@@ -32,13 +32,24 @@ interface DashboardLoadSchedulerContextValue {
   observe: (id: string, element: Element) => () => void;
   /**
    * Reads the box of a host widget once, before the first paint: on screen,
-   * the widget is marked visible (it needs no slot, so it starts) and renders
-   * again. The returned cleanup drops a read that has not happened yet.
+   * the widget is marked visible and can take a view-startup slot before
+   * paint. The returned cleanup drops a read that has not happened yet.
    */
   startBeforePaint: (read: BeforePaintRead) => () => void;
 }
 
 const DashboardLoadSchedulerContext = createContext<DashboardLoadSchedulerContextValue | null>(null);
+
+const VIEWPORT_VISIBILITY_ATTRIBUTE = 'data-dashboard-visible';
+
+/** A CSS signal: scrolling must not rerender cached views merely to pause their queued spinners. */
+function reflectViewportVisibility(element: Element, visible: boolean) {
+  const value = String(visible);
+
+  if (element.getAttribute(VIEWPORT_VISIBILITY_ATTRIBUTE) !== value) {
+    element.setAttribute(VIEWPORT_VISIBILITY_ATTRIBUTE, value);
+  }
+}
 
 /** Whether `value`, a computed `overflow-x` or `overflow-y`, clips the content of its box. */
 function clipsContent(value: string) {
@@ -91,6 +102,9 @@ function startOnScreenBeforePaint(scheduler: DashboardLoadScheduler, reads: Befo
   });
 
   if (onScreen.length === 0) return;
+  onScreen.forEach(({ box }) => {
+    if (box.current) reflectViewportVisibility(box.current, true);
+  });
   scheduler.setVisibility(onScreen.map(({ id }) => [id, true] as [string, boolean]));
   onScreen.forEach(({ id, rerender }) => {
     if (scheduler.isStarted(id)) rerender();
@@ -123,9 +137,9 @@ interface DashboardLoadSchedulerProviderProps {
 
 /**
  * Queues the widgets of one open dashboard (`load-scheduler.ts`): visible
- * widgets first, the host database's included, at most two source databases
- * loading cold at a time (the host and a database whose settled walk the tab
- * still holds take no slot, see `isDatabaseSourceResident`). It watches
+ * views only, the host database's included, at most two unfinished view
+ * startups and two source databases loading cold at a time. The host and a
+ * resident database skip only the source I/O budget (`isDatabaseSourceResident`). It watches
  * every widget box with one `IntersectionObserver` on the viewport (every
  * widget counts as visible where the browser has none). Unmounting it
  * (leaving the dashboard) closes the queue: nothing starts afterwards.
@@ -186,6 +200,7 @@ export function DashboardLoadSchedulerProvider({
     const targets = targetsRef.current;
 
     if (allVisibleRef.current) {
+      targets.forEach((_id, element) => reflectViewportVisibility(element, true));
       scheduler.setVisibility(Array.from(targets.values(), (id) => [id, true] as [string, boolean]));
       return;
     }
@@ -196,7 +211,10 @@ export function DashboardLoadSchedulerProvider({
       records.forEach((record) => {
         const id = targets.get(record.target);
 
-        if (id !== undefined) changes.push([id, record.isIntersecting]);
+        if (id !== undefined) {
+          reflectViewportVisibility(record.target, record.isIntersecting);
+          changes.push([id, record.isIntersecting]);
+        }
       });
       scheduler.setVisibility(changes);
     });
@@ -236,11 +254,16 @@ export function DashboardLoadSchedulerProvider({
       const targets = targetsRef.current;
 
       targets.set(element, id);
+      if (!element.hasAttribute(VIEWPORT_VISIBILITY_ATTRIBUTE)) {
+        reflectViewportVisibility(element, allVisibleRef.current);
+      }
+
       if (observerRef.current) observerRef.current.observe(element);
       else if (allVisibleRef.current) scheduler.setVisibility([[id, true]]);
       return () => {
         if (targets.get(element) === id) targets.delete(element);
         observerRef.current?.unobserve(element);
+        element.removeAttribute(VIEWPORT_VISIBILITY_ATTRIBUTE);
       };
     },
     [scheduler]
@@ -280,7 +303,7 @@ interface WidgetLoadStartOptions {
   sourceId: string;
   /** The widget box: its visibility orders the queue. */
   boxRef: RefObject<Element>;
-  /** The widget showed its view before it remounted (a move): it starts at once. */
+  /** Its source doc was shown before a move: transfer its existing view admission. */
   resume: boolean;
 }
 
@@ -294,10 +317,10 @@ export interface WidgetLoadStart {
 /**
  * A widget's turn to load. Until it is granted the widget shows its header and
  * the loading placeholder, and loads nothing. A widget that resumes after a
- * move and a widget outside a dashboard (no scheduler) start at once. A widget
- * of the host database is queued like the others, but takes no slot: when its
- * box is on screen at mount it starts before the first paint, so it never
- * shows the placeholder. Unmounting gives the slot back.
+ * move transfers its existing admission. Outside a dashboard there is no queue. A widget
+ * of the host database is queued like the others, but takes no source I/O
+ * slot: an on-screen box may take a view-startup slot before the first paint.
+ * Unmounting gives its slots back.
  */
 export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: WidgetLoadStartOptions): WidgetLoadStart {
   const context = useContext(DashboardLoadSchedulerContext);
@@ -316,9 +339,9 @@ export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: Widge
     const unregister = scheduler.register({ id: widgetId, sourceId, resume: resumeRef.current });
 
     registeredRef.current = true;
-    // A host widget needs no slot: it starts as soon as the queue knows it is
-    // visible. Its box is read before the paint rather than at the observer's
-    // first report (after it), so on screen it never shows the placeholder.
+    // A host widget needs no source I/O slot. Read its box before paint so
+    // visible work can use the view-startup budget without waiting for the
+    // observer's first report.
     const cancelRead =
       isHostSource && startBeforePaint ? startBeforePaint({ id: widgetId, box: boxRef, rerender: renderAgain }) : noop;
 
@@ -347,7 +370,7 @@ export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: Widge
   );
 
   // Decided while rendering for the widgets that never wait, so they never flash the placeholder.
-  const started = !context || granted > 0 || resume;
+  const started = !context || granted > 0;
 
   return { started, report };
 }

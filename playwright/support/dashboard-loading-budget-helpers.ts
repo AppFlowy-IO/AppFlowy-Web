@@ -5,8 +5,6 @@ import { fileURLToPath } from 'url';
 import { APIRequestContext, expect, Page, Request } from '@playwright/test';
 import protobuf from 'protobufjs';
 
-import { DASHBOARD_LOADING } from '../../src/application/database-yjs/dashboard-loading';
-
 import {
   addSmallDatabases,
   createDashboardOfViews,
@@ -17,6 +15,7 @@ import {
   loadStats,
   prepareLoadingWorkspace,
   readPageRecord,
+  revealWidgetData,
   sourceDatabaseNames,
   visibleWidgets,
   waitForWidgetData,
@@ -146,28 +145,24 @@ export async function createEmployeesListGalleryDashboard(page: Page, request: A
   await createDashboardOfViews(page, request, [[`${EMPLOYEES} Loading List`, `${EMPLOYEES} Loading Gallery`]]);
 }
 
-export async function expectBelowFoldWaitedForDataOrTimeout(page: Page, seconds: number) {
-  expect(seconds * 1000).toBe(DASHBOARD_LOADING.deferredStartTimeoutMs);
+export async function expectBelowFoldWaitedForViewport(page: Page) {
   const visible = visibleWidgets(page);
   const below = widgetsBelowTheFold(page);
 
   expect(visible.length).toBeGreaterThan(0);
   expect(below.length).toBeGreaterThan(0);
-  await waitForWidgetData(page, loadingWidgets(page));
-  const stats = await loadStats(page);
-  const first = Math.min(
-    ...stats.widgetStarts.filter((start) => visible.some((w) => w.id === start.widgetId)).map((s) => s.at)
-  );
-  const lastData = Math.max(...visible.map((widget) => stats.widgetFirstData[widget.id]));
+  await waitForWidgetData(page, visible);
+  const before = await loadStats(page);
 
-  expect(Number.isFinite(first) && Number.isFinite(lastData), 'visible widget times were recorded').toBe(true);
-  const earliest = Math.min(lastData, first + seconds * 1000);
+  expect(before.widgetStarts.filter((start) => below.some((widget) => widget.id === start.widgetId)), 'unseen startup work').toEqual([]);
+  await revealWidgetData(page, below);
+  const stats = await loadStats(page);
 
   for (const widget of below) {
     const start = stats.widgetStarts.find((entry) => entry.widgetId === widget.id);
 
     expect(start, `${widget.label} started`).toBeDefined();
-    expect(start!.at, `${widget.label} started after visible data or the deferral`).toBeGreaterThanOrEqual(earliest);
+    expect(start!.visibleAtStart, `${widget.label} started only after entering the viewport`).toBe(true);
   }
 }
 

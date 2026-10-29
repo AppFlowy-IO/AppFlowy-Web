@@ -131,18 +131,18 @@ Feature: A dashboard loads each source database once, two at a time, visible wid
     And the rows of every source database were loaded in one pass
 
   # M4: a source whose rows the tab still holds (the idle release has not
-  # run) is warm: its widgets skip the queue. "Another page" is a separate
+  # run) is warm: its widgets skip source I/O, while view startup stays bounded. "Another page" is a separate
   # document in the workspace, reached and left without a browser reload.
   @cloud
-  Scenario: Reopening the dashboard starts every widget at once and loads no rows again
+  Scenario: Reopening the dashboard starts visible views without loading rows again
     Given eight small databases each have a grid view for a dashboard widget
     And a new database has a dashboard with 8 widgets over the 8 databases in 2 rows of 4
     And I opened that dashboard and it finished loading
     And dashboard load counters are being recorded
     When I open another page and return to the dashboard within 30 seconds
-    Then no widget waited for a source
+    Then every visible widget shows its data within 3 seconds
+    And no widget waited for a source
     And no source database was opened or loaded again
-    And every widget shows its data within 3 seconds
     And every widget shows the same result as its source view
 
   # M5: the window is longer than two slow responses, so a slot freed by a
@@ -185,13 +185,16 @@ Feature: A dashboard loads each source database once, two at a time, visible wid
   # M9: tokens.json loading.deferredStartTimeoutMs. The first database holds
   # every response back 20 s, so its widget shows no data for about 40 s.
   @cloud
-  Scenario: Widgets below the fold start 10 seconds after the visible ones when a visible source is slow
+  Scenario: Unseen widgets remain queued beyond the background deadline until scrolling reveals them
     Given eight small databases each have a grid view for a dashboard widget
     And a new database has a dashboard with 8 widgets over the 8 databases in 8 rows of 1
     And dashboard load counters are being recorded
     When I open that dashboard while the first source database loads with a delay of 20 seconds
     Then no widget below the fold started in the first 10 seconds
-    And a widget below the fold started before the first source database showed data
+    And unseen widgets remain queued after the background deadline
+    When I scroll to the last dashboard row before the visible widgets show data
+    Then the widget in the last row started loading before every widget that was never scrolled into view
+    And the widget in the last row was visible when it started
 
   # M16: the header and its menu work while a widget waits for its source.
   @cloud
@@ -224,7 +227,7 @@ Feature: A dashboard loads each source database once, two at a time, visible wid
     When I open that dashboard with nothing cached
     Then every widget frame was shown before any row data arrived
     And every visible widget started loading before any widget below the fold
-    And every widget below the fold waited for the visible widgets to show data or for 10 seconds
+    And every widget below the fold waited until it entered the viewport
     And every widget shows the same result as its source view
 
   # 4.4 #2, budget 5 (W3, D9): the employees database answers 6 s late

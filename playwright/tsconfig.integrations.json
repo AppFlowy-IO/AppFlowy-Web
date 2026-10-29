@@ -13,7 +13,8 @@
     "support/code-block.fixture.tsx",
     "../playwright.pdf.config.ts",
     "support/pdf.fixture.tsx",
-    "support/dashboard-owned-clone.fixture.tsx"
+    "support/dashboard-owned-clone.fixture.tsx",
+    "support/dashboard-view-startup.fixture.tsx"
   ],
   "references": []
 }

@@ -36,7 +36,7 @@ import {
   slowDownSources,
   sourceDatabaseNames,
   viewerOf,
-  waitForWidgetData,
+  revealWidgetData,
   widgetLocatorOf,
   widgetsInViewport,
 } from './dashboard-loading-helpers';
@@ -535,7 +535,7 @@ export async function expectCollaboratorRowsShown(page: Page, names: string[]) {
     const widget = loadingWidgets(page).find((candidate) => candidate.database === name) as LoadingWidget;
 
     expect(title, `no collaborator row was added to "${name}"`).toBeDefined();
-    await waitForWidgetData(page, [widget]);
+    await revealWidgetData(page, [widget]);
     const scroller = widgetLocatorOf(page, widget).locator('[data-parity-id="dash-widget-grid-scrollbar"]');
 
     // The appended row can be below the virtual grid's mounted range. Reveal
@@ -931,7 +931,7 @@ export async function expectLoadingNeverEmpty(page: Page) {
   const scenario = loadingScenario(page);
   const widgets = loadingWidgets(page);
 
-  await waitForWidgetData(page, widgets);
+  await revealWidgetData(page, widgets);
   const { data, samples } = await readPageRecord(page);
 
   for (const widget of widgets) {
@@ -1228,7 +1228,7 @@ export async function returnToDashboardWhileSlow(page: Page) {
 export async function expectEverySourceTookASlot(page: Page) {
   const scenario = loadingScenario(page);
 
-  await waitForWidgetData(page, loadingWidgets(page));
+  await revealWidgetData(page, loadingWidgets(page));
   const stats = await loadStats(page);
   const ids = sourceDatabaseNames(page).map((name) => fixtureDatabase(page, name).databaseId);
   const loaded = new Set(

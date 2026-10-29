@@ -733,10 +733,11 @@ describe('in the load queue', () => {
     cleanup();
   });
 
-  it('starts the queued widget once a loading widget is removed', () => {
+  it('starts the queued widget after a removed loading widget cleans up', async () => {
     const { writeRows, cleanup } = setupQueue();
 
     writeRows([{ ...QUEUED_ROWS[0], widgets: QUEUED_ROWS[0].widgets.slice(1) }]);
+    await act(async () => undefined);
 
     expect(screen.getByTestId('widget-surface-v3')).toBeTruthy();
     cleanup();
@@ -779,6 +780,22 @@ describe('in the load queue', () => {
     cleanup();
   });
 
+  it('transfers an unfinished moved view startup without admitting a third body', () => {
+    const { writeRows, cleanup } = setupQueue();
+
+    expect(screen.getByTestId('widget-surface-v1')).toBeTruthy();
+    expect(screen.getByTestId('widget-surface-v2')).toBeTruthy();
+    expect(screen.queryByTestId('widget-surface-v3')).toBeNull();
+    writeRows(moveDashboardWidget(QUEUED_ROWS, 'w1', { type: 'new_row', rowIndex: 1 }));
+
+    expect(screen.getByTestId('widget-surface-v1')).toBeTruthy();
+    expect(screen.getByTestId('widget-surface-v2')).toBeTruthy();
+    expect(screen.queryByTestId('widget-surface-v3')).toBeNull();
+    reportLoad('v1', 'complete');
+    expect(screen.getByTestId('widget-surface-v3')).toBeTruthy();
+    cleanup();
+  });
+
   it('mounts no nested database before the source permission answers', () => {
     mockPermissionPending = true;
     const { cleanup } = setupQueue();
@@ -806,7 +823,7 @@ describe('in the load queue', () => {
     ['permission probe', () => (mockPermissionPending = true)],
   ])(
     'gives the slot of a source whose %s never settles to the next widget after the source load timeout',
-    (_what, stall) => {
+    async (_what, stall) => {
       const timeout = sourceLoadTimeoutMs();
 
       jest.useFakeTimers();
@@ -825,6 +842,8 @@ describe('in the load queue', () => {
       act(() => {
         jest.advanceTimersByTime(1);
       });
+      // The timed-out hosts unmount first; only their cleanup acknowledgment frees the slots.
+      await act(async () => { jest.runAllTicks(); });
 
       // Both stalled loads gave their slots up: the third widget loads its source.
       expect(mockLoadedViewIds.has('v3')).toBe(true);
@@ -1065,9 +1084,11 @@ describe('leaving a dashboard', () => {
         expect(screen.queryByTestId('widget-surface-v1')).toBeNull();
         expect(widgetPlaceholder('w1')?.dataset.reason).toBe('loading');
         expect(observers.intersectionRoots().at(-1) ?? null).toBeNull();
-        // Every box comes into view: two sources load, the third waits for a slot, then loads too.
+        // Every box comes into view. The host also holds a view-startup slot.
         observers.reportEverythingVisible();
         expect(screen.getByTestId('widget-surface-v1')).toBeTruthy();
+        expect(screen.queryByTestId('widget-surface-v2')).toBeNull();
+        act(() => mockLoadReporters.get('v0')?.('complete'));
         expect(screen.getByTestId('widget-surface-v2')).toBeTruthy();
         expect(screen.queryByTestId('widget-surface-v3')).toBeNull();
         act(() => mockLoadReporters.get('v1')?.('complete'));

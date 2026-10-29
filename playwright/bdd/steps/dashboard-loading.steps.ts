@@ -15,7 +15,7 @@ import {
   createEmployeesListGalleryDashboard,
   createSmallBindingBudgetDashboard,
   ensureEmployeesListGallery,
-  expectBelowFoldWaitedForDataOrTimeout,
+  expectBelowFoldWaitedForViewport,
   expectDepartmentChartEdit,
   expectEmployeesReadBudget,
   expectOtherChartsUnchanged,
@@ -41,9 +41,8 @@ import {
   ensureEmployeesViews,
   expectAtMostTwoSourcesLoading,
   expectBelowFoldDatabasesWaited,
-  expectBelowFoldStartedBeforeFirstSourceData,
+  expectBelowFoldRemainsQueued,
   expectEachSourceOpenedOnce,
-  expectEveryWidgetDataWithin,
   expectFramesBeforeData,
   expectLastRowShowsRows,
   expectLastRowStartedBeforeNeverScrolled,
@@ -352,10 +351,6 @@ Then('no source database was opened or loaded again', async ({ page }) => {
   await expectNoSourceLoadedAgain(page);
 });
 
-Then('every widget shows its data within {int} seconds', async ({ page }, seconds: number) => {
-  await expectEveryWidgetDataWithin(page, seconds * 1000);
-});
-
 Then('no source database starts loading within {int} seconds after I left', async ({ page }, seconds: number) => {
   await expectNoStartWithinAfterLeaving(page, seconds * 1000);
 });
@@ -391,8 +386,8 @@ Then('no widget below the fold started in the first {int} seconds', async ({ pag
   await expectNoBelowFoldStartWithin(page, seconds);
 });
 
-Then('a widget below the fold started before the first source database showed data', async ({ page }) => {
-  await expectBelowFoldStartedBeforeFirstSourceData(page);
+Then('unseen widgets remain queued after the background deadline', async ({ page }) => {
+  await expectBelowFoldRemainsQueued(page);
 });
 
 Then('the database of the removed widget was never opened', async ({ page }) => {
@@ -443,8 +438,8 @@ When('I change the Department of the first employee in the plain grid widget', a
   await changeFirstEmployeeDepartment(page);
 });
 
-Then('every widget below the fold waited for the visible widgets to show data or for {int} seconds', async ({ page }, seconds: number) => {
-  await expectBelowFoldWaitedForDataOrTimeout(page, seconds);
+Then('every widget below the fold waited until it entered the viewport', async ({ page }) => {
+  await expectBelowFoldWaitedForViewport(page);
 });
 
 Then('every visible widget shows its data within {int} seconds', async ({ page }, seconds: number) => {

@@ -230,6 +230,24 @@ describe('the dashboard load queue', () => {
     expect(screen.getAllByTestId(/^placeholder-/)).toHaveLength(8);
   });
 
+  it('reflects the existing observer into CSS without another observer or leftover visibility state', () => {
+    const { unmount } = render(<TestDashboard widgets={widgetsOverDistinctSources(2)} />);
+    const first = document.querySelector('[data-widget-id="w1"]')!;
+    const second = document.querySelector('[data-widget-id="w2"]')!;
+
+    expect(first.getAttribute('data-dashboard-visible')).toBe('false');
+    observer().report((id) => id === 'w1');
+    expect(first.getAttribute('data-dashboard-visible')).toBe('true');
+    expect(second.getAttribute('data-dashboard-visible')).toBe('false');
+    observer().report((id) => id === 'w2');
+    expect(first.getAttribute('data-dashboard-visible')).toBe('false');
+    expect(second.getAttribute('data-dashboard-visible')).toBe('true');
+    expect(FakeIntersectionObserver.instances).toHaveLength(1);
+    unmount();
+    expect(first.hasAttribute('data-dashboard-visible')).toBe(false);
+    expect(second.hasAttribute('data-dashboard-visible')).toBe(false);
+  });
+
   it('never has more than 2 distinct sources loading while 8 widgets over 8 sources load, visible ones first', () => {
     const widgets = widgetsOverDistinctSources(8);
     const visible = new Set(['w1', 'w2', 'w3', 'w4']);
@@ -248,7 +266,8 @@ describe('the dashboard load queue', () => {
     expect(screen.queryByTestId('database-w3')).toBeNull();
 
     // Each widget shows its first rows, then completes; the next one in layout order takes the freed slot.
-    widgets.forEach(() => {
+    widgets.forEach((_widget, index) => {
+      if (index === 4) observer().report(() => true);
       const loading = Array.from(mountedDatabases.entries()).find(([, entry]) => !entry.done);
 
       if (!loading) return;
@@ -265,16 +284,7 @@ describe('the dashboard load queue', () => {
     expect(stats.maxConcurrentSourceLoads).toBeLessThanOrEqual(2);
     expect(stats.maxConcurrentSourceLoads).toBe(2);
     expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4', 'w5', 'w6', 'w7', 'w8']);
-    expect(stats.widgetStarts.map((start) => start.visibleAtStart)).toEqual([
-      true,
-      true,
-      true,
-      true,
-      false,
-      false,
-      false,
-      false,
-    ]);
+    expect(stats.widgetStarts.map((start) => start.visibleAtStart)).toEqual(Array(8).fill(true));
     // Every slot was given back.
     expect(stats.sourceLoads.every((load) => load.end !== null)).toBe(true);
     expect(Object.keys(stats.widgetComplete).sort()).toEqual(widgets.map((widget) => widget.id).sort());
@@ -297,12 +307,13 @@ describe('the dashboard load queue', () => {
     }
   );
 
-  it('gives the slot of a widget that unmounts to the next one', () => {
+  it('gives the slot of an unmounted widget to the next one after cleanup', async () => {
     const widgets = widgetsOverDistinctSources(4);
     const { rerender } = render(<TestDashboard widgets={widgets} />);
 
     observer().report(() => true);
     rerender(<TestDashboard widgets={widgets.filter((widget) => widget.id !== 'w1')} />);
+    await act(async () => undefined);
 
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w2', 'w3']);
     expect(dashboardLoadStats.snapshot().sourceLoads.find((load) => load.sourceId === 'S1')?.end).not.toBeNull();
@@ -370,19 +381,23 @@ describe('the dashboard load queue', () => {
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBeLessThanOrEqual(2);
   });
 
-  it('keeps views of an already cached source mounted while they finish rendering off screen', async () => {
+  it('cancels unfinished cached views off screen while keeping completed siblings mounted', async () => {
     mockResidentSources.add('S1');
     mockResidentSources.add('S2');
     render(<TestDashboard widgets={widgetsOverDistinctSources(2)} />);
     observer().report(() => true);
-    const cached = screen.getByTestId('database-w2');
+    report('w1', 'complete');
+    const cached = screen.getByTestId('database-w1');
 
     observer().report((id) => id === 'w1');
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByTestId('database-w2')).toBe(cached);
+    expect(screen.getByTestId('database-w1')).toBe(cached);
+    expect(screen.queryByTestId('database-w2')).toBeNull();
+    expect(screen.getByTestId('placeholder-w2')).toBeTruthy();
     expect(dashboardLoadStats.snapshot().sourceLoads).toEqual([]);
+    observer().report(() => true);
     report('w2', 'complete');
-    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w2']);
   });
 
   it('keeps a completed widget mounted when it scrolls off screen', async () => {
@@ -443,7 +458,10 @@ describe('the dashboard load queue', () => {
 
     observer().report(() => true);
 
-    // The host takes no slot: two cold sources load beside it.
+    // The host takes a view slot, but no cold-source slot.
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w4']);
+    expect(loadingSources()).toEqual(new Set(['S1']));
+    report('w4', 'complete');
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w4']);
     expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
@@ -467,9 +485,11 @@ describe('the dashboard load queue', () => {
     // w3 now shows a view of the host: its content remounts in the box it had.
     rerender(<TestDashboard widgets={[...widgets.slice(0, 2), { id: 'w3', sourceId: 'host' }]} />);
 
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2']);
+    expect(screen.getByTestId('placeholder-w3')).toBeTruthy();
+    report('w1', 'complete');
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w3']);
-    expect(placeholderRenders.get('w3')).toBe(2);
-    expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+    expect(loadingSources()).toEqual(new Set(['S2']));
   });
 
   /**
@@ -493,10 +513,13 @@ describe('the dashboard load queue', () => {
     // Before the observer reports, only the visible host widgets started.
     expect(startedWidgetIds()).toEqual(['w1', 'w2']);
     observer().report((id) => hostDashboardVisible.has(id));
+    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+    report('w1', 'complete');
+    report('w2', 'complete');
     expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4']);
   }
 
-  it('starts the off-screen widgets of the host database after the first data of every visible widget, without a slot', () => {
+  it('waits for viewport admission even after every visible widget has first data', () => {
     openHostDashboard();
 
     // Off-screen host widgets wait for the visible ones, though they need no slot.
@@ -508,23 +531,28 @@ describe('the dashboard load queue', () => {
 
     report('w4', 'first-data');
 
-    // Both slots are still held by S1 and S2: the host widgets start beside
-    // them, and the off-screen widget of a third cold source still waits.
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4']);
+    report('w3', 'complete');
+    report('w4', 'complete');
+    expect(mountedDatabases.has('w5')).toBe(false);
+    observer().report((id) => id !== 'w7');
+
+    // Completed bodies stay mounted; only the newly visible host views start.
     expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4', 'w5', 'w6']);
-    expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+    expect(loadingSources()).toEqual(new Set());
     expect(mountedDatabases.has('w7')).toBe(false);
     expect(dashboardLoadStats.snapshot().widgetStarts.map((start) => start.visibleAtStart)).toEqual([
       true,
       true,
       true,
       true,
-      false,
-      false,
+      true,
+      true,
     ]);
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
   });
 
-  it('starts the off-screen widgets of the host database 10 s after the first visible start when a visible widget shows no data', () => {
+  it('does not initialize unseen host views when the old background deadline expires', () => {
     jest.useFakeTimers();
     openHostDashboard();
     report('w1', 'first-data');
@@ -539,8 +567,10 @@ describe('the dashboard load queue', () => {
       jest.advanceTimersByTime(1);
     });
 
-    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4', 'w5', 'w6']);
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3', 'w4']);
     expect(loadingSources()).toEqual(new Set(['S1', 'S2']));
+    expect(mountedDatabases.has('w5')).toBe(false);
+    expect(mountedDatabases.has('w6')).toBe(false);
     expect(mountedDatabases.has('w7')).toBe(false);
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
   });
@@ -573,7 +603,10 @@ describe('resident sources in the dashboard load queue', () => {
     render(<TestDashboard widgets={widgetsOverDistinctSources(4)} />);
     observer().report(() => true);
 
-    // S2's rows are in memory: w2 takes no slot, and w3 gets the second one.
+    // S2 takes a view slot while deriving its result, but no source I/O slot.
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2']);
+    expect(dashboardLoadStats.snapshot().sourceLoads.map((load) => load.sourceId)).toEqual(['S1']);
+    report('w2', 'complete');
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w3']);
     const stats = dashboardLoadStats.snapshot();
 
@@ -581,7 +614,7 @@ describe('resident sources in the dashboard load queue', () => {
     expect(stats.sourceLoads.filter((load) => load.end === null).map((load) => load.sourceId)).toEqual(['S1', 'S3']);
   });
 
-  it('frees the slot of a source whose walk settles, and starts the next widget', () => {
+  it('frees a settled source I/O slot while retaining its unfinished view slot', () => {
     render(<TestDashboard widgets={widgetsOverDistinctSources(3)} />);
     observer().report(() => true);
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2']);
@@ -589,6 +622,8 @@ describe('resident sources in the dashboard load queue', () => {
     // w1 still derives its result, but S1's rows are in memory now: its slot is free.
     setResident('S1', true);
 
+    expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2']);
+    report('w1', 'complete');
     expect(Array.from(mountedDatabases.keys()).sort()).toEqual(['w1', 'w2', 'w3']);
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
   });
@@ -689,11 +724,12 @@ describe('createDashboardLoadScheduler', () => {
     const generation = scheduler.loadGeneration('w1');
 
     advance(DASHBOARD_LOADING.sourceLoadTimeoutMs);
-    expect(scheduler.isStarted('w1')).toBe(true);
+    expect(scheduler.isStarted('w1')).toBe(false);
+    expect(scheduler.loadingWidgetIds()).toEqual(['w1']);
+    scheduler.report('w1', 'suspended', generation);
     expect(scheduler.loadingWidgetIds()).toEqual([]);
     scheduler.setVisibility([['w1', false]]);
     expect(scheduler.isStarted('w1')).toBe(false);
-    scheduler.report('w1', 'suspended', generation);
     // Further observer batches must leave the cancelled host suspended.
     scheduler.register({ id: 'w2', sourceId: 'S2' });
     scheduler.setVisibility([['w2', true]]);
@@ -702,7 +738,7 @@ describe('createDashboardLoadScheduler', () => {
     scheduler.close();
   });
 
-  it('starts deferred widgets when the deferred timeout expires, and plans no timer once closed', () => {
+  it('keeps unseen widgets queued past the background deadline, and plans no timer once closed', () => {
     jest.useFakeTimers();
     const { scheduler, advance } = setup();
 
@@ -719,6 +755,8 @@ describe('createDashboardLoadScheduler', () => {
     advance(DASHBOARD_LOADING.deferredStartTimeoutMs - 1);
     expect(scheduler.isStarted('w2')).toBe(false);
     advance(1);
+    expect(scheduler.isStarted('w2')).toBe(false);
+    scheduler.setVisibility([['w2', true]]);
     expect(scheduler.isStarted('w2')).toBe(true);
 
     scheduler.register({ id: 'w3', sourceId: 'S3' });
@@ -729,7 +767,7 @@ describe('createDashboardLoadScheduler', () => {
     expect(scheduler.isStarted('w3')).toBe(false);
   });
 
-  it('starts deferred widgets once every visible widget shows its first data', () => {
+  it('keeps unseen widgets queued after first data until they enter the viewport', () => {
     const { scheduler } = setup();
 
     scheduler.register({ id: 'w1', sourceId: 'S1' });
@@ -741,6 +779,8 @@ describe('createDashboardLoadScheduler', () => {
     ]);
     scheduler.report('w1', 'first-data');
 
+    expect(scheduler.isStarted('w2')).toBe(false);
+    scheduler.setVisibility([['w2', true]]);
     expect(scheduler.isStarted('w2')).toBe(true);
     expect(scheduler.loadingWidgetIds()).toEqual(['w1', 'w2']);
   });
@@ -768,6 +808,10 @@ describe('createDashboardLoadScheduler', () => {
 
   it('resumes a widget that showed its view before a move without taking a slot', () => {
     const { scheduler } = setup();
+    const unregisterMoved = scheduler.register({ id: 'w3', sourceId: 'S3' });
+
+    scheduler.setVisibility([['w3', true]]);
+    scheduler.report('w3', 'complete');
 
     scheduler.register({ id: 'w1', sourceId: 'S1' });
     scheduler.register({ id: 'w2', sourceId: 'S2' });
@@ -775,6 +819,7 @@ describe('createDashboardLoadScheduler', () => {
       ['w1', true],
       ['w2', true],
     ]);
+    unregisterMoved();
     scheduler.register({ id: 'w3', sourceId: 'S3', resume: true });
     scheduler.register({ id: 'w4', sourceId: 'S4' });
     scheduler.setVisibility([
@@ -813,9 +858,11 @@ describe('createDashboardLoadScheduler', () => {
         ['w4', 'S4'],
       ]);
 
-      expect(scheduler.loadingWidgetIds()).toEqual(['w1', 'w2', 'w3']);
+      expect(scheduler.loadingWidgetIds()).toEqual(['w1', 'w2']);
       expect(scheduler.isStarted('w4')).toBe(false);
-      expect(dashboardLoadStats.snapshot().sourceLoads.map((load) => load.sourceId)).toEqual(['S2', 'S3']);
+      expect(dashboardLoadStats.snapshot().sourceLoads.map((load) => load.sourceId)).toEqual(['S2']);
+      scheduler.report('w1', 'complete');
+      expect(scheduler.loadingWidgetIds()).toEqual(['w2', 'w3']);
     });
 
     it('plans again when residency changes: a settled walk frees its slot', () => {
@@ -834,11 +881,13 @@ describe('createDashboardLoadScheduler', () => {
       expect(scheduler.isStarted('w3')).toBe(false);
       scheduler.refreshResidency();
 
-      expect(scheduler.isStarted('w3')).toBe(true);
+      expect(scheduler.isStarted('w3')).toBe(false);
       const loads = dashboardLoadStats.snapshot().sourceLoads;
 
       expect(loads.find((load) => load.sourceId === 'S1')?.end).not.toBeNull();
-      expect(loads.filter((load) => load.end === null).map((load) => load.sourceId)).toEqual(['S2', 'S3']);
+      expect(loads.filter((load) => load.end === null).map((load) => load.sourceId)).toEqual(['S2']);
+      scheduler.report('w1', 'complete');
+      expect(scheduler.isStarted('w3')).toBe(true);
     });
 
     it('queues the next widget of a released source for a slot again', () => {

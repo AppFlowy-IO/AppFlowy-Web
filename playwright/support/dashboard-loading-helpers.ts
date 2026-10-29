@@ -1319,8 +1319,8 @@ export async function scrollToLastRow(page: Page) {
   const scenario = loadingScenario(page);
   const viewer = viewerOf(page);
 
-  await DashboardSelectors.rows(viewer).last().scrollIntoViewIfNeeded();
   scenario.scrolledAt = Date.now();
+  await DashboardSelectors.rows(viewer).last().scrollIntoViewIfNeeded();
   scenario.visibleAfterScroll = new Set(await widgetsInViewport(viewer));
 }
 
@@ -1332,6 +1332,7 @@ export async function openDashboardUntilLoaded(page: Page) {
   await openDashboardCold(page);
   const widgets = loadingWidgets(page);
 
+  await revealWidgetData(page, widgets);
   await expect
     .poll(
       async () => {
@@ -1539,6 +1540,7 @@ export async function expectWidgetsMatchTheirSourceViews(
   const shown: { widget: LoadingWidget; result: string }[] = [];
 
   for (const widget of widgets) {
+    await widgetLocatorOf(page, widget).scrollIntoViewIfNeeded();
     shown.push({ widget, result: await settledResult(widgetLocatorOf(page, widget), `the "${widget.label}" widget`) });
   }
 
@@ -1569,6 +1571,27 @@ export async function waitForWidgetData(page: Page, widgets: LoadingWidget[], ti
       { timeout, message: 'waiting for the widgets to show data' }
     )
     .toEqual([]);
+}
+
+/** Visit data being compared explicitly; unseen views intentionally do no startup work. */
+export async function revealWidgetData(page: Page, widgets: LoadingWidget[], timeout = LOAD_TIMEOUT_MS) {
+  const deadline = Date.now() + timeout;
+  const remaining = () => {
+    const ms = deadline - Date.now();
+
+    if (ms <= 0) throw new Error(`Revealing dashboard widget data exceeded ${timeout} ms`);
+    return ms;
+  };
+
+  for (const widget of widgets) {
+    await widgetLocatorOf(page, widget).scrollIntoViewIfNeeded({ timeout: remaining() });
+    await waitForWidgetData(page, [widget], remaining());
+    // Complete the visited view before scrolling away: otherwise that action
+    // intentionally cancels its unfinished source walk and changes read budgets.
+    await expect.poll(async () => (await loadStats(page)).widgetComplete[widget.id] !== undefined, {
+      timeout: remaining(), message: `waiting for the visited "${widget.label}" widget to complete`,
+    }).toBe(true);
+  }
 }
 
 /**
@@ -1692,7 +1715,7 @@ export async function expectPeakOfTwoSources(page: Page) {
   const cap = DASHBOARD_LOADING.maxConcurrentSources;
   const ids = sourceDatabaseNames(page).map((name) => fixtureDatabase(page, name).databaseId);
 
-  await waitForWidgetData(page, loadingWidgets(page));
+  await revealWidgetData(page, loadingWidgets(page));
   expectRequestsSeenFor(page, ids);
   const stats = await loadStats(page);
 
@@ -1762,7 +1785,7 @@ export async function expectWaitersSeenWaiting(page: Page) {
   const widgets = loadingWidgets(page);
   const cap = DASHBOARD_LOADING.maxConcurrentSources;
 
-  await waitForWidgetData(page, widgets);
+  await revealWidgetData(page, widgets);
   const first = recorderOf(page).firstRequestAt(scenario.openedAt ?? 0);
   const order = [...first.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
   const waited = new Set(order.slice(cap));
@@ -1812,7 +1835,7 @@ export async function expectWaitersSeenWaiting(page: Page) {
  */
 export async function expectNoEmptyLooks(page: Page, widgets: LoadingWidget[]) {
   // The whole load: every widget shows data first.
-  await waitForWidgetData(page, widgets);
+  await revealWidgetData(page, widgets);
   const stats = await loadStats(page);
   const { samples } = await readPageRecord(page);
   const ids = new Set(widgets.map((widget) => widget.id));
@@ -1899,7 +1922,7 @@ export async function expectLoadingStateShown(page: Page, widgets: LoadingWidget
 export async function expectEachSourceOpenedOnce(page: Page, names: string[] = sourceDatabaseNames(page)) {
   const scenario = loadingScenario(page);
 
-  await waitForWidgetData(
+  await revealWidgetData(
     page,
     loadingWidgets(page).filter((widget) => names.includes(widget.database))
   );
@@ -1922,7 +1945,7 @@ export async function expectRowsLoadedInOnePass(page: Page, name: string) {
   const scenario = loadingScenario(page);
   const { databaseId } = fixtureDatabase(page, name);
 
-  await waitForWidgetData(
+  await revealWidgetData(
     page,
     loadingWidgets(page).filter((widget) => widget.database === name)
   );
@@ -2110,7 +2133,7 @@ const SAME_PLAN_MS = 1_000;
 export async function expectSharedSourceWidgetsStartedTogether(page: Page) {
   const widgets = loadingWidgets(page);
 
-  await waitForWidgetData(page, widgets);
+  await revealWidgetData(page, widgets);
   const stats = await loadStats(page);
   const { ready } = await readPageRecord(page);
 
@@ -2144,14 +2167,11 @@ export async function expectRowsOfEverySourceLoadedInOnePass(page: Page) {
   for (const name of sourceDatabaseNames(page)) await expectRowsLoadedInOnePass(page, name);
 }
 
-/**
- * No widget waited for a load slot after the return: every widget started,
- * and no source database took a slot (resident sources need none).
- */
+/** Visited warm views require no source I/O slots; their view-startup budget still applies. */
 export async function expectNoWidgetWaited(page: Page) {
   const widgets = loadingWidgets(page);
 
-  await waitForWidgetData(page, widgets);
+  await revealWidgetData(page, widgets);
   const stats = await loadStats(page);
 
   expect(
@@ -2174,7 +2194,7 @@ export async function expectNoWidgetWaited(page: Page) {
 export async function expectNoSourceLoadedAgain(page: Page) {
   const scenario = loadingScenario(page);
 
-  await waitForWidgetData(page, loadingWidgets(page));
+  await revealWidgetData(page, loadingWidgets(page));
   // Room for a load that would start late.
   await viewerOf(page).waitForTimeout(SLOW_SOURCE_DELAY_MS);
   const stats = await loadStats(page);
@@ -2194,23 +2214,6 @@ export async function expectNoSourceLoadedAgain(page: Page) {
   expect(
     ids.filter((id) => (stats.sourceOpens[id] ?? 0) > 0),
     'source databases opened again (the app counter)'
-  ).toEqual([]);
-}
-
-/** Every widget showed its data within `withinMs` of the (re)open. */
-export async function expectEveryWidgetDataWithin(page: Page, withinMs: number) {
-  const scenario = loadingScenario(page);
-  const widgets = loadingWidgets(page);
-  const openedAt = scenario.openedAt ?? Date.now();
-
-  await waitForWidgetData(page, widgets, Math.max(0, withinMs - (Date.now() - openedAt)) + 1_000);
-  const { data } = await readPageRecord(page);
-
-  expect(
-    widgets
-      .filter((widget) => data[widget.id] - openedAt > withinMs)
-      .map((widget) => `${widget.label} after ${data[widget.id] - openedAt} ms`),
-    `widgets that showed their data later than ${withinMs} ms after the open`
   ).toEqual([]);
 }
 
@@ -2322,7 +2325,7 @@ export async function expectOthersWaitForSlowSources(page: Page) {
 
   expect(slow.length, 'slow source databases').toBe(DASHBOARD_LOADING.maxConcurrentSources);
   expect(others.length, 'widgets of the other databases').toBeGreaterThan(0);
-  await waitForWidgetData(page, loadingWidgets(page));
+  await revealWidgetData(page, loadingWidgets(page));
   const slowFinished = Math.min(...slow.map((name) => lastRequestEnd(page, name)));
   const first = recorderOf(page).firstRequestAt(scenario.openedAt ?? 0);
   const { waiting, samples } = await readPageRecord(page);
@@ -2352,7 +2355,7 @@ export async function expectNoErrorOrEmptyWhileWaiting(page: Page) {
   const scenario = loadingScenario(page);
   const widgets = loadingWidgets(page);
 
-  await waitForWidgetData(page, widgets);
+  await revealWidgetData(page, widgets);
   const stats = await loadStats(page);
   const { data, samples } = await readPageRecord(page);
 
@@ -2400,7 +2403,7 @@ export async function scrollToLastRowBeforeVisibleData(page: Page) {
     'visible widgets that showed data before the scroll'
   ).toEqual([]);
   expect(
-    stats.widgetStarts.some((start) => start.widgetId === lastRowWidget(page).id),
+    stats.widgetStarts.some((start) => start.widgetId === lastRowWidget(page).id && start.at < (scenario.scrolledAt as number)),
     'the last-row widget had started before the scroll'
   ).toBe(false);
   expect(
@@ -2468,11 +2471,17 @@ export async function expectNoBelowFoldStartWithin(page: Page, seconds: number) 
 
   expect(windowMs, 'tokens.json loading.deferredStartTimeoutMs').toBe(DASHBOARD_LOADING.deferredStartTimeoutMs);
   expect(below.length, 'widgets below the fold').toBeGreaterThan(0);
-  // Until a widget below the fold started, or long past the window.
+  // Observe the full old background window. Waiting for an unseen start would
+  // itself require the behavior this viewport policy forbids.
   await expect
-    .poll(async () => (await loadStats(page)).widgetStarts.some((start) => !start.visibleAtStart), {
+    .poll(async () => {
+      const starts = (await loadStats(page)).widgetStarts.filter((start) => start.visibleAtStart);
+      const first = Math.min(...starts.map((start) => start.at));
+
+      return starts.length > 0 && Date.now() >= first + windowMs + 250;
+    }, {
       timeout: windowMs + LOAD_TIMEOUT_MS,
-      message: 'waiting for a widget below the fold to start',
+      message: 'observing the old background startup deadline',
     })
     .toBe(true);
   const stats = await loadStats(page);
@@ -2501,29 +2510,16 @@ export async function expectNoBelowFoldStartWithin(page: Page, seconds: number) 
   }
 }
 
-/** A widget below the fold started (its database was requested) before the first source database showed data. */
-export async function expectBelowFoldStartedBeforeFirstSourceData(page: Page) {
-  const scenario = loadingScenario(page);
-  const firstSource = sourceDatabaseNames(page)[0];
-  const firstWidgets = loadingWidgets(page).filter((widget) => widget.database === firstSource);
+/** Unvisited cards retain their queued frames after the old background deadline. */
+export async function expectBelowFoldRemainsQueued(page: Page) {
+  const below = widgetsBelowTheFold(page);
+  const starts = (await loadStats(page)).widgetStarts;
 
-  await waitForWidgetData(
-    page,
-    firstWidgets,
-    LOAD_TIMEOUT_MS + Math.max(0, ...Object.values(scenario.slowDelays ?? {})) * 3
-  );
-  const { data } = await readPageRecord(page);
-  const firstData = Math.min(...firstWidgets.map((widget) => data[widget.id]));
-  const first = recorderOf(page).firstRequestAt(scenario.openedAt ?? 0);
-  const belowRequests = widgetsBelowTheFold(page)
-    .map((widget) => first.get(fixtureDatabase(page, widget.database).databaseId))
-    .filter((at): at is number => at !== undefined);
-
-  expect(belowRequests.length, 'databases below the fold that were requested').toBeGreaterThan(0);
-  expect(
-    Math.min(...belowRequests),
-    'the first request below the fold came after the first database showed data'
-  ).toBeLessThan(firstData);
+  expect(below.length, 'widgets below the fold').toBeGreaterThan(0);
+  expect(starts.filter((start) => below.some((widget) => widget.id === start.widgetId)), 'unseen startup work').toEqual([]);
+  for (const widget of below) {
+    await expect(widgetLocatorOf(page, widget).getByTestId('dashboard-widget-placeholder')).toHaveAttribute('data-reason', 'loading');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2561,7 +2557,7 @@ export async function expectRemovedSourceNeverOpened(page: Page) {
   const { widget } = removed as { widget: LoadingWidget; at: number };
   const { databaseId } = fixtureDatabase(page, widget.database);
 
-  await waitForWidgetData(page, loadingWidgets(page));
+  await revealWidgetData(page, loadingWidgets(page));
   // Room for a start that would come late.
   await viewerOf(page).waitForTimeout(2 * SLOW_SOURCE_DELAY_MS);
   const stats = await loadStats(page);

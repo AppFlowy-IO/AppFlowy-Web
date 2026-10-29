@@ -52,7 +52,10 @@ export function WidgetPlaceholder({ reason, onRemove, className }: WidgetPlaceho
       role={reason === 'loading' ? 'status' : undefined}
     >
       {reason === 'loading' ? (
-        <Progress variant='inherit' />
+        <Progress
+          className='group-data-[dashboard-visible=false]/widget:[animation-play-state:paused]'
+          variant='inherit'
+        />
       ) : reason === 'no-access' ? (
         <LockIcon aria-hidden='true' className='h-6 w-6 text-icon-tertiary' />
       ) : reason === 'offline' ? (

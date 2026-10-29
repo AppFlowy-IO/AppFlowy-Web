@@ -180,21 +180,22 @@ describe('widgets that share a database (M3)', () => {
     { id: 'c2', sourceId: 'C' },
   ];
 
-  it('start together on one slot: the cap counts databases, not widgets', () => {
+  it('starts two views together on one source slot without bypassing the view budget', () => {
     render(<TestDashboard widgets={PAIRS} />);
     observer().report(() => true);
 
-    expect(Array.from(mounted.keys())).toEqual(['a1', 'a2', 'b1', 'b2']);
-    expect(loadingSources()).toEqual(new Set(['A', 'B']));
+    expect(Array.from(mounted.keys())).toEqual(['a1', 'a2']);
+    expect(loadingSources()).toEqual(new Set(['A']));
+    expect(screen.getByTestId('placeholder-b1')).toBeTruthy();
     expect(screen.getByTestId('placeholder-c1')).toBeTruthy();
     expect(screen.getByTestId('placeholder-c2')).toBeTruthy();
     const stats = dashboardLoadStats.snapshot();
 
-    expect(stats.maxConcurrentSourceLoads).toBe(DASHBOARD_LOADING.maxConcurrentSources);
-    expect(stats.sourceLoads.map((load) => load.sourceId)).toEqual(['A', 'B']);
+    expect(stats.maxConcurrentSourceLoads).toBe(1);
+    expect(stats.sourceLoads.map((load) => load.sourceId)).toEqual(['A']);
   });
 
-  it('keep the slot until both widgets of the database are done, then the next database starts both of its widgets', () => {
+  it('retains a shared source slot until its last view finishes while admitting only two unfinished views', () => {
     render(<TestDashboard widgets={PAIRS} />);
     observer().report(() => true);
 
@@ -204,8 +205,14 @@ describe('widgets that share a database (M3)', () => {
     expect(loadingSources()).toEqual(new Set(['A', 'B']));
 
     report('a2', 'failed');
-    expect(Array.from(mounted.keys()).filter((id) => id.startsWith('c'))).toEqual(['c1', 'c2']);
+    expect(Array.from(mounted.keys()).filter((id) => id.startsWith('c'))).toEqual([]);
+    expect(loadingSources()).toEqual(new Set(['B']));
+    report('b1', 'complete');
+    expect(Array.from(mounted.keys()).filter((id) => id.startsWith('c'))).toEqual(['c1']);
     expect(loadingSources()).toEqual(new Set(['B', 'C']));
+    report('b2', 'complete');
+    expect(Array.from(mounted.keys()).filter((id) => id.startsWith('c'))).toEqual(['c1', 'c2']);
+    expect(loadingSources()).toEqual(new Set(['C']));
     const stats = dashboardLoadStats.snapshot();
 
     expect(stats.maxConcurrentSourceLoads).toBe(2);
@@ -241,7 +248,7 @@ describe('two slow sources (M8: the cap is hard)', () => {
     expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBe(2);
 
     report('w2', 'complete');
-    // The freed slot goes to the next visible widget, then the deferred ones (their timeout ran out) follow.
+    // The freed slot goes to the next visible widget; unseen widgets still wait.
     expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3']);
     expect(loadingSources()).toEqual(new Set(['S1', 'S3']));
   });
@@ -320,7 +327,7 @@ describe('the row budget reported by the widgets (M19)', () => {
     report('w1', 'complete');
     report('w2', 'complete');
 
-    // Both visible widgets showed their data, so the deferred ones may start, except over the row budget.
+    // Neither completing visible views nor their row count initializes unseen views.
     expect(startedWidgetIds()).toEqual(['w1', 'w2']);
     expect(screen.getByTestId('placeholder-w3')).toBeTruthy();
 
@@ -330,7 +337,7 @@ describe('the row budget reported by the widgets (M19)', () => {
     expect(screen.getByTestId('placeholder-w4')).toBeTruthy();
   });
 
-  it('lets deferred widgets start in the background while the open sources stay under the budget', () => {
+  it('waits for actual visibility even while open sources stay under the background row budget', () => {
     const widgets: TestWidgetSpec[] = [
       { id: 'w1', sourceId: 'S1', rows: DASHBOARD_LOADING.rowBudget - 20 },
       { id: 'w2', sourceId: 'S2', rows: 10 },
@@ -341,6 +348,8 @@ describe('the row budget reported by the widgets (M19)', () => {
     observer().report((id) => id === 'w1');
     report('w1', 'complete');
 
+    expect(startedWidgetIds()).toEqual(['w1']);
+    observer().report(() => true);
     expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w3']);
   });
 });
