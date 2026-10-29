@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 import { assessPresentation } from '../presentation-client';
+import { findReusableResult } from '../server-client';
 import SlideGenerationSetup from '../SlideGenerationSetup';
+import { useReusableGeneration } from '../useReusableGeneration';
 
 import type { SlidesWorkflowProps } from '../SlidesWorkflow';
 
@@ -11,6 +13,7 @@ jest.mock('../presentation-client', () => ({
   importPresentationTemplate: jest.fn(),
   reviewPresentationTemplate: jest.fn(),
 }));
+jest.mock('../server-client', () => ({ findReusableResult: jest.fn() }));
 jest.mock('../SlideThemePicker', () => ({ __esModule: true, default: () => null }));
 jest.mock('../SlideCountDropdown', () => ({ __esModule: true, default: () => null }));
 jest.mock('../PresentationSettingsDropdown', () => ({ __esModule: true, default: () => null }));
@@ -146,5 +149,85 @@ test('settings changes return to Generate and wait for the saved-result check be
     await act(async () => { jest.advanceTimersByTime(400); });
     expect(assessPresentation).toHaveBeenCalledTimes(1);
     expect(generateButton().disabled).toBe(false);
+  } finally { jest.useRealTimers(); }
+});
+
+test.each([false, true])('count changes keep the ready button enabled while checking saved results (saved deck: %s)', async (savedDeck) => {
+  jest.useFakeTimers();
+  try {
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => 'request-id' });
+    jest.mocked(assessPresentation).mockClear().mockResolvedValue(clear);
+    jest.mocked(findReusableResult).mockReset().mockResolvedValue(null);
+    const base = setupProps();
+    const scope = { workspaceId: 'workspace', pageId: 'page' };
+    const source = {
+      ...base.snapshot,
+      serverSource: { ...base.snapshot.serverSource!, sources: [{ pageId: 'page', revision: 'native' }] },
+    };
+
+    const Setup = () => {
+      const [options, onOptions] = React.useState(base.options);
+      const reuse = useReusableGeneration({ scope, task: 'slides', source, options, style: base.style }, true, 'actor');
+
+      return <SlideGenerationSetup scope={scope} props={{
+        ...base, snapshot: source, options, onOptions,
+        plan: savedDeck ? { title: 'Saved deck', slides: [] } : undefined,
+        reuse: { available: !!reuse.job, checking: reuse.checking, error: reuse.error, onOpen: jest.fn(), onRetry: reuse.refresh },
+      }} />;
+    };
+
+    render(<Setup />);
+    await act(async () => { await jest.advanceTimersByTimeAsync(200); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(400); });
+    const button = screen.getByRole<HTMLButtonElement>('button', {
+      name: savedDeck ? 'Regenerate presentation' : 'Generate presentation',
+    });
+
+    expect(button.disabled).toBe(false);
+    let finish!: (value: null) => void;
+
+    jest.mocked(findReusableResult).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: '4', exact: true }));
+    expect(button.disabled).toBe(false);
+    await act(async () => { await jest.advanceTimersByTimeAsync(200); });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(base.onGenerate).not.toHaveBeenCalled();
+    expect(button.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '8', exact: true }));
+    expect(button.disabled).toBe(false);
+    await act(async () => { await jest.advanceTimersByTimeAsync(200); });
+    await act(async () => { finish(null); });
+    expect(button.disabled).toBe(false);
+    expect(assessPresentation).toHaveBeenCalledTimes(1);
+    expect(base.onGenerate).not.toHaveBeenCalled();
+    expect(screen.queryByText('Analyzing your sources…')).toBeNull();
+    fireEvent.click(button);
+    expect(base.onGenerate).toHaveBeenCalledTimes(1);
+  } finally { jest.useRealTimers(); }
+});
+
+test.each(['match', 'miss', 'error'] as const)('clicking during a lookup waits for its %s before taking action', async (outcome) => {
+  jest.useFakeTimers();
+  try {
+    jest.mocked(assessPresentation).mockResolvedValue(clear);
+    const base = setupProps();
+    const scope = { workspaceId: 'workspace', pageId: 'page' };
+    const reuse = { available: false, checking: false, onOpen: jest.fn(), onRetry: jest.fn() };
+    const view = render(<SlideGenerationSetup scope={scope} props={{ ...base, reuse }} />);
+
+    await act(async () => { await jest.advanceTimersByTimeAsync(400); });
+    const selected = { ...base, options: { ...base.options, slideCountMode: 'fixed' as const, slideCount: 4 } };
+
+    view.rerender(<SlideGenerationSetup scope={scope} props={{ ...selected, reuse: { ...reuse, checking: true } }} />);
+    expect(generateButton().disabled).toBe(false);
+    fireEvent.click(generateButton());
+    expect(base.onGenerate).not.toHaveBeenCalled();
+    expect(reuse.onOpen).not.toHaveBeenCalled();
+    view.rerender(<SlideGenerationSetup scope={scope} props={{
+      ...selected, reuse: { ...reuse, available: outcome === 'match', error: outcome === 'error' ? 'Lookup failed' : undefined },
+    }} />);
+    expect(reuse.onOpen).toHaveBeenCalledTimes(outcome === 'match' ? 1 : 0);
+    expect(base.onGenerate).toHaveBeenCalledTimes(outcome === 'miss' ? 1 : 0);
   } finally { jest.useRealTimers(); }
 });

@@ -220,7 +220,36 @@ export default function SlideGenerationSetup({
   const hasSource =
     !!snapshot.serverSource || !!snapshot.blocks.length || (options.includeProperties && !!snapshot.properties.length);
   const question = assessment?.condition === 'ambiguous' && !options.purpose?.trim() && !options.reviewOutline;
-  const showProgress = busy || (assessing && !props.reuse?.available && !props.reuse?.checking);
+  const selectionKey = JSON.stringify([assessmentKey, options, style]);
+  const [requestedSelection, setRequestedSelection] = useState<string>();
+  const waitingForResult = requestedSelection === selectionKey;
+  const submitting = busy || waitingForResult;
+  const ready =
+    hasSource &&
+    (props.reuse?.available || (canGenerate && !!assessment && !limitMessage)) &&
+    !props.reuse?.error &&
+    !busy &&
+    (!assessing || props.reuse?.available) &&
+    !importing &&
+    !draft &&
+    (designMode !== 'template' || !!style.templateName) &&
+    (!question || props.reuse?.available);
+  const showProgress = submitting || (assessing && !props.reuse?.available && !props.reuse?.checking);
+
+  // Only an explicit click waits for a background lookup. If a match arrives, Open must win
+  // over artifact regeneration, which deliberately bypasses reuse on the server.
+  useEffect(() => {
+    if (!requestedSelection) return;
+    if (!waitingForResult || !ready) {
+      setRequestedSelection(undefined);
+      return;
+    }
+
+    if (props.reuse?.checking) return;
+    setRequestedSelection(undefined);
+    if (props.reuse?.available) props.reuse.onOpen();
+    else onGenerate();
+  }, [requestedSelection, waitingForResult, ready, props.reuse, onGenerate]);
   const change = (patch: Partial<typeof options>) => onOptions({ ...options, ...patch });
   const changePreset = (patch: Partial<Pick<typeof options, 'audience' | 'tone' | 'contentDensity'>>) =>
     change({
@@ -247,7 +276,12 @@ export default function SlideGenerationSetup({
     if (mode !== 'template' && style.templateName) props.styles[0] && onStyle(props.styles[0]);
   };
 
-  const generate = () => onGenerate();
+  const generate = () => {
+    if (props.reuse?.checking) setRequestedSelection(selectionKey);
+    else if (props.reuse?.available) props.reuse.onOpen();
+    else onGenerate();
+  };
+
   const review = draft ?? (style.templateName ? style : undefined);
   const updateReview = (patch: Partial<PresentationStyle>) => {
     if (!review?.serverStyle) return;
@@ -708,7 +742,9 @@ export default function SlideGenerationSetup({
                 aria-hidden='true'
                 className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
               />
-              {busy
+              {waitingForResult
+                ? 'Preparing your presentation…'
+                : busy
                 ? props.reuse?.available
                   ? 'Opening your presentation…'
                   : 'Generating your presentation…'
@@ -724,21 +760,15 @@ export default function SlideGenerationSetup({
         <Button
           size='lg'
           disabled={
-            !hasSource ||
-            (!props.reuse?.available && (!canGenerate || !assessment || !!limitMessage)) ||
-            !!props.reuse?.checking ||
-            !!props.reuse?.error ||
-            busy ||
-            (assessing && !props.reuse?.available) ||
-            importing ||
-            !!draft ||
-            (designMode === 'template' && !style.templateName) ||
-            (question && !props.reuse?.available)
+            !ready ||
+            // A background saved-result lookup must not flash an already-ready Generate button.
+            waitingForResult ||
+            (!!props.reuse?.checking && !assessment)
           }
-          onClick={props.reuse?.available ? props.reuse.onOpen : generate}
+          onClick={generate}
         >
           <AIIcon className='h-4 w-4' />
-          {busy
+          {submitting
             ? props.reuse?.available
               ? 'Opening…'
               : 'Generating…'

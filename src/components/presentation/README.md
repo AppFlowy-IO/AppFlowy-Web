@@ -51,6 +51,9 @@ assessment when its source, extraction options, purpose, reviewed template and p
 Completed assessments also survive panel visits in a bounded studio cache. Built-in palette and
 slide-count changes invalidate generated-result reuse but do not repeat source analysis or interrupt
 an assessment already in flight. Changed evidence or analysis inputs require a new assessment.
+Once analysis is valid, a background saved-result lookup keeps Generate enabled. An explicit click
+waits for that lookup: a match opens the saved deck, a miss generates, and an error does neither.
+Changing settings cancels a pending click so it cannot submit an obsolete selection.
 
 Session writes are scheduled by preference edits and merge only those fields into the latest saved
 payload. Opening a studio does not clear deck/narrative references or another mode's map style.
