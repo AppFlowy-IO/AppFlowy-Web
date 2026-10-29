@@ -1,4 +1,4 @@
-import { Upload, X, Check, ArrowLeft } from 'lucide-react';
+import { Upload, X, ArrowLeft } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
@@ -658,11 +658,6 @@ export default function SlideGenerationSetup({
                   >
                     Use this template
                   </Action>
-                )}
-                {!needsReview && (
-                  <p className='ps-muted'>
-                    <Check size={12} /> Template selected. {assessment?.templateReason}
-                  </p>
                 )}
               </div>
             )}

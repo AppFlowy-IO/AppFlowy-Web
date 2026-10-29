@@ -3056,6 +3056,9 @@
   flex-direction: column;
   gap: 10px;
 }
+.ps-ppt-import > .ps-field + .ps-ppt-template-review {
+  margin-top: 16px;
+}
 .ps-ppt-detected-colors {
   display: flex;
   gap: 5px;
