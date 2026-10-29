@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 import { documentUnitKey, paginateDocument } from '../document-pagination';
@@ -90,10 +90,12 @@ describe('measuring compact and dense tables only when they can change a slide',
 });
 
 describe('the presenter ruler', () => {
+  const resizeCallbacks: ResizeObserverCallback[] = [];
   const boundingRect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!;
 
   beforeAll(() => {
     global.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) { resizeCallbacks.push(callback); }
       observe = jest.fn();
       unobserve = jest.fn();
       disconnect = jest.fn();
@@ -142,7 +144,7 @@ describe('the presenter ruler', () => {
     Object.defineProperty(Element.prototype, 'getBoundingClientRect', boundingRect);
   });
 
-  it('measures smaller densities only for a table that does not fit comfortably', () => {
+  it('measures smaller densities only for a table that does not fit comfortably', async () => {
     const snapshot = parseMarkdown('---');
 
     snapshot.blocks.unshift(table('fits', 2));
@@ -157,6 +159,11 @@ describe('the presenter ruler', () => {
 
     expect(variants(documentUnitKey(1, 0))).toEqual(['comfortable']);
     expect(variants(documentUnitKey(2, 0))).toEqual([...TABLE_DENSITIES]);
+    // The mounted unit grows when its smaller density copies appear. The existing observer reads them.
+    await act(async () => {
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver));
+      await new Promise(requestAnimationFrame);
+    });
     // 6 comfortable rows need two slides; the compact copy keeps them on one.
     expect(screen.getByRole('main').getAttribute('aria-label')).toBe('Slide 1 of 3');
     fireEvent.keyDown(window, { key: 'ArrowRight' });

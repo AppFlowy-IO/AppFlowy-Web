@@ -33,6 +33,14 @@ jest.mock('../SlidesWorkflow', () => ({
         Generate
       </button>
       <button onClick={() => props.onOptions({ ...props.options, allowWebSearch: true })}>Allow web search</button>
+      <button
+        onClick={() => {
+          props.onOptions({ ...props.options, designMode: 'auto' });
+          props.onStyle(themeToStyle(themes[0]));
+        }}
+      >
+        Switch design mode and theme
+      </button>
     </div>
   ),
 }));
@@ -136,7 +144,9 @@ beforeEach(() => {
 afterEach(() => jest.useRealTimers());
 
 test('reopening restores the saved built-in theme and writes nothing back', async () => {
-  jest.mocked(loadPresentation).mockResolvedValue({ status, session: stored('chosen'), styles: [], warnings: [] } as never);
+  jest
+    .mocked(loadPresentation)
+    .mockResolvedValue({ status, session: stored('chosen'), styles: [], warnings: [] } as never);
   open();
   await advance(2000);
   expect(screen.getByTestId('style').textContent).toBe('chosen');
@@ -144,7 +154,9 @@ test('reopening restores the saved built-in theme and writes nothing back', asyn
 });
 
 test('a changed preference is written once', async () => {
-  jest.mocked(loadPresentation).mockResolvedValue({ status, session: stored('chosen'), styles: [], warnings: [] } as never);
+  jest
+    .mocked(loadPresentation)
+    .mockResolvedValue({ status, session: stored('chosen'), styles: [], warnings: [] } as never);
   open();
   await advance(2000);
   fireEvent.click(screen.getByText('Allow web search'));
@@ -168,7 +180,9 @@ test('opening a generated deck saves its own style and options in a single write
   const run = jest.fn().mockResolvedValue({ deck, artifact: { id: deck.id, version: deck.version }, status });
 
   jest.mocked(createGenerationRunner).mockReturnValue(run);
-  jest.mocked(loadPresentation).mockResolvedValue({ status, session: stored('first'), styles: [], warnings: [] } as never);
+  jest
+    .mocked(loadPresentation)
+    .mockResolvedValue({ status, session: stored('first'), styles: [], warnings: [] } as never);
   open();
   await advance(2000);
   expect(screen.getByTestId('style').textContent).toBe('first');
@@ -180,5 +194,42 @@ test('opening a generated deck saves its own style and options in a single write
   expect(jest.mocked(saveSession).mock.calls[0][2]).toMatchObject({
     artifact: { id: deck.id, version: deck.version },
     options: { themeId: 'chosen', slideCount: 4, slideCountMode: 'custom' },
+  });
+});
+
+test('a single design selection saves both its mode and theme before the next render', async () => {
+  jest
+    .mocked(loadPresentation)
+    .mockResolvedValue({ status, session: stored('chosen'), styles: [], warnings: [] } as never);
+  open();
+  await advance(2000);
+  fireEvent.click(screen.getByText('Switch design mode and theme'));
+  await advance(2000);
+  expect(saveSession).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(saveSession).mock.calls[0][2].options).toMatchObject({ design: 'auto', themeId: 'first' });
+});
+
+test('opening and editing preferences preserves a saved deck, stale narrative and custom map style', async () => {
+  const saved = stored('chosen');
+
+  saved.payload.artifact = { id: 'saved-deck', version: 4 };
+  saved.payload.narrative = { id: 'saved-map', version: 2 };
+  saved.payload.mapStyle = { structure: 'top-down', branchLine: 'curved' };
+  jest.mocked(loadPresentation).mockResolvedValue({
+    status,
+    session: saved,
+    styles: [],
+    warnings: [],
+    mapArtifact: { id: 'saved-map', version: 2, sourceRevision: 'old-revision' },
+  } as never);
+  open();
+  await advance(2000);
+  expect(saveSession).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Allow web search'));
+  await advance(2000);
+  expect(saveSession).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(saveSession).mock.calls[0][2]).toEqual({
+    ...saved.payload,
+    options: { ...saved.payload.options, allowWebSearch: true },
   });
 });

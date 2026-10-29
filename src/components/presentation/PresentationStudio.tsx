@@ -15,7 +15,6 @@ import {
   editMap,
   exportDeck,
   loadPresentation,
-  loadSavedDeck,
   loadStructuralMap,
   loadSourceSnapshot,
   uiOptions,
@@ -25,7 +24,7 @@ import {
   styleReference,
   PresentationAPIError,
 } from './presentation-client';
-import { MindMapLoading } from './PresentationLoading';
+import PresentationLoading, { MindMapLoading } from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
 import SlidesWorkflow, { type SlidesWorkflowProps } from './SlidesWorkflow';
@@ -55,6 +54,7 @@ import type {
   PresentationStyle,
   SavedDeck,
   Slide,
+  SlideAssessment,
   SlidesStage,
   StoryPlan,
 } from './types';
@@ -67,7 +67,7 @@ interface Props {
   initialMode?: Mode;
   presentMindMap?: boolean;
   onClose?: () => void;
-  onSource?: (id: string) => void;
+  onSource?: (id: string, source?: PageSnapshot) => void;
   canWrite?: boolean;
   onUpgrade?: () => void;
   canManageStyles?: boolean;
@@ -141,16 +141,22 @@ export default function PresentationStudio({
     [workspaceId, snapshot.pageId]
   );
   const [runGeneration] = useState(createGenerationRunner);
+  const assessmentCache = useRef(new Map<string, SlideAssessment>());
   const [status, setStatus] = useState<PresentationStatus>();
   const [mode, setMode] = useState<Mode>(initialMode === 'document' ? 'source' : initialMode);
   const [documentOpen, setDocumentOpen] = useState(initialMode === 'document');
   const [mapPresentationOpen, setMapPresentationOpen] = useState(presentMindMap);
   const [options, setOptions] = useState<GenerationOptions>(DEFAULT_OPTIONS);
   const [style, setStyle] = useState<PresentationStyle>(APPFLOWY_SLIDE_THEMES[0]);
+  const preferences = useRef({ options, style });
+
+  preferences.current = { options, style };
   const [companyStyles, setCompanyStyles] = useState<PresentationStyle[]>([]);
-  const [activeDeck, setActiveDeck] = useState<SavedDeck>();
+  const [activeDeck, setActiveDeck] = useState<SavedDeck | undefined>(initialDeck);
   const [mapArtifact, setMapArtifact] = useState<Artifact<MindMap>>();
   const [loadedIdentity, setLoadedIdentity] = useState<string>();
+  const [loadFailure, setLoadFailure] = useState<string>();
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [structuralState, setStructuralState] = useState<StructuralMapState>();
   const [structuralAttempt, setStructuralAttempt] = useState(0);
   const session = useRef<StoredSession | null>();
@@ -158,6 +164,8 @@ export default function PresentationStudio({
   const savedSession = useRef<string>();
   const scopeEpoch = useRef(0);
   const sessionQueue = useRef<Promise<void>>(Promise.resolve());
+  const preferenceTimer = useRef<number>();
+  const pendingPreferences = useRef<Partial<PresentationSession>>({});
   const [showAIMap, setShowAIMap] = useState(presentMindMap);
   const [narrativeSelection, setNarrativeSelection] = useState<{
     reference: VersionedId;
@@ -170,6 +178,7 @@ export default function PresentationStudio({
   const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [outlineError, setOutlineError] = useState<SlidesWorkflowProps['outlineError']>();
   const [busy, setBusy] = useState(false);
+  const [preparingSource, setPreparingSource] = useState(false);
   // Polling reports a new job object each time; only its state is shown, so an unchanged state does not render.
   const [jobState, setJobState] = useState<JobStatus['state']>();
   const generation = useRef<AbortController>();
@@ -203,7 +212,7 @@ export default function PresentationStudio({
   const canUseAI = !!status && canWrite && !busy;
   const mapUnavailable = status ? aiMapUnavailableReason(status, canWrite) : undefined;
   const canGenerateMap = canUseAI && !mapUnavailable;
-  const compactSetup = mode === 'slides' && stage === 'setup';
+  const compactSetup = mode === 'slides' && stage === 'setup' && loadedIdentity === identity;
   const reuseInput = {
     scope,
     task: mode === 'mindmap' ? ('mindmap' as const) : ('slides' as const),
@@ -211,11 +220,14 @@ export default function PresentationStudio({
     options,
     style,
     ...(mode === 'slides' && narrative && { narrative }),
-    ...(mode === 'slides' && activeDeck && { artifact: { id: activeDeck.id, version: activeDeck.version! } }),
   };
   const reuse = useReusableGeneration(
     reuseInput,
-    loadedIdentity === identity && canWrite && (compactSetup || mode === 'mindmap') && !style.requiresReview,
+    loadedIdentity === identity &&
+      canWrite &&
+      !preparingSource &&
+      (compactSetup || mode === 'mindmap') &&
+      !style.requiresReview,
     userId
   );
   const plan = activeDeck?.plan;
@@ -230,41 +242,46 @@ export default function PresentationStudio({
 
     const epoch = ++scopeEpoch.current;
 
+    assessmentCache.current.clear();
+    setLoadFailure(undefined);
     setStatus(undefined);
-    setActiveDeck(undefined);
+    setActiveDeck(initialDeck);
     setMapArtifact(undefined);
     setLoadedIdentity(undefined);
     setCompanyStyles([]);
-    setStyle(APPFLOWY_SLIDE_THEMES[0]);
-    setOptions(DEFAULT_OPTIONS);
+    setStyle(initialDeck?.style ?? APPFLOWY_SLIDE_THEMES[0]);
+    setOptions(initialDeck?.options ?? DEFAULT_OPTIONS);
+    setStage(initialDeck && initialAction !== 'regenerate' ? 'preview' : 'setup');
     setOutlineDraft(undefined);
     setNarrativeSelection(undefined);
     session.current = undefined;
     savedSession.current = undefined;
     sessionQueue.current = Promise.resolve();
-    // The opened deck needs only its own artifact and scene, so read it beside the studio's data, not after it.
-    void Promise.all([
-      loadPresentation(scope, controller.signal),
-      initialDeck ? loadSavedDeck(scope, initialDeck.id, initialDeck.version, controller.signal) : undefined,
-    ])
-      .then(([loaded, selected]) => {
+    window.clearTimeout(preferenceTimer.current);
+    pendingPreferences.current = {};
+    // Share already read this deck and its scene. Only normal page entry restores a saved deck.
+    void loadPresentation(scope, controller.signal, initialMode === 'slides' && !initialDeck)
+      .then((loaded) => {
+        const selected = initialDeck ?? loaded.deck;
+
         if (controller.signal.aborted || scopeEpoch.current !== epoch) return;
         session.current = loaded.session;
         savedSession.current = loaded.session ? sessionIdentity(loaded.session.payload) : undefined;
-        if (selected) {
+        if (selected && !initialDeck) {
           setActiveDeck(selected);
           setStyle(selected.style);
           if (selected.options) setOptions(selected.options);
+          setStage(initialAction === 'regenerate' ? 'setup' : 'preview');
         }
 
-        if (!initialDeck && loaded.session) {
+        if (!selected && loaded.session) {
           setOptions(uiOptions(loaded.session.payload.options));
           const selected = loaded.styles.find((item) => item.id === loaded.session?.payload.style?.id);
 
           if (selected) setStyle(selected);
         }
 
-        if (!initialDeck && !loaded.session?.payload.style && loaded.status.themes[0]) {
+        if (!selected && !loaded.session?.payload.style && loaded.status.themes[0]) {
           // A built-in theme has no style reference; the saved options carry its identity.
           const themeId = loaded.session?.payload.options.themeId;
 
@@ -292,14 +309,40 @@ export default function PresentationStudio({
         setLoadedIdentity(identity);
         setNotice(loaded.warnings?.join(' ') ?? '');
       })
-      .catch((error: Error) => {
-        if (!controller.signal.aborted) setNotice(error.message);
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setLoadFailure('Unable to load your saved presentation. Please try again.');
+          if (initialDeck) setNotice('Some presentation controls are unavailable. Close and reopen to try again.');
+        }
       });
     return () => {
       controller.abort();
+      window.clearTimeout(preferenceTimer.current);
       generation.current?.abort();
     };
-  }, [scope, userId, initialDeck, identity, presentMindMap]);
+  }, [scope, userId, initialDeck, initialAction, initialMode, identity, presentMindMap, loadAttempt]);
+
+  // Entering settings revalidates the page with the restored extraction options. Opening a saved
+  // preview does neither source extraction nor AI assessment, and unverified does not mean stale.
+  useEffect(() => {
+    if (!compactSetup || loadedIdentity !== identity || !canWrite) return;
+    const controller = new AbortController();
+
+    setPreparingSource(true);
+    void loadSourceSnapshot(workspaceId, snapshot.pageId, options, controller.signal, style)
+      .then((value) => {
+        if (!controller.signal.aborted) setSnapshot({ ...value, kind: snapshot.kind });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) report(error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPreparingSource(false);
+      });
+    return () => controller.abort();
+    // Extraction identity depends on the selected page and source options, not slide cosmetics.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compactSetup, loadedIdentity, identity, canWrite, options.includeProperties, options.allowWebSearch]);
 
   // The saved AI map view never shows the page structure, so it does not request one.
   const structuralVisible = (mapPresentationOpen || mode === 'mindmap') && !showAIMap;
@@ -330,28 +373,24 @@ export default function PresentationStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structuralKey, structuralAttempt, structuralVisible, structuralReady, canWrite, hasServerSource]);
 
-  function persistSelection(
-    artifact: VersionedId | null,
-    selectedNarrative = narrative ?? null,
-    mapStyle = currentArtifact?.mapStyle ?? { structure: 'right-facing' as const, branchLine: 'rounded' as const },
-    selection: { style: PresentationStyle; options?: GenerationOptions } = { style, options }
-  ) {
+  // Merge when dequeued: a preference edit must preserve pointers saved by an earlier operation.
+  function persistSession(patch: Partial<PresentationSession>) {
     const epoch = scopeEpoch.current;
 
-    // Serialize this tab's optimistic session revisions; other tabs receive the server's conflict.
     sessionQueue.current = sessionQueue.current
       .then(async () => {
         if (session.current === undefined || scopeEpoch.current !== epoch) return;
-        const payload = {
-          artifact,
-          narrative: selectedNarrative,
-          style: styleReference(selection.style) ?? null,
-          options: serverOptions(selection.options ?? options, selection.style),
-          mapStyle,
+        const payload: PresentationSession = {
+          artifact: null,
+          narrative: null,
+          style: null,
+          options: serverOptions(options, style),
+          mapStyle: { structure: 'right-facing', branchLine: 'rounded' },
+          ...session.current?.payload,
+          ...patch,
         };
         const serialized = sessionIdentity(payload);
 
-        // Loading or reselecting the saved state must not bump the revision-checked session.
         if (serialized === savedSession.current) return;
         const saved = await saveSession(scope, session.current?.revision ?? 0, payload);
 
@@ -365,16 +404,44 @@ export default function PresentationStudio({
       });
   }
 
-  useEffect(() => {
-    if (!status || session.current === undefined) return;
-    const timer = window.setTimeout(() => {
-      persistSelection(activeDeck?.version ? { id: activeDeck.id, version: activeDeck.version } : null);
-    }, 600);
+  function persistSelection(
+    artifact: VersionedId | null,
+    selectedNarrative?: VersionedId | null,
+    mapStyle?: MindMapStyle,
+    selection: { style: PresentationStyle; options?: GenerationOptions } = { style, options }
+  ) {
+    window.clearTimeout(preferenceTimer.current);
+    pendingPreferences.current = {};
+    persistSession({
+      artifact,
+      ...(selectedNarrative !== undefined && { narrative: selectedNarrative }),
+      ...(mapStyle && { mapStyle }),
+      style: styleReference(selection.style) ?? null,
+      options: serverOptions(selection.options ?? options, selection.style),
+    });
+  }
 
-    return () => window.clearTimeout(timer);
-    // Only user preference changes schedule a write; artifact selection persists immediately.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options, style, status?.promptBundleVersion]);
+  function schedulePreferences(patch: Partial<PresentationSession>) {
+    pendingPreferences.current = { ...pendingPreferences.current, ...patch };
+    window.clearTimeout(preferenceTimer.current);
+    preferenceTimer.current = window.setTimeout(() => {
+      persistSession(pendingPreferences.current);
+      pendingPreferences.current = {};
+    }, 600);
+  }
+
+  function changeOptions(next: GenerationOptions) {
+    preferences.current.options = next;
+    setOptions(next);
+    schedulePreferences({ options: serverOptions(next, preferences.current.style) });
+  }
+
+  function changeStyle(next: PresentationStyle) {
+    preferences.current.style = next;
+    setStyle(next);
+    // Selecting a design mode can change options and style in one event, before React renders.
+    schedulePreferences({ style: styleReference(next) ?? null, options: serverOptions(preferences.current.options, next) });
+  }
 
   // Stable, and applied to the latest draft, so story cards that did not change skip rendering.
   const updatePlan = useCallback<SlidesWorkflowProps['onPlan']>(
@@ -393,7 +460,7 @@ export default function PresentationStudio({
   }
 
   function source(id: string) {
-    if (onSource) onSource(id);
+    if (onSource) onSource(id, snapshot);
     else {
       setMapPresentationOpen(false);
       setSourceNode(id);
@@ -448,7 +515,7 @@ export default function PresentationStudio({
 
   async function generate(task: 'slides' | 'mindmap', slide?: Slide, editedPlan?: StoryPlan) {
     if (busy || !status) return;
-    if (task === 'slides' && activeDeck && !sourceMatches) {
+    if (task === 'slides' && (slide || editedPlan) && activeDeck && !sourceMatches) {
       report(
         new PresentationAPIError(
           'Select the original, unchanged source before regenerating this saved presentation.',
@@ -475,7 +542,12 @@ export default function PresentationStudio({
 
       if (controller.signal.aborted) return;
       setSnapshot(sourceSnapshot);
-      if (task === 'slides' && activeDeck && activeDeck.sourceRevision !== sourceSnapshot.revision)
+      if (
+        task === 'slides' &&
+        (slide || editedPlan) &&
+        activeDeck &&
+        activeDeck.sourceRevision !== sourceSnapshot.revision
+      )
         throw new PresentationAPIError(
           'The source changed. Start a new presentation from the updated page.',
           'SOURCE_REVISION_CONFLICT',
@@ -490,7 +562,11 @@ export default function PresentationStudio({
           source: sourceSnapshot,
           options,
           style,
-          ...(task === 'slides' && activeDeck && { artifact: regenerationReference(activeDeck, sourceSnapshot) }),
+          ...(task === 'slides' &&
+            activeDeck &&
+            activeDeck.sourceRevision === sourceSnapshot.revision && {
+              artifact: regenerationReference(activeDeck, sourceSnapshot),
+            }),
           ...(task === 'slides' && currentNarrative && { narrative: currentNarrative }),
           ...(slide && { targetSlideIds: [slide.id] }),
           ...(editedPlan && { storyPlan: editedPlan, storyPlanSourceRevision: activeDeck!.sourceRevision }),
@@ -596,7 +672,7 @@ export default function PresentationStudio({
 
   // Loading the saved map and then the page structure reads as one step while presenting.
   const mapLoading = showAIMap
-    ? loadedIdentity !== identity
+    ? loadedIdentity !== identity && !loadFailure
     : canWrite && !!snapshot.serverSource && structuralResult?.state !== 'error' && structuralResult?.state !== 'ready';
   const mapViewer = currentMap?.nodes.length ? (
     <MindMapViewer
@@ -664,7 +740,12 @@ export default function PresentationStudio({
       className={mapPresentationOpen ? 'ps-map-presentation-status' : 'ps-page'}
       aria-label='Mind map availability'
     >
-      {showAIMap ? (
+      {loadFailure ? (
+        <>
+          <p role='alert'>{loadFailure}</p>
+          <Action onClick={() => setLoadAttempt((value) => value + 1)}>Retry</Action>
+        </>
+      ) : showAIMap ? (
         <p role='status'>
           {loadedIdentity !== identity
             ? 'Loading saved mind map…'
@@ -754,109 +835,98 @@ export default function PresentationStudio({
               </Action>
             </Notice>
           )}
-          {mode === 'slides' && (
-            <>
-              {activeDeck && !sourceMatches && (
-                <Notice>
-                  This saved presentation uses a different source revision. Preview and download remain available. Select
-                  its original source to edit or regenerate, or{' '}
-                  <Action
-                    onClick={() => {
-                      void loadSourceSnapshot(workspaceId, snapshot.pageId, options, undefined, style)
-                        .then((value) => {
-                          setSnapshot({ ...value, kind: snapshot.kind });
-                          if (value.revision !== activeDeck.sourceRevision)
-                            setNotice('The selected source does not match this saved presentation.');
-                        })
-                        .catch(report);
-                    }}
-                  >
-                    check the selected source
-                  </Action>
-                  , or{' '}
-                  <Action
-                    onClick={() => {
-                      setActiveDeck(undefined);
-                      setStage('setup');
-                    }}
-                  >
-                    start a new presentation
-                  </Action>
-                  .
-                </Notice>
-              )}
-              <SlidesWorkflow
-                scope={scope}
-                snapshot={snapshot}
-                sourceSnapshot={sourceMatches ? snapshot : activeDeck?.source ?? snapshot}
-                activeDeck={activeDeck}
-                busy={busy}
-                reuse={{
-                  available: !!reuse.job,
-                  checking: reuse.checking,
-                  error: reuse.error,
-                  onOpen: () => void openExisting(),
-                  onRetry: reuse.refresh,
-                }}
-                options={options}
-                onOptions={setOptions}
-                onCancel={busy ? () => generation.current?.abort() : onClose}
-                styles={[...companyStyles, ...(status?.themes.map(themeToStyle) ?? [])]}
-                style={style}
-                onStyle={setStyle}
-                plan={outlineDraft?.plan ?? plan}
-                onPlan={updatePlan}
-                stage={stage}
-                onStage={(next) => {
-                  setOutlineError(undefined);
-                  if (next === 'story' && plan && sourceMatches)
-                    setOutlineDraft({ plan: structuredClone(plan), baseline: structuredClone(plan) });
-                  else setOutlineDraft(undefined);
-                  setStage(next);
-                }}
-                onGenerate={(slide) => {
-                  void generate('slides', slide);
-                }}
-                onSource={(id) => {
-                  if (sourceMatches) source(id);
-                  else setUnlinkedSource(id);
-                }}
-                hasOutlineChanges={outlineChanged}
-                outlineError={outlineError}
-                onApplyOutline={applyOutline}
-                onDiscardOutline={() => {
-                  setOutlineDraft(undefined);
-                  setOutlineError(undefined);
-                  setStage(plan ? 'preview' : 'setup');
-                }}
-                exportReady={!!activeDeck?.version && !!status && canWrite}
-                initialAction={initialAction}
-                onDownload={async (requestId, signal, onJob) => {
-                  if (!canWrite || !activeDeck?.version)
-                    throw new Error('Editor access to a saved presentation is required for downloading.');
-                  const result = await exportDeck(
-                    scope,
-                    { id: activeDeck.id, version: activeDeck.version },
-                    requestId,
-                    signal,
-                    onJob
-                  );
+          {mode === 'slides' && loadedIdentity !== identity && !initialDeck ? (
+            loadFailure ? (
+              <div className='ps-page' role='alert'>
+                <p>{loadFailure}</p>
+                <Action onClick={() => setLoadAttempt((value) => value + 1)}>Retry</Action>
+                <Action onClick={onClose}>Back to page</Action>
+              </div>
+            ) : (
+              <PresentationLoading message='Loading saved presentation…' />
+            )
+          ) : (
+            mode === 'slides' && (
+              <>
+                <SlidesWorkflow
+                  scope={scope}
+                  snapshot={snapshot}
+                  sourceSnapshot={sourceMatches ? snapshot : activeDeck?.source ?? snapshot}
+                  activeDeck={activeDeck}
+                  busy={busy}
+                  reuse={{
+                    available: !!reuse.job,
+                    checking: preparingSource || !snapshot.serverSource || reuse.checking,
+                    error: reuse.error,
+                    onOpen: () => void openExisting(),
+                    onRetry: reuse.refresh,
+                  }}
+                  options={options}
+                  onOptions={changeOptions}
+                  onCancel={busy ? () => generation.current?.abort() : onClose}
+                  styles={[...companyStyles, ...(status?.themes.map(themeToStyle) ?? [])]}
+                  style={style}
+                  onStyle={changeStyle}
+                  plan={outlineDraft?.plan ?? plan}
+                  onPlan={updatePlan}
+                  stage={stage}
+                  onStage={(next) => {
+                    setOutlineError(undefined);
+                    if (next === 'story' && plan && sourceMatches)
+                      setOutlineDraft({ plan: structuredClone(plan), baseline: structuredClone(plan) });
+                    else setOutlineDraft(undefined);
+                    setStage(next);
+                  }}
+                  onGenerate={(slide) => {
+                    void generate('slides', slide);
+                  }}
+                  onSource={(id) => {
+                    if (sourceMatches) source(id);
+                    else setUnlinkedSource(id);
+                  }}
+                  hasOutlineChanges={outlineChanged}
+                  outlineError={outlineError}
+                  onApplyOutline={applyOutline}
+                  onDiscardOutline={() => {
+                    setOutlineDraft(undefined);
+                    setOutlineError(undefined);
+                    setStage(plan ? 'preview' : 'setup');
+                  }}
+                  exportReady={!!activeDeck?.version && !!status && canWrite}
+                  initialAction={initialAction}
+                  onDownload={async (requestId, signal, onJob) => {
+                    if (!canWrite || !activeDeck?.version)
+                      throw new Error('Editor access to a saved presentation is required for downloading.');
+                    const result = await exportDeck(
+                      scope,
+                      { id: activeDeck.id, version: activeDeck.version },
+                      requestId,
+                      signal,
+                      onJob
+                    );
 
-                  setStatus(result.status);
-                  return result;
-                }}
-                onStyles={() => setMode('styles')}
-                canGenerate={canGenerate}
-                canEdit={canWrite && !busy && sourceMatches}
-                maxSlides={status?.maxSlides}
-                remainingSlides={status?.remainingSlides}
-                onUpgrade={onUpgrade ?? (() => setNotice('Open workspace billing to compare plans.'))}
-                sourceChanged={!!activeDeck && !sourceMatches}
-                hasNarrative={!!narrative}
-                origin={activeDeck ? 'Saved presentation' : 'Current page'}
-                sourceRevision={activeDeck?.sourceRevision}
-              />
-            </>
+                    setStatus(result.status);
+                    return result;
+                  }}
+                  onStyles={() => setMode('styles')}
+                  canGenerate={canGenerate && !preparingSource && !!snapshot.serverSource}
+                  canRegenerate={canWrite && !busy}
+                  canAssess={
+                    !!status && canWrite && !preparingSource && !!snapshot.serverSource && status.remainingSlides > 0
+                  }
+                  promptBundleVersion={status?.promptBundleVersion}
+                  assessmentCache={assessmentCache.current}
+                  canEdit={canWrite && !busy && sourceMatches}
+                  maxSlides={status?.maxSlides}
+                  remainingSlides={status?.remainingSlides}
+                  onUpgrade={onUpgrade ?? (() => setNotice('Open workspace billing to compare plans.'))}
+                  sourceChanged={!!activeDeck && !!snapshot.serverSource && !sourceMatches}
+                  hasNarrative={!!narrative}
+                  origin={activeDeck ? 'Saved presentation' : 'Current page'}
+                  sourceRevision={activeDeck?.sourceRevision}
+                />
+              </>
+            )
           )}
           {mode === 'mindmap' && !mapPresentationOpen && (
             <>

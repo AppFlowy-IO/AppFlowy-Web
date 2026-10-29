@@ -182,7 +182,9 @@ const permissions = {
   can_comment: true,
   can_share: true,
 };
-const navigation = { objectPermissions: { [gridId]: permissions } } as unknown as AppNavigationContextType;
+const navigation = {
+  objectPermissions: { [gridId]: permissions, [listId]: { ...permissions, governing_view_id: listId } },
+} as unknown as AppNavigationContextType;
 const snapshot = snapshotFromSlate('page', 'Linked database presentation', {
   type: 'page',
   children: [
@@ -197,6 +199,9 @@ const snapshot = snapshotFromSlate('page', 'Linked database presentation', {
       },
       children: [{ text: '' }],
     },
+    // Native database embeds leave an editor spacer before the next heading.
+    { type: 'paragraph', blockId: 'database-spacer', children: [{ text: '' }] },
+    { type: 'heading', blockId: 'next-heading', data: { level: 2 }, children: [{ text: 'Next section' }] },
     { type: 'paragraph', blockId: 'after', children: [{ text: 'The next part of the presentation.' }] },
   ],
 } as unknown as Element);

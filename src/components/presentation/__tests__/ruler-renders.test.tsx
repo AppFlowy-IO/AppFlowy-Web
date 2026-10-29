@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 import DocumentPresenter from '../DocumentPresenter';
@@ -83,4 +83,26 @@ test('slide content receives a stable source callback that follows the latest ho
   mockDatabaseSource!('embed');
   expect(second).toHaveBeenCalledWith('embed');
   expect(first).not.toHaveBeenCalled();
+});
+
+
+
+
+test('expanding one toggle does not re-render unrelated hidden ruler units', async () => {
+  const snapshot = parseMarkdown('---\nUnrelated');
+  const other = snapshot.blocks.find((block) => block.text === 'Unrelated')!.id;
+
+  snapshot.blocks.unshift({ id: 'toggle', type: 'toggle_list', text: 'Details', children: [
+    { id: 'child', type: 'paragraph', text: 'Inside', children: [] },
+  ] });
+  render(<DocumentPresenter snapshot={snapshot} onClose={() => undefined} onSource={() => undefined} />);
+  next();
+  const before = mockRenders.get(other);
+  const details = screen.getByRole('main').querySelector('details')!;
+
+  await act(async () => {
+    details.open = true;
+    fireEvent(details, new Event('toggle'));
+  });
+  expect(mockRenders.get(other)).toBe(before);
 });

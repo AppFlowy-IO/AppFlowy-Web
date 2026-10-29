@@ -74,7 +74,7 @@ export function BlockContent(props: BlockContentProps) {
     return (
       <div className='ps-document-database' style={{ height: Math.max(120, props.tableMaxHeight ?? 440) }}>
         <Suspense fallback={<div role='status'>Loading database view…</div>}>
-          <DocumentDatabase block={props.block} onSource={props.onSource} />
+          <DocumentDatabase block={props.block} onSource={props.onSource} height={Math.max(120, props.tableMaxHeight ?? 440)} />
         </Suspense>
       </div>
     );
@@ -353,6 +353,41 @@ function DocumentTitle({ snapshot, measuring = false }: { snapshot: PageSnapshot
   );
 }
 
+/** Each unit follows only toggles in its own subtree, not every toggle on the page. */
+const DocumentRulerUnit = memo(function DocumentRulerUnit({
+  block,
+  unitKey,
+  expandedIds,
+  condensed,
+}: {
+  block: SourceBlock;
+  unitKey: string;
+  expandedIds: string;
+  condensed: boolean;
+}) {
+  const expandedToggles = useMemo(() => new Set<string>(JSON.parse(expandedIds) as string[]), [expandedIds]);
+
+  return (
+    <div className='ps-doc-block' data-document-unit={unitKey}>
+      {isSimpleTable(block) ? (
+        (condensed ? TABLE_DENSITIES : COMFORTABLE).map((density) => (
+          <div key={density} data-table-density={density}>
+            <BlockContent
+              block={block}
+              onSource={inertSource}
+              expandedToggles={expandedToggles}
+              tableDensity={density}
+              measuring
+            />
+          </div>
+        ))
+      ) : (
+        <BlockContent block={block} onSource={inertSource} expandedToggles={expandedToggles} measuring />
+      )}
+    </div>
+  );
+});
+
 /** The hidden copy measured for pagination. Slide changes and host renders leave it untouched. */
 const DocumentRuler = memo(function DocumentRuler({
   snapshot,
@@ -378,24 +413,17 @@ const DocumentRuler = memo(function DocumentRuler({
               const key = documentUnitKey(sectionIndex, blockIndex);
 
               return (
-                <div className='ps-doc-block' data-document-unit={key} key={key}>
-                  {isSimpleTable(block) ? (
-                    // Smaller densities can only matter for a table that does not fit one slide comfortably.
-                    (condensedTables.has(key) ? TABLE_DENSITIES : COMFORTABLE).map((density) => (
-                      <div key={density} data-table-density={density}>
-                        <BlockContent
-                          block={block}
-                          onSource={inertSource}
-                          expandedToggles={expandedToggles}
-                          tableDensity={density}
-                          measuring
-                        />
-                      </div>
-                    ))
-                  ) : (
-                    <BlockContent block={block} onSource={inertSource} expandedToggles={expandedToggles} measuring />
+                <DocumentRulerUnit
+                  key={key}
+                  unitKey={key}
+                  block={block}
+                  condensed={condensedTables.has(key)}
+                  expandedIds={JSON.stringify(
+                    flattenBlocks([block])
+                      .filter((item) => item.type === 'toggle_list' && expandedToggles.has(item.id))
+                      .map((item) => item.id)
                   )}
-                </div>
+                />
               );
             })}
           </MeetingSlide>
@@ -516,7 +544,7 @@ export default function DocumentPresenter({
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [sections, expandedToggles, condensedTables, viewport, measure]);
+  }, [sections, viewport, measure]);
 
   useLayoutEffect(() => {
     if (viewport) viewport.scrollTop = slide.scrollTop;

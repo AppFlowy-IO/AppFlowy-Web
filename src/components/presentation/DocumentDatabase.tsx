@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
@@ -34,6 +34,7 @@ import type { SourceBlock } from './types';
 
 interface Props {
   block: SourceBlock;
+  height?: number;
   onSource: (id: string) => void;
 }
 
@@ -46,7 +47,7 @@ function Unavailable({ block, onSource, message }: Props & { message: string }) 
   );
 }
 
-export default function DocumentDatabase(props: Props) {
+const DocumentDatabase = memo(function DocumentDatabase(props: Props) {
   const workspaceId = useCurrentWorkspaceIdOptional();
 
   if (!workspaceId)
@@ -57,7 +58,9 @@ export default function DocumentDatabase(props: Props) {
       <ResolveDatabase {...props} workspaceId={workspaceId} />
     </ErrorBoundary>
   );
-}
+});
+
+export default DocumentDatabase;
 
 function ResolveDatabase(props: Props & { workspaceId: string }) {
   const { block } = props;
@@ -152,7 +155,7 @@ function useDatabaseView(doc: YDoc | null, viewId: string) {
   });
 }
 
-function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { workspaceId: string; viewId: string }) {
+function LinkedDatabase({ block, onSource, workspaceId, viewId, height = 440 }: Props & { workspaceId: string; viewId: string }) {
   const reference = block.database!;
   const operations = useAppOperations();
   const eventEmitter = useEventEmitterOptional();
@@ -224,6 +227,7 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
     return (
       <SharedDatabase
         context={shared.context}
+        height={height}
         name={shared.name}
         visibleViewIds={reference.viewIds.length ? reference.viewIds : [viewId]}
         onChangeView={setActiveViewId}
@@ -244,6 +248,8 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
       readOnly
       loadReadOnlyRows
       shareResources={false}
+      isDocumentBlock
+      embeddedHeight={height}
       canWrite={false}
       canComment={false}
       canShare={false}
@@ -266,12 +272,14 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
 /** A second view of the page's live data: no second row loader, prefetch or sync owner. */
 function SharedDatabase({
   context,
+  height,
   name,
   visibleViewIds,
   onChangeView,
   onSource,
 }: {
   context: DatabaseContextState;
+  height: number;
   name: string;
   visibleViewIds: string[];
   onChangeView: (id: string) => void;
@@ -290,19 +298,20 @@ function SharedDatabase({
       showActions: false,
       paddingStart: 0,
       paddingEnd: 0,
-      isDocumentBlock: false,
-      embeddedHeight: undefined,
+      isDocumentBlock: true,
+      embeddedHeight: height,
       navigateToRow: onSource,
       openRowInHostPeek: onSource,
       onRendered: undefined,
     }),
-    [context, onSource, rowOrdersStore]
+    [context, height, onSource, rowOrdersStore]
   );
 
   return (
     <DatabaseContext.Provider value={value}>
-      <div className='appflowy-database relative flex w-full select-text flex-col'>
+      <div className='appflowy-database relative flex min-h-0 w-full flex-1 select-text flex-col overflow-hidden'>
         <DatabaseViews
+          fixedHeight={height}
           visibleViewIds={visibleViewIds}
           databasePageId={context.databasePageId}
           viewName={name}

@@ -23,7 +23,6 @@ function Fixture() {
     <div className='ps-root'>
       <MindMapViewer
         map={map}
-        isPro
         mapStyle={{ structure: 'balanced', branchLine: 'curved' }}
         canGenerate={false}
         onGenerate={noop}
@@ -40,7 +39,12 @@ function Fixture() {
       {direct ? (
         <>
           <button onClick={() => setOpen(true)}>Present mind map</button>
-          <Dialog open={open} fullScreen onClose={() => setOpen(false)}>
+          <Dialog
+            open={open}
+            fullScreen
+            onClose={() => setOpen(false)}
+            PaperProps={{ className: 'ps-root ps-map-preview-dialog' }}
+          >
             {open && viewer}
           </Dialog>
         </>

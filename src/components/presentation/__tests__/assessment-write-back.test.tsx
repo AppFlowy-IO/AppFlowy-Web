@@ -131,14 +131,15 @@ test('switching design mode after a recommendation requests no assessment', asyn
   expect(generateButton().disabled).toBe(false);
 });
 
-test('a theme chosen outside auto design is still assessed', async () => {
+test('a manually chosen theme reuses the source analysis', async () => {
   render(<Setup designMode='theme' />);
   await advance(400);
   expect(onStyle).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Use recommended' }));
   await advance(400);
-  expect(assessPresentation).toHaveBeenCalledTimes(2);
-  expect(jest.mocked(assessPresentation).mock.calls[1][0].style).toBe(recommended);
+  expect(assessPresentation).toHaveBeenCalledTimes(1);
+  expect(onStyle).toHaveBeenCalledWith(recommended);
+  expect(generateButton().disabled).toBe(false);
 });
 
 test('an assessment writes no derived condition or Auto count back into the options', async () => {

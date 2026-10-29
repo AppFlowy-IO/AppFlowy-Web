@@ -209,6 +209,8 @@ export interface SavedDeck {
   source?: PageSnapshot;
   updatedAt?: string;
   options?: GenerationOptions;
+  /** Server-validated analysis from this deck's generation, reusable for the same evidence. */
+  assessment?: { value: SlideAssessment; promptBundleVersion: string };
   /** The scene read with this artifact version, so previews reuse it instead of reading it again. */
   scene?: { workspaceId: string; id: string; version: number; value: import('./server-scene').DeckScene };
 }

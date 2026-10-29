@@ -2,7 +2,7 @@ import Dialog from '@mui/material/Dialog';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import { ArrowRight, ChevronLeft, ChevronRight, ChevronUp, Expand, Sparkles, X } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, type KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { TransformComponent, TransformWrapper, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 
 import { getMermaidTheme } from '@/components/editor/components/blocks/code/mermaidTheme';
@@ -16,7 +16,7 @@ import { MapNode, MindMap, MapOrigin } from './types';
 import { Action, Notice } from './ui';
 import { usePresentationFullscreen } from './usePresentationFullscreen';
 
-import type { MapBranchLine, MapStructure } from './mindmap-layout';
+import type { MapBranchLine, MapStructure, MapPosition } from './mindmap-layout';
 
 /** Whole-pixel canvas size; keeps the current state when it is unchanged or the canvas is hidden (zero-sized). */
 const resizeTo = (width: number, height: number) => (old: { width: number; height: number }) => {
@@ -24,6 +24,75 @@ const resizeTo = (width: number, height: number) => (old: { width: number; heigh
 
   return !next.width || !next.height || (next.width === old.width && next.height === old.height) ? old : next;
 };
+
+/** Selection changes only the old and new node; camera changes leave every node intact. */
+const MindMapNode = memo(function MindMapNode({
+  p,
+  nodeIndex,
+  structure,
+  selected,
+  collapsed,
+  onSelect,
+  onToggle,
+  onMenu,
+  onKey,
+}: {
+  p: MapPosition;
+  nodeIndex: number;
+  structure: MapStructure;
+  selected: boolean;
+  collapsed: boolean;
+  onSelect: (id: string) => void;
+  onToggle: (id: string) => void;
+  onMenu: (menu: { nodeId: string; x: number; y: number }) => void;
+  onKey: (event: KeyboardEvent<HTMLButtonElement>, position: MapPosition, index: number) => void;
+}) {
+  return (
+    <div
+      className={`ps-map-node ${p.depth === 0 ? 'ps-map-root' : ''} ${selected ? 'ps-map-selected' : ''}`}
+      style={{ left: p.x, top: p.y }}
+      data-node-id={p.node.id}
+      data-side={structure === 'down' || p.side === 0 ? 'down' : p.side < 0 ? 'left' : 'right'}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onMenu({ nodeId: p.node.id, x: event.clientX, y: event.clientY });
+      }}
+      key={p.node.id}
+    >
+      <button
+        title={p.node.label}
+        onClick={() => onSelect(p.node.id)}
+        aria-pressed={selected}
+        aria-haspopup='dialog'
+        aria-expanded={selected}
+        onKeyDown={(e) => onKey(e, p, nodeIndex)}
+        data-node-index={nodeIndex}
+      >
+        <span>{p.node.label}</span>
+      </button>
+      {p.descendantCount > 0 && (
+        <button
+          className={`ps-map-collapse${collapsed ? ' ps-map-collapsed' : ''}`}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${p.node.label}`}
+          title={collapsed ? `Expand ${p.descendantCount} hidden nodes` : 'Collapse child nodes'}
+          aria-expanded={!collapsed}
+          onClick={() => onToggle(p.node.id)}
+        >
+          {collapsed ? (
+            p.descendantCount
+          ) : structure === 'down' || p.side === 0 ? (
+            <ChevronUp size={14} />
+          ) : p.side < 0 ? (
+            <ChevronRight size={14} />
+          ) : (
+            <ChevronLeft size={14} />
+          )}
+        </button>
+      )}
+    </div>
+  );
+});
 
 export default function MindMapViewer({
   onUpgrade,
@@ -133,6 +202,15 @@ export default function MindMapViewer({
   }, [focused]);
   const layout = useMemo(() => layoutMap(index, collapsed, focused, structure), [index, collapsed, focused, structure]);
   const byId = useMemo(() => new Map(layout.positions.map((p) => [p.node.id, p])), [layout]);
+  const branchPaths = useMemo(
+    () =>
+      layout.positions.map((p) => {
+        const parent = p.node.parentId ? byId.get(p.node.parentId) : undefined;
+
+        return parent ? <path key={p.node.id} d={mapBranchPath(parent, p, structure, branchLine)} /> : null;
+      }),
+    [layout, byId, structure, branchLine]
+  );
   const fitScale = Math.min(1, viewport.width / layout.width, viewport.height / layout.height) * 0.9;
   const minScale = Math.min(0.05, fitScale);
   const fit = () => transform.current?.centerView(fitScale, 200);
@@ -172,32 +250,88 @@ export default function MindMapViewer({
     anchor.current = undefined;
   }, [layout, structure, fitScale, viewport]);
 
-  const anchorNode = (id: string) => {
-    const node = byId.get(id);
-    const state = transform.current?.instance.transformState;
+  const anchorNode = useCallback(
+    (id: string) => {
+      const node = byId.get(id);
+      const state = transform.current?.instance.transformState;
 
-    if (node && state) anchor.current = { id, x: node.x, y: node.y, ...state };
-  };
+      if (node && state) anchor.current = { id, x: node.x, y: node.y, ...state };
+    },
+    [byId]
+  );
 
-  const toggleBranch = (id: string) => {
-    anchorNode(id);
-    setCollapsed((old) => (old.has(id) ? expandBranch(index, old, id) : new Set([...old, id])));
-    if (selected && index.descendants.get(id)?.includes(selected.id)) setSelectedId(undefined);
-    setMenu(undefined);
-  };
+  const toggleBranch = useCallback(
+    (id: string) => {
+      anchorNode(id);
+      setCollapsed((old) => (old.has(id) ? expandBranch(index, old, id) : new Set([...old, id])));
+      setSelectedId((old) => (old && index.descendants.get(id)?.includes(old) ? undefined : old));
+      setMenu(undefined);
+    },
+    [anchorNode, index]
+  );
 
-  const drillDown = (id: string) => {
-    anchor.current = undefined;
-    setFocused(id === index.root.id ? undefined : id);
-    setSelectedId(undefined);
-    setMenu(undefined);
-    setCollapsed((old) => {
-      const next = new Set(old);
+  const drillDown = useCallback(
+    (id: string) => {
+      anchor.current = undefined;
+      setFocused(id === index.root.id ? undefined : id);
+      setSelectedId(undefined);
+      setMenu(undefined);
+      setCollapsed((old) => {
+        const next = new Set(old);
 
-      next.delete(id);
-      return next;
-    });
-  };
+        next.delete(id);
+        return next;
+      });
+    },
+    [index]
+  );
+
+  const selectNode = useCallback((id: string) => setSelectedId((old) => (old === id ? undefined : id)), []);
+  const nodeKey = useCallback(
+    (e: KeyboardEvent<HTMLButtonElement>, p: MapPosition, nodeIndex: number) => {
+      if (e.altKey && e.key === 'Enter') {
+        e.preventDefault();
+        drillDown(p.node.id);
+        return;
+      }
+
+      const vertical = structure === 'down' || p.side === 0;
+      const outwardKey = vertical ? 'ArrowDown' : p.side < 0 ? 'ArrowLeft' : 'ArrowRight';
+      const inwardKey = vertical ? 'ArrowUp' : p.side < 0 ? 'ArrowRight' : 'ArrowLeft';
+
+      if (e.key === outwardKey || e.key === inwardKey) {
+        e.preventDefault();
+        const outward = e.key === outwardKey;
+
+        if (outward && collapsed.has(p.node.id)) toggleBranch(p.node.id);
+        else if (!outward && p.descendantCount && !collapsed.has(p.node.id)) toggleBranch(p.node.id);
+        else {
+          const targetId = outward ? index.children.get(p.node.id)?.[0]?.id : p.node.parentId;
+          const targetIndex = layout.positions.findIndex((position) => position.node.id === targetId);
+
+          host.current?.querySelector<HTMLButtonElement>(`[data-node-index="${targetIndex}"]`)?.focus();
+        }
+
+        return;
+      }
+
+      const nextKey = vertical ? 'ArrowRight' : 'ArrowDown';
+      const previousKey = vertical ? 'ArrowLeft' : 'ArrowUp';
+
+      if (e.key === nextKey || e.key === previousKey) {
+        e.preventDefault();
+        const target =
+          layout.positions[
+            (nodeIndex + (e.key === nextKey ? 1 : layout.positions.length - 1)) % layout.positions.length
+          ];
+
+        host.current
+          ?.querySelector<HTMLButtonElement>(`[data-node-index="${layout.positions.indexOf(target)}"]`)
+          ?.focus();
+      }
+    },
+    [structure, collapsed, index, layout, drillDown, toggleBranch]
+  );
 
   const changeAllBranches = (collapse: boolean) => {
     anchorNode(layout.root.id);
@@ -330,104 +464,21 @@ export default function MindMapViewer({
             >
               <div className='ps-map-content' style={{ width: layout.width, height: layout.height }}>
                 <svg className='ps-map-lines' width={layout.width} height={layout.height} aria-hidden='true'>
-                  {layout.positions.map((p) => {
-                    const parent = p.node.parentId ? byId.get(p.node.parentId) : undefined;
-
-                    return parent ? <path key={p.node.id} d={mapBranchPath(parent, p, structure, branchLine)} /> : null;
-                  })}
+                  {branchPaths}
                 </svg>
                 {layout.positions.map((p, nodeIndex) => (
-                  <div
-                    className={`ps-map-node ${p.depth === 0 ? 'ps-map-root' : ''} ${
-                      selected?.id === p.node.id ? 'ps-map-selected' : ''
-                    }`}
-                    style={{ left: p.x, top: p.y }}
-                    data-node-id={p.node.id}
-                    data-side={structure === 'down' || p.side === 0 ? 'down' : p.side < 0 ? 'left' : 'right'}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setMenu({ nodeId: p.node.id, x: event.clientX, y: event.clientY });
-                    }}
+                  <MindMapNode
                     key={p.node.id}
-                  >
-                    <button
-                      title={p.node.label}
-                      onClick={() => setSelectedId((old) => (old === p.node.id ? undefined : p.node.id))}
-                      aria-pressed={selected?.id === p.node.id}
-                      aria-haspopup='dialog'
-                      aria-expanded={selected?.id === p.node.id}
-                      onKeyDown={(e) => {
-                        if (e.altKey && e.key === 'Enter') {
-                          e.preventDefault();
-                          drillDown(p.node.id);
-                          return;
-                        }
-
-                        const vertical = structure === 'down' || p.side === 0;
-                        const outwardKey = vertical ? 'ArrowDown' : p.side < 0 ? 'ArrowLeft' : 'ArrowRight';
-                        const inwardKey = vertical ? 'ArrowUp' : p.side < 0 ? 'ArrowRight' : 'ArrowLeft';
-
-                        if (e.key === outwardKey || e.key === inwardKey) {
-                          e.preventDefault();
-                          const outward = e.key === outwardKey;
-
-                          if (outward && collapsed.has(p.node.id)) toggleBranch(p.node.id);
-                          else if (!outward && p.descendantCount && !collapsed.has(p.node.id)) toggleBranch(p.node.id);
-                          else {
-                            const targetId = outward ? index.children.get(p.node.id)?.[0]?.id : p.node.parentId;
-                            const targetIndex = layout.positions.findIndex((position) => position.node.id === targetId);
-
-                            host.current
-                              ?.querySelector<HTMLButtonElement>(`[data-node-index="${targetIndex}"]`)
-                              ?.focus();
-                          }
-
-                          return;
-                        }
-
-                        const nextKey = vertical ? 'ArrowRight' : 'ArrowDown';
-                        const previousKey = vertical ? 'ArrowLeft' : 'ArrowUp';
-
-                        if (e.key === nextKey || e.key === previousKey) {
-                          e.preventDefault();
-                          const target =
-                            layout.positions[
-                              (nodeIndex + (e.key === nextKey ? 1 : layout.positions.length - 1)) %
-                                layout.positions.length
-                            ];
-
-                          host.current
-                            ?.querySelector<HTMLButtonElement>(`[data-node-index="${layout.positions.indexOf(target)}"]`)
-                            ?.focus();
-                        }
-                      }}
-                      data-node-index={nodeIndex}
-                    >
-                      <span>{p.node.label}</span>
-                    </button>
-                    {p.descendantCount > 0 && (
-                      <button
-                        className={`ps-map-collapse${collapsed.has(p.node.id) ? ' ps-map-collapsed' : ''}`}
-                        aria-label={`${collapsed.has(p.node.id) ? 'Expand' : 'Collapse'} ${p.node.label}`}
-                        title={
-                          collapsed.has(p.node.id) ? `Expand ${p.descendantCount} hidden nodes` : 'Collapse child nodes'
-                        }
-                        aria-expanded={!collapsed.has(p.node.id)}
-                        onClick={() => toggleBranch(p.node.id)}
-                      >
-                        {collapsed.has(p.node.id) ? (
-                          p.descendantCount
-                        ) : structure === 'down' || p.side === 0 ? (
-                          <ChevronUp size={14} />
-                        ) : p.side < 0 ? (
-                          <ChevronRight size={14} />
-                        ) : (
-                          <ChevronLeft size={14} />
-                        )}
-                      </button>
-                    )}
-                  </div>
+                    p={p}
+                    nodeIndex={nodeIndex}
+                    structure={structure}
+                    selected={selected?.id === p.node.id}
+                    collapsed={collapsed.has(p.node.id)}
+                    onSelect={selectNode}
+                    onToggle={toggleBranch}
+                    onMenu={setMenu}
+                    onKey={nodeKey}
+                  />
                 ))}
               </div>
             </TransformComponent>

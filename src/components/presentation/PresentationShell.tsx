@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 
 import type { ReactNode } from 'react';
 
-/** A focused setup dialog expands to a slide preview window after generation. */
+/** One presentation window owns loading, settings and preview without changing dialog geometry. */
 export default function PresentationShell({
   setup,
   preview = false,
@@ -28,20 +28,9 @@ export default function PresentationShell({
       onClose={onClose}
       maxWidth={false}
       PaperProps={
-        setup
+        setup || preview
           ? {
-              'aria-label': 'Create presentation',
-              className: 'ps-ppt-popover',
-              style: {
-                margin: 16,
-                width: 'min(720px, calc(100vw - 32px))',
-                maxHeight: 'calc(100dvh - 32px)',
-                borderRadius: 12,
-              },
-            }
-          : preview
-          ? {
-              'aria-label': 'Presentation preview',
+              'aria-label': setup ? 'Create presentation' : 'Presentation preview',
               className: 'ps-ppt-preview-popover',
               style: {
                 margin: 16,
@@ -62,7 +51,7 @@ export default function PresentationShell({
           size='icon'
           aria-label={setup ? 'Close generation settings' : 'Close presentation preview'}
           onClick={onClose}
-          className={setup ? 'ps-ppt-close' : 'ps-ppt-preview-close'}
+          className='ps-ppt-preview-close'
         >
           <CloseIcon className='h-5 w-5' aria-hidden='true' />
         </Button>

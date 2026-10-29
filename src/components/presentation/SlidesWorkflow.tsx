@@ -42,6 +42,7 @@ import {
   PresentationStyle,
   SavedDeck,
   Slide,
+  SlideAssessment,
   SlidesStage,
   StoryPlan,
 } from './types';
@@ -73,7 +74,11 @@ export interface SlidesWorkflowProps {
   onDiscardOutline: () => void;
   onStyles: () => void;
   canGenerate: boolean;
+  canAssess?: boolean;
+  promptBundleVersion?: string;
+  assessmentCache?: Map<string, SlideAssessment>;
   canEdit: boolean;
+  canRegenerate?: boolean;
   remainingSlides?: number | null;
   maxSlides?: number;
   onUpgrade: () => void;
@@ -537,7 +542,11 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
                 </TooltipTrigger>
                 <TooltipContent className='z-[1500]'>Edit story plan</TooltipContent>
               </Tooltip>
-              <Button variant='outline' disabled={!props.canEdit} onClick={() => onStage('setup')}>
+              <Button
+                variant='outline'
+                disabled={!(props.canRegenerate ?? props.canEdit)}
+                onClick={() => onStage('setup')}
+              >
                 <RegenerateIcon className='h-4 w-4' aria-hidden='true' />
                 Regenerate
               </Button>
@@ -560,7 +569,7 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
           </header>
           {sourceChanged && (
             <Notice>
-              This saved deck uses a different source revision. Open its original source before regeneration.
+              The page has changed since this presentation was saved. Regenerate to use its current content.
             </Notice>
           )}
           <div className='ps-preview-layout'>
@@ -632,11 +641,7 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
           <div className='ps-icon-tile'>
             <Download size={25} />
           </div>
-          <h2>
-            {!lab && !exportReady
-              ? 'PowerPoint download unavailable'
-              : 'Your presentation, ready to go.'}
-          </h2>
+          <h2>{!lab && !exportReady ? 'PowerPoint download unavailable' : 'Your presentation, ready to go.'}</h2>
           <p>
             {!lab && !exportReady
               ? 'You can view this saved presentation. Download requires editor access and a current server artifact.'
@@ -657,17 +662,13 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
           <div className='ps-inline'>
             <Action onClick={closeDownload}>{downloading ? 'Cancel download' : 'Back to preview'}</Action>
             <Action
-                primary
-                disabled={!exportReady || downloading}
-                onClick={() => {
-                  void download();
-                }}
-              >
-                {downloading
-                  ? 'Preparing PowerPoint…'
-                  : downloadError
-                  ? 'Retry download'
-                  : 'Download PowerPoint (.pptx)'}
+              primary
+              disabled={!exportReady || downloading}
+              onClick={() => {
+                void download();
+              }}
+            >
+              {downloading ? 'Preparing PowerPoint…' : downloadError ? 'Retry download' : 'Download PowerPoint (.pptx)'}
             </Action>
           </div>
         </div>

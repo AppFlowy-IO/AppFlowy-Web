@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getActiveRowPage } from '@/application/row-document/row-page-state';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
@@ -60,10 +60,16 @@ export default function PresentationDialog({
   const workspaceId = useCurrentWorkspaceId();
   const user = useCurrentUserOptional();
   const { loadView, loadRowDocument, toView } = useAppOperations();
+  const sourceReaders = useRef({ loadView, loadRowDocument });
+
+  sourceReaders.current = { loadView, loadRowDocument };
   const identity = `${workspaceId}:${user?.uid}:${viewId}:${mode}`;
   const [readResult, setReadResult] = useState<{ identity: string; value: SourceRead }>();
   const read = readResult?.identity === identity ? readResult.value : undefined;
   const name = sourceView?.name;
+  const sourceTitle = useRef(title || name || 'Untitled');
+
+  sourceTitle.current = title || name || 'Untitled';
   const snapshot = useMemo(
     () =>
       read?.kind === 'document'
@@ -80,7 +86,7 @@ export default function PresentationDialog({
     [read, viewId, title, name, isRow, cover]
   );
   const [error, setError] = useState('');
-  const [setupPopover, setSetupPopover] = useState(mode === 'slides' && (!deck || action === 'regenerate'));
+  const [setupPopover, setSetupPopover] = useState(false);
   const { canRead, canWrite, hasLoadedViewActionPermissions } = useViewActionPermissions(view, !!mode, permissionViewId);
   // Only onUpgrade and canManageStyles are used here; the studio reads presentation status itself.
   const access = usePresentationAccess(false);
@@ -88,6 +94,22 @@ export default function PresentationDialog({
   const readSource = useCallback(
     async (signal?: AbortSignal): Promise<SourceRead> => {
       if (!canRead) throw new Error('You no longer have access to this source page.');
+      if (mode === 'slides') {
+        // Saved decks carry their own scene. Prepare current evidence only in the setup panel.
+        return {
+          kind: 'server',
+          snapshot: {
+            pageId: viewId,
+            title: sourceTitle.current,
+            kind: isRow ? 'row' : 'document',
+            revision: '',
+            blocks: [],
+            properties: [],
+            warnings: [],
+          },
+        };
+      }
+
       if (mode !== 'document') {
         if (!workspaceId) throw new Error('Select a workspace before opening presentations.');
         const resolved = await loadSourceSnapshot(workspaceId, viewId, undefined, signal);
@@ -97,13 +119,17 @@ export default function PresentationDialog({
 
       const activeRow = getActiveRowPage();
       const row = isRow && activeRow?.documentId === viewId ? activeRow : undefined;
+      const readers = sourceReaders.current;
 
       // An empty row has properties and a title but no document to fetch/create.
       if (row && !row.hasDocument) return { kind: 'document', rowTitle: row.title, properties: row.getProperties?.() };
       const doc =
-        isRow && loadRowDocument
-          ? await loadRowDocument(viewId, { requireServerFetch: true, rowDocumentSource: row?.source ?? undefined })
-          : await loadView(viewId, false, false);
+        isRow && readers.loadRowDocument
+          ? await readers.loadRowDocument(viewId, {
+              requireServerFetch: true,
+              rowDocumentSource: row?.source ?? undefined,
+            })
+          : await readers.loadView(viewId, false, false);
 
       if (!doc) throw new Error('The document snapshot is not available.');
       const content = yDocToSlateContent(doc);
@@ -111,7 +137,9 @@ export default function PresentationDialog({
       if (!content) throw new Error('The source is still loading. Close this preview and try again.');
       return { kind: 'document', content, rowTitle: row?.title, properties: row?.getProperties?.() };
     },
-    [canRead, mode, workspaceId, viewId, loadView, loadRowDocument, isRow]
+    // Reader callbacks can change as background database rows load. Only the selected source
+    // changes this read; callback churn must not cancel and restart expensive preparation.
+    [canRead, mode, workspaceId, viewId, isRow]
   );
 
   useEffect(() => {
@@ -145,10 +173,10 @@ export default function PresentationDialog({
     onClose();
   }
 
-  function source(referenceId: string) {
-    const location = snapshot?.serverSource?.references[referenceId]?.location;
+  function source(referenceId: string, resolved = snapshot) {
+    const location = resolved?.serverSource?.references[referenceId]?.location;
 
-    if (snapshot?.serverSource && !location) return;
+    if (resolved?.serverSource && !location) return;
     if (location?.kind === 'web') {
       try {
         const url = new URL(location.url);
@@ -180,7 +208,7 @@ export default function PresentationDialog({
   return (
     <PresentationShell
       setup={setupPopover}
-      preview={mode === 'slides' && !setupPopover}
+      preview={mode === 'slides'}
       onClose={close}
       anchorEl={anchorEl}
       paperClassName={mode === 'mindmap' ? 'ps-map-preview-dialog' : undefined}
@@ -191,7 +219,7 @@ export default function PresentationDialog({
             mode === 'mindmap' ? (
               <MindMapLoading onClose={close} />
             ) : (
-              <PresentationLoading message='Loading presentation studio…' onClose={close} />
+              <PresentationLoading message='Loading presentation…' />
             )
           }
         >
@@ -224,7 +252,7 @@ export default function PresentationDialog({
       ) : mode === 'mindmap' ? (
         <MindMapLoading onClose={close} />
       ) : (
-        <PresentationLoading message='Loading authorized page snapshot…' onClose={close} />
+        <PresentationLoading message='Loading presentation…' onClose={mode === 'slides' ? undefined : close} />
       )}
     </PresentationShell>
   );

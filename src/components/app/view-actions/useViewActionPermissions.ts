@@ -26,8 +26,7 @@ export function useViewActionPermissions(
   const workspaceId = useCurrentWorkspaceId();
   const viewId = view?.view_id ?? fallbackViewId;
   const activeObjectPermission = useViewObjectPermission(viewId);
-  const resolvedTarget =
-    explicitTarget ?? (viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined);
+  const resolvedTarget = explicitTarget ?? (viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined);
   const collabObjectId = resolvedTarget?.collabObjectId;
   const collabType = resolvedTarget?.collabType;
   const requestSeq = useRef(0);
@@ -116,8 +115,20 @@ export function useViewActionPermissions(
   }, [activeObjectPermission, collabObjectId, collabType, opened, viewId, workspaceId]);
 
   const canLoadViewActionPermissions = Boolean(opened && workspaceId && viewId);
-  const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
-  const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
+  // Canonical cached permissions already match this view's target. Use them in this render,
+  // so switching authorized views does not briefly tear down and reload their shared database.
+  const cachedPermission =
+    activeObjectPermission && resolvedTarget && isCollabObjectPermissionForTarget(activeObjectPermission, resolvedTarget)
+      ? activeObjectPermission
+      : null;
+  const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || !!cachedPermission || loadedViewId === viewId;
+  const loadedPermission =
+    loadedViewId === viewId &&
+    objectPermission &&
+    (!resolvedTarget || isCollabObjectPermissionForTarget(objectPermission, resolvedTarget))
+      ? objectPermission
+      : null;
+  const permissionForCurrentView = cachedPermission ?? loadedPermission;
   const canRead = hasLoadedViewActionPermissions && permissionForCurrentView?.can_read === true;
   const canWrite = canRead && permissionForCurrentView.can_write;
   const canShare = canRead && permissionForCurrentView.can_share;
@@ -132,7 +143,7 @@ export function useViewActionPermissions(
     : false;
 
   return {
-    permissionError: loadedViewId === viewId ? permissionError : undefined,
+    permissionError: !cachedPermission && loadedViewId === viewId ? permissionError : undefined,
     canRead,
     canShare,
     canWrite,

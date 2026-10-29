@@ -41,7 +41,19 @@ Before assessment, the studio checks for a successful result with the same sourc
 settings. A match shows **Open presentation** or **Open mind map**, skips assessment and opens the
 saved artifact without a new generation request. Any generation-setting change removes the match
 immediately; late network replies cannot restore Open for obsolete inputs. Open revalidates, and a
-miss never silently submits paid generation. Explicit deck regeneration still requests fresh work.
+miss never silently submits paid generation. AI Slides first opens the saved deck for the current
+page, without preparing sources or assessing them. Regenerate opens settings; a page with no deck
+opens settings directly. Share-provided decks render immediately from their existing plan/scene.
+Loading, preview and settings share one dialog with fixed viewport-bounded dimensions. The footer
+stays at the bottom while the settings body scrolls; its progress line has reserved space.
+The settings panel prepares current evidence with the saved options and restores the saved job's
+assessment when its source, extraction options, purpose, reviewed template and prompt bundle match.
+Completed assessments also survive panel visits in a bounded studio cache. Built-in palette and
+slide-count changes invalidate generated-result reuse but do not repeat source analysis or interrupt
+an assessment already in flight. Changed evidence or analysis inputs require a new assessment.
+
+Session writes are scheduled by preference edits and merge only those fields into the latest saved
+payload. Opening a studio does not clear deck/narrative references or another mode's map style.
 
 The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts; it does not reconstruct quotas from a plan label or historical usage. Preset/custom choices retain their explicit request mode. Export, custom-count and map-style admission are decided by the API. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
 
@@ -51,7 +63,7 @@ The server owns slide/export quotas, AI accounting, source permissions and deplo
 
 Story-plan editing preserves the saved artifact version and source revision. Accepting an unchanged initial outline opens the already-generated artifact. Applying a changed outline regenerates through Cloud. Map text and appearance edits use expected-version checks; rejected writes retain the accepted content. The root map label remains the approved source title. Structural maps also come from Cloud: loading, failure and retry states never synthesize a replacement map in the browser.
 
-Canonical source references resolve through the server evidence envelope. A historical deck/map whose source envelope cannot be proven to match the open page remains viewable but cannot silently reuse that page's citations or regeneration evidence. The current artifact catalog does not expose a saved source-page filter or full historical evidence envelope.
+Canonical source references resolve through the server evidence envelope. A historical deck/map whose source envelope cannot be proven to match the open page remains viewable but cannot silently reuse that page's citations or regeneration evidence. The artifact catalog supports a captured source-page filter. Full regeneration after a page edit creates a new deck; targeted slide/story edits still require matching evidence.
 
 Template uploads produce candidates requiring explicit review. Review preserves the imported template geometry, assets and mandatory footer, then saves a new server version. Arbitrary browser-created company styles, logo uploads and workspace-default style changes have no matching server API and are not presented as persisted operations.
 
@@ -65,7 +77,10 @@ presentation controls and row-order publication. It does not mount a second row-
 lifecycle. The borrower remains read-only and checks current access. Owners unregister on unmount;
 a missing owner falls back to the normal cached loader. Resources are isolated by workspace, view,
 database mapping and login session, and restored documents replace old resources. Published and
-historical snapshots never enter this live registry.
+historical snapshots never enter this live registry. Database slides use a bounded native embedded
+viewport so virtualization follows the slide's scroll position. Empty editor paragraphs after a
+database do not create separate blank slides. Toggle changes update only their own ruler unit;
+existing resize observers measure its new size without reconnecting every unit.
 
 ## Validation
 

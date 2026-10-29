@@ -49,7 +49,10 @@ test('renders the native linked grid with filters, sorting, colors, hidden field
   await page.screenshot({ path: 'test-results/presentation/linked-database-grid.png' });
   await expect(main.getByText('Milestone 35', { exact: true })).toBeInViewport();
   await expect(page.locator('html')).toHaveAttribute('data-row-fetches', '1');
-  await main.getByTestId('database-grid').locator('.appflowy-custom-scroller').first().hover();
+  await main.getByTestId('database-grid').locator('.appflowy-hidden-horizontal-scrollbar').hover();
+  await page.mouse.wheel(0, 2000);
+  await main.getByTestId('grid-load-more-row').click();
+  await main.getByTestId('database-grid').locator('.appflowy-hidden-horizontal-scrollbar').hover();
   await page.mouse.wheel(0, 2000);
   await expect(main.getByText('Milestone 01', { exact: true })).toBeInViewport();
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -67,6 +70,8 @@ test('renders the native linked grid with filters, sorting, colors, hidden field
   await expect(main.getByText('Milestone 35', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Next slide' }).click();
+  // The empty editor paragraph after the grid must not become an intervening blank slide.
+  await expect(main).toHaveAttribute('aria-label', 'Slide 3 of 3');
   await expect(main).toContainText('The next part of the presentation.');
   await expect(page.locator('.ps-document-database')).toHaveCount(0);
   expect(errors).toEqual([]);

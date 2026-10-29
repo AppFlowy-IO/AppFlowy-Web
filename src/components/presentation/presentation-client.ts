@@ -12,7 +12,7 @@ import {
 } from './server-client';
 
 import type {
-  Artifact, AssessmentResponse, JobStatus, PresentationScope, PresentationStatus, ReviewedStyle,
+  Artifact, ArtifactSummary, AssessmentResponse, JobStatus, PresentationScope, PresentationStatus, ReviewedStyle,
   ServerSlidePlan, StoredSession, VersionedId,
 } from './server-contract';
 import type { GenerationOptions, MindMap, PageSnapshot, PresentationStyle, SavedDeck } from './types';
@@ -79,11 +79,31 @@ export async function listStyles(scope: Pick<PresentationScope, 'workspaceId'>, 
   return styles;
 }
 
+/** Finds a saved deck for this page using captured source identities, even after page edits. */
+async function restorePageDeck(scope: PresentationScope, selected: VersionedId | null | undefined, signal?: AbortSignal) {
+  let after: string | undefined;
+  let latest: ArtifactSummary | undefined;
+
+  do {
+    const page = await listDecks(scope, after, 100, signal, scope.pageId);
+    const preferred = page.items.find((item) => item.id === selected?.id);
+
+    if (preferred) return loadSavedDeck(scope, preferred.id, preferred.version, signal);
+    for (const item of page.items) {
+      if (!latest || item.createdAt > latest.createdAt) latest = item;
+    }
+
+    after = page.nextCursor ?? undefined;
+  } while (after);
+
+  return latest ? loadSavedDeck(scope, latest.id, latest.version, signal) : undefined;
+}
+
 export interface LoadedPresentation {
   status: PresentationStatus; session: StoredSession | null | undefined; warnings: string[]; styles: PresentationStyle[];
-  map?: MindMap; mapArtifact?: Artifact<MindMap>;
+  map?: MindMap; mapArtifact?: Artifact<MindMap>; deck?: SavedDeck;
 }
-export async function loadPresentation(scope: PresentationScope, signal?: AbortSignal): Promise<LoadedPresentation> {
+export async function loadPresentation(scope: PresentationScope, signal?: AbortSignal, restoreDeck = false): Promise<LoadedPresentation> {
   const warnings: string[] = [];
   const sessionRead = getSession(scope, signal).catch((error: unknown) => {
     if (!(error instanceof PresentationAPIError) || ![403, 404].includes(error.status)) throw error;
@@ -91,7 +111,7 @@ export async function loadPresentation(scope: PresentationScope, signal?: AbortS
     // Do not invent revision zero: an inaccessible existing session cannot safely be overwritten.
     return undefined;
   });
-  const [status, session, styles, mapArtifact] = await Promise.all([
+  const [status, session, styles, mapArtifact, deck] = await Promise.all([
     getPresentationStatus(scope, signal), sessionRead, listStyles(scope, signal),
     // The saved narrative needs only the session, so it does not wait for status or styles.
     sessionRead.then(async (stored) => {
@@ -102,9 +122,10 @@ export async function loadPresentation(scope: PresentationScope, signal?: AbortS
 
       return isMapArtifact(record) ? record : undefined;
     }),
+    restoreDeck ? sessionRead.then((stored) => restorePageDeck(scope, stored?.payload.artifact, signal)) : undefined,
   ]);
 
-  return { status, session, styles, warnings, map: mapArtifact?.content, mapArtifact };
+  return { status, session, styles, warnings, map: mapArtifact?.content, mapArtifact, deck };
 }
 
 export async function importPresentationTemplate(scope: Pick<PresentationScope, 'workspaceId'>, file: File, signal?: AbortSignal): Promise<PresentationStyle> {

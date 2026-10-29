@@ -149,8 +149,8 @@ export const listArtifactVersions = (scope: WorkspaceScope, id: string, before?:
   presentationRequest<Artifact[]>({ url: `${base(scope)}/artifacts/${segment(id)}/versions`, params: { before, limit }, signal });
 export const listArtifacts = (scope: WorkspaceScope, kind: 'deck' | 'map' | 'style', after?: string, limit = 30, signal?: AbortSignal) =>
   presentationRequest<ArtifactPage>({ url: `${base(scope)}/artifacts`, params: { kind, after, limit }, signal });
-export const listDecks = (scope: WorkspaceScope, after?: string, limit = 30, signal?: AbortSignal) =>
-  presentationRequest<ArtifactPage>({ url: `${base(scope)}/decks`, params: { after, limit }, signal });
+export const listDecks = (scope: WorkspaceScope, after?: string, limit = 30, signal?: AbortSignal, pageId?: string) =>
+  presentationRequest<ArtifactPage>({ url: `${base(scope)}/decks`, params: { after, limit, ...(pageId && { pageId }) }, signal });
 export const listMaps = (scope: WorkspaceScope, after?: string, limit = 30, signal?: AbortSignal) =>
   presentationRequest<ArtifactPage>({ url: `${base(scope)}/map`, params: { after, limit }, signal });
 export const listStyleRecords = (scope: WorkspaceScope, after?: string, limit = 30, signal?: AbortSignal) =>

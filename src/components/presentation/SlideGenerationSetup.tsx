@@ -35,26 +35,51 @@ export default function SlideGenerationSetup({
 }) {
   const { snapshot, options, onOptions, style, onStyle, onGenerate, canGenerate, plan, onStage } = props;
   const designMode = options.designMode ?? (style.templateName ? 'template' : 'theme');
-  // While selected, a theme applied from a recommendation keeps the key of the style it was recommended
-  // for, so neither applying it nor switching design mode requests another assessment.
-  const [applied, setApplied] = useState<{ themeId: string; styleKey: string }>();
-  const styleKey = applied?.themeId === style.id ? applied.styleKey : JSON.stringify([style.id, style.serverVersion]);
-  // An assessment answers for these inputs; a typed purpose keeps it until the new answer lands.
-  const assessmentKey = JSON.stringify([
-    scope?.workspaceId,
-    scope?.pageId,
-    snapshot.revision,
-    options.includeProperties,
-    options.allowWebSearch,
-    styleKey,
-  ]);
+  // Palette and slide count affect generation, not source analysis. Reviewed template content
+  // still participates, as do evidence, purpose and the active prompt contract.
+  const assessmentIdentity = (
+    revision = snapshot.revision,
+    selectedOptions = options,
+    selectedStyle = style,
+    bundle = props.promptBundleVersion
+  ) =>
+    JSON.stringify([
+      scope?.workspaceId,
+      scope?.pageId,
+      revision,
+      selectedOptions.includeProperties,
+      selectedOptions.allowWebSearch,
+      selectedStyle.serverStyle?.reference ?? null,
+      bundle,
+      selectedOptions.purpose,
+    ]);
+  const assessmentKey = assessmentIdentity();
+  const cacheKey = assessmentKey;
+  const savedDeck = props.activeDeck;
+  const savedAssessment =
+    savedDeck?.assessment &&
+    savedDeck.options &&
+    assessmentKey ===
+      assessmentIdentity(
+        savedDeck.sourceRevision,
+        savedDeck.options,
+        savedDeck.style,
+        savedDeck.assessment.promptBundleVersion
+      )
+      ? savedDeck.assessment.value
+      : undefined;
+  const cachedAssessment = props.assessmentCache?.get(cacheKey) ?? savedAssessment;
+  const canAssess = props.canAssess ?? canGenerate;
   const [assessed, setAssessed] = useState<{
     key: string;
     purpose?: string;
     attempt: number;
     assessment: SlideAssessment;
   }>();
-  const assessment = assessed?.key === assessmentKey ? assessed.assessment : undefined;
+  const assessment = assessed?.key === assessmentKey ? assessed.assessment : cachedAssessment;
+  const pendingAssessment = useRef<string>();
+  const awaitingReuse = !!(props.reuse?.checking && pendingAssessment.current !== cacheKey && !cachedAssessment);
+  const hasReusable = !!props.reuse?.available;
   // Once asked for this source, the purpose field stays while the user answers, even if a reassessment stops asking.
   const sourceKey = JSON.stringify([scope?.workspaceId, scope?.pageId, snapshot.revision]);
   const [asked, setAsked] = useState<{ key: string; question?: string }>();
@@ -115,7 +140,7 @@ export default function SlideGenerationSetup({
   }
 
   useEffect(() => {
-    if (!scope || !canGenerate || props.reuse?.checking || props.reuse?.available || props.reuse?.error) {
+    if (!scope || !canAssess || awaitingReuse || hasReusable || props.reuse?.error) {
       setAssessing(false);
       return;
     }
@@ -126,14 +151,33 @@ export default function SlideGenerationSetup({
       assessed.attempt === assessmentAttempt
     )
       return;
+    const cached = cachedAssessment;
+
+    if (cached && assessmentAttempt === 0) {
+      setAssessed({ key: assessmentKey, purpose: options.purpose, attempt: assessmentAttempt, assessment: cached });
+      props.assessmentCache?.set(cacheKey, cached);
+      if (cached.condition === 'ambiguous') setAsked({ key: sourceKey, question: cached.question });
+      setAssessing(false);
+      setNotice('');
+      return;
+    }
+
     const controller = new AbortController();
 
+    pendingAssessment.current = cacheKey;
     setAssessing(true);
     // Debounce source/options changes; aborted requests must never replace a newer assessment.
     const timer = window.setTimeout(() => {
       void assessPresentation({ scope, source: snapshot, options, style }, controller.signal)
         .then((result) => {
           if (!controller.signal.aborted) {
+            if (props.assessmentCache) {
+              // A studio owns this bounded cache; changing actor or source scope clears it.
+              if (props.assessmentCache.size >= 20)
+                props.assessmentCache.delete(props.assessmentCache.keys().next().value);
+              props.assessmentCache.set(cacheKey, result.assessment);
+            }
+
             setAssessed({
               key: assessmentKey,
               purpose: options.purpose,
@@ -160,6 +204,7 @@ export default function SlideGenerationSetup({
     return () => {
       window.clearTimeout(timer);
       controller.abort();
+      pendingAssessment.current = undefined;
     };
     // Counts, palette and panel expansion do not alter source assessment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,14 +212,15 @@ export default function SlideGenerationSetup({
     assessmentKey,
     options.purpose,
     assessmentAttempt,
-    canGenerate,
-    props.reuse?.checking,
-    props.reuse?.available,
+    canAssess,
+    awaitingReuse,
+    hasReusable,
     props.reuse?.error,
   ]);
   const hasSource =
     !!snapshot.serverSource || !!snapshot.blocks.length || (options.includeProperties && !!snapshot.properties.length);
   const question = assessment?.condition === 'ambiguous' && !options.purpose?.trim() && !options.reviewOutline;
+  const showProgress = busy || (assessing && !props.reuse?.available && !props.reuse?.checking);
   const change = (patch: Partial<typeof options>) => onOptions({ ...options, ...patch });
   const changePreset = (patch: Partial<Pick<typeof options, 'audience' | 'tone' | 'contentDensity'>>) =>
     change({
@@ -190,10 +236,10 @@ export default function SlideGenerationSetup({
     const suggested = props.styles.find((theme) => theme.id === assessment?.recommendedThemeId);
 
     if (suggested && style.id !== suggested.id) {
-      setApplied({ themeId: suggested.id, styleKey });
       onStyle(suggested);
     }
-  }, [assessment?.recommendedThemeId, designMode, style.id, styleKey, onStyle, props.styles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assessment?.recommendedThemeId, designMode, style.id, onStyle, props.styles]);
   const chooseDesign = (mode: 'auto' | 'theme' | 'template') => {
     cancelTemplateRequest();
     setDraft(undefined);
@@ -655,19 +701,21 @@ export default function SlideGenerationSetup({
         {!hasSource && <Notice>Add some document content before generating.</Notice>}
       </div>
       <footer className='ps-ppt-setup-footer'>
-        {(busy || (assessing && !props.reuse?.available && !props.reuse?.checking)) && (
-          <p className='ps-ppt-setup-progress' role='status'>
-            <span
-              aria-hidden='true'
-              className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
-            />
-            {busy
-              ? props.reuse?.available
-                ? 'Opening your presentation…'
-                : 'Generating your presentation…'
-              : 'Analyzing your sources…'}
-          </p>
-        )}
+        <p className='ps-ppt-setup-progress' role={showProgress ? 'status' : undefined} aria-hidden={!showProgress}>
+          {showProgress && (
+            <>
+              <span
+                aria-hidden='true'
+                className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
+              />
+              {busy
+                ? props.reuse?.available
+                  ? 'Opening your presentation…'
+                  : 'Generating your presentation…'
+                : 'Analyzing your sources…'}
+            </>
+          )}
+        </p>
         {props.onCancel && (
           <Button variant='outline' size='lg' onClick={props.onCancel}>
             Cancel

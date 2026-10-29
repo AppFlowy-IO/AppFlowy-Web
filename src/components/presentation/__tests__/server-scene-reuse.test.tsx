@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 
-import { loadSavedDeck } from '../presentation-client';
+import { loadPresentation, loadSavedDeck, serverOptions } from '../presentation-client';
 import ServerSlideCanvas, { ServerSlideSceneProvider } from '../ServerSlideCanvas';
 
 import type { Artifact, ServerSlidePlan } from '../server-contract';
@@ -147,4 +147,30 @@ test('reads the scene itself when the deck carries one for another version or wo
   await screen.findByText('Saved title');
   expect(sceneReads()).toHaveLength(3);
   expect(sceneReads()[2][0]).toMatchObject({ url: '/api/presentation/another-workspace/artifacts/deck/scene' });
+});
+
+
+test('page restoration uses the scoped catalog, retains saved options and never prepares or assesses sources', async () => {
+  const options = serverOptions({ slideCount: 13, slideCountMode: 'fixed', includeProperties: false });
+
+  mockRequest.mockImplementation(async (config: AxiosRequestConfig) => {
+    const reply = (data: unknown) => ({ status: 200, data: { code: 0, data }, headers: {} });
+
+    if (config.url?.endsWith('/session')) return reply(null);
+    if (config.url?.endsWith('/status')) return reply({ themes: [] });
+    if (config.url?.endsWith('/styles')) return reply({ items: [], nextCursor: null });
+    if (config.url?.endsWith('/decks')) {
+      expect(config.params).toMatchObject({ pageId: scope.pageId });
+      return reply({ items: [{ ...artifact, kind: 'deck' }], nextCursor: null });
+    }
+
+    if (config.url?.endsWith('/artifacts/deck')) return reply({ ...artifact, options });
+    return route(config);
+  });
+  const loaded = await loadPresentation(scope, undefined, true);
+
+  expect(loaded.deck?.id).toBe('deck');
+  expect(loaded.deck?.options).toMatchObject({ slideCount: 13, slideCountMode: 'fixed', includeProperties: false });
+  expect(sceneReads()).toHaveLength(1);
+  expect(mockRequest.mock.calls.some(([config]) => config.method === 'POST')).toBe(false);
 });

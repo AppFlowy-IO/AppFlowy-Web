@@ -2,6 +2,7 @@ import { meetingMeasureKey } from './document-content';
 import { isSimpleTable, paginateTable, type TablePage } from './table-pagination';
 
 import type { DocumentSlide } from './source';
+import type { SourceBlock } from './types';
 
 export interface DocumentPage extends DocumentSlide {
   key: string;
@@ -16,6 +17,17 @@ export interface DocumentPage extends DocumentSlide {
 }
 
 export const documentUnitKey = (section: number, block: number) => `${section}:${block}`;
+
+function isEmptyParagraph(block: SourceBlock): boolean {
+  return (
+    block.type === 'paragraph' &&
+    !block.text.trim() &&
+    !block.children.length &&
+    !block.database &&
+    !block.style?.backgroundColor &&
+    !block.richText?.some((run) => run.text.trim() || run.mention || run.formula)
+  );
+}
 
 /**
  * Fit blocks to the viewport, keeping table introductions together and body rows unique.
@@ -36,6 +48,9 @@ export function paginateDocument(
     let keys: string[] = [];
     let used = 0;
     const append = (content: DocumentSlide, sourceKeys: string[], height: number) => {
+      // Native editors keep an empty paragraph after embeds. Retain spacers with content,
+      // but do not turn a trailing spacer or an empty section into its own slide.
+      if (!section.titleSlide && !section.meeting && content.blocks.every(isEmptyParagraph)) return;
       // Oversized non-table blocks use overlapping windows so no line is lost at the viewport edge.
       const stride = capacity - Math.min(64, capacity * 0.15);
       const partCount = Math.max(1, 1 + Math.ceil((height - capacity) / stride));
@@ -72,7 +87,7 @@ export function paginateDocument(
       const keepWithNext = () => {
         const block = section.blocks[index];
 
-        return block.type === 'heading' || (block.type === 'paragraph' && !block.text.trim() && !block.children.length);
+        return block.type === 'heading' || isEmptyParagraph(block);
       };
 
       while (keepWithNext() && index + 1 < section.blocks.length) {

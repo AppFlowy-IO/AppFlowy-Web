@@ -7,7 +7,7 @@ import MindMapViewer from '../MindMapViewer';
 import type { MapBranchLine, MapStructure } from '../mindmap-layout';
 import type { MindMap } from '../types';
 
-// Every MindMapViewer render draws each branch, so these calls count renders of the whole map.
+// Count branch geometry work independently of camera, selection and menu renders.
 jest.mock('../mindmap-layout', () => {
   const actual = jest.requireActual<typeof import('../mindmap-layout')>('../mindmap-layout');
 
@@ -216,4 +216,16 @@ test('keeps a newer selection when a node save finishes, and shows the node from
     />
   );
   expect(screen.getByRole('dialog', { hidden: true }).querySelector('h3')?.textContent).toBe('Accepted');
+});
+
+
+test('selection, context menus and viewport resize reuse branch geometry', () => {
+  render(<Viewer />);
+  const paths = mapRenders();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Scope' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Risks' }));
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Risks' }), { clientX: 20, clientY: 20 });
+  resizeCanvas(800, 500);
+  expect(mapRenders()).toBe(paths);
 });

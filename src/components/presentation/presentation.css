@@ -2615,6 +2615,19 @@
 .ps-ppt-preview-popover .ps-story-page {
   padding-right: 64px;
 }
+.ps-ppt-preview-popover > .ps-compact-setup {
+  height: 100%;
+}
+.ps-ppt-preview-popover .ps-compact-setup .ps-main {
+  min-height: 0;
+}
+.ps-ppt-preview-popover .ps-compact-setup .ps-slides-workflow {
+  flex: 1;
+}
+.ps-ppt-preview-popover .ps-compact-setup .ps-ppt-setup {
+  height: 100%;
+  max-height: 100%;
+}
 .ps-slides-window {
   height: 100%;
   min-height: 0;
@@ -2799,6 +2812,7 @@
   height: 24px;
 }
 .ps-ppt-setup-body {
+  flex: 1;
   padding: 24px 32px;
   min-height: 0;
   overflow-y: auto;
@@ -2994,6 +3008,7 @@
 /* Analysis or generation in progress, on its own line above the buttons it keeps disabled. */
 .ps-ppt-setup-progress {
   display: flex;
+  min-height: 20px;
   flex-basis: 100%;
   align-items: center;
   justify-content: flex-end;

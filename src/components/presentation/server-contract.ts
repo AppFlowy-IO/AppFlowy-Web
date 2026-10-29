@@ -103,6 +103,8 @@ export interface JobStatus {
 export interface MindMapStyle { structure: 'right-facing' | 'left-facing' | 'two-sided' | 'top-down'; branchLine: 'rounded' | 'curved'; }
 export interface Artifact<T = ServerSlidePlan | MindMap | ReviewedStyle> {
   id: string; workspaceId: string; version: number; content: T; resultHash: string; sourceRevision: string | null;
+  options?: ServerGenerationOptions | null;
+  assessment?: SlideAssessment | null;
   generationJobId: string | null; origin: string | null; createdAt: string; mapStyle: MindMapStyle;
   promptBundleVersion: string | null; compiledPromptChecksum: string | null; providerModel: Json;
 }

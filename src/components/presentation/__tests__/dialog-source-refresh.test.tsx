@@ -14,7 +14,7 @@ mockResizeObserver();
 
 const mockRequest = jest.fn();
 const mockLoadView = jest.fn(async () => ({}));
-// The app's operations are stable functions; the dialog's source read depends on them.
+// Operations may change identity while background database rows load.
 const mockOperations = { loadView: mockLoadView, loadRowDocument: jest.fn(), toView: jest.fn(async () => undefined) };
 const mockAccess = jest.fn((_enabled?: boolean) => ({ isPro: false, canManageStyles: false, onUpgrade: jest.fn() }));
 let mockName = 'Live document';
@@ -166,6 +166,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   jest.clearAllMocks();
+  mockOperations.loadView = mockLoadView;
   mockName = 'Live document';
   mockCover = undefined;
   setActiveRowPage(null);
@@ -198,6 +199,48 @@ test('a rename keeps an open AI Slides studio and its running generation', async
   expect(requests('GET', '/status')).toBe(reads.status);
   expectAccessWithoutStatus();
   unmount();
+});
+
+test('background database loader changes do not restart pending mind-map source preparation', async () => {
+  mockRequest.mockImplementation((config) =>
+    config.url.endsWith('/sources') ? new Promise(() => undefined) : mockWire(config)
+  );
+  const { rerender } = render(<PresentEntry viewId='document' />);
+
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Present AI mind map' }));
+  await waitFor(() => expect(requests('POST', '/sources')).toBe(1));
+  const config = mockRequest.mock.calls.find(([request]) => request.url.endsWith('/sources'))![0];
+
+  mockOperations.loadView = jest.fn(async () => ({}));
+  rerender(<PresentEntry viewId='document' />);
+  await flush();
+  expect(requests('POST', '/sources')).toBe(1);
+  expect(config.signal.aborted).toBe(false);
+});
+
+test('PPT loading and settings stay in the same large dialog without an intermediate Back button', async () => {
+  let finishLookup!: () => void;
+
+  mockRequest.mockImplementation((config) =>
+    config.url.endsWith('/decks')
+      ? new Promise((resolve) => {
+          finishLookup = () => resolve(mockWire(config));
+        })
+      : mockWire(config)
+  );
+  render(<PresentEntry viewId='document' slidesOnly />);
+  fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Presentation preview' });
+
+  await waitFor(() => expect(finishLookup).toBeDefined());
+  expect(dialog.classList.contains('ps-ppt-preview-popover')).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Back to page' })).toBeNull();
+  await act(async () => finishLookup());
+  await screen.findByRole('region', { name: 'Create presentation settings' });
+  expect(screen.getByRole('dialog', { name: 'Create presentation' })).toBe(dialog);
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(dialog.classList.contains('ps-ppt-preview-popover')).toBe(true);
 });
 
 test('a rename keeps a document presentation on its slide and shows the new title', async () => {

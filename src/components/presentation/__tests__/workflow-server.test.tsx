@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
-import PresentationStudio from '../PresentationStudio';
 import {
   createGenerationRunner,
   exportDeck,
@@ -10,6 +9,7 @@ import {
   loadSourceSnapshot,
   saveSession,
 } from '../presentation-client';
+import PresentationStudio from '../PresentationStudio';
 import { regenerationReference } from '../workflow-state';
 
 import type { SlidesWorkflowProps } from '../SlidesWorkflow';
@@ -234,8 +234,8 @@ test('workspace switch clears saved content while new authority is loading', asy
   await waitFor(() => expect(screen.getByText('Generate').disabled).toBe(false));
   (loadPresentation as jest.Mock).mockReturnValueOnce(new Promise(() => undefined));
   view.rerender(<PresentationStudio workspaceId='other-workspace' userId='user' snapshot={source} canWrite />);
-  await waitFor(() => expect(screen.getByTestId('deck').textContent).toBe(':'));
-  expect(screen.getByText('Generate').disabled).toBe(true);
+  await screen.findByText('Loading saved presentation…');
+  expect(screen.queryByTestId('deck')).toBeNull();
 });
 
 test('reopened artifact can bind an exact server source hash but foreign or local snapshots cannot', () => {
@@ -280,10 +280,10 @@ test.each([
     status, session: null, decks: [], styles: [],
     mapArtifact: { id: 'saved-narrative', version: 4, sourceRevision: mapRevision },
   });
-  (loadSourceSnapshot as jest.Mock).mockResolvedValueOnce({ ...source, revision: refreshedRevision });
+  (loadSourceSnapshot as jest.Mock).mockResolvedValue({ ...source, revision: refreshedRevision });
   open();
   await waitFor(() => expect(screen.getByText('Generate').disabled).toBe(false));
-  expect(screen.getByTestId('narrative').textContent).toBe(String(mapRevision === source.revision));
+  expect(screen.getByTestId('narrative').textContent).toBe(String(mapRevision === refreshedRevision));
   fireEvent.click(screen.getByText('Generate'));
   await waitFor(() => expect(run).toHaveBeenCalled());
   expect(run.mock.calls[0][0].narrative).toEqual(included ? { id: 'saved-narrative', version: 4 } : undefined);

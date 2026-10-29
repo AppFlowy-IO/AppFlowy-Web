@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
-import { createGenerationRunner, loadPresentation, loadSavedDeck, loadSourceSnapshot, saveSession } from '../presentation-client';
+import {
+  createGenerationRunner,
+  loadPresentation,
+  loadSavedDeck,
+  loadSourceSnapshot,
+  saveSession,
+} from '../presentation-client';
 import PresentationStudio from '../PresentationStudio';
 import { flattenBlocks } from '../source';
 import { hasStoryPlanChanges } from '../story-plan';
@@ -43,6 +49,9 @@ jest.mock('../SlidesWorkflow', () => {
       }, [props.stage]);
       return (
         <div>
+          <span data-testid='deck-title'>{props.plan?.title}</span>
+          <span data-testid='stage'>{props.stage}</span>
+          <button onClick={() => props.onStage('setup')}>Regenerate</button>
           <button disabled={!props.canGenerate} onClick={() => props.onGenerate()}>
             Generate
           </button>
@@ -143,6 +152,7 @@ const open = (initialDeck?: SavedDeck) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  run.mockReset();
   mockWorkflowRenders = 0;
   mockStageReports.length = 0;
   Object.defineProperty(global, 'structuredClone', {
@@ -235,4 +245,71 @@ test('the setup stage reaches the dialog before any stage paints', async () => {
     ['setup', true],
     ['story', false],
   ]);
+});
+
+test('a deck supplied by Share displays while studio metadata is pending without fetching it again', () => {
+  jest.mocked(loadPresentation).mockReturnValue(new Promise(() => undefined));
+  open(deck);
+  expect(screen.getByTestId('deck-title').textContent).toBe('Story');
+  expect(screen.getByTestId('stage').textContent).toBe('preview');
+  expect(loadSavedDeck).not.toHaveBeenCalled();
+  expect(loadSourceSnapshot).not.toHaveBeenCalled();
+  expect(saveSession).not.toHaveBeenCalled();
+});
+
+test('page entry opens its saved deck, and Regenerate alone opens source preparation and settings', async () => {
+  jest.mocked(loadPresentation).mockResolvedValue({ status, session: null, styles: [], warnings: [], deck } as never);
+  open();
+  await waitFor(() => expect(screen.getByTestId('stage').textContent).toBe('preview'));
+  expect(screen.getByTestId('deck-title').textContent).toBe('Story');
+  expect(loadSourceSnapshot).not.toHaveBeenCalled();
+  expect(saveSession).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Regenerate'));
+  await waitFor(() => expect(loadSourceSnapshot).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId('stage').textContent).toBe('setup');
+});
+
+test('regenerating a changed page starts a new deck rather than overwriting an incompatible version', async () => {
+  const changed = { ...source, revision: 'changed', serverSource: { ...source.serverSource!, revision: 'changed' } };
+
+  jest.mocked(loadSourceSnapshot).mockResolvedValue(changed);
+  run.mockResolvedValue({ deck: { ...deck, id: 'new-deck', sourceRevision: 'changed' }, status });
+  open(deck);
+  await waitFor(() => expect(loadPresentation).toHaveBeenCalled());
+  fireEvent.click(screen.getByText('Regenerate'));
+  await waitFor(() => expect(generateButton().disabled).toBe(false));
+  fireEvent.click(generateButton());
+  await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+  expect(run.mock.calls[0][0]).not.toHaveProperty('artifact');
+  expect(run.mock.calls[0][0].source.revision).toBe('changed');
+});
+
+test('a failed saved-deck lookup stops loading and can be retried', async () => {
+  jest.mocked(loadPresentation).mockRejectedValueOnce(new Error('INVALID_QUERY'));
+  open();
+  await screen.findByRole('alert');
+  expect(screen.queryByText('Loading saved presentation…')).toBeNull();
+  expect(screen.queryByText('INVALID_QUERY')).toBeNull();
+  jest.mocked(loadPresentation).mockResolvedValue({ status, session: null, styles: [], warnings: [], deck } as never);
+  fireEvent.click(screen.getByText('Retry'));
+  await waitFor(() => expect(screen.getByTestId('stage').textContent).toBe('preview'));
+});
+
+test('a failed saved-map lookup stops the full-screen spinner and offers retry', async () => {
+  jest.mocked(loadPresentation).mockRejectedValueOnce(new Error('INVALID_QUERY'));
+  render(
+    <PresentationStudio
+      workspaceId='workspace'
+      userId='user'
+      snapshot={source}
+      initialMode='mindmap'
+      presentMindMap
+      canWrite
+    />
+  );
+  await screen.findByRole('alert');
+  expect(screen.queryByText('Loading saved mind map…')).toBeNull();
+  expect(screen.queryByText('INVALID_QUERY')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Back to page' })).toBeTruthy();
 });
