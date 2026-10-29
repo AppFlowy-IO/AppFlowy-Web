@@ -59,13 +59,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   // AI execution reasons; Cloud sends the reason itself as the message.
   // Users can't act on the provider's billing, so it reads as an outage; the AI service log names the cause.
   AI_PROVIDER_QUOTA_EXHAUSTED: 'The AI service is unavailable right now. Please try again later.',
-  AI_EXECUTION_FAILED: 'The AI service could not complete this request. Try again, or ask your administrator to check the AI provider settings.',
+  AI_EXECUTION_FAILED: 'The AI service is unavailable right now. Please try again later.',
   AI_EXECUTION_BUSY: 'The AI service is busy. Please try again shortly.',
   AI_EXECUTION_UNAVAILABLE: 'The AI service is unavailable right now. Please try again shortly.',
   AI_EXECUTION_INTERRUPTED: 'The connection to the AI service was interrupted. Please try again.',
   AI_MODEL_INVALID_RESPONSE: 'The AI service returned a response that could not be read. Please try again.',
   INVALID_MODEL_OUTPUT: 'The AI returned an answer that could not be used. Please try again.',
-  INVALID_MODEL_INPUT: 'The AI service rejected this request. Ask your administrator to check the AI model settings.',
+  INVALID_MODEL_INPUT: 'The AI service is unavailable right now. Please try again later.',
   MODEL_CONTEXT_EXCEEDED: 'The source is too large for the AI model. Select fewer pages, a smaller view or shorter media.',
   MODEL_OUTPUT_TOO_LARGE: "The AI's answer was too large to use. Try fewer slides or a smaller source.",
   // Source preparation reasons that otherwise surface as raw codes in the dialog.

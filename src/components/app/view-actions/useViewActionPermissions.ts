@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { AccessService, ViewService } from '@/application/services/domains';
 import { type CollabObjectPermission, View } from '@/application/types';
+import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPermission';
 import {
@@ -32,11 +33,13 @@ export function useViewActionPermissions(
   const requestSeq = useRef(0);
   const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
   const [objectPermission, setObjectPermission] = useState<CollabObjectPermission | null>(null);
+  const [permissionError, setPermissionError] = useState<ErrorType>();
   const [isLoadingViewActionPermissions, setIsLoadingViewActionPermissions] = useState(false);
 
   useEffect(() => {
     setLoadedViewId(null);
     setObjectPermission(null);
+    setPermissionError(undefined);
     setIsLoadingViewActionPermissions(false);
   }, [viewId]);
 
@@ -47,6 +50,8 @@ export function useViewActionPermissions(
     }
 
     const seq = ++requestSeq.current;
+
+    setPermissionError(undefined);
     const knownTarget =
       collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
 
@@ -99,6 +104,7 @@ export function useViewActionPermissions(
       .catch((error) => {
         if (cancelled || seq !== requestSeq.current) return;
         console.error(error);
+        setPermissionError(determineErrorType(error).type);
         setObjectPermission(null);
         setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
@@ -126,6 +132,7 @@ export function useViewActionPermissions(
     : false;
 
   return {
+    permissionError: loadedViewId === viewId ? permissionError : undefined,
     canRead,
     canShare,
     canWrite,

@@ -672,7 +672,7 @@ export default function PresentationStudio({
         <main className='ps-content'>
           {notice &&
             (upgradeRequired ? <PresentationPaywall message={notice} onUpgrade={upgrade} /> : <Notice>{notice}</Notice>)}
-          {busy && (
+          {busy && !compactSetup && (
             <Notice>
               {jobState ? `Presentation ${jobState}…` : 'Preparing your presentation…'}{' '}
               <Action
@@ -723,7 +723,7 @@ export default function PresentationStudio({
                 busy={busy}
                 options={options}
                 onOptions={setOptions}
-                onCancel={onClose}
+                onCancel={busy ? () => generation.current?.abort() : onClose}
                 styles={[...companyStyles, ...(status?.themes.map(themeToStyle) ?? [])]}
                 style={style}
                 onStyle={setStyle}

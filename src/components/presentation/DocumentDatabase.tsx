@@ -12,6 +12,7 @@ import {
   type YDoc,
   type YSharedRoot,
 } from '@/application/types';
+import { ErrorType } from '@/application/utils/error-utils';
 import {
   useAppOperations,
   useCurrentWorkspaceIdOptional,
@@ -191,6 +192,10 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
   const openRowInHostPeek = useCallback(() => latestSource.current(block.id), [block.id]);
   const unavailable = (message: string) => <Unavailable block={block} onSource={onSource} message={message} />;
 
+  if (permissions.permissionError === ErrorType.PageNotFound || permissions.permissionError === ErrorType.Gone)
+    return unavailable('This linked database is no longer available.');
+  if (permissions.permissionError && permissions.permissionError !== ErrorType.Forbidden)
+    return unavailable('This database view could not be loaded. Please try again later.');
   if (noAccess || (permissions.hasLoadedViewActionPermissions && !permissions.canRead))
     return unavailable('You don’t have access to this linked database.');
   if (deletionStatus === 'inTrash') return unavailable('This linked database is in Trash.');

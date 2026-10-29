@@ -134,7 +134,8 @@ test.each([
 
 test.each([
   ['AI_PROVIDER_QUOTA_EXHAUSTED', 503, 'unavailable'],
-  ['AI_EXECUTION_FAILED', 503, 'could not complete'],
+  ['AI_EXECUTION_FAILED', 503, 'unavailable'],
+  ['INVALID_MODEL_INPUT', 400, 'unavailable'],
   ['AI_EXECUTION_BUSY', 503, 'busy'],
   ['MODEL_CONTEXT_EXCEEDED', 400, 'too large'],
 ])('AI execution reason %s reads as a sentence, never the raw code', async (reason, httpStatus, text) => {

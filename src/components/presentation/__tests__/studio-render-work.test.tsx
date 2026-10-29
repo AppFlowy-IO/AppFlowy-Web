@@ -50,6 +50,7 @@ jest.mock('../SlidesWorkflow', () => {
             Toggle web search
           </button>
           <button onClick={() => props.onStage('story')}>Edit story</button>
+          <button onClick={props.onCancel}>Cancel setup</button>
           <button onClick={() => props.onPlan((plan) => ({ ...plan, title: 'Edited title' }))}>Change story</button>
           <span data-testid='outline-changed'>{String(props.hasOutlineChanges)}</span>
         </div>
@@ -174,6 +175,7 @@ test('job polls that repeat the shown state do not render the studio again', asy
   });
   open();
   await waitFor(() => expect(generateButton().disabled).toBe(false));
+  fireEvent.click(screen.getByText('Edit story'));
   fireEvent.click(generateButton());
   await waitFor(() => expect(run).toHaveBeenCalled());
   act(() => report(job));
@@ -186,6 +188,19 @@ test('job polls that repeat the shown state do not render the studio again', asy
   act(() => report({ ...job, state: 'validating' }));
   expect(screen.getByText(/Presentation validating/)).toBeTruthy();
   expect(mockWorkflowRenders).toBe(renders + 1);
+});
+
+test('setup uses its footer progress and can cancel without a duplicate banner', async () => {
+  run.mockImplementation(() => new Promise(() => undefined));
+  open();
+  await waitFor(() => expect(generateButton().disabled).toBe(false));
+  fireEvent.click(generateButton());
+  await waitFor(() => expect(run).toHaveBeenCalled());
+  expect(screen.queryByText('Preparing your presentation…')).toBeNull();
+  const signal = run.mock.calls[0][1] as AbortSignal;
+
+  fireEvent.click(screen.getByText('Cancel setup'));
+  expect(signal.aborted).toBe(true);
 });
 
 test('source content is not looked up while no source dialog is open', async () => {

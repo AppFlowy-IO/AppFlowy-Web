@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { YjsDatabaseKey, YjsEditorKey, type YDoc } from '@/application/types';
+import { ErrorType } from '@/application/utils/error-utils';
 
 import DocumentDatabase from '../DocumentDatabase';
 
@@ -12,7 +13,9 @@ const mockOperations = {
   loadViewMeta: jest.fn(),
   bindViewSync: jest.fn(),
 };
-let mockPermissions = { canRead: false, hasLoadedViewActionPermissions: false };
+let mockPermissions: { canRead: boolean; hasLoadedViewActionPermissions: boolean; permissionError?: ErrorType } = {
+  canRead: false, hasLoadedViewActionPermissions: false,
+};
 let mockDatabaseProps: { openRowInHostPeek?: (...args: never[]) => void } = {};
 
 jest.mock('@/components/app/app.hooks', () => ({
@@ -86,6 +89,19 @@ test('never fetches, opens or syncs a database before read access is confirmed',
   await screen.findByText('Database view');
   expect(mockOperations.loadView).toHaveBeenCalledTimes(1);
   expect(mockOperations.bindViewSync).toHaveBeenCalledWith(doc, { retain: true });
+});
+
+test.each([
+  [ErrorType.PageNotFound, 'no longer available'],
+  [ErrorType.Gone, 'no longer available'],
+  [ErrorType.ServerError, 'could not be loaded'],
+  [ErrorType.Forbidden, 'don’t have access'],
+])('reports %s without opening inaccessible data', async (permissionError, message) => {
+  mockPermissions = { canRead: false, hasLoadedViewActionPermissions: true, permissionError };
+  render(<DocumentDatabase block={block} onSource={jest.fn()} />);
+  expect(status()).toContain(message);
+  await act(async () => undefined);
+  expect(mockOperations.loadView).not.toHaveBeenCalled();
 });
 
 test('shows the view when the database and its views sync after the document loads', async () => {

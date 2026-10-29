@@ -1,9 +1,12 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
 
+import { ERROR_CODE } from '@/application/constants';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
+import { ErrorType } from '@/application/utils/error-utils';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+
+import type { ReactNode } from 'react';
 
 const mockGetObjectPermission = jest.fn();
 const mockGetView = jest.fn();
@@ -53,6 +56,25 @@ describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
     mockGetView.mockReset();
+  });
+
+  it('retains a missing-resource error separately from denied access and clears it on recovery', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockRejectedValueOnce({ code: ERROR_CODE.RECORD_NOT_FOUND, message: 'missing database' });
+    const view = createView();
+    const { result, rerender } = renderHook(({ opened }) => useViewActionPermissions(view, opened), {
+      initialProps: { opened: true },
+    });
+
+    await waitFor(() => expect(result.current.permissionError).toBe(ErrorType.PageNotFound));
+    expect(result.current.canRead).toBe(false);
+    mockGetObjectPermission.mockResolvedValue(createPermission());
+    rerender({ opened: false });
+    rerender({ opened: true });
+    await waitFor(() => expect(result.current.canRead).toBe(true));
+    expect(result.current.permissionError).toBeUndefined();
+    error.mockRestore();
   });
 
   it('resolves action gates from the object-permission endpoint', async () => {
