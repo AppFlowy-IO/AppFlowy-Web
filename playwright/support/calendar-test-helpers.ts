@@ -4,9 +4,10 @@
  *
  * Provides utilities for calendar view testing using FullCalendar.
  */
-import { Page, expect } from '@playwright/test';
-import { CalendarSelectors, AddPageSelectors } from './selectors';
+import { Page, expect, type Locator } from '@playwright/test';
+
 import { signInAndWaitForApp } from './auth-flow-helpers';
+import { CalendarSelectors, AddPageSelectors } from './selectors';
 import { generateRandomEmail } from './test-config';
 
 export { generateRandomEmail };
@@ -18,6 +19,7 @@ export function formatDateForCalendar(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -54,6 +56,7 @@ export async function loginAndCreateCalendar(
 
   // Click Calendar menu item (add-calendar-button testid doesn't exist in source)
   const calendarMenuItem = page.locator('[role="menuitem"]').filter({ hasText: /^Calendar$/i });
+
   await expect(calendarMenuItem).toBeVisible({ timeout: 5000 });
   await calendarMenuItem.click({ force: true });
 
@@ -71,11 +74,22 @@ export async function waitForCalendarLoad(page: Page): Promise<void> {
   await page.waitForTimeout(1000);
 }
 
+/** Keep an expanded range menu open when the previous gesture left it active. */
+export async function openCalendarViewMenu(page: Page): Promise<Locator> {
+  const trigger = CalendarSelectors.viewSelect(page).filter({ visible: true }).last();
+
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click();
+  await expect(CalendarSelectors.weekViewOption(page)).toBeVisible();
+  return trigger;
+}
+
 /** Change the calendar range through the same dropdown used on desktop. */
 export async function switchCalendarView(page: Page, view: 'Month' | 'Week' | 2 | 3 | 4 | 5 | 6 | 8): Promise<void> {
-  await CalendarSelectors.viewSelect(page).filter({ visible: true }).last().click();
+  await openCalendarViewMenu(page);
   if (typeof view === 'number') {
-    await CalendarSelectors.numberOfDaysMenu(page).click();
+    const dayCount = CalendarSelectors.numberOfDaysMenu(page);
+
+    if ((await dayCount.getAttribute('aria-expanded')) !== 'true') await dayCount.click();
     await CalendarSelectors.customDayOption(page, view).click();
   } else {
     await (view === 'Month' ? CalendarSelectors.monthViewOption(page) : CalendarSelectors.weekViewOption(page)).click();
@@ -117,6 +131,7 @@ export async function navigateToToday(page: Page): Promise<void> {
  */
 export async function doubleClickCalendarDay(page: Page, date: Date): Promise<void> {
   const dateStr = formatDateForCalendar(date);
+
   await CalendarSelectors.dayCellByDate(page, dateStr).dblclick({ force: true });
   await page.waitForTimeout(1000);
 }
@@ -134,6 +149,7 @@ export async function clickEvent(page: Page, eventIndex: number = 0): Promise<vo
  */
 export async function editEventTitle(page: Page, newTitle: string): Promise<void> {
   const titleInput = page.getByTestId('calendar-event-title-input');
+
   await expect(titleInput).toBeVisible();
   await titleInput.fill('');
   await titleInput.pressSequentially(newTitle, { delay: 30 });
@@ -143,6 +159,7 @@ export async function editEventTitle(page: Page, newTitle: string): Promise<void
 /** Explicit submission keeps an intentionally untitled calendar placeholder. */
 export async function submitEventPopover(page: Page): Promise<void> {
   const titleInput = page.getByTestId('calendar-event-title-input');
+
   await expect(titleInput).toBeVisible();
   await titleInput.press('Enter');
   await expect(titleInput).toHaveCount(0);
@@ -162,6 +179,7 @@ export async function closeEventPopover(page: Page): Promise<void> {
 export async function deleteEventFromPopover(page: Page): Promise<void> {
   // The delete button is icon-only (no text), use data-testid
   const deleteButton = page.getByTestId('calendar-event-delete');
+
   await expect(deleteButton).toBeVisible({ timeout: 5000 });
   await deleteButton.click({ force: true });
   await page.waitForTimeout(500);
@@ -169,6 +187,7 @@ export async function deleteEventFromPopover(page: Page): Promise<void> {
   // Handle delete confirmation dialog
   const confirmButton = page.getByTestId('delete-row-confirm-button');
   const confirmCount = await confirmButton.count();
+
   if (confirmCount > 0 && await confirmButton.isVisible()) {
     await confirmButton.click({ force: true });
     await page.waitForTimeout(500);
@@ -195,6 +214,7 @@ export async function assertEventExists(page: Page, title: string): Promise<void
 export async function assertEventCountOnDay(page: Page, date: Date, expectedCount: number): Promise<void> {
   const dateStr = formatDateForCalendar(date);
   const dayCell = CalendarSelectors.dayCellByDate(page, dateStr);
+
   await expect(dayCell.locator('.fc-event')).toHaveCount(expectedCount, { timeout: 10000 });
 }
 
@@ -203,6 +223,7 @@ export async function assertEventCountOnDay(page: Page, date: Date, expectedCoun
  */
 export async function assertUnscheduledEventCount(page: Page, expectedCount: number): Promise<void> {
   const noDateButton = page.locator('.no-date-button, button:has-text("No date")');
+
   if (expectedCount === 0) {
     await expect(noDateButton).toHaveCount(0);
   } else {
@@ -280,6 +301,7 @@ export function getToday(): Date {
  */
 export function getRelativeDate(daysFromToday: number): Date {
   const date = new Date();
+
   date.setDate(date.getDate() + daysFromToday);
   return date;
 }
@@ -293,6 +315,7 @@ export async function openDatePickerInEventPopover(page: Page): Promise<void> {
   const popover = page.locator('[data-radix-popper-content-wrapper]').last();
   // DateTime cells have data-testid starting with "datetime-cell-"
   const dateTimeCell = popover.locator('[data-testid^="datetime-cell-"]');
+
   await expect(dateTimeCell.first()).toBeVisible({ timeout: 5000 });
   await dateTimeCell.first().click({ force: true });
   await page.waitForTimeout(500);
@@ -313,20 +336,25 @@ export async function selectDayInDatePicker(page: Page, dayNumber: number): Prom
   const dayButtons = pickerPopover.locator('button');
   const count = await dayButtons.count();
   let clicked = false;
+
   for (let i = 0; i < count; i++) {
     const btn = dayButtons.nth(i);
     const text = (await btn.textContent())?.trim();
+
     if (text !== String(dayNumber)) continue;
     const cls = (await btn.getAttribute('class')) || '';
+
     if (cls.includes('day-outside')) continue;
     // Use Playwright's native click to properly trigger React synthetic events
     await btn.click({ force: true });
     clicked = true;
     break;
   }
+
   if (!clicked) {
     throw new Error(`Could not find day ${dayNumber} button in date picker (excluding day-outside)`);
   }
+
   await page.waitForTimeout(1000);
 }
 
@@ -335,6 +363,7 @@ export async function selectDayInDatePicker(page: Page, dayNumber: number): Prom
  */
 export async function clearDateInPicker(page: Page): Promise<void> {
   const clearButton = page.getByTestId('clear-date-button');
+
   await expect(clearButton).toBeVisible({ timeout: 5000 });
   await clearButton.click({ force: true });
   await page.waitForTimeout(500);
