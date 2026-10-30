@@ -2875,6 +2875,51 @@ describe('Database blob prefetch lifecycle', () => {
     canonicalRowDoc.destroy();
   });
 
+  it.each(['document', 'workspace'] as const)(
+    'recovers missing rows after a failed %s lifecycle is replaced without remounting',
+    async (replacement) => {
+      const initialDoc = createDatabaseDoc('failed-lifecycle');
+      const nextDoc = replacement === 'document' ? createDatabaseDoc('replacement-lifecycle') : initialDoc;
+      const rowDoc = new Y.Doc({ guid: 'missing-after-replacement' }) as YDoc;
+      const states: string[] = [];
+      const createRow = jest.fn(async () => rowDoc);
+      const props = {
+        ...databaseProps(initialDoc),
+        createRow,
+        onLoadStateChange: (state: string) => states.push(state),
+      };
+
+      mockedOpenRowDoc.mockResolvedValue(rowDoc);
+      mockedPrefetch.mockRejectedValueOnce(new Error('Previous lifecycle transport failed'));
+      const { rerender, unmount } = render(<Database {...props} />);
+
+      try {
+        await waitFor(() => expect(states).toContain('failed'));
+        expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+
+        mockedPrefetch.mockImplementation(async (_workspace, _database, options) => {
+          options?.onSeedsReady?.();
+        });
+        const workspaceId = replacement === 'workspace' ? 'replacement-workspace' : props.workspaceId;
+
+        // Reuse the component and the logical database id. Only its actual
+        // document/workspace lifecycle changes; the successful pass lacks a row.
+        rerender(<Database {...props} doc={nextDoc} workspaceId={workspaceId} />);
+        await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(2));
+        await act(async () => {
+          await requestEnsureRow();
+        });
+        expect(mockedPrefetch).toHaveBeenCalledTimes(3);
+        expect(mockedPrefetch.mock.calls[2][0]).toBe(workspaceId);
+        expect(mockedPrefetch.mock.calls[2][1]).toBe('database-id');
+        expect(mockedPrefetch.mock.calls[2][2]?.forceFullSync).toBe(true);
+      } finally {
+        unmount();
+        new Set([initialDoc, nextDoc, rowDoc]).forEach((doc) => doc.destroy());
+      }
+    }
+  );
+
   it('keeps a failed initial row walk terminal until the widget explicitly retries', async () => {
     const doc = createDatabaseDoc('failed-initial-walk');
     const emptyRow = new Y.Doc({ guid: 'row-id' }) as YDoc;

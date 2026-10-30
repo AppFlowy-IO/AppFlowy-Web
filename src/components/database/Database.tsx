@@ -593,6 +593,8 @@ function Database(props: Database2Props) {
   // Async blob work is scoped to one workspace/database lifecycle. A later
   // generation makes completions from the previous lifecycle inert.
   const blobPrefetchGenerationRef = useRef(0);
+  // A retained component can replace its document/workspace without remounting.
+  const failedBlobPrefetchGenerationRef = useRef<number | null>(null);
   // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
   const seedsGateRef = useRef(createDeferredGate());
   const [rowPass] = useState(createRowPassStore);
@@ -1349,8 +1351,8 @@ function Database(props: Database2Props) {
 
   const scheduleMissingRowRecovery = useCallback(() => {
     // A failed transport does not prove a lying watermark. Its error stays
-    // terminal until Retry remounts the database with a new lifecycle.
-    if (readOnly || emittedLoadStatesRef.current.has('failed')) return;
+    // terminal for this prefetch generation; a new lifecycle can recover.
+    if (readOnly || failedBlobPrefetchGenerationRef.current === blobPrefetchGenerationRef.current) return;
     if (missingRowRecoveryLifecycleRef.current === databaseLifecycleIdentity) return;
 
     const databaseId = getDatabaseId();
@@ -1579,6 +1581,7 @@ function Database(props: Database2Props) {
       .catch(() => {
         if (!isCurrentPrefetch()) return;
 
+        failedBlobPrefetchGenerationRef.current = prefetchGeneration;
         residentRefreshInFlightRef.current = false;
         // Keep this terminal pass memoized: a later row read must not start a
         // new source request after the dashboard released this load's slot.
