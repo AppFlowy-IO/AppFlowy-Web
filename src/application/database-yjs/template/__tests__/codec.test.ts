@@ -30,6 +30,17 @@ const template: DatabaseRowTemplate = {
 };
 
 describe('database row template codec', () => {
+  it('preserves Desktop linked-view authority through Web edits', () => {
+    const persisted = JSON.parse(serializeDatabaseRowTemplates([template]));
+    persisted[0].embedded_databases[0].is_linked = true;
+    persisted[0].embedded_databases[0].permission_source_view_id = 'live-permission-source';
+
+    const decoded = parseDatabaseRowTemplates(JSON.stringify(persisted));
+    const written = JSON.parse(serializeDatabaseRowTemplates(decoded));
+
+    expect(written[0].embedded_databases[0].permission_source_view_id).toBe('live-permission-source');
+  });
+
   it('round-trips the Desktop metadata shape without losing typed values or snapshots', () => {
     expect(parseDatabaseRowTemplates(serializeDatabaseRowTemplates([template]))).toEqual([template]);
   });

@@ -526,6 +526,34 @@ test('an empty frozen backing requires no live source lookup', async () => {
   expect(sync).not.toHaveBeenCalled();
 });
 
+test('Desktop linked settings use their live permission source, not an archived view identity', async () => {
+  const source = archive(id('external-database'));
+  const liveViewId = id('live-permission-view');
+  const params = input(document([{ viewIds: source.views.map((view) => view.id), databaseId: source.database_id }]));
+
+  provideSource({ ...source, views: source.views.map((view, index) => index === 0 ? { ...view, id: liveViewId } : view) }, id('version'));
+  snapshots(params, source, true);
+  params.template.embeddedDatabases.forEach((snapshot) => Object.assign(snapshot, { permissionSourceViewId: liveViewId }));
+
+  const result = compound(await prepareTemplateRowGraph(params));
+
+  expect(result.manifest.database_extensions[0].source_view_id).toBe(liveViewId);
+  expect(result.manifest.database_extensions[0].views[0].view.name).toBe(source.views[0].name);
+});
+
+test('Desktop linked settings refuse conflicting source authority', async () => {
+  const source = archive(id('external-database'));
+  const params = input(document([{ viewIds: source.views.map((view) => view.id), databaseId: source.database_id }]));
+
+  snapshots(params, source, true);
+  params.template.embeddedDatabases.forEach((snapshot, index) => {
+    snapshot.permissionSourceViewId = id(`permission-source-${index}`);
+  });
+
+  await expect(prepareTemplateRowGraph(params)).rejects.toThrow('conflicting permission sources');
+  expect(sync).not.toHaveBeenCalled();
+});
+
 test.each([false, true])(
   'linked archive keeps live authority and never copies source rows (self-link=%s)',
   async (self) => {

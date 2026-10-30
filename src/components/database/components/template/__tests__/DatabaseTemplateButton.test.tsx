@@ -857,9 +857,12 @@ describe('DatabaseTemplateButton', () => {
 
     sourceDocument.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
     context.loadRowDocument = jest.fn(async () => sourceDocument);
+    let migratedRowId = '';
+
     context.duplicateRowDocument = jest.fn(async (_databaseId, sourceId, targetId, _state, prepareSource) => {
       expect(sourceId).not.toBe(template.templateId);
-      expect(targetId).toBe(template.templateId);
+      expect(targetId).not.toBe(template.templateId);
+      migratedRowId ||= targetId;
       const rawTemplates = database.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.row_templates);
       const persistedTemplates = JSON.parse(String(rawTemplates)) as Array<{ template_id: string; name: string }>;
 
@@ -880,7 +883,7 @@ describe('DatabaseTemplateButton', () => {
     expect(migrated[0]).toEqual(
       expect.objectContaining({
         templateId: template.templateId,
-        docViewId: rowDocumentIdFromRowId(template.templateId),
+        docViewId: rowDocumentIdFromRowId(migratedRowId),
         documentData: undefined,
         embeddedDatabases: [],
         isDocumentEmpty: false,
@@ -889,6 +892,85 @@ describe('DatabaseTemplateButton', () => {
     expect(JSON.parse(String(database.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.row_templates)))).not.toContainEqual(
       expect.objectContaining({ name: '' })
     );
+  });
+
+  it('reopens an existing Web template after Desktop saves its archive', async () => {
+    const { Wrapper, context, database, rows } = setup();
+    const store = new DatabaseRowTemplateStore(database);
+    const templateId = 'web-desktop-roundtrip';
+    const oldDocumentId = rowDocumentIdFromRowId(templateId);
+    const template = store.upsert({
+      templateId,
+      name: 'Roundtrip template',
+      docViewId: oldDocumentId,
+      documentData: documentSnapshot,
+      isDocumentEmpty: false,
+      embeddedDatabases: [],
+      defaultCells: { [nameFieldId]: { type: 'text', value: 'Roundtrip template' } },
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    });
+
+    store.setDefault(templateId);
+    let migratedRowId = '';
+
+    context.duplicateRowDocument = jest.fn(async (_databaseId, _sourceId, targetId, _state, prepareSource) => {
+      if (targetId === templateId) {
+        throw new Error(`destination row ${templateId} already has a row document collab`);
+      }
+
+      migratedRowId ||= targetId;
+      await prepareSource?.();
+    });
+
+    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
+    await openTemplateActions(template.templateId);
+    fireEvent.click(await screen.findByText('Edit'));
+
+    expect(await screen.findByTestId('database-template-editor')).toBeTruthy();
+    expect(store.read().templates).toHaveLength(1);
+    const migrated = store.read().templates[0];
+
+    expect(migrated.templateId).toBe(templateId);
+    expect(migrated.name).toBe(template.name);
+    expect(migrated.docViewId).not.toBe(oldDocumentId);
+    expect(store.read().defaultTemplateId).toBe(templateId);
+    expect(context.duplicateRowDocument).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+
+    context.loadViewMeta = jest.fn(async () => ({
+      view_id: migrated.docViewId,
+      name: migrated.name,
+      icon: null,
+      layout: ViewLayout.Document,
+      children: [],
+      is_published: false,
+      is_private: false,
+      extra: { row_document: { source: { database_id: databaseId, database_view_id: viewId, row_id: migratedRowId } } },
+    }));
+    const backing = rows.get(getRowKey(databaseDocId, migratedRowId))!;
+
+    act(() => {
+      backing.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta)
+        .set(getMetaIdMap(migratedRowId).get(RowMetaKey.IconId), '📘');
+    });
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('database-template-editor')).toBeNull());
+    expect(store.read().templates[0].icon).toBe('📘');
+
+    await openTemplateActions(templateId);
+    fireEvent.click(await screen.findByText('Edit'));
+    expect(await screen.findByTestId('database-template-editor')).toBeTruthy();
+    expect(screen.getByTestId('mock-template-header').textContent).toBe(migratedRowId);
+    expect(store.read().templates[0].docViewId).toBe(migrated.docViewId);
+    expect(context.duplicateRowDocument).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('database-template-editor')).toBeNull());
+    await openTemplateActions(templateId);
+    fireEvent.click(await screen.findByText('Duplicate'));
+    await waitFor(() => expect(store.read().templates).toHaveLength(2));
+    expect(jest.mocked(context.duplicateRowDocument).mock.calls[1][1]).toBe(migratedRowId);
   });
 
   it('keeps Desktop snapshots intact when live migration fails', async () => {
