@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react';
 import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
+import { defineConfig, loadEnv, normalizePath, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
@@ -214,7 +214,8 @@ export default defineConfig(async ({ command, mode }) => {
     },
     plugins: [
       viteStaticCopy({ targets: ['cmaps', 'standard_fonts', 'wasm'].map((directory) => ({
-        src: path.resolve(__dirname, `node_modules/pdfjs-dist/${directory}`), dest: 'pdfjs',
+        // normalizePath: src is a glob, so Windows backslashes must become forward slashes
+        src: normalizePath(path.resolve(__dirname, `node_modules/pdfjs-dist/${directory}`)), dest: 'pdfjs',
       })) }),
       react(),
       isDev ? namespaceRedirectPlugin() : undefined,

@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "Me",
   "welcomeText": "እንኳን በደህና መጡ @:appName መተግበሪያ ስም",
   "githubStarText": "በ Github ላይ ኮከብ",
@@ -334,10 +334,10 @@
       "defineWhereYourDataIsStored": "ውሂብዎ የት እንደተከማቸ ይግለጹ",
       "open": "ክፈት",
       "openFolder": "አሁን ያለውን አቃፊ ይክፈቱ",
-      "openFolderDesc": "አሁን ባለው የ Appflowy አቃፊዎ ውስጥ ያንብቡ እና ይፃፉ",
+      "openFolderDesc": "አሁን ባለው የ CustomerIK አቃፊዎ ውስጥ ያንብቡ እና ይፃፉ",
       "folderHintText": "አቃፊ ስም",
       "location": "አዲስ አቃፊ መፍጠር",
-      "locationDesc": "ለ Appflowy ውሂብ አቃፊዎ ስም ይምረጡ",
+      "locationDesc": "ለ CustomerIK ውሂብ አቃፊዎ ስም ይምረጡ",
       "browser": "ያስሱ",
       "create": "ፍጠር",
       "set": "አዘጋጅ",
@@ -348,7 +348,7 @@
       "change": "ለውጥ",
       "openLocationTooltips": "ሌላ የውሂብ ማውጫ ይክፈቱ",
       "openCurrentDataFolder": "የአሁኑን የውሂብ ማውጫ ይክፈቱ",
-      "recoverLocationTooltips": "ወደ Appflowy ነባሪ የውሂብ ማውጫ ዳግም ያስጀምሩ",
+      "recoverLocationTooltips": "ወደ CustomerIK ነባሪ የውሂብ ማውጫ ዳግም ያስጀምሩ",
       "exportFileSuccess": "ወደ ውጭ የመላክ ፋይል በተሳካ ሁኔታ!",
       "exportFileFail": "ወደ ውጭ የመላክ ፋይል አልተሳካም!",
       "export": "ወደ ውጭ ይላኩ"
@@ -744,7 +744,7 @@
     "referencedCalendarPrefix": "View of"
   },
   "errorDialog": {
-    "title": "Appflowy ስህተት",
+    "title": "CustomerIK ስህተት",
     "howToFixFallback": "ለተፈጠረው ችግር ይቅርታ እንጠይቃለን!ስህተትዎን በሚገልፅ የእኛ የ Gitubub ገጽ ላይ አንድ ጉዳይ ያስገቡ.",
     "github": "በ Github ላይ ይመልከቱ"
   },

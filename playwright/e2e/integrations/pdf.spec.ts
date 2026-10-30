@@ -756,8 +756,8 @@ test('PDF action menus and toolbar follow Figma sizing and row order', async ({ 
   await menu.screenshot({ path: info.outputPath('pdf-url-menu-figma.png') });
   await menu.getByRole('button', { name: 'Ask AI', exact: true }).click();
   await page.getByTestId('pdf-submenu').getByRole('button', { name: 'Ask AI', exact: true }).click();
-  await expect(page.getByTestId('pdf-assistant').getByPlaceholder('Ask AppFlowy AI')).toBeVisible();
-  await page.getByTestId('pdf-assistant').getByPlaceholder('Ask AppFlowy AI').press('Escape');
+  await expect(page.getByTestId('pdf-assistant').getByPlaceholder('Ask CustomerIK AI')).toBeVisible();
+  await page.getByTestId('pdf-assistant').getByPlaceholder('Ask CustomerIK AI').press('Escape');
   await expect(page.getByTestId('pdf-assistant')).toHaveCount(0);
 });
 
@@ -824,7 +824,7 @@ test('empty PDF Ask AI submits through the real writer request and can be closed
   await page.getByTestId('pdf-submenu').getByRole('button', { name: 'Ask AI', exact: true }).click();
   const assistant = page.getByTestId('pdf-assistant');
 
-  await assistant.getByPlaceholder('Ask AppFlowy AI').fill('How do I upload a PDF?');
+  await assistant.getByPlaceholder('Ask CustomerIK AI').fill('How do I upload a PDF?');
   await assistant.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(assistant).toContainText('You can upload a PDF using the upload button.');
   expect(prompts).toHaveLength(1);

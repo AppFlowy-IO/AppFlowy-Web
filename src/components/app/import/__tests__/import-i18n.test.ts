@@ -79,7 +79,7 @@ describe('import panel count strings', () => {
       'Drop your Confluence HTML or CSV space export (.zip) here to upload, or click to browse'
     );
     expect(t('settings.manageData.importWorkspace.tooltip')).toBe(
-      'Create a new workspace from an AppFlowy backup, Notion export, or Confluence space export (HTML or CSV ZIP)'
+      'Create a new workspace from a CustomerIK backup, Notion export, or Confluence space export (HTML or CSV ZIP)'
     );
     expect(t('importPanel.confluenceImportStarted')).toBe(
       'Confluence import started. Pages will appear in this view when ready.'

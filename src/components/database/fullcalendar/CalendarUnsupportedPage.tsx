@@ -20,7 +20,7 @@ export function CalendarUnsupportedPage() {
       
       {/* Description */}
       <p className="text-text-caption text-center mb-8 max-w-md">
-        Calendar view is not supported on this device. For the best calendar experience, please download the AppFlowy mobile app.
+        Calendar view is not supported on this device. For the best calendar experience, please download the CustomerIK mobile app.
       </p>
       
       {/* Buttons */}
@@ -28,7 +28,7 @@ export function CalendarUnsupportedPage() {
         <Button
           onClick={() => window.open('https://appflowy.com/download', '_blank')}
         >
-          Download AppFlowy
+          Download CustomerIK
         </Button>
         <Button
           variant="outline"

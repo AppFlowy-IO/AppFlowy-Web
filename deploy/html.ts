@@ -6,7 +6,8 @@ import { indexPath } from './config';
 import { logger } from './logger';
 import { type PublishErrorPayload } from './publish-error';
 
-const DEFAULT_DESCRIPTION = 'Write, share, and publish docs quickly on AppFlowy.\nGet started for free.';
+const BRAND_NAME = 'CustomerIK';
+const DEFAULT_DESCRIPTION = `Write, share, and publish docs on ${BRAND_NAME}.`;
 const DEFAULT_IMAGE = '/og-image.png';
 const DEFAULT_FAVICON = '/appflowy.ico';
 
@@ -18,12 +19,12 @@ const MARKETING_META: Record<
   }
 > = {
   '/after-payment': {
-    title: 'Payment Success | AppFlowy',
-    description: 'Payment success on AppFlowy',
+    title: `Payment Success | ${BRAND_NAME}`,
+    description: `Payment success on ${BRAND_NAME}`,
   },
   '/login': {
-    title: 'Login | AppFlowy',
-    description: 'Login to AppFlowy',
+    title: `Login | ${BRAND_NAME}`,
+    description: `Login to ${BRAND_NAME}`,
   },
 };
 
@@ -157,7 +158,7 @@ export const renderPublishPage = ({
   // Only server-rendered pages get a content-derived description; every other
   // page keeps the default so its response stays exactly as before SSR.
   const description = ssr?.description ?? DEFAULT_DESCRIPTION;
-  let title = 'AppFlowy';
+  let title = BRAND_NAME;
   const url = `https://${hostname ?? ''}${pathname}`;
   let image = DEFAULT_IMAGE;
   let favicon = DEFAULT_FAVICON;
@@ -192,7 +193,7 @@ export const renderPublishPage = ({
         titleList.push('|');
       }
 
-      titleList.push('AppFlowy');
+      titleList.push(BRAND_NAME);
       title = titleList.join(' ');
 
       try {
@@ -221,13 +222,12 @@ export const renderPublishPage = ({
   setOrUpdateMetaTag($, 'meta[property="og:description"]', 'property', description);
   setOrUpdateMetaTag($, 'meta[property="og:image"]', 'property', image);
   setOrUpdateMetaTag($, 'meta[property="og:url"]', 'property', url);
-  setOrUpdateMetaTag($, 'meta[property="og:site_name"]', 'property', 'AppFlowy');
+  setOrUpdateMetaTag($, 'meta[property="og:site_name"]', 'property', BRAND_NAME);
   setOrUpdateMetaTag($, 'meta[property="og:type"]', 'property', 'website');
   setOrUpdateMetaTag($, 'meta[name="twitter:card"]', 'name', 'summary_large_image');
   setOrUpdateMetaTag($, 'meta[name="twitter:title"]', 'name', title);
   setOrUpdateMetaTag($, 'meta[name="twitter:description"]', 'name', description);
   setOrUpdateMetaTag($, 'meta[name="twitter:image"]', 'name', image);
-  setOrUpdateMetaTag($, 'meta[name="twitter:site"]', 'name', '@appflowy');
 
   if (publishError) {
     appendPublishErrorScript($, publishError);

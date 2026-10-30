@@ -105,7 +105,7 @@ async function fetchFile(url: string): Promise<Response> {
   const requiresMemberAuth = isAppFlowyPublicFormUploadUrl(url);
 
   if (requiresMemberAuth && !token) {
-    throw new Error('Authentication required for AppFlowy file download');
+    throw new Error('Authentication required for CustomerIK file download');
   }
 
   // Regular /api/file_storage URLs may be readable anonymously on published

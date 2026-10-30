@@ -25,7 +25,7 @@ test.describe('Password Login Flow', () => {
       await visitLoginPage(page, 3000);
 
       // Check for login page title
-      await expect(page.getByText('Welcome to AppFlowy')).toBeVisible();
+      await expect(page.getByText('Welcome to CustomerIK')).toBeVisible();
 
       // Check for email input by placeholder
       await expect(page.locator('input[placeholder*="email"]')).toBeVisible({ timeout: 10000 });

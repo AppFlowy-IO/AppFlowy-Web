@@ -301,7 +301,7 @@ export function FormBody({
       </div>
 
       <p className='pt-6 text-xs text-text-caption'>
-        Never submit sensitive personal information, like passwords, through AppFlowy Forms.
+        Never submit sensitive personal information, like passwords, through CustomerIK Forms.
       </p>
 
       {!previewMode && !schema.hide_branding ? (
@@ -310,7 +310,7 @@ export function FormBody({
             href='https://appflowy.com'
             target='_blank'
             rel='noopener noreferrer'
-            aria-label='AppFlowy'
+            aria-label='CustomerIK'
             className='text-text-caption opacity-50 transition-opacity hover:opacity-75'
           >
             <AppFlowyLogo className='w-[88px]' aria-hidden />

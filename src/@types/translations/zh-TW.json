@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "我",
   "welcomeText": "歡迎使用 @:appName",
   "welcomeTo": "歡迎來到",
@@ -116,7 +116,7 @@
     "csv": "CSV",
     "copyLink": "複製連結",
     "publishToTheWeb": "發佈到公開網路",
-    "publishToTheWebHint": "使用 AppFlowy 建立網站",
+    "publishToTheWebHint": "使用 CustomerIK 建立網站",
     "publish": "發佈",
     "unPublish": "取消發佈",
     "exportAsTab": "導出為",

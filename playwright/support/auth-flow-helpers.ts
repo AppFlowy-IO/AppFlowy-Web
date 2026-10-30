@@ -41,7 +41,7 @@ export async function visitLoginPage(page: Page, waitMs: number = 2000): Promise
  * Assert core login page elements are visible.
  */
 export async function assertLoginPageReady(page: Page): Promise<void> {
-  await expect(page.getByText('Welcome to AppFlowy')).toBeVisible();
+  await expect(page.getByText('Welcome to CustomerIK')).toBeVisible();
   await expect(AuthSelectors.emailInput(page)).toBeVisible();
   await expect(AuthSelectors.passwordSignInButton(page)).toBeVisible();
 }

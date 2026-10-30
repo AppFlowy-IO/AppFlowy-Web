@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "אני",
   "welcomeText": "ברוך בואך אל @:appName",
   "welcomeTo": "ברוך בואך אל",
@@ -827,7 +827,7 @@
       "customPathPrompt": "אחסון תיקיית הנתונים של @:appName בתיקייה שמסונכרנת עם הענן כגון Google Drive יכול להוות סיכון. אם למסד הנתונים בתיקייה הזאת ניגשים או עורכים ממגוון מקומות בו־זמנית, יכולות לקרות סתירות סנכרון והנתונים יכולים להינזק",
       "importAppFlowyData": "ייבוא נתונים מתיקיית @:appName חיצונית",
       "importingAppFlowyDataTip": "מתבצע ייבוא נתונים. נא לא לסגור את היישום",
-      "importAppFlowyDataDescription": "העתקת נתונים מתיקיית נתונים חיצונית של @:appName ולייבא אותה לתיקיית הנתונים הנוכחית של AppFlowy",
+      "importAppFlowyDataDescription": "העתקת נתונים מתיקיית נתונים חיצונית של @:appName ולייבא אותה לתיקיית הנתונים הנוכחית של CustomerIK",
       "importSuccess": "תיקיית הנתונים של @:appName יובאה בהצלחה",
       "importFailed": "ייבוא תיקיית הנתונים של @:appName נכשל",
       "importGuide": "לפרטים נוספים, נא לעיין במסמך המוזכר"
@@ -2059,7 +2059,7 @@
     "reportPage": "דיווח על עמוד",
     "databaseHasNotBeenPublished": "עדיין אין תמיכה בפרסום למסדי נתונים.",
     "createdWith": "נוצר עם",
-    "downloadApp": "הורדת AppFlowy",
+    "downloadApp": "הורדת CustomerIK",
     "copy": {
       "codeBlock": "תוכן מקטע הקוד הועתק ללוח הגזירים",
       "imageBlock": "קישור התמונה הועתק ללוח הגזירים",
@@ -2071,7 +2071,7 @@
     "publishFailed": "הפרסום נכשל",
     "unpublishFailed": "ההסתרה נכשלה",
     "noAccessToVisit": "אין גישה לעמוד הזה…",
-    "createWithAppFlowy": "יצירת אתר עם AppFlowy",
+    "createWithAppFlowy": "יצירת אתר עם CustomerIK",
     "fastWithAI": "מהיר וקל עם בינה מלאכותית.",
     "tryItNow": "לנסות כעת"
   },
@@ -2081,7 +2081,7 @@
     "continueWithGoogle": "להמשיך עם Google",
     "continueWithGithub": "להמשיך עם GitHub",
     "continueWithDiscord": "להמשיך עם Discord",
-    "signInAgreement": "לחיצה על „המשך” להלן, מהווה את אישורך\nלכך שקראת, הבנת והסכמת לתנאים של AppFlowy",
+    "signInAgreement": "לחיצה על „המשך” להלן, מהווה את אישורך\nלכך שקראת, הבנת והסכמת לתנאים של CustomerIK",
     "and": "וגם",
     "termOfUse": "תנאים",
     "privacyPolicy": "מדיניות פרטיות",

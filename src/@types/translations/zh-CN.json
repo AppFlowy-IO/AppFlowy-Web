@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "我",
   "welcomeText": "欢迎使用 @:appName",
   "welcomeTo": "欢迎来到",
@@ -128,7 +128,7 @@
     "exportAsTab": "导出为",
     "publishTab": "发布",
     "shareTab": "分享",
-    "publishOnAppFlowy": "在 AppFlowy 发布",
+    "publishOnAppFlowy": "在 CustomerIK 发布",
     "shareTabTitle": "邀请他人来协作",
     "shareTabDescription": "与任何人轻松协作",
     "copyLinkSuccess": "链接已复制到剪贴板",
@@ -676,7 +676,7 @@
       "menuLabel": "AI 设置",
       "keys": {
         "enableAISearchTitle": "AI 搜索",
-        "aiSettingsDescription": "选择你偏好的模型来赋能 AppFlowy AI。目前可以使用 GPT 4-o、Claude 3,5、Llama 3.1 与 Mistral 7B",
+        "aiSettingsDescription": "选择你偏好的模型来赋能 CustomerIK AI。目前可以使用 GPT 4-o、Claude 3,5、Llama 3.1 与 Mistral 7B",
         "llmModel": "语言模型",
         "llmModelType": "语言模型类别"
       }
