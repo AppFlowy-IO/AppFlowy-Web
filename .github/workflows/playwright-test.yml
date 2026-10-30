@@ -270,6 +270,7 @@ jobs:
             spec: >-
               playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/page/html-document-import.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/editor/tab-return-scroll.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
@@ -281,7 +282,7 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/feed-search-lifecycle.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/feed-attribution-search.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-relation-live-update.feature.spec.js
-            description: 'Authentication, sidebar, database-row mention, migrated Gallery and Feed behavior, and rollup reactivity scenarios'
+            description: 'Authentication, sidebar, HTML import, database-row mention, migrated Gallery and Feed behavior, and rollup reactivity scenarios'
             bdd: 'true'
             shard: ''
           - name: 'database-filters'
