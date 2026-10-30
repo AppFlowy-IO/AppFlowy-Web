@@ -1,5 +1,4 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { inflateRawSync } from 'node:zlib';
 
 import { expect, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
@@ -8,6 +7,7 @@ import { createDocumentPageAndNavigate } from '../support/page-utils';
 
 import { livePresentationEnvironment, livePresentationPassword } from './environment';
 import { PresentationNetwork, SOURCE_MARKER, type PresentationObservation } from './network';
+import { pptxEntries } from './pptx-entries';
 
 import type {
   Artifact,
@@ -423,39 +423,7 @@ Then('the paid workflow leaves the workspace Free slide and export allowances un
   expect(value.network.records.some((r) => r.path.endsWith('/slides/assess') && r.code === 0)).toBe(true);
 });
 
-/** Read bounded ZIP central-directory entries, including compressed native editable slide XML. */
+/** Keep the editable-text assertions while sharing the bounded package reader with image tests. */
 function zipEntries(bytes: Buffer): Map<string, string> {
-  const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-
-  expect(end).toBeGreaterThanOrEqual(0);
-  const count = bytes.readUInt16LE(end + 10);
-  let cursor = bytes.readUInt32LE(end + 16);
-  const entries = new Map<string, string>();
-
-  expect(count).toBeLessThan(10_000);
-  for (let index = 0; index < count; index++) {
-    expect(bytes.readUInt32LE(cursor)).toBe(0x02014b50);
-    const method = bytes.readUInt16LE(cursor + 10);
-    const compressedSize = bytes.readUInt32LE(cursor + 20);
-    const nameLength = bytes.readUInt16LE(cursor + 28);
-    const extraLength = bytes.readUInt16LE(cursor + 30);
-    const commentLength = bytes.readUInt16LE(cursor + 32);
-    const offset = bytes.readUInt32LE(cursor + 42);
-    const name = bytes.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
-
-    if (/^ppt\/slides\/slide\d+\.xml$/.test(name)) {
-      expect(bytes.readUInt32LE(offset)).toBe(0x04034b50);
-      const start = offset + 30 + bytes.readUInt16LE(offset + 26) + bytes.readUInt16LE(offset + 28);
-      const data = bytes.subarray(start, start + compressedSize);
-
-      expect([0, 8]).toContain(method);
-      entries.set(
-        name,
-        (method === 8 ? inflateRawSync(data, { maxOutputLength: 4 * 1024 * 1024 }) : data).toString('utf8')
-      );
-    } else entries.set(name, '');
-    cursor += 46 + nameLength + extraLength + commentLength;
-  }
-
-  return entries;
+  return new Map([...pptxEntries(bytes)].map(([name, data]) => [name, /^ppt\/slides\/slide\d+\.xml$/.test(name) ? data.toString('utf8') : '']));
 }

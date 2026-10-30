@@ -27,6 +27,7 @@ import {
 import { templateUploadLimit } from './presentation-policy';
 import PresentationLoading, { MindMapLoading } from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
+import { describeSlideSources } from './slide-sources';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
 import SlidesWorkflow, { type SlidesWorkflowProps } from './SlidesWorkflow';
 import { flattenBlocks, splitDocument } from './source';
@@ -687,11 +688,13 @@ export default function PresentationStudio({
   const mapLoading = showAIMap
     ? loadedIdentity !== identity && !loadFailure
     : canWrite && !!snapshot.serverSource && structuralResult?.state !== 'error' && structuralResult?.state !== 'ready';
+  const mapSourceDetails = useMemo(() => describeSlideSources(snapshot), [snapshot]);
   const mapViewer = currentMap?.nodes.length ? (
     <MindMapViewer
       // Another map starts with its own view state; edits keep the artifact ID, so they keep it.
       key={currentArtifact?.id}
       map={currentMap}
+      sourceDetails={mapSourceDetails}
       origin={showAIMap ? (savedMapArtifact?.origin === 'ai' ? 'ai' : 'imported') : undefined}
       onUpgrade={upgrade}
       canGenerate={!busy && !reuse.checking && !reuse.error && (!!reuse.job || canGenerateMap)}
@@ -937,7 +940,6 @@ export default function PresentationStudio({
                   sourceChanged={!!activeDeck && !!snapshot.serverSource && !sourceMatches}
                   hasNarrative={!!narrative}
                   origin={activeDeck ? 'Saved presentation' : 'Current page'}
-                  sourceRevision={activeDeck?.sourceRevision}
                 />
               </>
             )

@@ -1,4 +1,6 @@
 import { describeSlideSources, numberSlideSources, slideSourceIds } from '../slide-sources';
+import { cellId, databaseSource } from './fixtures/database-source';
+import { sourceToSnapshot } from '../server-adapter';
 
 import type { PageSnapshot, Slide, SourceBlock } from '../types';
 import type { SourceEnvelope } from '../server-contract';
@@ -18,6 +20,22 @@ it('describes retrieved web citations separately from document passages', () => 
 
 const block = (id: string, text: string, children: SourceBlock[] = []): SourceBlock => ({
   id, text, type: 'paragraph', children,
+});
+
+it('describes database citations with database, row and field names instead of IDs', () => {
+  const details = describeSlideSources(sourceToSnapshot(databaseSource));
+
+  expect(details.get(cellId)).toEqual({
+    documentTitle: 'LLM Experiments', section: 'v4 Hard examples › Passing answers', excerpt: '88',
+  });
+});
+
+it('keeps legacy database sources readable when field metadata is unavailable', () => {
+  const source = { ...databaseSource, databaseViews: databaseSource.databaseViews.map((view) => ({ ...view, schema: null })) };
+
+  expect(describeSlideSources(sourceToSnapshot(source)).get(cellId)).toEqual({
+    documentTitle: 'LLM Experiments', section: '', excerpt: '88',
+  });
 });
 const snapshot: PageSnapshot = {
   pageId: 'page', title: 'Product review', kind: 'document', revision: 'saved', warnings: [],

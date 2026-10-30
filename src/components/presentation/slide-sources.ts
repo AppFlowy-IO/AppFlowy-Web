@@ -1,3 +1,5 @@
+import { cellText } from './server-adapter';
+
 import type { PageSnapshot, Slide, SourceBlock, StoryPlan } from './types';
 
 export interface SourceDetails {
@@ -60,6 +62,34 @@ export function describeSlideSources(snapshot: PageSnapshot): ReadonlyMap<string
       section: property.name,
       excerpt: excerpt(`${property.name}: ${property.value ?? 'Not provided'}`),
     });
+  }
+
+  // Use the prepared view's names and typed values, never the opaque IDs in a citation.
+  for (const view of snapshot.serverSource?.databaseViews ?? []) {
+    const schema = view.schema;
+    const fields = schema && typeof schema === 'object' && !Array.isArray(schema) && Array.isArray(schema.fields)
+      ? schema.fields.flatMap((field) =>
+          field && typeof field === 'object' && !Array.isArray(field) && typeof field.id === 'string' && typeof field.name === 'string'
+            ? [{ id: field.id, name: field.name, primary: field.is_primary === true }]
+            : [])
+      : [];
+    const primary = fields.find((field) => field.primary);
+    const fieldNames = new Map(fields.map((field) => [field.id, field.name]));
+
+    for (const row of view.rows) {
+      const titleCell = primary && row.cells[primary.id];
+      const rowTitle = titleCell ? cellText(titleCell.value) : '';
+
+      for (const [fieldId, cell] of Object.entries(row.cells)) {
+        const fieldName = fieldNames.get(fieldId);
+
+        details.set(cell.sourceId, {
+          documentTitle: view.name || 'Database',
+          section: [rowTitle, fieldName].filter(Boolean).join(' › '),
+          excerpt: excerpt(cellText(cell.value)),
+        });
+      }
+    }
   }
 
   for (const [id, reference] of Object.entries(snapshot.serverSource?.references ?? {})) {

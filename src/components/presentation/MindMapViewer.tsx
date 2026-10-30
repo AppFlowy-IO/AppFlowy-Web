@@ -17,6 +17,7 @@ import { Action, Notice } from './ui';
 import { usePresentationFullscreen } from './usePresentationFullscreen';
 
 import type { MapBranchLine, MapStructure, MapPosition } from './mindmap-layout';
+import type { SourceDetails } from './slide-sources';
 
 /** Whole-pixel canvas size; keeps the current state when it is unchanged or the canvas is hidden (zero-sized). */
 const resizeTo = (width: number, height: number) => (old: { width: number; height: number }) => {
@@ -107,6 +108,7 @@ export default function MindMapViewer({
   generateLabel,
   onSlides,
   onSource,
+  sourceDetails,
   onClosePresentation,
 }: {
   onUpgrade?: () => void;
@@ -121,6 +123,7 @@ export default function MindMapViewer({
   generateLabel?: string;
   onSlides: () => void;
   onSource: (id: string) => void;
+  sourceDetails?: ReadonlyMap<string, SourceDetails>;
   onClosePresentation?: () => void;
 }) {
   const mac = isMac();
@@ -509,6 +512,7 @@ export default function MindMapViewer({
                 node={selected}
                 position={byId.get(selected.id)}
                 sourceNumbers={index.sourceNumbers}
+                sourceDetails={sourceDetails}
                 canDrill={selected.id !== layout.root.id}
                 canParent={!!focused}
                 modifierLabel={modifierLabel}

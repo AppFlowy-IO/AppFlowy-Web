@@ -68,6 +68,25 @@ without treating a paid subscription as an unlimited shared AI-response allowanc
 These tests are outside the normal BDD globs and have no fixture-server dependency. Use the separate
 `playwright.presentation.config.ts` for the retained component-only presentation browser tests.
 
+## Existing LLM demo regressions
+
+**Passed on 2026-10-30: four scenarios in 44.5 seconds against the real local services.**
+The [recorded result](./result-2026-10-30-llm-regressions.json) contains only checks and counts.
+
+`llm-regressions.feature` reuses the **LLM Iteration Lab** page created in the local Pro workspace.
+Set `PRESENTATION_LIVE_LLM_PAGE_ID` to that page's UUID, in addition to the environment above, and
+run with `--grep 'LLM demo'`. The fixture must already have its saved six-slide deck, saved AI map,
+two PNG images, and the embedded LLM Experiments database with the v4 Hard examples row.
+
+The scenarios cover reopening without generation or session writes, readable database citations
+and row navigation, a single preview dialog without the technical source-version footer, stable
+regeneration settings without repeating assessment when slide count changes, nonempty document
+slides with their database, and downloaded PPTX image proportions/centering against the exact
+preview scene. They use UI actions and observe real responses; no provider responses are mocked.
+Changing slide counts restores the six-slide selection; exporting creates a disposable download
+but does not regenerate the deck. Existing imported-template and paid-generation scenarios cover
+upload/AI theme analysis, saved template reuse, regeneration, and usage accounting separately.
+
 
 ## Imported template scenario
 

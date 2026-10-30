@@ -87,7 +87,6 @@ export interface SlidesWorkflowProps {
   sourceChanged: boolean;
   hasNarrative: boolean;
   origin: string;
-  sourceRevision?: string;
   exportReady?: boolean;
   onDownload?: (
     requestId: string,
@@ -259,7 +258,6 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
     lab = false,
     sourceChanged,
     origin,
-    sourceRevision,
     exportReady = false,
     onDownload,
     initialAction,
@@ -623,12 +621,6 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
                   <Notice key={warning}>{warning}</Notice>
                 ))}
               </details>
-              <p className='ps-muted'>
-                Source version {sourceRevision || snapshot.revision} ·{' '}
-                {exportReady
-                  ? 'Preview and editable PowerPoint use the same slide layouts.'
-                  : 'Reload the saved presentation to enable export.'}
-              </p>
             </div>
           </div>
         </div>

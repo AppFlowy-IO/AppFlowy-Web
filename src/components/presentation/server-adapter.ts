@@ -96,7 +96,7 @@ function mapBlock(block: ServerSourceBlock): SourceBlock {
   };
 }
 
-function cellText(value: SourceValue): string {
+export function cellText(value: SourceValue): string {
   switch (value.type) {
     case 'unknown': return 'Unknown';
     case 'text': return value.text;

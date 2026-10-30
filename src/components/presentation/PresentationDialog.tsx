@@ -190,6 +190,19 @@ export default function PresentationDialog({
       return;
     }
 
+    if (location?.kind === 'database_cell') {
+      // Database IDs are not navigable view IDs. Use the authorized prepared view and let
+      // the normal database navigation open the row via its row parameter.
+      const database = resolved?.serverSource?.databaseViews.find((candidate) =>
+        candidate.databaseId === location.databaseId && candidate.rows.some((row) =>
+          row.rowId === location.rowId && row.cells[location.fieldId]?.sourceId === referenceId));
+
+      if (!database) return;
+      close();
+      void toView(database.viewId, location.rowId).catch(() => undefined);
+      return;
+    }
+
     const pageId = location?.pageId ?? viewId;
     const blockId =
       location && (location.kind === 'document' || location.kind === 'code')

@@ -111,6 +111,13 @@ beforeEach(() => {
   Object.defineProperty(global.crypto, 'randomUUID', { configurable: true, value: () => `request-${++id}` });
 });
 
+test('keeps speaker notes and export controls without the technical source-version footer', () => {
+  render(<SlidesWorkflow {...props(jest.fn())} />);
+  expect(screen.getByText('Sources & speaker notes')).toBeTruthy();
+  expect(screen.getByText('Export PPTX')).toBeTruthy();
+  expect(screen.queryByText(/Source version |Preview and editable PowerPoint use the same slide layouts/)).toBeNull();
+});
+
 test('uncertain export retries retain identity but switching artifact starts a new request', async () => {
   const download = jest.fn().mockRejectedValue(new Error('Connection lost'));
   const view = render(<SlidesWorkflow {...props(download)} />);

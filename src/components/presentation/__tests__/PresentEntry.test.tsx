@@ -199,9 +199,9 @@ it('opens the server-saved mind map with canonical source numbers and native sou
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Present AI mind map' }));
   fireEvent.click(await screen.findByRole('button', { name: 'First topic', exact: true }));
-  expect(screen.getByLabelText('Open source 3: canonical:body').textContent).toBe('3');
+  expect(screen.getByLabelText('Open source 3: Live document · Real page heading').textContent).toBe('3');
   fireEvent.click(screen.getByRole('button', { name: 'Second topic', exact: true }));
-  const source = screen.getByLabelText('Open source 3: canonical:body');
+  const source = screen.getByLabelText('Open source 3: Live document · Real page heading');
 
   expect(source.textContent).toBe('3');
   fireEvent.click(source);
@@ -218,7 +218,7 @@ it('keeps a saved map from a different source revision out of current-page navig
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Present AI mind map' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Imported AI article', exact: true }));
-  fireEvent.click(screen.getByLabelText('Open source 1: canonical:other-page'));
+  fireEvent.click(screen.getByLabelText('Open source 1: Source unavailable'));
   expect(await screen.findByText('Select the original source page and revision to follow this reference.')).toBeTruthy();
   expect(mockToView).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }));
@@ -234,7 +234,7 @@ it('navigates an imported map only through its server-validated canonical refere
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Present AI mind map' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Imported AI article', exact: true }));
-  fireEvent.click(screen.getByLabelText('Open source 1: canonical:body'));
+  fireEvent.click(screen.getByLabelText('Open source 1: Live document · Real page heading'));
   expect(mockToView).toHaveBeenCalledWith('document', 'body-live');
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Interactive mind map' })).toBeNull());
 });

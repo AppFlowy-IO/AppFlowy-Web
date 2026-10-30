@@ -12,6 +12,7 @@ import { Action } from './ui';
 
 import type { MapPosition } from './mindmap-layout';
 import type { MapRect, MapPopoverSide } from './mindmap-popover';
+import type { SourceDetails } from './slide-sources';
 import type { MapNode } from './types';
 
 /** Map controls the card must not cover. */
@@ -22,6 +23,7 @@ export default function MindMapNodePopover({
   node,
   position,
   sourceNumbers,
+  sourceDetails,
   canDrill,
   canParent,
   modifierLabel,
@@ -37,6 +39,7 @@ export default function MindMapNodePopover({
   /** The node's place in the current layout. A new layout can move the node or its neighbours. */
   position?: MapPosition;
   sourceNumbers: ReadonlyMap<string, number>;
+  sourceDetails?: ReadonlyMap<string, SourceDetails>;
   canDrill: boolean;
   canParent: boolean;
   modifierLabel: string;
@@ -306,20 +309,29 @@ export default function MindMapNodePopover({
           <div className='ps-node-sources' role='group' aria-label='Sources'>
             {node.sourceIds.map((id) => {
               const number = sourceNumbers.get(id)!;
+              const detail = sourceDetails?.get(id);
+              const title = detail?.documentTitle || 'Source unavailable';
 
               return (
                 <Tooltip
                   key={id}
                   placement='top'
+                  describeChild
                   disableInteractive
                   PopperProps={{ container }}
-                  title={`Source ${number} · ${id}`}
+                  title={
+                    <div className='flex max-w-[360px] flex-col gap-1 whitespace-normal break-words'>
+                      <span>Source {number} · {title}</span>
+                      {detail?.section && <span>{detail.section}</span>}
+                      {detail?.excerpt && <span className='whitespace-pre-wrap'>{detail.excerpt}</span>}
+                    </div>
+                  }
                 >
                   <button
                     type='button'
                     className='ps-node-source'
                     style={number >= 100 ? { fontSize: 10 } : undefined}
-                    aria-label={`Open source ${number}: ${id}`}
+                    aria-label={`Open source ${number}: ${title}${detail?.section ? ` · ${detail.section}` : ''}`}
                     onClick={() => onSource(id)}
                   >
                     {number}

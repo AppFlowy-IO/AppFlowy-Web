@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-30",
+  "status": "passed",
+  "suite": "llm-regressions.feature",
+  "environment": "localhost Web -> Gateway -> Cloud, existing Pro LLM demo fixture",
+  "testsPassed": 4,
+  "durationSeconds": 44.5,
+  "checks": {
+    "savedMindMapReopenedTwiceWithoutGenerationOrSessionWrite": true,
+    "databaseCitationShowsDatabaseRowFieldAndValue": true,
+    "citationAccessibleNameRemainsStableWhileHovered": true,
+    "citationOpensTheCorrectRow": true,
+    "savedDeckOpensDirectlyWithoutSourceAnalysis": true,
+    "previewUsesOneDialogWithoutSourceVersionFooter": true,
+    "slideCountChangesKeepDialogSizeAndReuseAssessment": true,
+    "documentPresentationHasNoBlankSlides": true,
+    "documentPresentationReusesLoadedDatabaseResources": true,
+    "downloadedPptxImageProportionsAndCenteringMatchPreview": true
+  },
+  "limits": [
+    "Local fixture regressions, not remote CI or deployment validation.",
+    "This run does not regenerate presentations or rerun the separate imported-template suite."
+  ]
+}
