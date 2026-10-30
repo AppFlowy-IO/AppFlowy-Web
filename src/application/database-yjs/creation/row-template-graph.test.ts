@@ -1487,3 +1487,21 @@ test('copied chart settings keep desktop BigInt integers, so Median and Week sur
     dateCondition: DateGroupCondition.Week,
   });
 });
+
+it('materializes a hidden template source without changing the ordinary row contract', async () => {
+  const params = input();
+  const graph = await prepareTemplateRowGraph({ ...params, isTemplateSource: true });
+
+  expect(graph.kind).toBe('compound');
+  if (graph.kind !== 'compound') throw new Error('Expected a hidden complete graph');
+  expect(graph.manifest.target).toEqual(expect.objectContaining({
+    kind: 'row', row_id: params.rowId, omit_row_membership: true,
+  }));
+  expect(graph.manifest.objects.map((object) => object.kind).sort()).toEqual(['database_row', 'document']);
+  expect(graph.manifest.views[0]).toEqual(expect.objectContaining({
+    view_id: uuidv5('document_id', params.rowId),
+    parent_view_id: uuidv5('document_id', params.rowId),
+    content: expect.objectContaining({ kind: 'row_document', row_id: params.rowId }),
+  }));
+  expect((await prepareTemplateRowGraph(params)).kind).toBe('seeded');
+});

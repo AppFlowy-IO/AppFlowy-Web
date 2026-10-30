@@ -33,6 +33,7 @@ import {
   readTemplateDocumentEmptiness,
 } from '@/application/database-yjs/template/document';
 import { useDatabaseRowTemplates } from '@/application/database-yjs/template/hooks';
+import { materializeTemplateSource } from '@/application/database-yjs/template/materialize';
 import { getCachedProviderDoc } from '@/application/db';
 import { getRowDocumentSourceFromView, rowDocumentIdFromRowId } from '@/application/row-document/lifecycle';
 import { ensureAtomicTemplateDocument } from '@/application/row-document/template-document';
@@ -400,13 +401,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
       // hidden source, and switch the registry pointer only after the copy succeeds.
       const targetRowId = uuidv4();
       const targetDocumentId = rowDocumentIdFromRowId(targetRowId);
-      const targetRowDoc = await ensureTemplateRow(sourceTemplate, assertCurrent, targetRowId);
-
-      // Desktop does not maintain Web's hidden source-row collab, so refresh
-      // its editable properties before migrating Desktop snapshot metadata.
-      initializeTemplateSourceRow(targetRowDoc, database, { ...sourceTemplate, templateId: targetRowId });
-
-      const publish = () => {
+      const publish = (targetRowDoc: YDoc) => {
         assertCurrent();
         const migrated = store.upsert({
           ...updateTemplateFromSourceRow(template, targetRowDoc, database),
@@ -419,11 +414,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
       };
 
       if (sourceTemplate.isDocumentEmpty) {
-        return publish();
-      }
-
-      if (!duplicateRowDocument) {
-        throw new Error('Template document duplication is unavailable');
+        return publish(await ensureTemplateRow(sourceTemplate, assertCurrent, targetRowId));
       }
 
       const sourceDocument = snapshot ? null : await loadTemplateDocument(sourceTemplate);
@@ -434,6 +425,20 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
         throw new Error('Template document is unavailable for live editing');
       }
 
+      if (sourceTemplate.embeddedDatabases.length) {
+        const rowDoc = await materializeTemplateSource({
+          workspaceId, databaseDoc, database, sourceViewId: activeViewId,
+          guid, rowId: targetRowId, template: sourceTemplate, encodedState, assertCurrent,
+          registerRow: () => ensureTemplateRow(sourceTemplate, assertCurrent, targetRowId),
+        });
+
+        return publish(rowDoc);
+      }
+
+      if (!duplicateRowDocument) throw new Error('Template document duplication is unavailable');
+      const targetRowDoc = await ensureTemplateRow(sourceTemplate, assertCurrent, targetRowId);
+
+      initializeTemplateSourceRow(targetRowDoc, database, { ...sourceTemplate, templateId: targetRowId });
       const stagingId = uuidv4();
       const stagingTemplate: DatabaseRowTemplate = {
         ...sourceTemplate,
@@ -445,9 +450,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
 
       assertCurrent();
       initializeTemplateSourceRow(stagingRowDoc, database, stagingTemplate);
-      // The duplication worker resolves template-owned database snapshots by
-      // source template ID. Publish this temporary source just for the copy,
-      // then remove it regardless of success.
+      // Text-only legacy snapshots use a temporary live source for the duplication API.
       store.upsertTransientMigrationSource(stagingTemplate);
       try {
         await duplicateRowDocument(databaseId, stagingId, targetRowId, encodedState, () =>
@@ -457,9 +460,9 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
         store.deleteTransientMigrationSource(stagingId);
       }
 
-      return publish();
+      return publish(targetRowDoc);
     },
-    [assertWritable, database, databaseId, duplicateRowDocument, ensureTemplateRow, loadTemplateDocument, registerSource, store, templateSourceRowId]
+    [activeViewId, assertWritable, database, databaseDoc, databaseId, duplicateRowDocument, ensureTemplateRow, guid, loadTemplateDocument, registerSource, store, templateSourceRowId, workspaceId]
   );
 
   const editTemplate = useCallback(
@@ -599,28 +602,39 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
         createdAtMs: now,
         updatedAtMs: now,
       };
-      const sourceDocumentPromise =
-        snapshot || sourceTemplate.isDocumentEmpty ? Promise.resolve(null) : loadTemplateDocument(sourceTemplate);
-      const sourceRowId = await templateSourceRowId(sourceTemplate);
-      const [sourceRowDoc, targetRowDoc, sourceDocument] = await Promise.all([
-        ensureTemplateRow(sourceTemplate, assertWritable, sourceRowId),
-        ensureTemplateRow(duplicate),
-        sourceDocumentPromise,
-      ]);
 
-      initializeTemplateSourceRow(sourceRowDoc, database, { ...sourceTemplate, templateId: sourceRowId });
-      initializeTemplateSourceRow(targetRowDoc, database, duplicate);
-
-      if (!sourceTemplate.isDocumentEmpty && duplicateRowDocument) {
-        await duplicateRowDocument(
-          databaseId,
-          sourceRowId,
-          duplicate.templateId,
-          snapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined),
-          () => registerSource(sourceRowId)
-        );
+      if (!sourceTemplate.isDocumentEmpty && sourceTemplate.embeddedDatabases.length) {
+        if (!snapshot) throw new Error('Template document snapshot is unavailable');
+        await materializeTemplateSource({
+          workspaceId, databaseDoc, database, sourceViewId: activeViewId, guid,
+          rowId: templateId, template: { ...sourceTemplate, name, defaultCells: duplicate.defaultCells },
+          encodedState: snapshot.encodedState, assertCurrent: assertWritable,
+          registerRow: () => ensureTemplateRow(duplicate),
+        });
       } else {
-        await registerSource(duplicate.templateId);
+        const sourceDocumentPromise =
+          snapshot || sourceTemplate.isDocumentEmpty ? Promise.resolve(null) : loadTemplateDocument(sourceTemplate);
+        const sourceRowId = await templateSourceRowId(sourceTemplate);
+        const [sourceRowDoc, targetRowDoc, sourceDocument] = await Promise.all([
+          ensureTemplateRow(sourceTemplate, assertWritable, sourceRowId),
+          ensureTemplateRow(duplicate),
+          sourceDocumentPromise,
+        ]);
+
+        initializeTemplateSourceRow(sourceRowDoc, database, { ...sourceTemplate, templateId: sourceRowId });
+        initializeTemplateSourceRow(targetRowDoc, database, duplicate);
+
+        if (!sourceTemplate.isDocumentEmpty && duplicateRowDocument) {
+          await duplicateRowDocument(
+            databaseId,
+            sourceRowId,
+            duplicate.templateId,
+            snapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined),
+            () => registerSource(sourceRowId)
+          );
+        } else {
+          await registerSource(duplicate.templateId);
+        }
       }
 
       const persistedDuplicate = store.upsert(duplicate);
@@ -634,6 +648,10 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
       }
     },
     [
+      activeViewId,
+      databaseDoc,
+      guid,
+      workspaceId,
       database,
       assertWritable,
       databaseId,

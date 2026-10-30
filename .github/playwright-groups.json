@@ -1,0 +1,128 @@
+[
+  {
+    "name": "auth-chat",
+    "spec": "playwright/e2e/auth playwright/e2e/chat",
+    "description": "Authentication and AI chat",
+    "bdd": "false",
+    "shard": ""
+  },
+  {
+    "name": "editor",
+    "spec": "playwright/e2e/editor",
+    "description": "Document editing and formatting",
+    "bdd": "false",
+    "shard": ""
+  },
+  {
+    "name": "simple-table-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/simple-table-headers.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/simple-table-block-actions.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/simple-table-selection-scroll.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/simple-table-add-row-scroll.feature.spec.js",
+    "description": "Simple table headers, block actions, conversion undo/redo, selection, and scrolling",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "dockable-outline-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js",
+    "description": "Dockable document outline, scroll tracking, themes, comments, and published display modes",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "code-block-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js",
+    "description": "Code block settings, Mermaid, literal editing, clipboard, and code/callout page conversion",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "database",
+    "spec": "playwright/e2e/database/",
+    "description": "Database and grid operations (shard 1 of 3)",
+    "bdd": "false",
+    "shard": "1/3"
+  },
+  {
+    "name": "database-2",
+    "spec": "playwright/e2e/database/",
+    "description": "Database and grid operations (shard 2 of 3)",
+    "bdd": "false",
+    "shard": "2/3"
+  },
+  {
+    "name": "database-3",
+    "spec": "playwright/e2e/database/",
+    "description": "Database and grid operations (shard 3 of 3)",
+    "bdd": "false",
+    "shard": "3/3"
+  },
+  {
+    "name": "database-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-subpage-breadcrumb.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/relative-date-comparisons.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/board-always-renders.feature.spec.js",
+    "description": "Database row, undo/redo, Formula, Rollup and Board rendering BDD workflows",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "rich-text-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/database/text-cell-rich-text.feature.spec.js",
+    "description": "Rich text in database Text cells and row titles: formatting, storage contract, mentions, clipboard",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "form-timeline-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/form/ playwright/.features-gen/playwright/bdd/features/database/form-chart-quota.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js",
+    "description": "Form and Timeline creation and interactions",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "gallery-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/tab-return-scroll.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/feed.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/feed-readonly.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/feed-interactions.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/feed-search-lifecycle.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/feed-attribution-search.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-relation-live-update.feature.spec.js",
+    "description": "Authentication, sidebar, database-row mention, migrated Gallery and Feed behavior, and rollup reactivity scenarios",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
+    "name": "database-filters",
+    "spec": "playwright/e2e/database2 playwright/e2e/database3",
+    "description": "Database filters and field type switching",
+    "bdd": "false",
+    "shard": ""
+  },
+  {
+    "name": "space-permissions-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/workspace/create-space-draft.feature.spec.js playwright/.features-gen/playwright/bdd/features/workspace/space-custom-permissions.feature.spec.js playwright/.features-gen/playwright/bdd/features/workspace/space-group-permission-resolution.feature.spec.js playwright/.features-gen/playwright/bdd/features/workspace/space-permission-matrix-management.feature.spec.js playwright/.features-gen/playwright/bdd/features/page/eva-more-actions-permissions.feature.spec.js",
+    "shard": "",
+    "description": "Create, manage, member, group, and action permission scenarios for spaces",
+    "bdd": "true"
+  },
+  {
+    "name": "embedded",
+    "spec": "playwright/e2e/embeded",
+    "description": "Embedded database and image operations",
+    "bdd": "false",
+    "shard": ""
+  },
+  {
+    "name": "page",
+    "spec": "playwright/e2e/page",
+    "description": "Page management (create, delete, share, publish, paste)",
+    "bdd": "false",
+    "shard": ""
+  },
+  {
+    "name": "account-space-user",
+    "spec": "playwright/e2e/account playwright/e2e/space playwright/e2e/user playwright/e2e/app playwright/e2e/folder playwright/e2e/calendar",
+    "description": "Account, Space, User, App, Folder, and Calendar tests",
+    "bdd": "false",
+    "shard": ""
+  },
+  {
+    "name": "template-interop",
+    "spec": "playwright/interop/row-template.spec.ts",
+    "description": "Real Desktop SDK and Web row-template round trips",
+    "bdd": "false",
+    "shard": ""
+  }
+]

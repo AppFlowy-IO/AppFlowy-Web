@@ -319,7 +319,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
 
     for (const [container, child] of containerAliases) ids.set(container, ids.get(child)!);
 
-    if (!mounts.size && documents.length === 1) {
+    if (!mounts.size && documents.length === 1 && !input.isTemplateSource) {
       addSeed(input.rowId, 'database_row', row);
       addSeed(documentId, 'document', document);
       return {
@@ -604,6 +604,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
           source_view_id: input.sourceViewId,
           position: input.position,
           position_view_ids: input.positionViewIds,
+          ...(input.isTemplateSource ? { omit_row_membership: true as const } : {}),
         },
         objects,
         views: sorted,

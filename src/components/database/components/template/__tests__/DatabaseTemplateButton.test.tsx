@@ -169,7 +169,7 @@ function setup() {
     const rowDoc = await intent.registerRow();
 
     Y.applyUpdate(rowDoc, Y.encodeStateAsUpdate(intent.rowDoc));
-    databaseDoc.transact(() => {
+    if (!intent.isTemplateSource) databaseDoc.transact(() => {
       const orders = view.get(YjsDatabaseKey.row_orders);
       const position = intent.position;
       const index =
@@ -737,7 +737,7 @@ describe('DatabaseTemplateButton', () => {
     expect(store.read().defaultTemplateId).toBe(first.templateId);
   });
 
-  it('duplicates a non-empty template through the row-document deep-copy pipeline', async () => {
+  it('duplicates a native database archive through the atomic graph SDK', async () => {
     const { Wrapper, context, database, rows, createRowDocument } = setup();
     const secondaryFieldId = 'secondary-title';
     const secondaryField = new Y.Map() as YDatabaseField;
@@ -799,12 +799,13 @@ describe('DatabaseTemplateButton', () => {
         embeddedDatabases: [],
       })
     );
-    expect(context.duplicateRowDocument).toHaveBeenCalledTimes(1);
-    expect(createRowDocument).toHaveBeenCalledWith(
-      rowDocumentIdFromRowId(source.templateId),
-      expect.objectContaining({ row_id: source.templateId })
-    );
-    expect(rows.has(getRowKey(databaseDocId, source.templateId))).toBe(true);
+    expect(context.duplicateRowDocument).not.toHaveBeenCalled();
+    expect(createCloudRow).toHaveBeenCalledWith(expect.objectContaining({
+      isTemplateSource: true, rowId: duplicate.templateId,
+      template: expect.objectContaining({ embeddedDatabases: source.embeddedDatabases }),
+    }));
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(rows.has(getRowKey(databaseDocId, source.templateId))).toBe(false);
     expect(rows.has(getRowKey(databaseDocId, duplicate.templateId))).toBe(true);
 
     await openTemplateActions(duplicate.templateId);
@@ -830,7 +831,7 @@ describe('DatabaseTemplateButton', () => {
     expect(savedSource?.defaultCells[secondaryFieldId]).toEqual({ type: 'text', value: 'Preserved secondary title' });
   });
 
-  it('migrates Desktop snapshot metadata through a temporary hidden source', async () => {
+  it('materializes Desktop snapshot metadata without publishing a visible row', async () => {
     const { Wrapper, context, database } = setup();
     const store = new DatabaseRowTemplateStore(database);
     const template = store.upsert({
@@ -858,18 +859,17 @@ describe('DatabaseTemplateButton', () => {
     sourceDocument.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
     context.loadRowDocument = jest.fn(async () => sourceDocument);
     let migratedRowId = '';
+    const commit = jest.mocked(createCloudRow).getMockImplementation()!;
 
-    context.duplicateRowDocument = jest.fn(async (_databaseId, sourceId, targetId, _state, prepareSource) => {
-      expect(sourceId).not.toBe(template.templateId);
-      expect(targetId).not.toBe(template.templateId);
-      migratedRowId ||= targetId;
-      const rawTemplates = database.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.row_templates);
-      const persistedTemplates = JSON.parse(String(rawTemplates)) as Array<{ template_id: string; name: string }>;
-
-      expect(persistedTemplates).toContainEqual(expect.objectContaining({ template_id: sourceId, name: '' }));
-      expect(store.read().templates.some((item) => item.templateId === sourceId)).toBe(false);
-      await prepareSource?.();
+    jest.mocked(createCloudRow).mockImplementationOnce(async (intent) => {
+      migratedRowId = intent.rowId;
+      expect(intent.isTemplateSource).toBe(true);
+      expect(intent.rowId).not.toBe(template.templateId);
+      expect(intent.template?.embeddedDatabases).toEqual(template.embeddedDatabases);
+      expect(intent.documentState?.length).toBeGreaterThan(0);
+      return commit(intent);
     });
+    context.duplicateRowDocument = jest.fn();
 
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     await openTemplateActions(template.templateId);
@@ -973,7 +973,7 @@ describe('DatabaseTemplateButton', () => {
     expect(jest.mocked(context.duplicateRowDocument).mock.calls[1][1]).toBe(migratedRowId);
   });
 
-  it('keeps Desktop snapshots intact when live migration fails', async () => {
+  it.each(['text', 'database'] as const)('keeps Desktop snapshots intact when %s migration fails', async (kind) => {
     const { Wrapper, context, database } = setup();
     const store = new DatabaseRowTemplateStore(database);
     const template = store.upsert({
@@ -982,7 +982,10 @@ describe('DatabaseTemplateButton', () => {
       docViewId: 'desktop-document',
       documentData: documentSnapshot,
       isDocumentEmpty: false,
-      embeddedDatabases: [],
+      embeddedDatabases: kind === 'database' ? [{
+        sourceViewId: 'archived-view', sourceDatabaseId: 'archived-database',
+        layoutType: 0, name: 'Archived tasks', rawData: '{}', isLinked: false,
+      }] : [],
       defaultCells: {},
       createdAtMs: 1,
       updatedAtMs: 1,
@@ -992,17 +995,19 @@ describe('DatabaseTemplateButton', () => {
     sourceDocument.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
     context.loadRowDocument = jest.fn(async () => sourceDocument);
     context.duplicateRowDocument = jest.fn(async () => Promise.reject(new Error('copy failed')));
+    if (kind === 'database') jest.mocked(createCloudRow).mockRejectedValueOnce(new Error('graph failed'));
 
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     await openTemplateActions(template.templateId);
     fireEvent.click(await screen.findByText('Edit'));
-    await waitFor(() => expect(context.duplicateRowDocument).toHaveBeenCalled());
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
 
     const preserved = store.read().templates;
 
     expect(preserved).toHaveLength(1);
     expect(preserved[0].templateId).toBe(template.templateId);
     expect(preserved[0].documentData).toEqual(documentSnapshot);
+    expect(preserved[0].embeddedDatabases).toEqual(template.embeddedDatabases);
     expect(screen.queryByTestId('database-template-editor')).toBeNull();
   });
 
