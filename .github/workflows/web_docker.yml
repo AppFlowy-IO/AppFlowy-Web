@@ -102,7 +102,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: registry.hub.docker.com/${{ env.IMAGE_NAME }}
 
@@ -130,6 +130,8 @@ jobs:
   appflowy_web_manifest:
     runs-on: ubuntu-22.04
     needs: [appflowy_web_image]
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
     env:
       IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/appflowy_web
     steps:
@@ -153,6 +155,7 @@ jobs:
           fi
           echo "GIT_TAG=$T" >> $GITHUB_ENV
           echo "Tag: $T"
+          printf 'tag=%s\n' "$T" >> "$GITHUB_OUTPUT"
 
       - name: Print final Docker image names
         run: |
@@ -203,3 +206,13 @@ jobs:
       - name: Logout from Docker Hub
         if: always()
         run: docker logout
+
+  notify_selfhost:
+    name: Notify self-hosted deployment after Web image publication
+    needs: appflowy_web_manifest
+    if: ${{ !endsWith(needs.appflowy_web_manifest.outputs.tag, '_test') }}
+    uses: ./.github/workflows/notify-selfhost-release.yml
+    with:
+      tag: ${{ needs.appflowy_web_manifest.outputs.tag }}
+    secrets:
+      PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
