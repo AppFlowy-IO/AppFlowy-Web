@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { Editor } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
@@ -22,6 +22,8 @@ export interface UserAwarenessParams {
   selection_color: string;
   user_avatar?: string;
 }
+
+type UserAwarenessIdentity = Pick<UserAwarenessParams, 'uid' | 'user_uuid' | 'device_id'>;
 
 /**
  * Hook to dispatch user information to awareness
@@ -62,43 +64,41 @@ export function useDispatchUserAwareness(awareness?: Awareness) {
 }
 
 /**
- * Hook to dispatch cursor selection to awareness
- * Updates both user metadata and current selection information
- * Automatically listens to editor changes and syncs cursor when selection changes
+ * Queue cursor selection changes for the published local identity. The profile
+ * publisher owns metadata, which a deferred cursor reads only when it flushes.
  */
 export function useDispatchCursorAwareness(awareness?: Awareness) {
-  const userParamsRef = useRef<UserAwarenessParams | null>(null);
+  const userIdentityRef = useRef<UserAwarenessIdentity | null>(null);
   const editorRef = useRef<Editor | null>(null);
 
   const syncCursor = useCallback(() => {
-    if (!awareness || !editorRef.current || !userParamsRef.current) return;
+    if (!awareness || !editorRef.current || !userIdentityRef.current) return;
 
     const editor = editorRef.current;
-    const userParams = userParamsRef.current;
+    const userIdentity = userIdentityRef.current;
+    const current = awareness.getLocalState() as AwarenessState | null;
+
+    if (!current?.user || !current.metadata) return;
 
     // Get current selection from editor
     const { selection } = editor;
 
     try {
+      const profile = JSON.parse(current.metadata) as AwarenessMetadata;
+
+      // A profile can refresh while this cursor waits for its debounce. Its
+      // publisher owns metadata; work queued by an obsolete identity is dropped.
+      if (
+        current.user.uid !== userIdentity.uid ||
+        current.user.device_id !== userIdentity.device_id ||
+        (userIdentity.user_uuid !== undefined && profile.user_uuid !== userIdentity.user_uuid)
+      ) return;
       // Convert Slate selection to AwarenessSelection
       const awarenessSelection = selection ? convertSlateSelectionToAwareness(selection, editor) : undefined;
 
-      const metadata: AwarenessMetadata = {
-        user_name: userParams.user_name,
-        cursor_color: userParams.cursor_color,
-        selection_color: userParams.selection_color,
-        user_avatar: userParams.user_avatar || '',
-        user_uuid: userParams.user_uuid,
-      };
-
       const awarenessState: AwarenessState = {
-        version: 1,
+        ...current,
         timestamp: dayjs().unix(),
-        user: {
-          uid: userParams.uid,
-          device_id: userParams.device_id,
-        },
-        metadata: JSON.stringify(metadata),
         selection: awarenessSelection,
       };
 
@@ -116,18 +116,22 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
     return debounce(syncCursor, 100);
   }, [syncCursor]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     return () => {
       debounceSyncCursor.cancel();
     };
   }, [debounceSyncCursor]);
 
   const dispatchCursor = useCallback(
-    (userParams: UserAwarenessParams, editor?: Editor) => {
+    (userIdentity: UserAwarenessIdentity, editor?: Editor) => {
       if (!awareness || !editor) return;
 
       // Store references for onChange handler
-      userParamsRef.current = userParams;
+      userIdentityRef.current = {
+        uid: userIdentity.uid,
+        user_uuid: userIdentity.user_uuid,
+        device_id: userIdentity.device_id,
+      };
       editorRef.current = editor;
 
       // Initial sync
