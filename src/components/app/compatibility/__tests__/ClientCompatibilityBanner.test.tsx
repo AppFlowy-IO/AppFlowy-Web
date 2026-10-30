@@ -60,7 +60,7 @@ describe('compatibility banner', () => {
   it('offers reload only when the required web client can work with the server', () => {
     const view = render(app({ version: REQUIRED_SERVER, min_web_client_version: NEWER_CLIENT }));
 
-    expect(screen.getByRole('status').textContent).toContain(`requires AppFlowy Web ${NEWER_CLIENT}`);
+    expect(screen.getByRole('status').textContent).toContain(`requires CustomerIK Web ${NEWER_CLIENT}`);
     expect(screen.getByRole('button', { name: 'Reload web app' })).toBeTruthy();
     view.rerender(app({ version: '0.17.0', min_web_client_version: NEWER_CLIENT }));
     expect(screen.getByRole('status').textContent).toContain('update both');

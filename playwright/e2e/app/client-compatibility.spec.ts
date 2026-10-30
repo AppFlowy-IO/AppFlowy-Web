@@ -99,12 +99,12 @@ test('compatibility warnings allow editing and follow server changes and tab-ses
 
   server.setServerInfo({ min_web_client_version: firstClientFloor });
   await refreshServerInfo(page);
-  await expect(banner).toContainText(`requires AppFlowy Web ${firstClientFloor}`);
+  await expect(banner).toContainText(`requires CustomerIK Web ${firstClientFloor}`);
   await expect(reload).toBeVisible();
   await dismiss.click();
   server.setServerInfo({ min_web_client_version: secondClientFloor });
   await refreshServerInfo(page);
-  await expect(banner).toContainText(`requires AppFlowy Web ${secondClientFloor}`);
+  await expect(banner).toContainText(`requires CustomerIK Web ${secondClientFloor}`);
 
   server.setServerInfo({ version: '0.17.0' });
   await refreshServerInfo(page);

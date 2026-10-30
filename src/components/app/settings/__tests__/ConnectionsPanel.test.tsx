@@ -130,7 +130,7 @@ describe('Connections settings', () => {
     render(<ConnectionsPanel workspaceId='workspace' />);
     fireEvent.click(await screen.findByTestId('connect-google-drive'));
     expect((await screen.findByRole('alert')).textContent).toBe(
-      'Allow pop-ups for AppFlowy, then try connecting again.'
+      'Allow pop-ups for CustomerIK, then try connecting again.'
     );
 
     const popup = { close: jest.fn() } as unknown as Window;

@@ -28,7 +28,7 @@ function SomethingError({ error }: { error: Error }) {
         </a>{' '}
         page that describes your error
       </div>
-      <img src={emptyImageSrc} alt={'AppFlowy'} />
+      <img src={emptyImageSrc} alt={'CustomerIK'} />
     </div>
   );
 }

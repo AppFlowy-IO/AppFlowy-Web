@@ -16,7 +16,7 @@ const { clearViewRouteCache } = publishLinks;
 
 const mockBunFetch = jest.fn<(url: string, init?: Record<string, unknown>) => Promise<unknown>>();
 
-const htmlTemplate = `<!DOCTYPE html><html><head><title>AppFlowy</title><link rel="icon" href="/appflowy.ico"><link rel="canonical" href=""></head><body><div id="root"></div></body></html>`;
+const htmlTemplate = `<!DOCTYPE html><html><head><title>CustomerIK</title><link rel="icon" href="/appflowy.ico"><link rel="canonical" href=""></head><body><div id="root"></div></body></html>`;
 
 jest.mock('pino', () => () => ({
   info: jest.fn(),
@@ -174,7 +174,7 @@ describe('published page SSR', () => {
       expect($('#root + #appflowy-publish-snapshot').length).toBe(1);
       expect($('head #appflowy-publish-snapshot').length).toBe(0);
       // Head metadata is still produced as before.
-      expect($('title').text()).toBe('Doc | AppFlowy');
+      expect($('title').text()).toBe('Doc | CustomerIK');
     });
 
     it('fetches the snapshot anonymously from the v2 published endpoint', async () => {
@@ -558,7 +558,7 @@ describe('meta descriptions', () => {
   // by setOrUpdateMetaTag's creation path.
   let createServer: typeof import('./server').createServer;
 
-  const DEFAULT_DESCRIPTION = 'Write, share, and publish docs quickly on AppFlowy.\nGet started for free.';
+  const DEFAULT_DESCRIPTION = 'Write, share, and publish docs on CustomerIK.';
   const descriptions = (html: string) => {
     const $ = load(html);
 
@@ -663,8 +663,8 @@ describe('meta descriptions', () => {
     const $ = load(html);
 
     expect($('script').length).toBe(0);
-    expect($('meta[property="og:title"]').attr('content')).toBe(`${hostile} | AppFlowy`);
-    expect($('meta[name="twitter:title"]').attr('content')).toBe(`${hostile} | AppFlowy`);
+    expect($('meta[property="og:title"]').attr('content')).toBe(`${hostile} | CustomerIK`);
+    expect($('meta[name="twitter:title"]').attr('content')).toBe(`${hostile} | CustomerIK`);
   });
 });
 

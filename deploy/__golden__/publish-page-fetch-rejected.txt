@@ -8,19 +8,16 @@ content-type: text/html
     <link rel="icon" type="image/svg+xml" href="/appflowy.ico">
     <link rel="canonical" href="https://appflowy.test/space/offline">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AppFlowy</title>
-    <meta name="description" content="Write, share, and publish docs quickly on AppFlowy.
-Get started for free.">
-    <meta property="og:title" content="AppFlowy">
-    <meta property="og:site_name" content="AppFlowy">
-    <meta property="og:description" content="Write, share, and publish docs quickly on AppFlowy.
-Get started for free.">
+    <title>CustomerIK</title>
+    <meta name="description" content="Write, share, and publish docs on CustomerIK.">
+    <meta property="og:title" content="CustomerIK">
+    <meta property="og:site_name" content="CustomerIK">
+    <meta property="og:description" content="Write, share, and publish docs on CustomerIK.">
     <meta property="og:image" content="/og-image.png">
     <meta property="og:url" content="https://appflowy.test/space/offline">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="AppFlowy">
-    <meta name="twitter:description" content="Write, share, and publish docs quickly on AppFlowy.
-Get started for free.">
+    <meta name="twitter:title" content="CustomerIK">
+    <meta name="twitter:description" content="Write, share, and publish docs on CustomerIK.">
     <meta name="twitter:image" content="/og-image.png">
     <meta name="twitter:site" content="@appflowy">
     <meta name="twitter:creator" content="@appflowy">

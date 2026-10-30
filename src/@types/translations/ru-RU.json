@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "Я",
   "welcomeText": "Добро пожаловать в @:appName",
   "welcomeTo": "Добро пожаловать в",
@@ -116,7 +116,7 @@
     "csv": "CSV",
     "copyLink": "Скопировать ссылку",
     "publishToTheWeb": "Опубликовать в интернете",
-    "publishToTheWebHint": "Создать веб-сайт с AppFlowy",
+    "publishToTheWebHint": "Создать веб-сайт с CustomerIK",
     "publish": "Опубликовать",
     "unPublish": "Отменить",
     "visitSite": "Посетить сайт",
@@ -2162,7 +2162,7 @@
     "reportPage": "Донести на страницу",
     "databaseHasNotBeenPublished": "Публикация базы данных пока не поддерживается.",
     "createdWith": "Создано с",
-    "downloadApp": "Скачать AppFlowy",
+    "downloadApp": "Скачать CustomerIK",
     "copy": {
       "codeBlock": "Содержимое блока кода скопировано в буфер обмена.",
       "imageBlock": "Ссылка на изображение скопирована в буфер обмена.",
@@ -2174,7 +2174,7 @@
     "publishFailed": "Не удалось опубликовать.",
     "unpublishFailed": "Не удалось отменить публикацию.",
     "noAccessToVisit": "Нет доступа к этой странице...",
-    "createWithAppFlowy": "Создать веб-сайт с AppFlowy",
+    "createWithAppFlowy": "Создать веб-сайт с CustomerIK",
     "fastWithAI": "Быстро и легко с ИИ.",
     "tryItNow": "Попробуй сейчас"
   },

@@ -28,11 +28,11 @@ describe('FormBody typed-answer validation', () => {
     expect(screen.queryByTestId('public-form-respondent-status')).toBeNull();
   });
 
-  it('shows AppFlowy branding only when the shared-form schema permits it', () => {
+  it('shows CustomerIK branding only when the shared-form schema permits it', () => {
     const { rerender } = render(<FormBody token='public-token' schema={schemaFor()} />);
     const body = screen.getByTestId('public-form-body');
     const branding = screen.getByTestId('public-form-branding');
-    const logoLink = screen.getByRole('link', { name: 'AppFlowy' });
+    const logoLink = screen.getByRole('link', { name: 'CustomerIK' });
 
     expect(body.lastElementChild).toBe(branding);
     expect(logoLink.getAttribute('href')).toBe('https://appflowy.com');

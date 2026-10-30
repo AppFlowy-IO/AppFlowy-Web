@@ -92,7 +92,7 @@ test('a blocked popup gives actionable guidance without starting a server connec
   });
   await connectionApp.open();
   await page.getByTestId('connect-google-drive').click();
-  await expect(page.getByRole('alert')).toHaveText('Allow pop-ups for AppFlowy, then try connecting again.');
+  await expect(page.getByRole('alert')).toHaveText('Allow pop-ups for CustomerIK, then try connecting again.');
   await expect(page.getByRole('button', { name: 'Add connection', exact: true })).toBeEnabled();
   expect(connectionApp.authorizations).toHaveLength(0);
   expect(connectionApp.connections).toHaveLength(0);

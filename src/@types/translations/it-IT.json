@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "Me",
   "welcomeText": "Benvenuto in @:appName",
   "welcomeTo": "Benvenuto a",
@@ -111,7 +111,7 @@
     "csv": "CSV",
     "copyLink": "Copia Link",
     "publishToTheWeb": "Pubblica sul Web",
-    "publishToTheWebHint": "Crea un sito con AppFlowy",
+    "publishToTheWebHint": "Crea un sito con CustomerIK",
     "publish": "Pubblica",
     "unPublish": "Annulla la pubblicazione",
     "visitSite": "Visita sito",

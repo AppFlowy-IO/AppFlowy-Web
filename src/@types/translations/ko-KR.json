@@ -1,5 +1,5 @@
 {
-  "appName": "AppFlowy",
+  "appName": "CustomerIK",
   "defaultUsername": "나",
   "welcomeText": "@:appName에 오신 것을 환영합니다",
   "welcomeTo": "환영합니다",
@@ -802,7 +802,7 @@
       "menuLabel": "AI 설정",
       "keys": {
         "enableAISearchTitle": "AI 검색",
-        "aiSettingsDescription": "선호하는 모델을 선택하여 AppFlowy AI를 구동하세요. 이제 GPT 4-o, Claude 3,5, Llama 3.1 및 Mistral 7B를 포함합니다",
+        "aiSettingsDescription": "선호하는 모델을 선택하여 CustomerIK AI를 구동하세요. 이제 GPT 4-o, Claude 3,5, Llama 3.1 및 Mistral 7B를 포함합니다",
         "loginToEnableAIFeature": "AI 기능은 @:appName Cloud에 로그인한 후에만 활성화됩니다. @:appName 계정이 없는 경우 '내 계정'에서 가입하세요",
         "llmModel": "언어 모델",
         "llmModelType": "언어 모델 유형",
@@ -824,7 +824,7 @@
         "offlineAIInstruction1": "다음을 따르세요",
         "offlineAIInstruction2": "지침",
         "offlineAIInstruction3": "오프라인 AI를 활성화하려면",
-        "offlineAIDownload1": "AppFlowy AI를 다운로드하지 않은 경우",
+        "offlineAIDownload1": "CustomerIK AI를 다운로드하지 않은 경우",
         "offlineAIDownload2": "다운로드",
         "offlineAIDownload3": "먼저 다운로드하세요",
         "activeOfflineAI": "활성화됨",
@@ -1098,7 +1098,7 @@
       "customPathPrompt": "Google Drive와 같은 클라우드 동기화 폴더에 @:appName 데이터 폴더를 저장하면 위험이 발생할 수 있습니다. 이 폴더 내의 데이터베이스에 여러 위치에서 동시에 액세스하거나 수정하면 동기화 충돌 및 데이터 손상이 발생할 수 있습니다",
       "importAppFlowyData": "외부 @:appName 폴더에서 데이터 가져오기",
       "importingAppFlowyDataTip": "데이터 가져오는 중입니다. 앱을 닫지 마세요",
-      "importAppFlowyDataDescription": "외부 @:appName 데이터 폴더에서 데이터를 복사하여 현재 AppFlowy 데이터 폴더로 가져옵니다",
+      "importAppFlowyDataDescription": "외부 @:appName 데이터 폴더에서 데이터를 복사하여 현재 CustomerIK 데이터 폴더로 가져옵니다",
       "importSuccess": "@:appName 데이터 폴더가 성공적으로 가져왔습니다",
       "importFailed": "@:appName 데이터 폴더 가져오기 실패",
       "importGuide": "자세한 내용은 참조 문서를 확인하세요"
@@ -2630,7 +2630,7 @@
     "reportPage": "페이지 신고",
     "databaseHasNotBeenPublished": "데이터베이스 게시를 아직 지원하지 않습니다.",
     "createdWith": "제작",
-    "downloadApp": "AppFlowy 다운로드",
+    "downloadApp": "CustomerIK 다운로드",
     "copy": {
       "codeBlock": "코드 블록의 내용이 클립보드에 복사되었습니다",
       "imageBlock": "이미지 링크가 클립보드에 복사되었습니다",
@@ -2832,7 +2832,7 @@
     "joinWorkspace": "작업 공간 참여",
     "success": "작업 공간에 성공적으로 참여했습니다",
     "successMessage": "이제 작업 공간 내의 모든 페이지와 작업 공간에 접근할 수 있습니다.",
-    "openWorkspace": "AppFlowy 열기",
+    "openWorkspace": "CustomerIK 열기",
     "alreadyAccepted": "이미 초대를 수락했습니다",
     "errorModal": {
       "title": "문제가 발생했습니다",
@@ -2858,7 +2858,7 @@
     "title": "작업 공간 참여 요청 승인",
     "requestSummary": "<user/>이(가) <workspace/>에 참여하고 <page/>에 접근을 요청합니다",
     "upgrade": "업그레이드",
-    "downloadApp": "AppFlowy 다운로드",
+    "downloadApp": "CustomerIK 다운로드",
     "approveButton": "승인",
     "approveSuccess": "성공적으로 승인되었습니다",
     "approveError": "승인 실패, 작업 공간 플랜 한도를 초과하지 않았는지 확인하세요",
@@ -3018,7 +3018,7 @@
       "commonOther": "기타",
       "otherHint": "여기에 답변을 작성하세요",
       "questionOne": {
-        "question": "AppFlowy Pro 구독을 취소하게 된 이유는 무엇입니까?",
+        "question": "CustomerIK Pro 구독을 취소하게 된 이유는 무엇입니까?",
         "answerOne": "비용이 너무 높음",
         "answerTwo": "기능이 기대에 미치지 못함",
         "answerThree": "더 나은 대안을 찾음",
@@ -3026,7 +3026,7 @@
         "answerFive": "서비스 문제 또는 기술적 어려움"
       },
       "questionTwo": {
-        "question": "미래에 AppFlowy Pro를 다시 구독할 가능성은 얼마나 됩니까?",
+        "question": "미래에 CustomerIK Pro를 다시 구독할 가능성은 얼마나 됩니까?",
         "answerOne": "매우 가능성이 높음",
         "answerTwo": "어느 정도 가능성이 있음",
         "answerThree": "잘 모르겠음",
@@ -3067,7 +3067,7 @@
   "publishSelectedViews": "선택된 보기 {{count}}개 게시",
   "untitled": "제목 없음",
   "addToWorkspace": "작업 공간에 추가됨",
-  "downloadTip": "AppFlowy 앱이 설치되어 있지 않습니까? <link/> 다운로드.",
+  "downloadTip": "CustomerIK 앱이 설치되어 있지 않습니까? <link/> 다운로드.",
   "here": "여기",
   "openInBrowser": "브라우저에서 열기",
   "openInApp": "앱에서 열기",

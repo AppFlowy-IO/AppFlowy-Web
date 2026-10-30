@@ -85,7 +85,7 @@ function ViewHelmet({ name, icon }: { name?: string; icon?: ViewIcon }) {
   if (!name) return null;
   return (
     <Helmet>
-      <title>{name} | AppFlowy</title>
+      <title>{name} | CustomerIK</title>
     </Helmet>
   );
 }

@@ -30,7 +30,7 @@ describe('deploy/server', () => {
   const htmlTemplate = `
     <html>
       <head>
-        <title>AppFlowy</title>
+        <title>CustomerIK</title>
         <meta name="description" content="">
         <meta property="og:image" content="">
         <link rel="icon" href="/appflowy.ico">
@@ -132,8 +132,8 @@ describe('deploy/server', () => {
     const $ = load(html);
 
     expect(response.status).toBe(200);
-    expect($('title').text()).toBe('Login | AppFlowy');
-    expect($('meta[name="description"]').attr('content')).toBe('Login to AppFlowy');
+    expect($('title').text()).toBe('Login | CustomerIK');
+    expect($('meta[name="description"]').attr('content')).toBe('Login to CustomerIK');
     expect(mockBunFetch).not.toHaveBeenCalled();
     expect(mockReadFileSync).toHaveBeenCalled();
   });
@@ -144,8 +144,8 @@ describe('deploy/server', () => {
     const $ = load(html);
 
     expect(response.status).toBe(200);
-    expect($('title').text()).toBe('Payment Success | AppFlowy');
-    expect($('meta[name="description"]').attr('content')).toBe('Payment success on AppFlowy');
+    expect($('title').text()).toBe('Payment Success | CustomerIK');
+    expect($('meta[name="description"]').attr('content')).toBe('Payment success on CustomerIK');
   });
 
   it('renders /app route without custom metadata', async () => {
@@ -154,7 +154,7 @@ describe('deploy/server', () => {
     const $ = load(html);
 
     expect(response.status).toBe(200);
-    expect($('title').text()).toBe('AppFlowy');
+    expect($('title').text()).toBe('CustomerIK');
     expect(mockBunFetch).not.toHaveBeenCalled();
   });
 
@@ -266,7 +266,7 @@ describe('deploy/server', () => {
     const html = await getHtml(response);
     const $ = load(html);
 
-    expect($('title').text()).toContain('Doc | AppFlowy');
+    expect($('title').text()).toContain('Doc | CustomerIK');
     expect(extractPublishError(html)).toBeUndefined();
     expect(mockBunFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/workspace/v1/published/space/doc',
@@ -562,7 +562,7 @@ describe('deploy/server', () => {
     const minimalTemplate = `
       <html>
         <head>
-          <title>AppFlowy</title>
+          <title>CustomerIK</title>
         </head>
         <body><div id="root"></div></body>
       </html>
@@ -584,7 +584,7 @@ describe('deploy/server', () => {
     const html = await getHtml(response);
     const $ = load(html);
 
-    expect($('meta[property="og:title"]').attr('content')).toBe('Doc | AppFlowy');
+    expect($('meta[property="og:title"]').attr('content')).toBe('Doc | CustomerIK');
     expect($('meta[property="og:description"]').length).toBe(1);
     expect($('meta[name="twitter:card"]').attr('content')).toBe('summary_large_image');
   });
@@ -605,7 +605,7 @@ describe('deploy/server', () => {
     const $ = load(html);
 
     expect(response.status).toBe(200);
-    expect($('title').text()).toBe('AppFlowy');
+    expect($('title').text()).toBe('CustomerIK');
   });
 
   it('handles ARGB color without alpha correctly', async () => {
@@ -708,7 +708,7 @@ describe('deploy/server', () => {
     expect($('meta[property="og:url"]').attr('content')).toBe('https://appflowy.test/workspace/page');
   });
 
-  it('sets og:site_name to AppFlowy', async () => {
+  it('sets og:site_name to CustomerIK', async () => {
     mockBunFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -721,7 +721,7 @@ describe('deploy/server', () => {
     const html = await getHtml(response);
     const $ = load(html);
 
-    expect($('meta[property="og:site_name"]').attr('content')).toBe('AppFlowy');
+    expect($('meta[property="og:site_name"]').attr('content')).toBe('CustomerIK');
   });
 
   it('sets og:type to website', async () => {
@@ -757,7 +757,7 @@ describe('deploy/server', () => {
     expect($('meta[name="twitter:card"]').attr('content')).toBe('summary_large_image');
   });
 
-  it('sets twitter:site to @appflowy', async () => {
+  it('does not set a twitter:site handle', async () => {
     mockBunFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -770,7 +770,7 @@ describe('deploy/server', () => {
     const html = await getHtml(response);
     const $ = load(html);
 
-    expect($('meta[name="twitter:site"]').attr('content')).toBe('@appflowy');
+    expect($('meta[name="twitter:site"]').length).toBe(0);
   });
 
   // Edge case tests
@@ -801,7 +801,7 @@ describe('deploy/server', () => {
     const $ = load(html);
 
     expect(response.status).toBe(200);
-    expect($('title').text()).toBe('📝 My Notes | AppFlowy');
+    expect($('title').text()).toBe('📝 My Notes | CustomerIK');
   });
 
   it('handles very long page names', async () => {
@@ -820,7 +820,7 @@ describe('deploy/server', () => {
     const $ = load(html);
 
     expect(response.status).toBe(200);
-    expect($('title').text()).toBe(`${longName} | AppFlowy`);
+    expect($('title').text()).toBe(`${longName} | CustomerIK`);
   });
 
   // API endpoint verification
