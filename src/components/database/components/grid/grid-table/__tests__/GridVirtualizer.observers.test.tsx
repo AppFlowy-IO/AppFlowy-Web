@@ -151,7 +151,7 @@ function fixture() {
 
   view.set(YjsDatabaseKey.id, 'grid-observer-view');
   view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
-  view.set(YjsDatabaseKey.row_orders, new Y.Array(rowOrders));
+  view.set(YjsDatabaseKey.row_orders, Y.Array.from(rowOrders));
   view.set(YjsDatabaseKey.sorts, new Y.Array());
   view.set(YjsDatabaseKey.filters, new Y.Array());
   views.set('grid-observer-view', view);
@@ -159,6 +159,7 @@ function fixture() {
   database.set(YjsDatabaseKey.fields, fields);
   database.set(YjsDatabaseKey.views, views);
   databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+  expect((view.get(YjsDatabaseKey.row_orders) as Y.Array<unknown>).length).toBe(ROW_COUNT);
 
   const context: DatabaseContextState = {
     readOnly: true,
