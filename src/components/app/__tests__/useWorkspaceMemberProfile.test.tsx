@@ -118,6 +118,7 @@ it('keeps a newer notification when an older refresh response arrives later', as
       release = resolve;
     })
   );
+  getProfile.mockResolvedValueOnce({ ...remoteProfile, avatar_url: '🌟' });
   const { result } = renderHook(useCurrentUserWorkspaceAvatar);
 
   await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
@@ -136,6 +137,7 @@ it('keeps a newer notification when an older refresh response arrives later', as
   });
   expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.avatar_url).toBe('🌟');
   expect(result.current).toBe('🌟');
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(2));
 });
 
 it('does not publish a refresh after its last consumer unmounts', async () => {
@@ -237,5 +239,272 @@ it('refreshes once while a scope has consumers and again after re-entry', async 
   const reopened = renderHook(useCurrentUserWorkspaceAvatar);
 
   await waitFor(() => expect(reopened.result.current).toBe('🚀'));
+  expect(getProfile).toHaveBeenCalledTimes(2);
+});
+
+it('revalidates once when an unchanged cache replay wins the first refresh', async () => {
+  const cached = { ...remoteProfile, workspace_id: 'workspace', user_uuid: 'user', avatar_url: '🙂', updated_at: 1 };
+
+  await db.workspace_member_profiles.put(cached);
+  let release!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      release = resolve;
+    })
+  );
+  getProfile.mockResolvedValueOnce(remoteProfile);
+  const { result } = renderHook(useCurrentUserWorkspaceAvatar);
+
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, updated_at: 2 });
+  });
+  await act(async () => {
+    release(remoteProfile);
+  });
+  await waitFor(() => expect(result.current).toBe('🎨'));
+  expect(getProfile).toHaveBeenCalledTimes(2);
+});
+
+it('preserves a genuine same-value update by revalidating instead of ignoring its timestamp', async () => {
+  const cached = { ...remoteProfile, workspace_id: 'workspace', user_uuid: 'user', avatar_url: '🙂', updated_at: 1 };
+
+  await db.workspace_member_profiles.put(cached);
+  let release!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      release = resolve;
+    })
+  );
+  getProfile.mockResolvedValueOnce({ ...remoteProfile, avatar_url: '🙂', name: 'Server latest' });
+  const { result } = renderHook(useCurrentUserWorkspaceAvatar);
+
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, updated_at: 2 });
+  });
+  await act(async () => {
+    release(remoteProfile);
+  });
+  await waitFor(async () =>
+    expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.name).toBe('Server latest')
+  );
+  expect(result.current).toBe('🙂');
+  expect(getProfile).toHaveBeenCalledTimes(2);
+});
+
+it('stops after one follow-up while concurrent writes continue', async () => {
+  const cached = { ...remoteProfile, workspace_id: 'workspace', user_uuid: 'user', avatar_url: '🙂', updated_at: 1 };
+
+  await db.workspace_member_profiles.put(cached);
+  const conflict = async () => {
+    const current = await db.workspace_member_profiles.get(['workspace', 'user']);
+
+    await db.workspace_member_profiles.put({ ...cached, updated_at: current!.updated_at + 1 });
+    return remoteProfile;
+  };
+
+  getProfile
+    .mockImplementationOnce(conflict)
+    .mockImplementationOnce(conflict)
+    .mockRejectedValue(new Error('Unexpected extra refresh'));
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  try {
+    const first = renderHook(useCurrentUserWorkspaceAvatar);
+
+    await waitFor(async () =>
+      expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.updated_at).toBe(3)
+    );
+    const second = renderHook(useCurrentUserWorkspaceAvatar);
+
+    await waitFor(() => expect(second.result.current).toBe('🙂'));
+    expect(first.result.current).toBe('🙂');
+    expect(getProfile).toHaveBeenCalledTimes(2);
+    expect(consoleError).not.toHaveBeenCalled();
+  } finally {
+    consoleError.mockRestore();
+  }
+});
+
+it('retains the newer cached profile when conflict revalidation is offline', async () => {
+  const cached = { ...remoteProfile, workspace_id: 'workspace', user_uuid: 'user', avatar_url: '🙂', updated_at: 1 };
+
+  await db.workspace_member_profiles.put(cached);
+  let release!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      release = resolve;
+    })
+  );
+  getProfile.mockRejectedValueOnce(new Error('offline'));
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  try {
+    const { result } = renderHook(useCurrentUserWorkspaceAvatar);
+
+    await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await db.workspace_member_profiles.put({ ...cached, avatar_url: '🌟', updated_at: 2 });
+    });
+    await act(async () => {
+      release(remoteProfile);
+    });
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+    expect(result.current).toBe('🌟');
+    expect(getProfile).toHaveBeenCalledTimes(2);
+  } finally {
+    consoleError.mockRestore();
+  }
+});
+
+it('keeps newer notifications that arrive during both refresh attempts', async () => {
+  const cached = { ...remoteProfile, workspace_id: 'workspace', user_uuid: 'user', avatar_url: '🙂', updated_at: 1 };
+
+  await db.workspace_member_profiles.put(cached);
+  let first!: (profile: typeof remoteProfile) => void;
+  let followUp!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      first = resolve;
+    })
+  );
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      followUp = resolve;
+    })
+  );
+  const { result } = renderHook(useCurrentUserWorkspaceAvatar);
+
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, avatar_url: '🌟', updated_at: 2 });
+  });
+  await act(async () => {
+    first(remoteProfile);
+  });
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, avatar_url: '🌿', updated_at: 3 });
+  });
+  await act(async () => {
+    followUp({ ...remoteProfile, avatar_url: '🌟' });
+  });
+  await waitFor(() => expect(result.current).toBe('🌿'));
+  expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.avatar_url).toBe('🌿');
+  expect(getProfile).toHaveBeenCalledTimes(2);
+});
+
+it('does not publish a follow-up after its last consumer unmounts', async () => {
+  const cached = { ...remoteProfile, workspace_id: 'workspace', user_uuid: 'user', avatar_url: '🙂', updated_at: 1 };
+
+  await db.workspace_member_profiles.put(cached);
+  let first!: (profile: typeof remoteProfile) => void;
+  let followUp!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      first = resolve;
+    })
+  );
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      followUp = resolve;
+    })
+  );
+  const { unmount } = renderHook(useCurrentUserWorkspaceAvatar);
+
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, updated_at: 2 });
+  });
+  await act(async () => {
+    first(remoteProfile);
+  });
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(2));
+  unmount();
+  await act(async () => {
+    followUp(remoteProfile);
+  });
+  expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.avatar_url).toBe('🙂');
+  expect(getProfile).toHaveBeenCalledTimes(2);
+});
+
+it('does not downgrade a newer notification when revalidation is stale', async () => {
+  const cached = {
+    ...remoteProfile,
+    workspace_id: 'workspace',
+    user_uuid: 'user',
+    avatar_url: '🙂',
+    updated_at: 1,
+  };
+
+  await db.workspace_member_profiles.put(cached);
+  let first!: (profile: typeof remoteProfile) => void;
+  let followUp!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      first = resolve;
+    })
+  );
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      followUp = resolve;
+    })
+  );
+  const { result } = renderHook(useCurrentUserWorkspaceAvatar);
+
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, avatar_url: '🌟', updated_at: 2 });
+    first(remoteProfile);
+  });
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    followUp(remoteProfile);
+  });
+  await waitFor(async () =>
+    expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.updated_at).toBeGreaterThan(2)
+  );
+  expect((await db.workspace_member_profiles.get(['workspace', 'user']))?.avatar_url).toBe('🌟');
+  await waitFor(() => expect(result.current).toBe('🌟'));
+});
+
+it('preserves changed fields while refreshing fields untouched by a partial notification', async () => {
+  const cached = {
+    ...remoteProfile,
+    workspace_id: 'workspace',
+    user_uuid: 'user',
+    name: 'Old name',
+    avatar_url: '🙂',
+    updated_at: 1,
+  };
+
+  await db.workspace_member_profiles.put(cached);
+  let first!: (profile: typeof remoteProfile) => void;
+
+  getProfile.mockReturnValueOnce(
+    new Promise((resolve) => {
+      first = resolve;
+    })
+  );
+  getProfile.mockResolvedValueOnce({ ...remoteProfile, name: 'Old name' });
+  const { result } = renderHook(useCurrentUserWorkspaceAvatar);
+
+  await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await db.workspace_member_profiles.put({ ...cached, name: 'Notified name', updated_at: 2 });
+    first({ ...remoteProfile, name: 'Old name' });
+  });
+  await waitFor(() => expect(result.current).toBe('🎨'));
+  const saved = await db.workspace_member_profiles.get(['workspace', 'user']);
+
+  expect(saved?.name).toBe('Notified name');
+  expect(saved?.avatar_url).toBe('🎨');
   expect(getProfile).toHaveBeenCalledTimes(2);
 });

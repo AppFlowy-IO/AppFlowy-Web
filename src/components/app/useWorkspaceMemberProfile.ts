@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo } from 'react';
 
 import { db } from '@/application/db';
+import { WorkspaceMemberProfile } from '@/application/db/tables/workspace_member_profiles';
 import { getWorkspaceMemberProfile } from '@/application/services/js-services/http/user-api';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -33,35 +34,55 @@ export function useCurrentUserWorkspaceAvatar() {
     hydration.consumers += 1;
 
     const hydrateProfile = async () => {
+      const newerFields = new Set<keyof WorkspaceMemberProfile>();
+
       try {
-        const existingProfile = await db.workspace_member_profiles
-          .where('[workspace_id+user_uuid]')
-          .equals([currentWorkspaceId, currentUser.uuid])
-          .first();
+        // A cache replay and a newer notification both change updated_at. If
+        // either wins the first read, revalidate once instead of dropping the
+        // refresh forever or overwriting that concurrent profile.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const existingProfile = await db.workspace_member_profiles
+            .where('[workspace_id+user_uuid]')
+            .equals([currentWorkspaceId, currentUser.uuid])
+            .first();
 
-        // Keep rendering the cache, but refresh it after a missed notification
-        // or reopening the app. One request serves every live consumer.
-        if (hydration.consumers === 0) return;
+          // Keep rendering the cache. Every live consumer shares this refresh.
+          if (hydration.consumers === 0) return;
+          const profile = await getWorkspaceMemberProfile(currentWorkspaceId);
 
-        const profile = await getWorkspaceMemberProfile(currentWorkspaceId);
+          if (!profile || hydration.consumers === 0) return;
+          const published = await db.transaction('rw', db.workspace_member_profiles, async () => {
+            const latest = await db.workspace_member_profiles.get([currentWorkspaceId, currentUser.uuid]);
 
-        if (!profile || hydration.consumers === 0) {
-          return;
-        }
+            if (hydration.consumers === 0) return false;
+            if (latest?.updated_at !== existingProfile?.updated_at) {
+              for (const field of Object.keys(latest ?? {}) as Array<keyof WorkspaceMemberProfile>) {
+                if (field === 'updated_at' || field === 'workspace_id' || field === 'user_uuid') continue;
+                if (latest?.[field] !== existingProfile?.[field]) newerFields.add(field);
+              }
 
-        await db.transaction('rw', db.workspace_member_profiles, async () => {
-          const latest = await db.workspace_member_profiles.get([currentWorkspaceId, currentUser.uuid]);
+              return false;
+            }
 
-          // A notification can update the cache while the GET is in flight.
-          // Compare and publish together so its newer profile always wins.
-          if (hydration.consumers === 0 || latest?.updated_at !== existingProfile?.updated_at) return;
-          await db.workspace_member_profiles.put({
-            workspace_id: currentWorkspaceId,
-            user_uuid: currentUser.uuid,
-            ...profile,
-            updated_at: Date.now(),
+            // Revalidation can still hit an older server cache. Preserve fields
+            // changed concurrently, using their latest value inside this write.
+            const refreshedProfile = { ...profile };
+
+            for (const field of newerFields) {
+              Object.assign(refreshedProfile, { [field]: latest?.[field] });
+            }
+
+            await db.workspace_member_profiles.put({
+              ...refreshedProfile,
+              workspace_id: currentWorkspaceId,
+              user_uuid: currentUser.uuid,
+              updated_at: Date.now(),
+            });
+            return true;
           });
-        });
+
+          if (published) return;
+        }
       } catch (error) {
         console.error('Failed to hydrate workspace member profile:', error);
       } finally {
