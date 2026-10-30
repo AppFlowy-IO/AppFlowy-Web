@@ -267,6 +267,45 @@ test.describe('Avatar Header Display', () => {
       await expect(headerAvatarFallback).toContainText(testEmoji);
     });
 
+    test('should refresh cached emoji after a workspace profile notification is missed', async ({ page, request }) => {
+      const testEmoji = '🎨';
+
+      await signInAndWaitForApp(page, request, generateRandomEmail());
+      const workspaceId = await getCurrentWorkspaceId(page);
+      const userUuid = await getCurrentUserUuid(page);
+
+      expect(workspaceId).not.toBeNull();
+      expect(userUuid).not.toBeNull();
+      await expect.poll(async () => Boolean(await getWorkspaceMemberProfile(page, workspaceId!, userUuid!))).toBe(true);
+      const returnUrl = page.url();
+      const accessToken = await getAccessToken(page);
+
+      // The page cannot receive the update notification while it is closed.
+      // Returning must refresh the existing cache rather than depend on that event.
+      await page.goto('about:blank');
+      const updated = await request.put(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/update-member-profile`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        data: { name: 'Avatar refresh test', avatar_url: testEmoji },
+      });
+
+      expect((await updated.json()).code).toBe(0);
+      const persisted = await request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/workspace-profile`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const profile = await persisted.json();
+
+      expect(profile.code).toBe(0);
+      expect(profile.data.avatar_url).toBe(testEmoji);
+      await page.goto(returnUrl);
+      await openFirstPageAndTriggerAwareness(page);
+      const headerAvatarFallback = page
+        .locator('.appflowy-top-bar [data-slot="avatar"]')
+        .first()
+        .locator('[data-slot="avatar-fallback"]');
+
+      await expect(headerAvatarFallback).toContainText(testEmoji);
+    });
+
     test('should update header avatar when workspace member profile notification is received', async ({
       page,
       request,

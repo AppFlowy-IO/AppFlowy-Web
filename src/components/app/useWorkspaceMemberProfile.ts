@@ -6,7 +6,7 @@ import { getWorkspaceMemberProfile } from '@/application/services/js-services/ht
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
-const pendingHydrations = new Set<string>();
+const profileHydrations = new Map<string, { consumers: number; pending: boolean }>();
 
 /**
  * Hook to get the current user's workspace member profile avatar
@@ -27,8 +27,10 @@ export function useCurrentUserWorkspaceAvatar() {
     }
 
     const cacheKey = `${currentWorkspaceId}:${currentUser.uuid}`;
-    let addedToPending = false;
-    let canceled = false;
+    const existing = profileHydrations.get(cacheKey);
+    const hydration = existing ?? { consumers: 0, pending: true };
+
+    hydration.consumers += 1;
 
     const hydrateProfile = async () => {
       try {
@@ -37,42 +39,47 @@ export function useCurrentUserWorkspaceAvatar() {
           .equals([currentWorkspaceId, currentUser.uuid])
           .first();
 
-        if (existingProfile) {
-          return;
-        }
-
-        if (pendingHydrations.has(cacheKey)) {
-          return;
-        }
-
-        pendingHydrations.add(cacheKey);
-        addedToPending = true;
+        // Keep rendering the cache, but refresh it after a missed notification
+        // or reopening the app. One request serves every live consumer.
+        if (hydration.consumers === 0) return;
 
         const profile = await getWorkspaceMemberProfile(currentWorkspaceId);
 
-        if (!profile || canceled) {
+        if (!profile || hydration.consumers === 0) {
           return;
         }
 
-        await db.workspace_member_profiles.put({
-          workspace_id: currentWorkspaceId,
-          user_uuid: currentUser.uuid,
-          ...profile,
-          updated_at: Date.now(),
+        await db.transaction('rw', db.workspace_member_profiles, async () => {
+          const latest = await db.workspace_member_profiles.get([currentWorkspaceId, currentUser.uuid]);
+
+          // A notification can update the cache while the GET is in flight.
+          // Compare and publish together so its newer profile always wins.
+          if (hydration.consumers === 0 || latest?.updated_at !== existingProfile?.updated_at) return;
+          await db.workspace_member_profiles.put({
+            workspace_id: currentWorkspaceId,
+            user_uuid: currentUser.uuid,
+            ...profile,
+            updated_at: Date.now(),
+          });
         });
       } catch (error) {
         console.error('Failed to hydrate workspace member profile:', error);
       } finally {
-        if (addedToPending) {
-          pendingHydrations.delete(cacheKey);
-        }
+        hydration.pending = false;
+        if (hydration.consumers === 0) profileHydrations.delete(cacheKey);
       }
     };
 
-    void hydrateProfile();
+    // Opening another document or widget must not refetch the same profile.
+    // A new scope entry refreshes again after its last consumer has left.
+    if (!existing) {
+      profileHydrations.set(cacheKey, hydration);
+      void hydrateProfile();
+    }
 
     return () => {
-      canceled = true;
+      hydration.consumers -= 1;
+      if (hydration.consumers === 0 && !hydration.pending) profileHydrations.delete(cacheKey);
     };
   }, [currentWorkspaceId, currentUser?.uuid]);
 
@@ -102,8 +109,11 @@ export function useCurrentUserWorkspaceAvatar() {
 
   // Extract avatar_url from profile
   const avatarUrl = useMemo(() => {
+    // Live queries can retain the previous value until the next scope's query
+    // finishes. Never show another account or workspace's cached profile.
+    if (profile?.workspace_id !== currentWorkspaceId || profile?.user_uuid !== currentUser?.uuid) return null;
     return profile?.avatar_url || null;
-  }, [profile]);
+  }, [profile, currentWorkspaceId, currentUser?.uuid]);
 
   return avatarUrl;
 }
