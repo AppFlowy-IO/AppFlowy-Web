@@ -93,11 +93,11 @@ Feature: A dashboard loads each source database once, two at a time, visible wid
   # widget's header and the loading placeholder before its database's first
   # request, for every widget of the third and later databases requested.
   @cloud
-  Scenario: With every source slow, exactly 2 source databases load at a time and the rest wait with a loading state
+  Scenario: Loading indicators are painted and sources finish independently with a limit of 2
     Given eight small databases each have a grid view for a dashboard widget
     And a new database has a dashboard with 8 widgets over the 8 databases in 2 rows of 4
     And dashboard load counters are being recorded
-    When I open that dashboard while every source database loads slowly
+    When I verify loading indicators while dashboard source responses are held
     Then 2 source databases were loading at the same time at the peak
     And no more than 2 source databases were loading at the same time
     And every widget that waited for a source was seen waiting with its header and a loading state

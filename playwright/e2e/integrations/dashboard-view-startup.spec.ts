@@ -1,6 +1,7 @@
 import { expect, type Page, type Request, type Route } from '@playwright/test';
 
 import { visitDashboardAndLeave } from '../../support/dashboard-loading-edge-helpers';
+import { expectPaintedLoadingIndicator } from '../../support/dashboard-loading-paint-helpers';
 import { loadStats, loadingScenario, revealDashboardWidgets, revealWidgetData } from '../../support/dashboard-loading-helpers';
 import { expectDashboardNumberValue } from '../../support/dashboard-shared-helpers';
 import { registerDashboardWorld } from '../../support/dashboard-test-helpers';
@@ -321,6 +322,41 @@ test('unseen queued progress pauses and resumes the same animation when scrolled
     await expect(offscreen).toHaveCSS('animation-play-state', 'paused');
     expect(await offscreen.evaluate((node, previous) => node.getAnimations()[0] === previous, animation)).toBe(true);
     await expectViewWorkLimit(page);
+    expect(errors).toEqual([]);
+  } finally {
+    work.finishAll();
+  }
+});
+
+test('loading visibility checks reject transparent or covered indicators that remain mounted', async ({ page, integrationsURL }) => {
+  const work = await workRecorder(page);
+  const errors = await openFixture(page, integrationsURL);
+  const widget = page.getByTestId('frame-w3');
+
+  try {
+    await expect.poll(() => work.started.length).toBe(2);
+    await expectPaintedLoadingIndicator(widget);
+    await widget.evaluate((node) => { node.style.opacity = '0'; });
+    // Playwright's usual visibility check permits opacity:0. The paint
+    // assertion must reject it while its DOM and loading role still exist.
+    await expect(widget.getByTestId('dashboard-widget-placeholder')).toBeVisible();
+    await expect(expectPaintedLoadingIndicator(widget)).rejects.toThrow('has no hidden ancestors');
+    await widget.evaluate((node) => { node.style.opacity = ''; });
+    await widget.getByTestId('dashboard-widget-placeholder').locator('svg').evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const cover = document.createElement('div');
+
+      cover.dataset.testid = 'test-loading-cover';
+      Object.assign(cover.style, {
+        position: 'fixed', left: `${bounds.left - 10}px`, top: `${bounds.top - 10}px`,
+        width: `${bounds.width + 20}px`, height: `${bounds.height + 20}px`, zIndex: '99999', background: 'white',
+      });
+      document.body.append(cover);
+    });
+    await expect(widget.getByTestId('dashboard-widget-placeholder')).toBeVisible();
+    await expect(expectPaintedLoadingIndicator(widget)).rejects.toThrow('is not covered by another element');
+    await page.getByTestId('test-loading-cover').evaluate((node) => node.remove());
+    await expectPaintedLoadingIndicator(widget);
     expect(errors).toEqual([]);
   } finally {
     work.finishAll();

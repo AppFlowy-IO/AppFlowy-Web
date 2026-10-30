@@ -786,6 +786,11 @@ export class SourceRequestRecorder {
     page.on('requestfailed', (request) => this.onEnd(request, true));
   }
 
+  /** The same document/blob boundary used by recording and response gates. */
+  sourceIdOfDataRequest(request: Request): string | null {
+    return this.classify(new URL(request.url()), request.method())?.sourceId ?? null;
+  }
+
   /** The source database a URL names (its id, its page or one of its views), if any. */
   private sourceNamedBy(url: string): string | null {
     const source = this.sources.find(

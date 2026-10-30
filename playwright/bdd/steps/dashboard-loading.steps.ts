@@ -9,6 +9,7 @@ import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { checkOffscreenCancellation } from '../../support/dashboard-cancellation-helpers';
+import { checkDashboardLoadingPaint } from '../../support/dashboard-loading-paint-helpers';
 import { DASHBOARD_LOADING } from '../../../src/application/database-yjs/dashboard-loading';
 import {
   changeFirstEmployeeDepartment,
@@ -216,6 +217,10 @@ When(
 
 When('I open that dashboard while every source database loads slowly', async ({ page }) => {
   await openDashboardCold(page, sourceDatabaseNames(page));
+});
+
+When('I verify loading indicators while dashboard source responses are held', async ({ page }) => {
+  await checkDashboardLoadingPaint(page);
 });
 
 When('I scroll to the last dashboard row', async ({ page }) => {
