@@ -140,6 +140,27 @@ Feature: Dashboard widget chrome
     When I move the pointer away from the dashboard
     Then the "Grid" widget shows no scrollbar
 
+  Scenario: A grid card keeps its column headers while its rows scroll on both axes
+    Given a dashboard of "Projects" shows its "Grid" and "Board" views side by side
+    And "Projects" also has the rows:
+      | Name              |
+      | Scroll project 01 |
+      | Scroll project 02 |
+      | Scroll project 03 |
+      | Scroll project 04 |
+      | Scroll project 05 |
+      | Scroll project 06 |
+      | Scroll project 07 |
+      | Scroll project 08 |
+      | Scroll project 09 |
+      | Scroll project 10 |
+      | Scroll project 11 |
+      | Scroll project 12 |
+      | Scroll project 13 |
+      | Scroll project 14 |
+      | Scroll project 15 |
+    Then the "Grid" widget keeps its column headers aligned while scrolling in both directions
+
   # The inset is dashboard-parity/widget-content.json geometry.list_title_inset
   # (the 40px row-actions slot, the 6px row padding and the 2px title inset).
   Scenario: A list widget's row titles start at the card's content inset

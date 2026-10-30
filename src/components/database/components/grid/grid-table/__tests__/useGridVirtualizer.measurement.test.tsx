@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
@@ -9,7 +9,7 @@ import { useGridVirtualizer } from '../useGridVirtualizer';
 jest.mock('lodash-es', () => jest.requireActual('lodash'));
 jest.mock('@/application/database-yjs', () => ({
   PADDING_END: 100,
-  useDatabaseContext: () => ({ isDocumentBlock: true }),
+  useDatabaseContext: () => mockDatabaseContext,
   useReadOnly: () => true,
   useSortsSelector: () => [],
   useRowData: () => mockDatabaseRow,
@@ -44,6 +44,7 @@ jest.mock('@/components/database/grid/useGridContext', () => ({
 
 const mockDatabaseRow = new Y.Doc().getMap<Y.Map<string>>('row');
 const mockCells = new Y.Map<string>();
+const mockDatabaseContext = { isDocumentBlock: true, isDashboardWidget: false };
 
 mockDatabaseRow.set('cells', mockCells);
 mockCells.set('title', 'Initial title');
@@ -116,6 +117,7 @@ describe('grid row measurement', () => {
   const originalScrollTo = HTMLElement.prototype.scrollTo;
 
   beforeEach(() => {
+    mockDatabaseContext.isDashboardWidget = false;
     window.ResizeObserver = TestResizeObserver;
     jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
       // The getter receives the measured DOM element as its receiver.
@@ -157,6 +159,34 @@ describe('grid row measurement', () => {
     expect(screen.getByTestId('image-row').getAttribute('data-start')).toBe('36');
     expect(screen.getByTestId('last-row').getAttribute('data-start')).toBe('292');
   });
+
+  it.each([
+    { dashboard: false, type: RenderRowType.Header, pinned: false },
+    { dashboard: true, type: RenderRowType.Header, pinned: true },
+    { dashboard: true, type: RenderRowType.GroupHeader, pinned: false },
+  ])(
+    'retains only a dashboard column header outside the visible row range (dashboard: $dashboard, $type)',
+    ({ dashboard, type, pinned }) => {
+      mockDatabaseContext.isDashboardWidget = dashboard;
+      render(
+        <Harness
+          rows={[
+            { key: 'header', type },
+            ...Array.from({ length: 100 }, (_, index) => ({ type: RenderRowType.Row, rowId: `row-${index}` })),
+          ]}
+        />
+      );
+      const header = screen.getByTestId('header');
+      const viewport = header.parentElement!;
+
+      fireEvent.scroll(viewport, { target: { scrollTop: 1200 } });
+
+      expect(screen.queryByTestId('row-0')).toBeNull();
+      expect(screen.queryByTestId('row-35')).not.toBeNull();
+      expect(Boolean(screen.queryByTestId('header'))).toBe(pinned);
+      expect(viewport.querySelectorAll('[data-index]').length).toBeLessThan(25);
+    }
+  );
 
   it('measures replacement rows independently when the active view changes', () => {
     const { rerender } = render(<Harness rows={[{ type: RenderRowType.Row, rowId: 'old-row' }]} />);

@@ -1,4 +1,4 @@
-import { measureElement, useVirtualizer } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, measureElement, type Range, useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
@@ -28,7 +28,7 @@ const logDebug = (..._args: Parameters<typeof console.debug>) => {
 };
 
 export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[]; data: RenderRow[] }) {
-  const { isDocumentBlock, paddingStart, paddingEnd } = useDatabaseContext();
+  const { isDocumentBlock, isDashboardWidget, paddingStart, paddingEnd } = useDatabaseContext();
   const {
     rowMeasure,
     rowOverscan = DEFAULT_GRID_ROW_OVERSCAN,
@@ -162,6 +162,17 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
   // The virtualizer rebuilds every item when `getItemKey` is a new function, and
   // a new item re-renders its row: keep both key getters stable between renders.
   const getRowKey = useCallback((index: number) => getRenderRowKey(data[index]), [data]);
+  // Keep one real header in the card's scrollable content so CSS can pin it.
+  // Grouped streams begin with a group header and keep their existing layout.
+  const pinColumnHeader = Boolean(isDashboardWidget && data[0]?.type === RenderRowType.Header);
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const indexes = defaultRangeExtractor(range);
+
+      return pinColumnHeader && indexes[0] !== 0 ? [0, ...indexes] : indexes;
+    },
+    [pinColumnHeader]
+  );
   const virtualizer = useVirtualizer({
     count: data.length,
     estimateSize: (index) => {
@@ -177,6 +188,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     scrollMargin: parentOffset,
     getScrollElement,
     getItemKey: getRowKey,
+    rangeExtractor,
     measureElement: (element, entry, instance) => {
       // The ref runs while React is mutating the grid. Reading offsetHeight
       // here forces layout for each mounted row. Keep the cached size (or its
@@ -302,5 +314,6 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     columnVirtualizer,
     scrollMarginTop: parentOffset,
     isReady,
+    pinColumnHeader,
   };
 }

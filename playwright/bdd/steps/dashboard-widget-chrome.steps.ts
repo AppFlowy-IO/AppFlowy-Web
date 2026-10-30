@@ -14,6 +14,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { pressEscapeUntilHidden, resolveColor, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
+import { expectDashboardGridScrollIsolation } from '../../support/dashboard-grid-scroll-helpers';
 import {
   addFixtureDatabase,
   DashboardSelectors,
@@ -60,7 +61,10 @@ const LIST_TITLE_INSET = (
   JSON.parse(
     readFileSync(
       fileURLToPath(
-        new URL('../../../src/application/database-yjs/__fixtures__/dashboard-parity/widget-content.json', import.meta.url)
+        new URL(
+          '../../../src/application/database-yjs/__fixtures__/dashboard-parity/widget-content.json',
+          import.meta.url
+        )
       ),
       'utf8'
     )
@@ -636,6 +640,13 @@ Then('the column headers of the {string} widget start at the top of the widget c
 
   expect(Math.abs((await box(header)).y - card.y)).toBeLessThanOrEqual(0.5);
 });
+
+Then(
+  'the {string} widget keeps its column headers aligned while scrolling in both directions',
+  async ({ page }, name: string) => {
+    await expectDashboardGridScrollIsolation(page, widgetOf(page, name));
+  }
+);
 
 Then('the {string} widget shows no row selection checkboxes', async ({ page }, name: string) => {
   const widget = widgetOf(page, name);

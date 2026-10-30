@@ -45,7 +45,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { dataSource, embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
   const isHistoryPreview = dataSource?.type === 'history';
 
-  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady } = useGridVirtualizer({
+  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady, pinColumnHeader } = useGridVirtualizer({
     data,
     columns,
   });
@@ -170,6 +170,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
               const rowData = data[row.index];
               const rowId = rowData.rowId;
               const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
+              const isPinnedHeader = pinColumnHeader && rowData.type === RenderRowType.Header;
               const isFullWidthControlRow =
                 rowData.type === RenderRowType.NewRow ||
                 rowData.type === RenderRowType.LoadMoreRow ||
@@ -183,15 +184,19 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   data-row-key={getRenderRowKey(rowData)}
                   data-index={row.index}
                   ref={virtualizer.measureElement}
+                  className={isPinnedHeader ? 'bg-dash-card-bg' : undefined}
                   style={{
-                    position: 'absolute',
+                    position: isPinnedHeader ? 'sticky' : 'absolute',
                     top: 0,
-                    left: 0,
-                    transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
+                    left: isPinnedHeader ? undefined : 0,
+                    width: isPinnedHeader ? totalSize : undefined,
+                    transform: isPinnedHeader
+                      ? undefined
+                      : `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
                     display: 'flex',
                     right: isPlaceholderRow ? 0 : undefined,
                     pointerEvents: isPlaceholderRow ? 'none' : undefined,
-                    zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
+                    zIndex: isPinnedHeader ? 2 : rowData.type === RenderRowType.NewRow ? 1 : undefined,
                   }}
                 >
                   {isPlaceholderRow ? (
