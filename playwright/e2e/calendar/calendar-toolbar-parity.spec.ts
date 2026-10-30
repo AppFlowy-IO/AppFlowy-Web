@@ -2,7 +2,12 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { calendarDraftTitle, switchPlaceholderCalendarView } from '../../support/calendar-placeholder-helpers';
-import { loginAndCreateCalendar, openCalendarViewMenu, switchCalendarView } from '../../support/calendar-test-helpers';
+import {
+  closeCalendarViewMenu,
+  loginAndCreateCalendar,
+  openCalendarViewMenu,
+  switchCalendarView,
+} from '../../support/calendar-test-helpers';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
 import {
@@ -86,8 +91,10 @@ test('opening an expanded calendar range menu preserves its selected range', asy
   await expect(CalendarSelectors.customDayOption(page, 2)).toBeVisible();
   await openCalendarViewMenu(page);
   await expect(CalendarSelectors.monthViewOption(page)).toHaveAttribute('aria-checked', 'true');
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await closeCalendarViewMenu(page);
+  await closeCalendarViewMenu(page);
+  await CalendarSelectors.nextButton(page).click();
+  await CalendarSelectors.prevButton(page).click();
   await expect(CalendarSelectors.viewSelect(page)).toHaveText('Month');
 });
 
@@ -124,8 +131,7 @@ test('calendar custom ranges navigate by their exact day count and standard view
     .getByRole('menu')
     .last()
     .screenshot({ path: testInfo.outputPath('calendar-day-count-menu.png') });
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await closeCalendarViewMenu(page);
 
   // Standard navigation retains the focused day, even when its visible range starts earlier.
   await clickNavigation(page, 'next');
@@ -148,8 +154,7 @@ test('calendar custom ranges navigate by their exact day count and standard view
     await openCalendarViewMenu(page);
     await CalendarSelectors.numberOfDaysMenu(page).click();
     await expect(CalendarSelectors.customDayOption(page, days)).toHaveAttribute('aria-checked', 'true');
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
+    await closeCalendarViewMenu(page);
   }
 
   // Four eight-day steps must cross a month boundary without snapping to a week.

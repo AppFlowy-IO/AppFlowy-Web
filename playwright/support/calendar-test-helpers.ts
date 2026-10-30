@@ -83,6 +83,25 @@ export async function openCalendarViewMenu(page: Page): Promise<Locator> {
   return trigger;
 }
 
+/** Let the submenu finish closing before Escape reaches its parent layer. */
+export async function closeCalendarViewMenu(page: Page): Promise<void> {
+  const trigger = CalendarSelectors.viewSelect(page).filter({ visible: true }).last();
+
+  if ((await trigger.getAttribute('aria-expanded')) === 'true') {
+    const submenuChoice = CalendarSelectors.customDayOption(page, 2);
+
+    if (await submenuChoice.isVisible()) {
+      await page.keyboard.press('Escape');
+      await expect(submenuChoice).toBeHidden();
+    }
+
+    if ((await trigger.getAttribute('aria-expanded')) === 'true') await page.keyboard.press('Escape');
+  }
+
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+}
+
 /** Change the calendar range through the same dropdown used on desktop. */
 export async function switchCalendarView(page: Page, view: 'Month' | 'Week' | 2 | 3 | 4 | 5 | 6 | 8): Promise<void> {
   await openCalendarViewMenu(page);
