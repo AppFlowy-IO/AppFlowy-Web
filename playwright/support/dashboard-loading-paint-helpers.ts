@@ -89,9 +89,11 @@ export async function checkDashboardLoadingPaint(page: Page) {
   const viewer = viewerOf(page);
   const viewport = viewer.viewportSize();
   const recorder = recorderOf(page);
+  const previousOpen = loadingScenario(page).openedAt;
   const hostId = hostDatabase(page).databaseId;
   const widgets = loadingWidgets(page).filter((widget) => fixtureDatabase(page, widget.database).databaseId !== hostId);
   const pending = new Map<string, (() => void)[]>();
+  const routes = new Set<Promise<void>>();
   const released = new Set<string>();
   let holding = true;
   let maximum = 0;
@@ -106,10 +108,14 @@ export async function checkDashboardLoadingPaint(page: Page) {
     [...pending.keys()].forEach(releaseSource);
   };
 
-  const handler = async (route: Route) => {
+  const handleRoute = async (route: Route) => {
     const sourceId = recorder.sourceIdOfDataRequest(route.request());
 
-    if (!sourceId || sourceId === hostId || !holding || released.has(sourceId)) {
+    // Resizing the still-open fixture can start warm requests. The cold open
+    // cancels them; never retain those old responses as pending cold sources.
+    const coldOpenStarted = loadingScenario(page).openedAt !== previousOpen;
+
+    if (!coldOpenStarted || !sourceId || sourceId === hostId || !holding || released.has(sourceId)) {
       await route.fallback();
       return;
     }
@@ -124,6 +130,14 @@ export async function checkDashboardLoadingPaint(page: Page) {
     }
 
     await route.fulfill({ response });
+  };
+
+  const handler = (route: Route) => {
+    const done = handleRoute(route);
+
+    routes.add(done);
+    void done.then(() => routes.delete(done), () => routes.delete(done));
+    return done;
   };
 
   await viewer.route('**/api/**', handler);
@@ -193,6 +207,9 @@ export async function checkDashboardLoadingPaint(page: Page) {
     );
   } finally {
     releaseAll();
+    // Complete released responses before removing the handler, including when
+    // a cap assertion fails with source responses still held.
+    await Promise.allSettled(routes);
     await viewer.unroute('**/api/**', handler);
     if (viewport) await viewer.setViewportSize(viewport);
   }
