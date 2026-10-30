@@ -1,15 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import AISlidesSharePanel from '../AISlidesSharePanel';
-import { listSavedDecks } from '../presentation-client';
+import { listSavedDecks, loadSavedDeck } from '../presentation-client';
 import { preloadPresentation } from '../presentation-preload';
 import { forgetSavedDecks } from '../saved-deck-cache';
 
-import type { SavedDeck } from '../types';
+import type { SavedDeck, SavedDeckSummary } from '../types';
 
 let mockUserId = 'user';
+let mockCanRead = true;
 
-jest.mock('../presentation-client', () => ({ listSavedDecks: jest.fn() }));
+jest.mock('../presentation-client', () => ({ listSavedDecks: jest.fn(), loadSavedDeck: jest.fn() }));
 jest.mock('../presentation-preload', () => ({ preloadPresentation: jest.fn() }));
 jest.mock('@/components/app/app.hooks', () => ({
   useAppView: (id: string) => ({ view_id: id }),
@@ -17,7 +18,7 @@ jest.mock('@/components/app/app.hooks', () => ({
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: mockUserId }) }));
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
-  useViewActionPermissions: () => ({ canRead: true, canWrite: true }),
+  useViewActionPermissions: () => ({ canRead: mockCanRead, canWrite: mockCanRead }),
 }));
 
 const deck = {
@@ -27,14 +28,23 @@ const deck = {
   style: { name: 'Paper' },
   createdAt: '2026-10-28T00:00:00Z',
 } as unknown as SavedDeck;
+const summary: SavedDeckSummary = {
+  id: deck.id,
+  version: deck.version!,
+  title: deck.plan.title,
+  slideCount: deck.plan.slides.length,
+  createdAt: deck.createdAt,
+};
 const onOpen = jest.fn();
 const panel = (viewId = 'page') => <AISlidesSharePanel viewId={viewId} onOpen={onOpen} />;
 
 beforeEach(() => {
-  jest.mocked(listSavedDecks).mockReset().mockResolvedValue([deck]);
+  jest.mocked(listSavedDecks).mockReset().mockResolvedValue([summary]);
+  jest.mocked(loadSavedDeck).mockReset().mockResolvedValue(deck);
   jest.mocked(preloadPresentation).mockClear();
   onOpen.mockClear();
   mockUserId = 'user';
+  mockCanRead = true;
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -55,6 +65,7 @@ test('lists the workspace catalog once across tab visits and pages', async () =>
   render(panel('another-page'));
   expect(screen.getByText('Quarterly review')).toBeTruthy();
   expect(listSavedDecks).toHaveBeenCalledTimes(1);
+  expect(loadSavedDeck).not.toHaveBeenCalled();
 });
 
 test('lists again after the cache expires, for another user, and after it is forgotten', async () => {
@@ -100,8 +111,63 @@ test('opening a deck starts the studio chunk alongside the dialog', async () => 
 
   fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
   expect(preloadPresentation).toHaveBeenCalledWith('slides');
-  expect(onOpen).toHaveBeenCalledWith(deck, 'preview');
+  expect(loadSavedDeck).toHaveBeenCalledWith(
+    { workspaceId: 'workspace', pageId: 'page' }, summary.id, summary.version, expect.any(AbortSignal)
+  );
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(deck, 'preview'));
   fireEvent.click(screen.getByRole('button', { name: 'Create AI Slides' }));
   expect(preloadPresentation).toHaveBeenCalledTimes(2);
   expect(onOpen).toHaveBeenLastCalledWith(undefined, undefined);
+});
+
+test('a failed selected scene keeps catalog cards visible and can be retried', async () => {
+  jest.mocked(loadSavedDeck).mockRejectedValueOnce(new Error('Scene unavailable'));
+  render(panel());
+  fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+
+  expect((await screen.findByRole('alert')).textContent).toBe('Scene unavailable');
+  expect(screen.getByText('Quarterly review')).toBeTruthy();
+  expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(deck, 'preview'));
+  expect(loadSavedDeck).toHaveBeenCalledTimes(2);
+  expect(listSavedDecks).toHaveBeenCalledTimes(1);
+});
+
+test.each(['unmount', 'account', 'permission'] as const)('aborts opening after %s changes and ignores a late deck', async (change) => {
+  let finish!: (value: SavedDeck) => void;
+
+  jest.mocked(loadSavedDeck).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const view = render(panel());
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+  expect(screen.getByText('Opening presentation…')).toBeTruthy();
+  const signal = jest.mocked(loadSavedDeck).mock.calls[0][3]!;
+
+  if (change === 'unmount') view.unmount();
+  else {
+    if (change === 'account') mockUserId = 'another-user';
+    else mockCanRead = false;
+    view.rerender(panel());
+  }
+
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(deck));
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test('partial catalog failures leave healthy entries visible and are retried on the next visit', async () => {
+  jest.mocked(listSavedDecks).mockResolvedValueOnce([
+    summary,
+    { id: 'unavailable', version: 1, createdAt: summary.createdAt, error: 'Artifact unavailable' },
+  ]);
+  const first = render(panel());
+
+  await screen.findByText('Quarterly review');
+  expect(screen.getByRole('alert').textContent).toBe('Artifact unavailable');
+  first.unmount();
+  render(panel());
+  await screen.findByText('Quarterly review');
+  expect(listSavedDecks).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('alert')).toBeNull();
 });

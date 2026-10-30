@@ -143,3 +143,50 @@ test('rejects unsupported image formats without hiding the rest of the deck', as
   expect(screen.queryByAltText('Evidence image')).toBeNull();
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
+
+test('narrow charts keep label proportions and wrap each complete label inside its own column', async () => {
+  const items = ['v1 Baseline', 'v2 Clear instructions', 'v3 Retrieval', 'v4 Hard examples', 'v5 Compact context'].map(
+    (label, index) => ({ label, value: 62 + index, sourceId: `source-${index}` })
+  );
+
+  jest.mocked(getArtifactScene).mockResolvedValue({
+    ...scene,
+    slides: [
+      {
+        ...scene.slides[0],
+        elements: [
+          {
+            id: 'chart',
+            kind: 'chart',
+            bounds: { x: 64, y: 280, width: 704, height: 330 },
+            unit: 'answers',
+            items,
+            font: 'Arial',
+            color: '243B53',
+            accent: '1F7A8C',
+          },
+        ],
+      },
+    ],
+  });
+  render(<Preview />);
+  const charts = await screen.findAllByRole('img', { name: /v2 Clear instructions/ });
+
+  for (const chart of charts) {
+    expect(chart.getAttribute('viewBox')).toBe('0 0 704 330');
+    expect(chart.getAttribute('preserveAspectRatio')).not.toBe('none');
+    const labels = chart.querySelectorAll('foreignObject');
+
+    expect(labels).toHaveLength(items.length);
+    labels.forEach((label, index) => {
+      expect(label.textContent).toContain(items[index].label);
+      expect(label.textContent).toContain(`${items[index].value} answers`);
+      expect((label.firstElementChild as HTMLElement).style.overflowWrap).toBe('anywhere');
+      if (index + 1 < labels.length) {
+        expect(Number(label.getAttribute('x')) + Number(label.getAttribute('width'))).toBeLessThan(
+          Number(labels[index + 1].getAttribute('x'))
+        );
+      }
+    });
+  }
+});

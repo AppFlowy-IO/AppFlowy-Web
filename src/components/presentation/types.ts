@@ -198,6 +198,15 @@ export type Mode = 'slides' | 'mindmap' | 'document' | 'styles' | 'source';
 export type SlidesStage = 'setup' | 'preview' | 'story' | 'outline';
 export type DeckAction = 'preview' | 'present' | 'download' | 'regenerate';
 export type Scenario = 'free' | 'consumed' | 'pro' | 'viewer' | 'ai-limit';
+/** Catalog metadata only; opening a deck loads its immutable scene separately. */
+export interface SavedDeckSummary {
+  id: string;
+  version: number;
+  createdAt: string;
+  title?: string;
+  slideCount?: number;
+  error?: string;
+}
 export interface SavedDeck {
   version?: number;
   serverPlan?: ServerSlidePlan;

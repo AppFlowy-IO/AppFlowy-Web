@@ -23,7 +23,7 @@ test('custom choices follow the current server maximum instead of a fixed client
 
 test('missing maximum does not manufacture a custom-count range or a paid upgrade requirement', () => {
   render(<SlideCountDropdown disabled onValueChange={jest.fn()} />);
-  expect((screen.getByRole('button', { name: 'Custom' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Custom' }).disabled).toBe(true);
   expect(screen.queryByText(/upgrade/i)).toBeNull();
 });
 

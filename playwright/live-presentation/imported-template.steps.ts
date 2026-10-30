@@ -24,9 +24,10 @@ async function data<T>(response: Response): Promise<T> {
 }
 
 async function newPage(page: Page, label: string) {
-  const space = page.getByTestId('space-item').first();
+  const space = page.getByTestId('space-item').filter({ has: page.getByTestId('space-name').filter({ hasText: /^General$/ }) }).first();
 
-  await space.hover();
+  // The space container includes all expanded children; its center is not the hoverable header.
+  await space.getByTestId('space-name').first().hover();
   const id = await createDocumentPageAndNavigate(page);
   const title = page.getByTestId('page-title-input').filter({ visible: true }).first();
 
@@ -116,7 +117,8 @@ Then('the saved template is immediately selectable in the presentation dialog', 
   await page.getByRole('button', { name: 'Remove template' }).click();
   await page.getByRole('button', { name: 'Saved templates', exact: true }).click();
   await page.getByRole('menuitemradio', { name, exact: true }).click();
-  await expect(page.getByText(/Template selected\./)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Saved templates', exact: true })).toHaveText(name);
+  await expect(page.getByText(/Template selected\./)).toHaveCount(0);
   expect(states.get(page)!.reviews).toBe(1);
 });
 
@@ -139,7 +141,8 @@ When('the test user selects that template on another new page', async ({ page })
   await page.getByRole('menuitemradio', { name, exact: true }).click();
   expect((await data<StoredSession>(await session)).payload.style).toEqual(states.get(page)!.style!.reference);
   await expect(page.getByLabel('Template accent color')).toHaveValue('#1f7a8c');
-  await expect(page.getByText(/Template selected\./)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Saved templates', exact: true })).toHaveText(name);
+  await expect(page.getByText(/Template selected\./)).toHaveCount(0);
 });
 
 Then('reopening the second page restores the same reviewed template without another upload', async ({ page }) => {

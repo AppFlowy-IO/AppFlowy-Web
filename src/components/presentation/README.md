@@ -12,7 +12,7 @@ pnpm dev --host 127.0.0.1 --port 5182 --strictPort
 Use the app's normal server configuration and sign in at `/app`. The configured Cloud deployment must provide the presentation endpoints. This worktree does not start a model provider, mock backend, Cloud proxy, or unauthenticated presentation lab.
 
 - **Present** beside Share opens document presentation, mind maps, or AI Slides.
-- **Share → AI Slides** lists up to 30 authorized workspace presentations. This is a workspace catalog, not a current-page list. The list is reused for a minute per user; Retry, or closing an AI presentation dialog, lists it again.
+- **Share → AI Slides** lists up to 30 authorized workspace presentations. Catalog cards read titles and slide counts with at most four artifact reads in flight; slide scenes load only for the deck opened by Preview, Present or Download. A failed artifact stays local to its card. This is a workspace catalog, not a current-page list. Successful metadata lists are reused for a minute per user; Retry, or closing an AI presentation dialog, lists it again.
 - **Settings → AI Settings → Presentation Styles** manages uploaded templates and their reviewed versions.
 - Prompt maintenance is a separate administrative screen. The server checks administrator access; normal generation never sends a system prompt or provider configuration from the browser.
 
@@ -62,6 +62,10 @@ The server owns slide/export quotas, AI accounting, source permissions and deplo
 
 [`ServerSlideCanvas.tsx`](./ServerSlideCanvas.tsx) renders the saved server scene used by native PowerPoint export. All thumbnails share one scene load and deduplicated, bounded private image reads; a deck read with its scene reuses that scene and fetches only its images. Slides render before their images, and an image that cannot be shown is marked unavailable without hiding the deck. Images use authenticated Blob requests with workspace, artifact version and asset revision. Object URLs are revoked on replacement/unmount. Source changes or permission failures do not fall back to fixture generation.
 
+Each asset revision publishes only to its own mounted image copies, so image arrivals and failures
+leave unrelated images, text and slide geometry untouched. Presenter shortcuts preserve native
+Space activation on buttons and ignore handled events, modified keys and other dialogs.
+
 ## Editing and compatibility
 
 Story-plan editing preserves the saved artifact version and source revision. Accepting an unchanged initial outline opens the already-generated artifact. Applying a changed outline regenerates through Cloud. Map text and appearance edits use expected-version checks; rejected writes retain the accepted content. The root map label remains the approved source title. Structural maps also come from Cloud: loading, failure and retry states never synthesize a replacement map in the browser.
@@ -73,6 +77,11 @@ Template uploads produce candidates requiring explicit review. Review preserves 
 Explicit map/deck JSON imports are available through the typed API adapter. Ordinary generation and the separate administrator prompt tests use the server workflows above. Prompt compilation, provider calls, output validation and native exports are implemented only on the server; the prototype implementation and historical prompt copies have been removed from Web.
 
 The non-AI document presenter retains measured pagination, tables, row properties, code/Mermaid, equations, callouts, meeting summaries, covers, linked databases, source navigation and fullscreen controls. It reuses the current main branch's secure Mermaid renderer and editor behavior.
+
+Document images use the shared authenticated-original loader for absolute and relative AppFlowy
+file URLs. Slides and their measuring copy share one image read; external and editor-owned blob
+URLs remain owned by their source. Presentation Styles uses the access hook's status read for
+upload limits, while its saved styles load independently of billing latency.
 
 Present document borrows live resources from the page's mounted database view through
 `database/mounted-database.ts`: the same Y.Doc, row map and loading functions, with separate

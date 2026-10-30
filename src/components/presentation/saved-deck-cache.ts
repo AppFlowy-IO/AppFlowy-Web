@@ -1,19 +1,18 @@
 import { listSavedDecks } from './presentation-client';
 
 import type { PresentationScope } from './server-contract';
-import type { SavedDeck } from './types';
+import type { SavedDeckSummary } from './types';
 
 /**
- * Listing reads every catalog deck's artifact and scene (up to 61 requests), and the Share panel's
- * tab content unmounts whenever another tab is selected. Visits within this window reuse the list;
- * after it, decks saved elsewhere appear on the next visit.
+ * The catalog API exposes artifact IDs, so listing also reads their titles and slide counts,
+ * without loading scenes. Tab visits within this window reuse that metadata.
  */
 const SAVED_DECKS_TTL_MS = 60 * 1000;
-const savedDecks = new Map<string, { decks: SavedDeck[]; savedAt: number }>();
+const savedDecks = new Map<string, { decks: SavedDeckSummary[]; savedAt: number }>();
 const cacheKey = (workspaceId: string, userId: string) => `${workspaceId}:${userId}`;
 
 /** The workspace catalog this user listed within the last minute, if any. */
-export function cachedSavedDecks(workspaceId: string, userId: string): SavedDeck[] | undefined {
+export function cachedSavedDecks(workspaceId: string, userId: string): SavedDeckSummary[] | undefined {
   const key = cacheKey(workspaceId, userId);
   const entry = savedDecks.get(key);
 
@@ -27,10 +26,11 @@ export async function listCachedSavedDecks(
   scope: PresentationScope,
   userId: string,
   signal?: AbortSignal
-): Promise<SavedDeck[]> {
+): Promise<SavedDeckSummary[]> {
   const decks = await listSavedDecks(scope, signal);
 
-  savedDecks.set(cacheKey(scope.workspaceId, userId), { decks, savedAt: Date.now() });
+  if (!signal?.aborted && !decks.some((deck) => deck.error))
+    savedDecks.set(cacheKey(scope.workspaceId, userId), { decks, savedAt: Date.now() });
   return decks;
 }
 

@@ -30,6 +30,7 @@ import { documentOutline } from './document-outline';
 import { documentUnitKey, paginateDocument } from './document-pagination';
 import DocumentCallout from './DocumentCallout';
 import DocumentContentProvider from './DocumentContentProvider';
+import DocumentImage from './DocumentImage';
 import DocumentMeeting, { MeetingSlide } from './DocumentMeeting';
 import DocumentOutline, { DocumentOutlineContext } from './DocumentOutline';
 import DocumentTable from './DocumentTable';
@@ -49,7 +50,6 @@ import { Action } from './ui';
 import { usePresentationFullscreen } from './usePresentationFullscreen';
 import './presentation.css';
 
-const SAFE_URL = /^(https?:\/\/|blob:)/i;
 const DocumentDatabase = lazy(() => import('./DocumentDatabase'));
 const DocumentCode = lazy(() => import('./DocumentCode'));
 // The measuring copy is hidden and inert, so none of its blocks can open a source.
@@ -251,11 +251,7 @@ function BlockBody({
     case 'image':
       return (
         <figure>
-          {block.url && SAFE_URL.test(block.url) ? (
-            <img src={block.url} alt={text || 'Source image'} />
-          ) : (
-            <button onClick={() => onSource(block.id)}>Open image in source</button>
-          )}
+          <DocumentImage block={block} onSource={onSource} />
           <figcaption>{text}</figcaption>
           {children}
         </figure>

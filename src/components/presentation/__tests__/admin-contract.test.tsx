@@ -88,6 +88,7 @@ test('switching components keeps the text of the selected immutable version with
     },
   };
   const original = JSON.stringify(bundle);
+
   (presentationRequest as jest.Mock).mockImplementation(async (request) => {
     if (request.url === '/api/admin/presentation/prompts') return { active: null, bundle };
     if (request.method === 'PUT') return {

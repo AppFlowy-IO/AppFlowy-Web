@@ -1,4 +1,15 @@
-import { createContext, CSSProperties, memo, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  CSSProperties,
+  memo,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { getArtifactAsset, getArtifactScene } from './presentation-client';
 
@@ -9,14 +20,46 @@ import type { SavedDeck } from './types';
 type SceneState = {
   key: string;
   scene?: DeckScene;
-  /** Object URL per asset revision; null marks an image that could not be shown. */
-  images: Map<string, string | null>;
+  images: ReturnType<typeof createSceneImages>;
   error?: string;
 };
 const SceneContext = createContext<SceneState | undefined>(undefined);
 const assetKey = (id: string, revision: string) => `${id}:${revision}`;
 const rgb = (color: string) => (/^#?[0-9a-f]{6}$/i.test(color) ? `#${color.replace(/^#/, '')}` : 'transparent');
 const supported = (scene: DeckScene) => scene.schemaVersion === 1 && scene.width === 1280 && scene.height === 720;
+
+/** Each asset revision notifies only its mounted image copies, leaving scene geometry stable. */
+function createSceneImages() {
+  const values = new Map<string, string | null>();
+  const listeners = new Map<string, Set<() => void>>();
+  const notify = (id: string) => listeners.get(id)?.forEach((listener) => listener());
+
+  return {
+    read: (id: string) => values.get(id),
+    subscribe(id: string, listener: () => void) {
+      const subscribers = listeners.get(id) ?? new Set<() => void>();
+
+      subscribers.add(listener);
+      listeners.set(id, subscribers);
+      return () => {
+        subscribers.delete(listener);
+        if (!subscribers.size) listeners.delete(id);
+      };
+    },
+    publish(id: string, url: string | null) {
+      if (values.get(id) === url) return;
+      values.set(id, url);
+      notify(id);
+    },
+    clear() {
+      const ids = [...values.keys()];
+
+      values.forEach((url) => url && URL.revokeObjectURL(url));
+      values.clear();
+      ids.forEach(notify);
+    },
+  };
+}
 
 /** Fetch one authorized scene and one copy of each private image for all thumbnails and slides. */
 export function ServerSlideSceneProvider({
@@ -34,12 +77,15 @@ export function ServerSlideSceneProvider({
     deck.scene?.workspaceId === scope.workspaceId && deck.scene.id === deck.id && deck.scene.version === deck.version
       ? deck.scene.value
       : undefined;
-  const [state, setState] = useState<SceneState>({ key: '', images: new Map() });
+  const images = useMemo(createSceneImages, [key]);
+  const [state, setState] = useState<SceneState>(() => ({
+    key,
+    scene: known && supported(known) ? known : undefined,
+    images,
+  }));
 
   useEffect(() => {
     const controller = new AbortController();
-    const images = new Map<string, string | null>();
-    const revoke = () => images.forEach((url) => url && URL.revokeObjectURL(url));
 
     async function load() {
       try {
@@ -56,10 +102,12 @@ export function ServerSlideSceneProvider({
             if (element.kind === 'image') assets.set(assetKey(element.asset_id, element.revision), element);
           })
         );
-        // Slides render before their images; each finished image publishes a new copy of the map.
-        const publish = () => setState({ key, scene, images: new Map(images) });
-
-        publish();
+        // Scene context changes only when the scene changes; images publish to their own subscribers.
+        setState((current) =>
+          current.key === key && current.scene === scene && current.images === images && !current.error
+            ? current
+            : { key, scene, images }
+        );
         const pending = [...assets.entries()];
         let next = 0;
         const worker = async () => {
@@ -78,14 +126,12 @@ export function ServerSlideSceneProvider({
 
               if (controller.signal.aborted) return;
               if (!['image/png', 'image/jpeg'].includes(blob.type)) throw new Error('Unsupported presentation image.');
-              images.set(id, URL.createObjectURL(blob));
+              images.publish(id, URL.createObjectURL(blob));
             } catch {
               if (controller.signal.aborted) return;
               // One unavailable image must not hide the rest of the deck.
-              images.set(id, null);
+              images.publish(id, null);
             }
-
-            publish();
           }
         };
 
@@ -94,53 +140,95 @@ export function ServerSlideSceneProvider({
         if (!controller.signal.aborted) {
           setState({
             key,
-            images: new Map(),
+            images,
             error: error instanceof Error ? error.message : 'Unable to load this presentation.',
           });
           controller.abort();
         }
 
-        revoke();
+        images.clear();
       }
     }
 
     void load();
     return () => {
       controller.abort();
-      revoke();
+      images.clear();
     };
     // pageId is not an authority for artifact reads; the server rechecks its saved source ACLs.
     // The known scene belongs to this key's artifact version, which never changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, scope.workspaceId, deck.id, deck.version]);
+  }, [key, scope.workspaceId, deck.id, deck.version, images]);
 
   // A stable value lets memoized thumbnails skip renders that change nothing in the scene.
   const value = useMemo<SceneState>(
-    () => (state.key === key ? state : { key, scene: known && supported(known) ? known : undefined, images: new Map() }),
-    [state, key, known]
+    () =>
+      state.key === key && state.images === images
+        ? state
+        : { key, scene: known && supported(known) ? known : undefined, images },
+    [state, key, known, images]
   );
 
   return <SceneContext.Provider value={value}>{children}</SceneContext.Provider>;
+}
+
+function SceneImage({
+  element,
+  box,
+  images,
+}: {
+  element: Extract<SceneElement, { kind: 'image' }>;
+  box: CSSProperties;
+  images: SceneState['images'];
+}) {
+  const id = assetKey(element.asset_id, element.revision);
+  const subscribe = useCallback((listener: () => void) => images.subscribe(id, listener), [images, id]);
+  const read = useCallback(() => images.read(id), [images, id]);
+  const src = useSyncExternalStore(subscribe, read, () => undefined);
+
+  // Keep the frame in place while this image loads or when it cannot be shown.
+  return src ? (
+    <img alt={element.attribution} src={src} style={{ ...box, objectFit: 'contain' }} />
+  ) : (
+    <div
+      role='img'
+      aria-label={src === null ? 'Image unavailable' : element.attribution}
+      aria-busy={src === undefined}
+      style={{
+        ...box,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0000000a',
+        color: '#6b7e98',
+        fontSize: '1.25cqw',
+      }}
+    >
+      {src === null && 'Image unavailable'}
+    </div>
+  );
 }
 
 function NativeChart({ element }: { element: Extract<SceneElement, { kind: 'chart' }> }) {
   const min = Math.min(0, ...element.items.map((item) => item.value));
   const max = Math.max(0, ...element.items.map((item) => item.value));
   const span = max - min || 1;
-  const baseline = (80 * max) / span;
-  const column = 100 / Math.max(1, element.items.length);
+  // Use scene pixels so text scales uniformly with the slide, including narrower exhibit columns.
+  const { width, height } = element.bounds;
+  const plotHeight = height * 0.74;
+  const baseline = (plotHeight * max) / span;
+  const column = width / Math.max(1, element.items.length);
 
   return (
     <svg
-      viewBox='0 0 100 100'
-      preserveAspectRatio='none'
+      viewBox={`0 0 ${width} ${height}`}
       role='img'
       aria-label={`${element.unit}: ${element.items.map((item) => `${item.label} ${item.value}`).join(', ')}`}
-      style={{ width: '100%', height: '100%', overflow: 'visible' }}
+      style={{ width: '100%', height: '100%', fontFamily: element.font }}
     >
-      <line x1={0} x2={100} y1={baseline} y2={baseline} stroke={rgb(element.color)} strokeWidth={0.3} />
+      <line x1={0} x2={width} y1={baseline} y2={baseline} stroke={rgb(element.color)} strokeWidth={1} />
       {element.items.map((item, index) => {
-        const y = (80 * (max - item.value)) / span;
+        const y = (plotHeight * (max - item.value)) / span;
 
         return (
           <g key={index}>
@@ -148,15 +236,25 @@ function NativeChart({ element }: { element: Extract<SceneElement, { kind: 'char
               x={index * column + column * 0.15}
               y={Math.min(y, baseline)}
               width={column * 0.7}
-              height={Math.max(0.2, Math.abs(y - baseline))}
+              height={Math.max(1, Math.abs(y - baseline))}
               fill={rgb(element.accent)}
             />
-            <text x={(index + 0.5) * column} y={90} textAnchor='middle' fontSize={3} fill={rgb(element.color)}>
-              {item.label}
-            </text>
-            <text x={(index + 0.5) * column} y={97} textAnchor='middle' fontSize={3} fill={rgb(element.color)}>
-              {item.value} {element.unit}
-            </text>
+            <foreignObject x={index * column + 4} y={plotHeight + 8} width={column - 8} height={height - plotHeight - 8}>
+              <div
+                style={{
+                  fontSize: 16,
+                  lineHeight: 1.2,
+                  textAlign: 'center',
+                  overflowWrap: 'anywhere',
+                  color: rgb(element.color),
+                }}
+              >
+                <div>{item.label}</div>
+                <div style={{ marginTop: 4 }}>
+                  {item.value} {element.unit}
+                </div>
+              </div>
+            </foreignObject>
           </g>
         );
       })}
@@ -230,32 +328,8 @@ function ServerSlideCanvas({ index = 0, miniature = false }: { index?: number; m
               }}
             />
           );
-        if (element.kind === 'image') {
-          const src = state.images.get(assetKey(element.asset_id, element.revision));
-
-          return src ? (
-            <img key={element.id} alt={element.attribution} src={src} style={{ ...box, objectFit: 'contain' }} />
-          ) : (
-            // The image frame stays in place while it loads or when it cannot be shown.
-            <div
-              key={element.id}
-              role='img'
-              aria-label={src === null ? 'Image unavailable' : element.attribution}
-              aria-busy={src === undefined}
-              style={{
-                ...box,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#0000000a',
-                color: '#6b7e98',
-                fontSize: '1.25cqw',
-              }}
-            >
-              {src === null && 'Image unavailable'}
-            </div>
-          );
-        }
+        if (element.kind === 'image')
+          return <SceneImage key={element.id} element={element} box={box} images={state.images} />;
 
         if (element.kind === 'chart')
           return (

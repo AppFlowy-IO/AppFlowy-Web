@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
 import SlidesWorkflow from '../SlidesWorkflow';
@@ -12,15 +12,17 @@ jest.mock('../ServerSlideCanvas', () => ({
   ServerSlideSceneProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock('../SlideGenerationSetup', () => ({ __esModule: true, default: () => null }));
-jest.mock('../FullscreenControl', () => ({ __esModule: true, default: () => null }));
 jest.mock('../presentation-client', () => ({
   PresentationAPIError: class extends Error {
-    constructor(message: string, _code: string, public status: number) { super(message); }
+    constructor(message: string, _code: string, public status: number) {
+      super(message);
+    }
   },
 }));
 jest.mock('@mui/material/Dialog', () => ({
   __esModule: true,
-  default: ({ open, children }: { open: boolean; children: React.ReactNode }) => (open ? <div>{children}</div> : null),
+  default: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
+    open ? <div role='dialog'>{children}</div> : null,
 }));
 jest.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -150,11 +152,16 @@ test('confirmed canceled export releases its request identity for the next attem
 });
 
 test('submits an export above the former Free cap and surfaces the actual API entitlement error', async () => {
-  const download = jest.fn().mockRejectedValue(new PresentationAPIError('Your current export allowance is exhausted.', 'PPT_EXPORT_LIMIT', 402));
+  const download = jest
+    .fn()
+    .mockRejectedValue(new PresentationAPIError('Your current export allowance is exhausted.', 'PPT_EXPORT_LIMIT', 402));
   const input = props(download);
   const original = input.plan!;
 
-  input.plan = { ...original, slides: Array.from({ length: 25 }, (_, index) => ({ ...original.slides[0], id: `slide-${index}` })) };
+  input.plan = {
+    ...original,
+    slides: Array.from({ length: 25 }, (_, index) => ({ ...original.slides[0], id: `slide-${index}` })),
+  };
   render(<SlidesWorkflow {...input} />);
   fireEvent.click(screen.getByText('Export PPTX'));
   expect(screen.queryByText(/one free|at most 12|used your free/i)).toBeNull();
@@ -163,4 +170,62 @@ test('submits an export above the former Free cap and surfaces the actual API en
   expect(download).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Upgrade to Pro' }));
   expect(input.onUpgrade).toHaveBeenCalledTimes(1);
+});
+
+function presentDeck() {
+  const input = props(jest.fn());
+  const plan = {
+    ...input.plan!,
+    slides: Array.from({ length: 3 }, (_, index) => ({ ...input.plan!.slides[0], id: `slide-${index}` })),
+  };
+
+  render(<SlidesWorkflow {...input} plan={plan} initialAction='present' />);
+  return screen.getByRole('button', { name: 'Exit presentation' }).closest<HTMLElement>('.ps-presenter')!;
+}
+
+test.each(['Exit presentation', 'Previous slide', 'Next slide', 'Enter fullscreen'])(
+  'Space keeps native activation on the focused %s button',
+  (name) => {
+    const presenter = presentDeck();
+
+    fireEvent.keyDown(presenter, { key: 'ArrowRight' });
+    expect(presenter.textContent).toContain('2 / 3');
+    const button = screen.getAllByRole('button', { name, exact: true }).at(-1)!;
+    const event = createEvent.keyDown(button, { key: ' ', code: 'Space', cancelable: true });
+
+    button.focus();
+    fireEvent(button, event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(presenter.textContent).toContain('2 / 3');
+  }
+);
+
+test('unhandled presentation keys still navigate from the slide surface', () => {
+  const presenter = presentDeck();
+
+  fireEvent.keyDown(presenter, { key: ' ' });
+  expect(presenter.textContent).toContain('2 / 3');
+  fireEvent.keyDown(presenter, { key: 'PageDown' });
+  expect(presenter.textContent).toContain('3 / 3');
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Exit presentation' }), { key: 'ArrowLeft' });
+  expect(presenter.textContent).toContain('2 / 3');
+});
+
+test('handled events, modifier shortcuts and another dialog leave the presented slide alone', () => {
+  const presenter = presentDeck();
+  const handled = createEvent.keyDown(presenter, { key: 'ArrowRight', cancelable: true });
+
+  handled.preventDefault();
+  fireEvent(presenter, handled);
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey', 'isComposing'])
+    fireEvent.keyDown(presenter, { key: 'ArrowRight', [modifier]: true });
+  const other = render(
+    <div role='dialog'>
+      <p>Another dialog</p>
+    </div>
+  );
+
+  fireEvent.keyDown(screen.getByText('Another dialog'), { key: 'PageDown' });
+  expect(presenter.textContent).toContain('1 / 3');
+  other.unmount();
 });

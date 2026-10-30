@@ -15,7 +15,7 @@ import type {
   Artifact, ArtifactSummary, AssessmentResponse, JobStatus, PresentationScope, PresentationStatus, ReviewedStyle,
   ServerSlidePlan, StoredSession, VersionedId,
 } from './server-contract';
-import type { GenerationOptions, MindMap, PageSnapshot, PresentationStyle, SavedDeck } from './types';
+import type { GenerationOptions, MindMap, PageSnapshot, PresentationStyle, SavedDeck, SavedDeckSummary } from './types';
 
 export * from './server-client';
 export * from './server-adapter';
@@ -51,15 +51,38 @@ export async function loadSavedDeck(scope: PresentationScope, id: string, versio
   return artifactToDeck(artifact, await (scene ?? getArtifactScene(scope, artifact.id, artifact.version, signal)));
 }
 
-/** First authorized workspace catalog page. The API does not expose a page-ID filter. */
-export async function listSavedDecks(scope: PresentationScope, signal?: AbortSignal): Promise<SavedDeck[]> {
+/** Read catalog metadata without rendering scenes for decks the user has not opened. */
+export async function listSavedDecks(scope: PresentationScope, signal?: AbortSignal): Promise<SavedDeckSummary[]> {
   const page = await listDecks(scope, undefined, 30, signal);
-  const decks: SavedDeck[] = [];
+  const decks: SavedDeckSummary[] = new Array(page.items.length);
+  let next = 0;
+  const worker = async () => {
+    while (!signal?.aborted && next < page.items.length) {
+      const index = next++;
+      const item = page.items[index];
 
-  // Bound artifact/scene reads rather than submitting 60 requests in one burst.
-  for (let start = 0; start < page.items.length; start += 4) {
-    decks.push(...await Promise.all(page.items.slice(start, start + 4).map((item) => loadSavedDeck(scope, item.id, item.version, signal))));
-  }
+      try {
+        const artifact = await readArtifact<ServerSlidePlan>(scope, item.id, item.version, signal);
+
+        if (!Array.isArray(artifact.content.slides))
+          throw new PresentationAPIError('This artifact is not a presentation.', 'ARTIFACT_KIND_MISMATCH', 400);
+        decks[index] = {
+          id: artifact.id, version: artifact.version, createdAt: artifact.createdAt,
+          title: artifact.content.title, slideCount: artifact.content.slides.length,
+        };
+      } catch (error) {
+        if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+        // One unavailable artifact must not hide the other authorized catalog entries.
+        decks[index] = {
+          id: item.id, version: item.version, createdAt: item.createdAt,
+          error: error instanceof Error ? error.message : 'Unable to load this presentation.',
+        };
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(4, page.items.length) }, worker));
+  if (signal?.aborted) throw abortError();
 
   return decks;
 }

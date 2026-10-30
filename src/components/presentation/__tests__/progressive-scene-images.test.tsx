@@ -239,3 +239,49 @@ test('memoized thumbnails do not re-render when only the selected slide changes'
   expect(reads).toHaveBeenCalledTimes(1);
   reads.mockRestore();
 });
+
+test('an image completion redraws only that asset, leaving other images and text-only slides untouched', async () => {
+  const first = deferred<Blob>();
+  const second = deferred<Blob>();
+  const heading = text('static-heading', 'Unrelated static text');
+  const otherImage = image('second', 'asset-b', 'Second image');
+  let textReads = 0;
+  let otherImageReads = 0;
+
+  Object.defineProperty(heading, 'text', {
+    enumerable: true,
+    get: () => {
+      textReads++;
+      return 'Unrelated static text';
+    },
+  });
+  Object.defineProperty(otherImage, 'attribution', {
+    enumerable: true,
+    get: () => {
+      otherImageReads++;
+      return 'Second image';
+    },
+  });
+  jest
+    .mocked(getArtifactScene)
+    .mockResolvedValue(
+      sceneWith([slide('static', [heading]), slide('pictures', [image('first', 'asset-a', 'First image'), otherImage])])
+    );
+  jest
+    .mocked(getArtifactAsset)
+    .mockImplementation((...args) => (args[3] === 'asset-a' ? first.promise : second.promise));
+  render(<Preview />);
+
+  await screen.findByText('Unrelated static text');
+  textReads = 0;
+  otherImageReads = 0;
+  await act(async () => first.resolve(png()));
+  expect(screen.getByAltText('First image').getAttribute('src')).toBe('blob:1');
+  expect(screen.getByRole('img', { name: 'Second image', busy: true })).toBeTruthy();
+  expect(textReads).toBe(0);
+  expect(otherImageReads).toBe(0);
+  // Failure also updates just its own placeholder, without rebuilding the static canvas.
+  await act(async () => second.reject(new Error('Image unavailable')));
+  expect(screen.getByRole('img', { name: 'Image unavailable' })).toBeTruthy();
+  expect(textReads).toBe(0);
+});

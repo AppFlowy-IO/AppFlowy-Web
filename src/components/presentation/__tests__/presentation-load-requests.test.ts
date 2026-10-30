@@ -1,6 +1,6 @@
 import type { AxiosRequestConfig } from 'axios';
 
-import { loadPresentation, loadSavedDeck, runGeneration } from '../presentation-client';
+import { listSavedDecks, loadPresentation, loadSavedDeck, runGeneration } from '../presentation-client';
 import { sourceToSnapshot } from '../server-adapter';
 
 import type { Artifact, JobStatus, PresentationStatus, ServerSlidePlan, SourceEnvelope, StoredSession, Theme } from '../server-contract';
@@ -41,6 +41,39 @@ const calls = () => mockRequest.mock.calls.map(([config]: [AxiosRequestConfig]) 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => mockRequest.mockReset());
+
+test('listing 30 catalog decks reads metadata without fetching any slide scenes', async () => {
+  const items = Array.from({ length: 30 }, (_, index) => ({ id: `deck-${index}`, version: 3, createdAt: '2026-10-28T00:00:00Z' }));
+
+  mockRequest.mockImplementation((config: AxiosRequestConfig) => {
+    if (config.url === `${root}/decks`) return ok({ items, nextCursor: null });
+    const item = items.find((item) => config.url === `${root}/artifacts/${item.id}`);
+
+    if (item) return ok(artifact(item.id, { ...plan, title: item.id }));
+    throw new Error(`Unexpected request ${config.url}`);
+  });
+  const decks = await listSavedDecks(scope);
+
+  expect(decks.map((deck) => deck.title)).toEqual(items.map((item) => item.id));
+  expect(decks.every((deck) => deck.slideCount === 1 && !deck.error)).toBe(true);
+  expect(mockRequest).toHaveBeenCalledTimes(31);
+  expect(calls().some((call) => call.endsWith('/scene'))).toBe(false);
+});
+
+test('one unavailable catalog artifact does not discard healthy decks', async () => {
+  mockRequest.mockImplementation((config: AxiosRequestConfig) => {
+    if (config.url === `${root}/decks`) return ok({ items: [
+      { id: 'unavailable', version: 3, createdAt: '' }, { id: 'healthy', version: 3, createdAt: '' },
+    ], nextCursor: null });
+    if (config.url === `${root}/artifacts/unavailable`) return denied();
+    if (config.url === `${root}/artifacts/healthy`) return ok(artifact('healthy', plan));
+    throw new Error(`Unexpected request ${config.url}`);
+  });
+  await expect(listSavedDecks(scope)).resolves.toEqual([
+    expect.objectContaining({ id: 'unavailable', error: expect.any(String) }),
+    expect.objectContaining({ id: 'healthy', title: 'Deck', slideCount: 1 }),
+  ]);
+});
 
 test('opening the studio reads no deck catalog and reads the saved narrative as soon as the session arrives', async () => {
   const statusRead = deferred();

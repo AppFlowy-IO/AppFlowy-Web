@@ -700,15 +700,34 @@ function DeckPresenter({ plan, initialIndex, onClose }: { plan: StoryPlan; initi
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) {
-        e.preventDefault();
-        setIndex((i) => Math.min(plan.slides.length - 1, i + 1));
-      }
+      if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const forward = ['ArrowRight', 'PageDown', ' '].includes(e.key);
 
-      if (['ArrowLeft', 'PageUp'].includes(e.key)) {
-        e.preventDefault();
-        setIndex((i) => Math.max(0, i - 1));
-      }
+      if (!forward && !['ArrowLeft', 'PageUp'].includes(e.key)) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const presenter = ref.current;
+
+      if (!presenter) return;
+      const dialog = presenter.closest('[role="dialog"]');
+
+      // Keep shortcuts in this presentation, including when fullscreen leaves focus on the body.
+      if (
+        target &&
+        target !== document.body &&
+        (dialog ? target.closest('[role="dialog"]') !== dialog : !presenter.contains(target))
+      )
+        return;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], [role="slider"], [role="menu"], [role="listbox"], [role="tablist"]'
+        )
+      )
+        return;
+      // Buttons keep Space activation; arrows still navigate after clicking a presenter control.
+      if (e.key === ' ' && target?.closest('button, a[href], summary, [role="button"], [role="link"]')) return;
+
+      e.preventDefault();
+      setIndex((i) => Math.max(0, Math.min(plan.slides.length - 1, i + (forward ? 1 : -1))));
     };
 
     window.addEventListener('keydown', key);

@@ -43,6 +43,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
     {children}
   </MemoryRouter>
 );
+
 beforeEach(() => {
   jest.mocked(getPresentationStatus).mockReset();
   mockWorkspaceId = 'workspace';
@@ -98,6 +99,7 @@ test('clears paid access after a failed refresh and treats unknown AI accounting
 
 test('aborts old workspace reads and ignores their late completion', async () => {
   let resolveOld!: (value: PresentationStatus) => void;
+
   jest
     .mocked(getPresentationStatus)
     .mockImplementationOnce(
@@ -120,6 +122,7 @@ test('aborts old workspace reads and ignores their late completion', async () =>
 
 test('does not invent paid style entitlement from status or block the owner before it arrives', async () => {
   let resolveStatus!: (value: PresentationStatus) => void;
+
   jest.mocked(getPresentationStatus).mockImplementation(() => new Promise((resolve) => { resolveStatus = resolve; }));
   const { result } = renderHook(() => usePresentationAccess(), { wrapper });
 
