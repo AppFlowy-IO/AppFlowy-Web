@@ -12,12 +12,13 @@ import { notify } from '@/components/_shared/notify';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
+import { reportPDFUploadError } from '@/components/editor/components/blocks/pdf/pdf-block-state';
+import { insertFirstBodyFiles } from '@/components/editor/plugins/insert-first-body-files';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import {
   insertBlocksAtCaret,
   shouldMergeFirstFragmentNodeInline,
 } from '@/components/editor/utils/insert-blocks-at-caret';
-import { insertFirstBodyFiles } from '@/components/editor/plugins/insert-first-body-files';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
 import { createPendingUploadId } from '@/utils/pending-upload';
@@ -198,6 +199,7 @@ export const withInsertData = (editor: ReactEditor) => {
           const fileId = fileIds[i];
           const pendingUploadId = createPendingUploadId();
           const isImage = file.type.startsWith('image/');
+          const isPDF = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
           let insertedBlockId: string | undefined;
 
           if (isImage) {
@@ -220,7 +222,7 @@ export const withInsertData = (editor: ReactEditor) => {
               pending_upload_id: pendingUploadId,
             } as FileBlockData;
 
-            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data);
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, isPDF ? BlockType.PDFBlock : BlockType.FileBlock, data);
             newBlockId = insertedBlockId || newBlockId;
           }
 
@@ -228,14 +230,25 @@ export const withInsertData = (editor: ReactEditor) => {
             pendingUploads.push(
               (async () => {
                 let url: string | undefined;
+                let uploadError: unknown;
 
                 try {
                   url = await e.uploadFile?.(file);
-                } catch {
-                  return;
+                } catch (error) {
+                  uploadError = error;
+                  // PDF placeholders retain their local file for retry.
                 }
 
-                if (!url) return;
+                if (!url) {
+                  const entry = isPDF && findSlateEntryByBlockId(e, insertedBlockId);
+
+                  if (entry && entry[0].type === BlockType.PDFBlock && (entry[0].data as FileBlockData)?.pending_upload_id === pendingUploadId) {
+                    CustomEditor.setBlockData(e, insertedBlockId, { pending_upload_id: '', upload_error: true } as FileBlockData);
+                    if (uploadError) reportPDFUploadError(e, insertedBlockId, uploadError);
+                  }
+
+                  return;
+                }
 
                 if (fileId) {
                   await fileHandler.cleanup(fileId).catch(() => undefined);

@@ -613,6 +613,16 @@ it('opens timeline rows centered and still allows an explicit side choice', asyn
   expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
 });
 
+// Desktop #1531 opens calendar events with `openCapturedRowAsPeekPanel`.
+it('opens calendar rows in side peek and still allows an explicit center choice', async () => {
+  mockView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Calendar);
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
+  await chooseMode('center');
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+});
+
 it('keeps an automatic center fallback after widening, with the same editor and draft', async () => {
   const { rerender } = render(<Fixture />);
   const editor = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Draft first' });

@@ -1,60 +1,49 @@
-import React from 'react';
-import { createEditor } from 'slate';
-import { Slate } from 'slate-react';
+import { useEffect, useMemo } from 'react';
+import * as Y from 'yjs';
 
-import { BlockPopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
-import { EditorContext } from '@/components/editor/EditorContext';
+import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
+import { getDocument, initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
+import { BlockType, PDFBlockData, YDoc, YjsEditorKey } from '@/application/types';
+import { Editor } from '@/components/editor';
 
 import { withContainer } from '../../../../../../.storybook/decorators';
+import samplePDF from '../../../../../../playwright/fixtures/pdfs/sample.pdf?url';
+import protectedPDF from '../../../../../../playwright/fixtures/pdfs/sample_with_password.pdf?url';
 
 import { PDFBlock } from './PDFBlock';
-
 
 import type { Meta, StoryObj } from '@storybook/react';
 import '../../../editor.scss';
 
-const mockEditorContext = {
-  uploadFile: async (file: File) => {
-    console.log('Mock upload:', file.name);
-    return 'https://example.com/uploaded.pdf';
-  },
-  workspaceId: 'mock-workspace',
-  viewId: 'mock-view',
-};
+// Use the real editor so block menus, uploads and resize operate on document data.
+function PDFStory({ data }: { data: PDFBlockData }) {
+  const doc = useMemo(() => {
+    const doc = new Y.Doc() as YDoc;
 
-const mockPopoverContext = {
-  open: false,
-  anchorEl: null,
-  close: () => {
-    // Mock close function
-  },
-  openPopover: (blockId: string, _type: unknown, _anchor: HTMLElement) => {
-    console.log('Open popover for block:', blockId);
-  },
-  type: null,
-  blockId: null,
-};
+    initializeDocumentStructure(doc, true);
+    const pageId = getDocument(doc.getMap(YjsEditorKey.data_section)).get(YjsEditorKey.page_id) as string;
 
-// eslint-disable-next-line react/display-name
-const WithEditorContexts = (Story: React.ComponentType) => {
-  const editor = React.useMemo(() => createEditor(), []);
-  const [value] = React.useState([
-    {
-      type: 'paragraph',
-      children: [{ text: '' }],
-    },
-  ]);
+    slateContentInsertToYData(
+      pageId,
+      0,
+      [{ type: BlockType.PDFBlock, data, children: [{ type: 'text', children: [{ text: '' }] }] }],
+      doc
+    );
+    return doc;
+  }, [data]);
 
+  useEffect(() => () => doc.destroy(), [doc]);
   return (
-    <Slate editor={editor} initialValue={value}>
-      <EditorContext.Provider value={mockEditorContext as unknown}>
-        <BlockPopoverContext.Provider value={mockPopoverContext}>
-          <Story />
-        </BlockPopoverContext.Provider>
-      </EditorContext.Provider>
-    </Slate>
+    <div className='w-[728px] max-w-full'>
+      <Editor
+        doc={doc}
+        workspaceId='storybook-workspace'
+        viewId='storybook-document'
+        uploadFile={async () => samplePDF}
+      />
+    </div>
   );
-};
+}
 
 const meta = {
   title: 'Editor/Blocks/PDFBlock',
@@ -63,7 +52,8 @@ const meta = {
     layout: 'centered',
   },
   tags: ['autodocs'],
-  decorators: [WithEditorContexts, withContainer({ padding: '20px', maxWidth: '800px' })],
+  render: ({ node }) => <PDFStory data={node.data} />,
+  decorators: [withContainer({ padding: '20px', maxWidth: '800px' })],
   argTypes: {
     node: {
       description: 'The PDF block node',
@@ -83,7 +73,7 @@ export const Default: Story = {
       children: [],
       data: {
         name: 'Project Proposal.pdf',
-        url: 'https://example.com/proposal.pdf',
+        url: samplePDF,
       },
     },
     children: [],
@@ -97,7 +87,7 @@ export const NoName: Story = {
       blockId: 'pdf-2',
       children: [],
       data: {
-        url: 'https://example.com/document.pdf',
+        url: samplePDF,
       },
     },
     children: [],
@@ -112,7 +102,7 @@ export const LongFilename: Story = {
       children: [],
       data: {
         name: 'Very Long Document Name That Should Wrap Properly in the UI Display Area Without Breaking Layout Q4 2025 Final Version.pdf',
-        url: 'https://example.com/long-document.pdf',
+        url: samplePDF,
       },
     },
     children: [],
@@ -127,7 +117,7 @@ export const ShortFilename: Story = {
       children: [],
       data: {
         name: 'Doc.pdf',
-        url: 'https://example.com/doc.pdf',
+        url: samplePDF,
       },
     },
     children: [],
@@ -142,7 +132,7 @@ export const NoExtension: Story = {
       children: [],
       data: {
         name: 'Meeting Notes',
-        url: 'https://example.com/notes.pdf',
+        url: samplePDF,
       },
     },
     children: [],
@@ -157,7 +147,7 @@ export const EmptyName: Story = {
       children: [],
       data: {
         name: '   ',
-        url: 'https://example.com/doc.pdf',
+        url: samplePDF,
       },
     },
     children: [],
@@ -176,4 +166,8 @@ export const NoURL: Story = {
     },
     children: [],
   },
+};
+
+export const Protected: Story = {
+  args: { ...Default.args, node: { ...Default.args!.node!, data: { url: protectedPDF } } },
 };

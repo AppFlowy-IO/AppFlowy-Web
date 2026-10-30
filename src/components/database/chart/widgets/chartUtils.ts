@@ -1,4 +1,12 @@
-import { CHART_COLORS, ChartDataItem } from '@/application/database-yjs/chart.type';
+import {
+  CHART_COLORS,
+  CHART_EMPTY_VALUE_COLOR,
+  ChartDataItem,
+  DONUT_CHART_COLORS,
+} from '@/application/database-yjs/chart.type';
+import { getSelectOptionChartFillHex } from '@/components/database/chart/hooks/chartColors';
+
+import { nearestInPalette, readableTone } from './chartPalette';
 
 /**
  * Format value for display (integer if whole number, otherwise 1 decimal)
@@ -7,14 +15,9 @@ export function formatValue(value: number): string {
   return value === Math.round(value) ? value.toString() : value.toFixed(1);
 }
 
-/**
- * Calculate bar width based on data count (matching Flutter implementation)
- */
+/** Desktop's `_calculateBarWidth`: 20px bars, 15px once there are more than 20. */
 export function calculateBarWidth(dataCount: number): number {
-  if (dataCount <= 5) return 40;
-  if (dataCount <= 10) return 30;
-  if (dataCount <= 20) return 20;
-  return 15;
+  return dataCount <= 20 ? 20 : 15;
 }
 
 /**
@@ -27,16 +30,41 @@ export function isPlottableValue(item: ChartDataItem): boolean {
 
 /**
  * Fill color for the item at `index` of the list a widget renders (desktop's
- * `ChartColorUtils.resolveColor`): its fixed option / checkbox color, else the
- * palette color for that index.
+ * `ChartColorUtils.resolveColor`): its fixed option / checkbox color, the grey
+ * of the "No {field}" category, else the palette color for that index.
  */
 export function resolveChartItemColor(item: ChartDataItem, index: number): string {
-  return item.color ?? CHART_COLORS[index % CHART_COLORS.length];
+  if (item.color !== undefined) return item.color;
+  if (item.isEmptyCategory) return CHART_EMPTY_VALUE_COLOR;
+  return CHART_COLORS[index % CHART_COLORS.length];
 }
 
-/** Text color for labels tinted with the item's color (`toAFTextColor: true` on desktop). */
-export function resolveChartItemTextColor(item: ChartDataItem, index: number): string {
-  return item.textColor ?? resolveChartItemColor(item, index);
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Fill and label colors of a donut section (desktop's `resolveColor` with
+ * `palette: donutPalette`). The palette is authoritative: an option fill only
+ * picks the hue, snapped to the nearest palette entry; checkbox colors and
+ * the "No {field}" grey stay; anything else takes the palette entry for
+ * `index`. Labels take the fill's readable tone on the current theme.
+ *
+ * Desktop snaps the label from the option's tag text color instead, which is
+ * white for the ten thick tag colors and lands every one of them on the red
+ * end of the ramp; deriving it from the fill keeps a label in its slice's hue.
+ */
+export function resolveDonutSectionColors(
+  item: ChartDataItem,
+  index: number,
+  isDark: boolean
+): { fill: string; text: string } {
+  const optionFill = item.color === undefined ? undefined : getSelectOptionChartFillHex(item.color);
+  const fill = optionFill
+    ? nearestInPalette(optionFill, DONUT_CHART_COLORS)
+    : item.color ??
+      (item.isEmptyCategory ? CHART_EMPTY_VALUE_COLOR : DONUT_CHART_COLORS[index % DONUT_CHART_COLORS.length]);
+
+  // Any other fixed color has no tone to derive.
+  return { fill, text: HEX_COLOR.test(fill) ? readableTone(fill, isDark) : fill };
 }
 
 /**
@@ -162,8 +190,10 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
       x.label !== y.label ||
       x.value !== y.value ||
       x.color !== y.color ||
-      x.textColor !== y.textColor ||
       x.isEmptyCategory !== y.isEmptyCategory ||
+      // The drill-down builds its filter from these, so a stale item must not survive.
+      x.isCheckedCategory !== y.isCheckedCategory ||
+      x.sortKey !== y.sortKey ||
       x.rowIds.length !== y.rowIds.length
     ) {
       return false;

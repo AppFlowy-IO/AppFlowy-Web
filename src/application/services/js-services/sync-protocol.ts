@@ -12,6 +12,9 @@ import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
+import { deleteSetDigest } from './delete-set-digest';
+import { ManifestRecovery } from './manifest-recovery';
+
 /**
  * SyncContext is the context object passed to the sync protocol handlers.
  * It contains the Y.Doc instance, optional awareness instance, collab type
@@ -26,7 +29,11 @@ export interface SyncContext {
   /**
    * Emit function to send messages back to the server.
    */
-  emit: (reply: messages.IMessage) => void;
+  emit: (reply: messages.IMessage, options?: { requireReady?: boolean }) => void;
+  /** Checks the owning session/transport before a timed retry can emit. */
+  canRetry?: () => boolean;
+  /** Context-owned recovery; disposed with the document's observers. */
+  manifestRecovery?: ManifestRecovery;
   /**
    * Wait until all locally-queued updates for this doc have drained to the
    * WebSocket. Backed by the persistent sync_outbox — the returned promise
@@ -48,11 +55,10 @@ export interface SyncContext {
    */
   onLocalUpdate?: (objectId: string) => void;
   /**
-   * Called after this context participates in a state-vector sync exchange.
-   * Routed manifests pass their IndexedDB persistence promise so consumers can
-   * clear only the dirty generation durably owned by the outbox.
+   * Called only when an authoritative manifest covers the current document.
+   * Sending or locally persisting an upload does not establish this boundary.
    */
-  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void;
+  onManifestSync?: (objectId: string) => void;
   /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
@@ -90,7 +96,8 @@ const isEmptyUpdateV1 = (update: Uint8Array): boolean =>
  * so it is safe to call again whenever the WebSocket reopens.
  */
 export const bindSyncContext = (ctx: SyncContext): void => {
-  const { doc, awareness, emit, collabType, lastMessageId } = ctx;
+  if (ctx.manifestRecovery?.isDisposed) return;
+  const { doc, awareness, emit, collabType } = ctx;
 
   if (!doc) {
     throw new Error('SyncContext must have a Y.Doc instance.');
@@ -101,17 +108,7 @@ export const bindSyncContext = (ctx: SyncContext): void => {
     collabType,
     version: doc.version,
   });
-  emit({
-    collabMessage: {
-      objectId: doc.guid,
-      collabType,
-      syncRequest: {
-        stateVector: Y.encodeStateVector(doc),
-        lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
-        version: doc.version,
-      },
-    },
-  });
+  requestManifest(ctx);
 
   if (awareness) {
     const allClients = Array.from(awareness.getStates().keys());
@@ -128,7 +125,64 @@ export const bindSyncContext = (ctx: SyncContext): void => {
   }
 };
 
-const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void => {
+const requestManifest = (ctx: SyncContext, requireReady = false): void => {
+  const { doc, collabType, lastMessageId } = ctx;
+
+  const message = {
+    collabMessage: {
+      objectId: doc.guid,
+      collabType,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(doc),
+        lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
+        version: doc.version,
+        deleteSet: { digest: deleteSetDigest(doc) },
+      },
+    },
+  };
+
+  if (requireReady) {
+    ctx.emit(message, { requireReady: true });
+  } else {
+    ctx.emit(message);
+  }
+};
+
+const manifestCoversUpdate = (doc: YDoc, update: Uint8Array, message: collab.ISyncRequest): boolean => {
+  if (doc.store.pendingStructs || doc.store.pendingDs) return false;
+  if (isEmptyUpdateV1(update)) return true;
+  // The first v1 varint counts insertion clients. A delete-only diff is sent
+  // even for identical docs, so compare the canonical deletion digest too.
+  const serverDigest = message.deleteSet?.digest;
+
+  if (update[0] !== 0 || serverDigest?.length !== 32) return false;
+  const localDigest = deleteSetDigest(doc);
+
+  return localDigest.every((byte, index) => byte === serverDigest[index]);
+};
+
+const confirmCoverage = (ctx: SyncContext, message: collab.ISyncRequest): void => {
+  const { doc } = ctx;
+  const nil = '00000000-0000-0000-0000-000000000000';
+
+  if (ctx.manifestRecovery?.isDisposed || (doc.version || '') !== (message.version || '')) return;
+  if ((doc.databaseRestoreId || nil) !== (message.databaseRestoreId || nil)) return;
+  ctx.manifestRecovery?.confirm();
+  ctx.onManifestSync?.(doc.guid);
+};
+
+/** Consume authoritative coverage without replaying a relayed manifest's upload response. */
+export const confirmManifestSync = (ctx: SyncContext, message: collab.ISyncRequest): void => {
+  const { doc } = ctx;
+
+  if (ctx.manifestRecovery?.isDisposed) return;
+  const stateVector = message.stateVector?.length ? message.stateVector : undefined;
+
+  if (!manifestCoversUpdate(doc, Y.encodeStateAsUpdate(doc, stateVector), message)) return;
+  confirmCoverage(ctx, message);
+};
+
+const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest, authoritative: boolean): void => {
   const { doc, emit } = ctx;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
@@ -145,17 +199,21 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // durable outbox or on the wire. An empty DatabaseRow update with an empty
   // causal vector otherwise looks like a self-contained replacement even
   // though it carries no row metadata or parent database id.
-  if (isEmptyUpdateV1(update)) {
-    ctx.onManifestSync?.(doc.guid);
+  if (manifestCoversUpdate(doc, update, message)) {
+    if (authoritative) confirmCoverage(ctx, message);
     return;
   }
+
+  ctx.manifestRecovery?.start();
+  ctx.onLocalUpdate?.(doc.guid);
+  if (isEmptyUpdateV1(update) || ctx.manifestRecovery?.writeAllowed === false) return;
 
   // A manifest response can contain years of locally retained Yjs history.
   // If it exceeds the server-advertised realtime frame limit, persist it and
   // let the serialized outbox use the bounded HTTP slow lane. Emitting here
   // would close the WebSocket before any fallback could run.
   if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
-    const persisted = enqueueOutboxUpdate(
+    void enqueueOutboxUpdate(
       {
         objectId: doc.guid,
         collabType: ctx.collabType,
@@ -167,7 +225,6 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       { broadcast: false, source: 'manifest' }
     );
 
-    ctx.onManifestSync?.(doc.guid, persisted);
     return;
   }
 
@@ -188,11 +245,11 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       },
     },
   });
-  ctx.onManifestSync?.(doc.guid);
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
   if (message.canRead === false) {
+    ctx.manifestRecovery?.dispose();
     //FIXME: we should not only destroy the doc, but also remove it from the persistent storage.
     // Access revoked: drop any queued outbox rows so we do not replay local
     // edits against a doc the user no longer has permission on. The discard
@@ -206,6 +263,8 @@ const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): 
     ctx.discardPendingUpdates = undefined;
     void deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
     ctx.doc.destroy();
+  } else if (typeof message.canWrite === 'boolean') {
+    ctx.manifestRecovery?.setWriteAccess(message.canWrite);
   }
 };
 
@@ -278,6 +337,12 @@ export const initSync = (ctx: SyncContext) => {
 
   let onAwarenessChange: ((event: AwarenessEvent, origin: string) => void) | undefined;
 
+  ctx.manifestRecovery?.dispose();
+  ctx.manifestRecovery = new ManifestRecovery(
+    () => requestManifest(ctx, true),
+    () => ctx.canRetry?.() ?? true
+  );
+
   // Persist every local update synchronously to the sync_outbox, then let the
   // background drain loop push it over the WebSocket. Survives refresh, tab
   // crash, and modal-unmount races because IndexedDB is the source of truth.
@@ -305,7 +370,7 @@ export const initSync = (ctx: SyncContext) => {
       objectId: doc.guid,
       collabType,
       version: doc.version ?? null,
-        databaseRestoreId: doc.databaseRestoreId,
+      databaseRestoreId: doc.databaseRestoreId,
       payload: update,
       beforeStateVector,
     });
@@ -313,6 +378,7 @@ export const initSync = (ctx: SyncContext) => {
   };
 
   const onDestroy = () => {
+    ctx.manifestRecovery?.dispose();
     // when switching versions, we destroy previous instance of the document
     // at this point all stashed updates are no longer valid. Fire-and-forget
     // is acceptable here: the unregister path that sets `skipFlushOnDestroy`
@@ -352,6 +418,7 @@ export const initSync = (ctx: SyncContext) => {
   // detaches listeners. Outbox deletion is caller-driven via
   // discardPendingUpdates() (version reset/revert paths only).
   const cleanup = () => {
+    ctx.manifestRecovery?.dispose();
     doc.off('update', onUpdate);
     doc.off('destroy', onDestroy);
     if (awareness && onAwarenessChange) {
@@ -381,7 +448,8 @@ export const getCollabMessageVersion = (message: collab.ICollabMessage): string 
  * @param ctx
  * @param message
  */
-export const handleMessage = (ctx: SyncContext, message: collab.ICollabMessage): void => {
+export const handleMessage = (ctx: SyncContext, message: collab.ICollabMessage, authoritative = true): void => {
+  if (ctx.manifestRecovery?.isDisposed) return;
   const doc = ctx.doc || ctx.awareness?.doc;
 
   if (message.objectId !== doc.guid) {
@@ -391,7 +459,7 @@ export const handleMessage = (ctx: SyncContext, message: collab.ICollabMessage):
   if (message.update) {
     handleUpdate(ctx, message.update);
   } else if (message.syncRequest) {
-    handleSyncRequest(ctx, message.syncRequest);
+    handleSyncRequest(ctx, message.syncRequest, authoritative);
   } else if (message.accessChanged) {
     handleAccessChanged(ctx, message.accessChanged);
   } else if (message.awarenessUpdate) {

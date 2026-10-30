@@ -36,6 +36,7 @@ const mockStartDrainObject = startDrainObject as jest.Mock;
 const sendWebSocketMessage = jest.fn();
 const reconnect = jest.fn();
 const postMessage = jest.fn();
+const postServerManifest = jest.fn();
 const postDurableMessage = jest.fn();
 const subscribeProtocolMessages = jest.fn();
 const postOutboxReady = jest.fn();
@@ -55,6 +56,7 @@ const createWebSocket = (lastMessage: messages.Message | null, readyState = WebS
 const broadcastChannel: BroadcastChannelType = {
   lastBroadcastMessage: null,
   postMessage,
+  postServerManifest,
   postDurableMessage,
   subscribeProtocolMessages,
   postOutboxReady,
@@ -149,6 +151,16 @@ describe('useWorkspaceRealtimeTransport', () => {
     expect(unsubscribeProtocol).toHaveBeenCalledTimes(1);
     expect(unsubscribeOutbox).toHaveBeenCalledTimes(1);
     expect(unsubscribeTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it('relays server manifest coverage alongside the legacy binary message', () => {
+    const serverMessage = { collabMessage: { objectId: 'row-1', syncRequest: { stateVector: Uint8Array.of(0) } } } as messages.Message;
+
+    mockUseWorkspaceWebSocketLeader.mockReturnValue({ isLeader: true, isCoordinated: true });
+    mockUseAppflowyWebSocket.mockReturnValue(createWebSocket(serverMessage));
+    renderTransport();
+    expect(postMessage).toHaveBeenCalledWith(serverMessage);
+    expect(postServerManifest).toHaveBeenCalledWith(serverMessage.collabMessage);
   });
 
   it('uses the leader status and reconnect control path for a coordinated follower', () => {

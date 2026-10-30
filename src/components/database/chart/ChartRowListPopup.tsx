@@ -1,15 +1,29 @@
-import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFieldSelector, useNavigateToRow, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
+import { useDatabaseFields, useNavigateToRow } from '@/application/database-yjs';
+import { DEFAULT_CHART_LAYOUT_SETTINGS } from '@/application/database-yjs/chart-layout-setting';
 import { ChartClickItem } from '@/application/database-yjs/chart.type';
-import { getCell } from '@/application/database-yjs/const';
-import { decodeCellToText } from '@/application/database-yjs/decode';
-import { YjsDatabaseKey } from '@/application/types';
+import { FieldType } from '@/application/database-yjs/database.type';
+import {
+  createDetachedFilter,
+  DetachedFilter,
+  DetachedFilterStore,
+  DetachedFilterStoreContext,
+  isDetachedFilterCurrent,
+  updateDetachedFilters,
+} from '@/application/database-yjs/dispatch/detached-filters';
+import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks';
+import { RowId, YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { chartCategoryFilter, isChartRowFilterFieldType } from '@/components/database/chart/hooks/chartCategoryFilter';
+import { useChartRowQuery } from '@/components/database/chart/hooks/useChartRowQuery';
 import { useChartContext } from '@/components/database/chart/useChartContext';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+
+import { ChartRowFilterBar } from './ChartRowFilterBar';
+import { ChartRowGrid } from './ChartRowGrid';
 
 interface ChartRowListPopupProps {
   open: boolean;
@@ -17,129 +31,105 @@ interface ChartRowListPopupProps {
   item: ChartClickItem;
 }
 
-interface RowItem {
-  id: string;
-  primaryValue: string;
-}
-
 /**
- * Drill-down popup showing rows in a chart category. Mirrors desktop's
- * `ChartRowListPopup`: header (label + count), filter chip
- * "<x-axis field>: <category>", and a scrollable list of rows.
+ * Drill-down popup of a chart category, desktop's `ChartRowListPopup`: the
+ * category as an editable filter chip over every row of the database, more
+ * rules from "Add filter", and the matches as a grid with a column per
+ * visible field. The rules belong to the popup and never reach the view.
  *
- * Web shows the primary-field text per row using the current field schema.
- * Clicking a row opens the row detail modal.
+ * When the category cannot be written as a rule, the popup lists the bucket's
+ * own rows and filters within them. Desktop falls back to the whole database
+ * there, listing rows the category does not hold.
  */
 export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProps) {
   const { t } = useTranslation();
-  const rowMetas = useRowMap();
-  const primaryFieldId = usePrimaryFieldId();
-  const { field: primaryField, clock: primaryFieldClock } = useFieldSelector(primaryFieldId ?? '');
-  const { xAxisField } = useChartContext();
-
-  const xAxisName = xAxisField ? String(xAxisField.get(YjsDatabaseKey.name) || '') : '';
-  // The widget passes the fill it drew for the clicked element, so the swatch
-  // matches the bar / slice (desktop resolves it by render index as well).
-  const { color } = item;
-
+  const { xAxisField, settings } = useChartContext();
+  const fields = useDatabaseFields();
+  const fieldsVersion = useDatabaseFieldsVersion();
   const navigateToRow = useNavigateToRow();
 
-  const rows = useMemo<RowItem[]>(() => {
-    void primaryFieldClock;
-
-    return item.rowIds.map((rowId) => {
-      if (!rowMetas || !primaryFieldId || !primaryField) {
-        return { id: rowId, primaryValue: '' };
-      }
-
-      const cell = getCell(rowId, primaryFieldId, rowMetas);
-
-      if (!cell) return { id: rowId, primaryValue: '' };
-      return { id: rowId, primaryValue: decodeCellToText(cell, primaryField) };
+  // Built once per opening, like desktop's popup state.
+  const [initial] = useState(() => {
+    const category = chartCategoryFilter({
+      item,
+      field: xAxisField,
+      dateCondition: settings?.dateCondition ?? DEFAULT_CHART_LAYOUT_SETTINGS.dateCondition,
     });
-  }, [item.rowIds, rowMetas, primaryFieldId, primaryField, primaryFieldClock]);
+
+    return { rules: category ? [category] : [], baseRowIds: category ? null : item.rowIds };
+  });
+  const [rules, setRules] = useState<DetachedFilter[]>(initial.rules);
+  // Desktop drops a rule once its field is deleted or changes type.
+  const currentRules = useMemo(() => {
+    void fieldsVersion;
+    return rules.filter((rule) => isDetachedFilterCurrent(rule, fields));
+  }, [rules, fields, fieldsVersion]);
+
+  const store = useMemo<DetachedFilterStore>(
+    () => ({
+      addFilter: (fieldId) => {
+        const field = fields.get(fieldId);
+
+        if (!field || !isChartRowFilterFieldType(Number(field.get(YjsDatabaseKey.type)) as FieldType)) return;
+        const rule = createDetachedFilter(fieldId, fields);
+
+        if (!rule) return;
+        setRules((previous) => [...previous, rule]);
+        return String(rule[YjsDatabaseKey.id]);
+      },
+      updateFilter: (params) => setRules((previous) => updateDetachedFilters(previous, fields, params)),
+      removeFilter: (filterId) =>
+        setRules((previous) => previous.filter((rule) => rule[YjsDatabaseKey.id] !== filterId)),
+    }),
+    [fields]
+  );
+
+  const query = useChartRowQuery({ rules: currentRules, baseRowIds: initial.baseRowIds, initialRowIds: item.rowIds });
+
+  const handleOpenRow = useCallback(
+    (rowId: RowId) => {
+      onClose();
+      void navigateToRow?.(rowId);
+    },
+    [navigateToRow, onClose]
+  );
 
   return (
-    <>
-      <Dialog
-        open={open}
-        onClose={onClose}
-        fullWidth
-        keepMounted={false}
-        // Prevent restoring focus to the previously-focused element (the slate
-        // editor host) on close — that element has `scroll-mt-[300px]`, which
-        // causes the browser to scroll the document to put it in view.
-        disableRestoreFocus
-        maxWidth='sm'
-        PaperProps={{
-          sx: {
-            maxWidth: 560,
-            width: '100%',
-            // A fixed-ish height keeps the body visible even when there are
-            // few rows; without this the DialogContent inherits a 0-height
-            // flex container and the row list collapses.
-            maxHeight: '70vh',
-            minHeight: 280,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          },
-        }}
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        data-testid='chart-row-popup'
+        aria-describedby={undefined}
+        showCloseButton={false}
+        // Restoring focus to the slate editor host scrolls the document to it.
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        className='flex max-h-[min(600px,85vh)] min-h-[min(400px,85vh)] w-[700px] max-w-[calc(100%-2rem)] flex-col gap-0 p-0 sm:max-w-[calc(100%-2rem)]'
       >
-        <DialogTitle className='flex items-center justify-between border-b border-border-primary px-4 py-3'>
-          <div className='flex items-center gap-3'>
-            <div className='h-4 w-4 rounded-sm' style={{ backgroundColor: color }} />
-            <span className='text-base font-medium text-text-primary'>{item.label}</span>
-            <span className='text-sm text-text-secondary'>
-              ({t('chart.drilldown.rowCount', { count: item.rowIds.length })})
-            </span>
-          </div>
-          <Button size='icon-sm' variant='ghost' onClick={onClose}>
-            <CloseIcon className='h-4 w-4' />
+        <div className='flex items-center gap-2 pl-4 pr-5 pt-4 sm:pl-[70px]'>
+          <DialogTitle
+            data-testid='chart-row-popup-title'
+            className='min-w-0 flex-1 truncate text-base font-semibold leading-[22px] text-text-primary'
+          >
+            {item.label}
+          </DialogTitle>
+          <Button
+            variant='ghost'
+            size='icon-lg'
+            className='p-1.5'
+            aria-label={t('button.close')}
+            data-testid='chart-row-popup-close'
+            onClick={onClose}
+          >
+            <CloseIcon className='h-5 w-5' />
           </Button>
-        </DialogTitle>
-
-        {/* Filter chip — mirrors desktop's `ChartFilterChip` */}
-        {xAxisName && !item.isEmptyCategory && (
-          <div className='flex items-center gap-2 border-b border-border-primary px-4 py-2 text-xs text-text-secondary'>
-            <span className='rounded bg-fill-list-hover px-2 py-1 text-text-primary'>{xAxisName}</span>
-            <span>:</span>
-            <span className='rounded px-2 py-1 text-text-primary' style={{ backgroundColor: color }}>
-              {item.label}
-            </span>
+        </div>
+        <DetachedFilterStoreContext.Provider value={store}>
+          <div className='mt-2 px-4 sm:px-[70px]'>
+            <ChartRowFilterBar rules={currentRules} loading={query.loading} error={query.error} onRetry={query.retry} />
           </div>
-        )}
-
-        <DialogContent
-          className='flex-1 overflow-y-auto p-0'
-          sx={{ padding: 0, '&.MuiDialogContent-root': { padding: 0 } }}
-        >
-          <div className='flex flex-col'>
-            {rows.length === 0 ? (
-              <div className='flex items-center justify-center py-8 text-sm text-text-secondary'>
-                {t('chart.drilldown.noRows', 'No rows in this category')}
-              </div>
-            ) : (
-              rows.map((row) => (
-                <button
-                  type='button'
-                  key={row.id}
-                  onClick={() => {
-                    onClose();
-                    void navigateToRow?.(row.id);
-                  }}
-                  className='flex w-full cursor-pointer items-center gap-3 border-b border-border-primary px-4 py-3 text-left transition-colors hover:bg-fill-content-hover'
-                >
-                  <span className='flex-1 truncate text-sm text-text-primary'>
-                    {row.primaryValue || t('grid.title.placeholder')}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+        </DetachedFilterStoreContext.Provider>
+        <ChartRowGrid className='mx-4 flex-1 sm:mx-[70px]' rowIds={query.rowIds} onOpenRow={handleOpenRow} />
+      </DialogContent>
+    </Dialog>
   );
 }
 

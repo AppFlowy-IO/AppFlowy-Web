@@ -11,6 +11,7 @@ import {
 import { getVisibleDataRowIds } from '../../support/row-detail-helpers';
 import {
   BoardSelectors,
+  ChartDrilldownSelectors,
   DatabaseGridSelectors,
   DatabaseListSelectors,
   DatabaseViewSelectors,
@@ -162,10 +163,7 @@ When('I open the undated row {string} from the No Date list', async ({ page }, t
 Then('the chart drill-down popup is closed', async ({ page }) => {
   const active = activeSidePeekPage(page);
 
-  // The drill-down is the MUI dialog with a title; the peek shells carry none.
-  await expect(
-    active.locator('.MuiDialog-root').filter({ has: active.locator('.MuiDialogTitle-root') })
-  ).toHaveCount(0, { timeout: 15_000 });
+  await expect(ChartDrilldownSelectors.dialog(active)).toHaveCount(0, { timeout: 15_000 });
 });
 
 /** A still press opens the bar; a moved pointer would start a drag instead. */

@@ -1,13 +1,15 @@
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useContext, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pie, PieChart, type SectorProps } from 'recharts';
 
 import { ChartAggregationType, ChartClickItem, ChartDataItem } from '@/application/database-yjs/chart.type';
+import { ThemeModeContext } from '@/components/main/useAppThemeMode';
+import { cn } from '@/lib/utils';
 
 import { ChartNoValidData } from './ChartNoValidData';
 import { ChartTitle, useChartAggregationLabel } from './ChartTitle';
 import { CHART_TOOLTIP_WIDTH, ChartIndicatorDot, PositionedChartTooltip } from './ChartTooltip';
-import { chartDataEqual, resolveChartItemColor, resolveChartItemTextColor } from './chartUtils';
+import { chartDataEqual, resolveDonutSectionColors } from './chartUtils';
 import { useElementSize } from './useElementSize';
 
 interface DonutChartWidgetProps {
@@ -16,14 +18,18 @@ interface DonutChartWidgetProps {
   aggregationType?: ChartAggregationType;
 }
 
-// Ring geometry from desktop's `_DonutChartContentState`.
+// Ring geometry from desktop's `_DonutChartContentState`: the design's thin
+// ring (24px against a 130px hole) scaled to this 70px hole.
 const INNER_RADIUS = 70; // `_centerSpaceRadius`
-const RING_WIDTH = 40; // `_pieRadius`
-const HOVER_GROWTH = 5; // the hovered section is `_pieRadius + 5` wide
+const RING_WIDTH = 13; // `_pieRadius`
+const HOVERED_RING_FACTOR = 1.5; // the hovered section thickens, 24 → 36 in the design
 const SECTION_GAP = 2; // `_sectionsSpace`
+/** Every section but the active one drops to this opacity (`donutDimmedOpacity`). */
+const DIMMED_OPACITY = 0.4;
 
-// Leader geometry from desktop's `_SectionLeader`.
-const LEADER_START_RADIUS = INNER_RADIUS + RING_WIDTH + 1;
+// Leader geometry from desktop's `_SectionLeader`. Leaders start flush with
+// the ring's outer edge, so their start follows the ring geometry.
+const LEADER_START_RADIUS = INNER_RADIUS + RING_WIDTH + SECTION_GAP / 2;
 const LEADER_RADIAL_LENGTH = 40;
 const LEADER_HORIZONTAL_LENGTH = 20;
 const LEADER_SINGLE_LINE_LENGTH = 50;
@@ -31,6 +37,8 @@ const SAME_LINE_EPSILON = 0.5;
 const LABEL_WIDTH = 96;
 const LABEL_HEIGHT = 36;
 const LABEL_EDGE_MARGIN = 4;
+/** Gap between the end of a leader line and its label. */
+const LABEL_LINE_GAP = 4;
 const TOOLTIP_GAP = 8;
 
 const polarX = (cx: number, radius: number, angle: number) => cx + radius * Math.cos(angle);
@@ -101,15 +109,17 @@ function donutSectionPath(cx: number, cy: number, inner: number, outer: number, 
   ].join(' ');
 }
 
+type SectionState = 'idle' | 'active' | 'dimmed';
+
 function renderSection(
   { cx = 0, cy = 0, innerRadius = 0, outerRadius = 0, startAngle = 0, endAngle = 0, fill }: SectorProps,
-  hovered: boolean
+  state: SectionState
 ) {
   // Recharts angles are degrees counter-clockwise; with `endAngle={-360}` the
   // sections run clockwise from 3 o'clock like desktop's fl_chart pie.
   const start = (-startAngle * Math.PI) / 180;
   const end = (-endAngle * Math.PI) / 180;
-  const outer = outerRadius + (hovered ? HOVER_GROWTH : 0);
+  const outer = state === 'active' ? innerRadius + (outerRadius - innerRadius) * HOVERED_RING_FACTOR : outerRadius;
 
   return (
     <path
@@ -117,19 +127,21 @@ function renderSection(
       className='cursor-pointer'
       d={donutSectionPath(cx, cy, innerRadius, outer, Math.min(start, end), Math.max(start, end))}
       fill={fill}
-      fillOpacity={hovered ? 0.8 : 1}
+      // The fills are opaque, so the opacity is the design's dimming factor as is.
+      fillOpacity={state === 'dimmed' ? DIMMED_OPACITY : 1}
     />
   );
 }
 
-const renderIdleSection = (props: SectorProps) => renderSection(props, false);
-const renderHoveredSection = (props: SectorProps) => renderSection(props, true);
+const renderIdleSection = (props: SectorProps) => renderSection(props, 'idle');
+const renderActiveSection = (props: SectorProps) => renderSection(props, 'active');
+const renderDimmedSection = (props: SectorProps) => renderSection(props, 'dimmed');
 
 interface DonutSection {
   item: ChartDataItem;
   /** Ring, leader line, legend dot and drill-down color. */
   color: string;
-  /** Leader label and tooltip dot color (the option's tag text color). */
+  /** Leader label and tooltip dot color: the fill's readable tone. */
   textColor: string;
   /** Angular midpoint in radians, clockwise from 3 o'clock. */
   midAngle: number;
@@ -187,26 +199,36 @@ function SectionLeader({
   layout,
   total,
   chartWidth,
+  dimmed,
 }: {
   section: DonutSection;
   layout: LeaderLayout;
   total: number;
   chartWidth: number;
+  dimmed: boolean;
 }) {
   const { item, color, textColor } = section;
   const percentage = ((item.value / total) * 100).toFixed(1);
 
   return (
-    <div data-testid='donut-chart-leader' className='pointer-events-none absolute inset-0'>
+    <div
+      data-testid='donut-chart-leader'
+      className='pointer-events-none absolute inset-0'
+      // The design dims a whole section, line and label, as one group.
+      style={dimmed ? { opacity: DIMMED_OPACITY } : undefined}
+    >
       <svg aria-hidden className='absolute inset-0 h-full w-full overflow-visible'>
         <polyline points={layout.points} fill='none' stroke={color} strokeWidth={1} />
       </svg>
+      {/* Each label reads outward from its own line end: left-aligned on the right half, right-aligned on the left. */}
       <div
-        className='absolute flex flex-col items-center'
+        className={cn('absolute flex flex-col', layout.rightSide ? 'items-start text-left' : 'items-end text-right')}
         style={{
           top: layout.labelTop,
           width: LABEL_WIDTH,
-          ...(layout.rightSide ? { left: layout.lineEndX } : { right: chartWidth - layout.lineEndX }),
+          ...(layout.rightSide
+            ? { left: layout.lineEndX + LABEL_LINE_GAP }
+            : { right: chartWidth - layout.lineEndX + LABEL_LINE_GAP }),
         }}
       >
         <span className='max-w-full truncate text-xs font-medium leading-[18px]' style={{ color: textColor }}>
@@ -226,14 +248,19 @@ function SectionLeader({
 
 /**
  * Desktop's `_DonutChartContent`: the ring with the total in its hole and a
- * leader + label per section, above a legend row.
+ * leader + label per section, above a legend row. Hovering a section, or its
+ * legend entry, thickens it, dims every other section and shows its tooltip.
  */
 function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWidgetProps) {
   const { t } = useTranslation();
+  const isDark = useContext(ThemeModeContext)?.isDark ?? false;
   const chartRef = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(chartRef);
   const aggregationLabel = useChartAggregationLabel(aggregationType);
+  // The ring and the legend report their own enter and leave events; keeping
+  // them apart means crossing from one to the other cannot race.
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [legendHoveredIndex, setLegendHoveredIndex] = useState<number | null>(null);
 
   const total = useMemo(() => data.reduce((sum, item) => sum + item.value, 0), [data]);
   const sections = useMemo<DonutSection[]>(() => {
@@ -242,16 +269,12 @@ function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWi
     return data.map((item, index) => {
       const sweep = (item.value / total) * 2 * Math.PI;
       const midAngle = start + sweep / 2;
+      const { fill, text } = resolveDonutSectionColors(item, index, isDark);
 
       start += sweep;
-      return {
-        item,
-        color: resolveChartItemColor(item, index),
-        textColor: resolveChartItemTextColor(item, index),
-        midAngle,
-      };
+      return { item, color: fill, textColor: text, midAngle };
     });
-  }, [data, total]);
+  }, [data, total, isDark]);
   const pieData = useMemo(
     () => sections.map(({ item, color }) => ({ label: item.label, value: item.value, fill: color })),
     [sections]
@@ -260,9 +283,11 @@ function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWi
     () => sections.map((section) => layoutLeader(section.midAngle, width, height)),
     [sections, width, height]
   );
-  const hovered = hoveredIndex !== null && hoveredIndex < sections.length ? hoveredIndex : null;
-  const hoveredSection = hovered === null ? undefined : sections[hovered];
-  const hoveredLeader = hovered === null ? undefined : leaders[hovered];
+  const inRange = (index: number | null) => (index !== null && index >= 0 && index < sections.length ? index : null);
+  // The ring wins over the legend.
+  const active = inRange(hoveredIndex) ?? inRange(legendHoveredIndex);
+  const activeSection = active === null ? undefined : sections[active];
+  const activeLeader = active === null ? undefined : leaders[active];
 
   const handleSectionClick = (index: number) => {
     const section = sections[index];
@@ -280,6 +305,7 @@ function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWi
       layout={leaders[index]}
       total={total}
       chartWidth={width}
+      dimmed={active !== null && index !== active}
     />
   );
 
@@ -302,9 +328,9 @@ function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWi
                 paddingAngle={0}
                 isAnimationActive={false}
                 // Recharts applies `inactiveShape` only while an index is active, so -1 means "none hovered".
-                activeIndex={hovered ?? -1}
-                activeShape={renderHoveredSection}
-                inactiveShape={renderIdleSection}
+                activeIndex={active ?? -1}
+                activeShape={renderActiveSection}
+                inactiveShape={active === null ? renderIdleSection : renderDimmedSection}
                 onMouseEnter={(_, index) => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
                 onClick={(_, index) => handleSectionClick(index)}
@@ -324,15 +350,15 @@ function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWi
                 />
               )}
             </div>
-            {/* The hovered section's leader is drawn last so it sits above every other label. */}
-            {sections.map((_, index) => (index === hovered ? null : renderLeader(index)))}
-            {hovered !== null && renderLeader(hovered)}
-            {hoveredSection && hoveredLeader && (
+            {/* The active section's leader is drawn last so it sits above every other label. */}
+            {sections.map((_, index) => (index === active ? null : renderLeader(index)))}
+            {active !== null && renderLeader(active)}
+            {activeSection && activeLeader && (
               <PositionedChartTooltip
-                label={hoveredSection.item.label}
-                value={hoveredSection.item.value}
-                color={hoveredSection.textColor}
-                anchor={{ x: hoveredLeader.tooltipX, y: hoveredLeader.lineEndY }}
+                label={activeSection.item.label}
+                value={activeSection.item.value}
+                color={activeSection.textColor}
+                anchor={{ x: activeLeader.tooltipX, y: activeLeader.lineEndY }}
                 chartSize={{ width, height }}
                 verticalGap={0}
               />
@@ -350,9 +376,17 @@ function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWi
               data-testid='donut-chart-legend-item'
               className='flex items-center rounded-100 pr-5 hover:bg-fill-content-hover'
               onClick={() => onSliceClick?.({ ...item, color })}
+              onMouseEnter={() => setLegendHoveredIndex(index)}
+              onMouseLeave={() => setLegendHoveredIndex(null)}
             >
+              {/* Swatches stay at full color; only another entry's label steps back while one is active. */}
               <ChartIndicatorDot color={color} />
-              <span className='ml-1.5 whitespace-nowrap text-xs font-medium leading-[18px] text-text-tertiary'>
+              <span
+                className={cn(
+                  'ml-1.5 whitespace-nowrap text-xs font-medium leading-[18px]',
+                  active !== null && index !== active ? 'text-text-tertiary' : 'text-text-primary'
+                )}
+              >
                 {item.label}
               </span>
             </button>

@@ -16,8 +16,8 @@ import { useReadOnly } from '@/application/database-yjs/context';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as CenterPeekIcon } from '@/assets/icons/center_peek.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as SidePeekIcon } from '@/assets/icons/side_peek.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { PlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
@@ -112,18 +112,10 @@ function EventPopoverContent({
       data-testid={isDraft ? 'calendar-event-draft-editor' : undefined}
       className={'appflowy-scroller max-h-[560px] w-[360px] overflow-y-auto px-3 py-2'}
     >
+      {/* Desktop's `EventEditorControls` order: delete, open as side peek,
+          duplicate. Close is web-only; desktop dismisses the popover by
+          clicking outside it. */}
       <div className={'sticky top-0 flex w-full items-center justify-end gap-1'}>
-        {/* Duplicate button */}
-        {!readOnly && !isDraft && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant='ghost' size='icon' onClick={handleDuplicate}>
-                <DuplicateIcon className='h-5 w-5' />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side='top'>{t('calendar.duplicateEvent')}</TooltipContent>
-          </Tooltip>
-        )}
         {/* Delete button */}
         {!readOnly && (
           <Tooltip>
@@ -138,14 +130,16 @@ function EventPopoverContent({
                 <DeleteIcon className='h-5 w-5' />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side='top'>{t('calendar.deleteEvent')}</TooltipContent>
+            <TooltipContent side='top'>{t('button.delete')}</TooltipContent>
           </Tooltip>
         )}
 
-        {/* Open using the shared row peek presentation. */}
+        {/* Open the row; the database opens calendar rows in side peek and
+            falls back to center peek when side peek is unavailable. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              data-testid='calendar-event-open-peek'
               size={'icon'}
               variant={'ghost'}
               aria-label={openPeekLabel}
@@ -169,6 +163,18 @@ function EventPopoverContent({
           </TooltipTrigger>
           <TooltipContent side='top'>{openPeekLabel}</TooltipContent>
         </Tooltip>
+
+        {/* Duplicate button */}
+        {!readOnly && !isDraft && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button data-testid='calendar-event-duplicate' variant='ghost' size='icon' onClick={handleDuplicate}>
+                <DuplicateIcon className='h-5 w-5' />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side='top'>{t('calendar.duplicateEvent')}</TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Close button */}
         <Tooltip>

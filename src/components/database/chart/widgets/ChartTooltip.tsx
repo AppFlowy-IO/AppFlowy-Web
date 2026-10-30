@@ -51,7 +51,7 @@ export function ChartTooltip({ label, value, color }: ChartTooltipProps) {
         <span className='ml-2 min-w-0 truncate text-sm font-medium leading-5 text-text-inverse'>{label}</span>
         <span className='ml-3 shrink-0 text-sm leading-5 text-text-inverse'>{Math.trunc(value)}</span>
       </div>
-      <div className='my-2 h-px shrink-0 bg-border-primary' />
+      <div data-testid='chart-tooltip-divider' className='my-2 h-px shrink-0 bg-border-secondary' />
       <span className='truncate text-xs leading-[18px] text-text-tertiary'>
         {t('chart.tooltip.clickToView', 'Click to view data')}
       </span>
