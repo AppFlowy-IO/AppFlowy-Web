@@ -7,7 +7,7 @@ import * as Y from 'yjs';
 import { waitForRowBodyCompletion } from '../../support/atomic-creation-helpers';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView } from '../../support/database-ui-helpers';
-import { waitForDocumentTextOnServer } from '../../support/duplicate-test-helpers';
+import { readDocumentBodyText } from '../../support/document-topology-helpers';
 import { closeRowDetailWithEscape, openRowDetailByRowId } from '../../support/row-detail-helpers';
 import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
@@ -60,14 +60,7 @@ async function readDocumentText(page: Page, documentId: string): Promise<string>
   const doc = await readCollab(page, documentId, 0);
 
   try {
-    const document = doc.getMap('data').get('document') as Y.Map<unknown>;
-    const meta = document.get('meta') as Y.Map<unknown>;
-    const texts = meta.get('text_map') as Y.Map<Y.Text>;
-
-    return [...texts.values()]
-      .map((text) => text.toString())
-      .join('\n')
-      .trim();
+    return readDocumentBodyText(doc);
   } finally {
     doc.destroy();
   }
@@ -219,7 +212,10 @@ test('opening an untouched row waits for the server document; body content alone
   await page.keyboard.type(text, { delay: 25 });
   await expect(editor).toContainText(text);
   await expect(editor).toBeFocused();
-  await waitForDocumentTextOnServer(page, TestConfig.apiUrl, documentId, text);
+  await expect.poll(() => readDocumentText(page, documentId), {
+    timeout: 30000,
+    intervals: [250, 500, 1000],
+  }).toBe(text);
   await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(false);
   await closeRowDetailWithEscape(page);
   await expect(rowIcon(page, rowId)).toBeVisible();
@@ -237,6 +233,7 @@ test('opening an untouched row waits for the server document; body content alone
   await expect(rowIcon(page, rowId)).toHaveCount(0);
   await page.keyboard.press('ControlOrMeta+Z');
   await expect(editor).toContainText(text);
+  await expect.poll(() => readDocumentText(page, documentId)).toBe(text);
   await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(false);
   await expect(rowIcon(page, rowId)).toBeVisible();
   await expect(editor).toBeFocused();
@@ -267,6 +264,7 @@ test('opening an untouched row waits for the server document; body content alone
   await expect(editor).toBeVisible();
   await expect(editor).not.toContainText(text);
   expect(commands).toHaveLength(1);
+  await expect.poll(() => readDocumentText(page, documentId)).toBe('');
 });
 
 test('a fresh atomic row opens its page without a preliminary Row full-sync', async ({ page, request }) => {
