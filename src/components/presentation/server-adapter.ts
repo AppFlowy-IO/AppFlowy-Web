@@ -1,5 +1,6 @@
 /** Presentation UI projections. The original evidence and immutable plan are retained verbatim. */
 import { PresentationAPIError } from './server-client';
+import { presentationCapabilities } from './presentation-policy';
 import { SLIDE_COUNT_PRESETS } from './slide-limits';
 
 import type {
@@ -17,13 +18,13 @@ export interface PresentationEntitlement {
 export function entitlementForStatus(status: PresentationStatus): PresentationEntitlement {
   const ai = status.aiResponses;
   const ready = ai.metered === false || ai.accountingReady === true;
-  const aiAvailable = ready && (ai.metered === false || ai.limit === null || (ai.remaining !== null && ai.remaining !== undefined && ai.remaining > 0));
+  const aiAvailable = ready && (ai.unlimited === true || ai.metered === false || ai.limit === null || (ai.remaining !== null && ai.remaining !== undefined && ai.remaining > 0));
 
   return {
-    isPro: status.plan === 'paid',
+    isPro: presentationCapabilities(status)!.isPro,
     canGenerate: status.remainingSlides > 0, canGenerateMap: aiAvailable,
     aiResponsesUsed: ai.committed ?? null, aiResponsesRemaining: ai.remaining ?? null, aiAccountingReady: ready,
-    maxSlides: status.maxSlides, generatedSlides: status.usage.freeSlides, remainingSlides: status.remainingSlides,
+    maxSlides: status.maxSlides, generatedSlides: status.generatedSlides ?? status.usage.freeSlides, remainingSlides: status.remainingSlides,
   };
 }
 
@@ -71,11 +72,11 @@ export function themeToStyle(theme: Theme): PresentationStyle {
   return { ...theme, id: theme.id, company: false, reviewed: true, requiresReview: false };
 }
 
-export function reviewedStyleToStyle(style: ReviewedStyle, requiresReview = false, warnings: string[] = []): PresentationStyle {
+export function reviewedStyleToStyle(style: ReviewedStyle, requiresReview = false, warnings: string[] = [], company = false): PresentationStyle {
   return {
     ...themeToStyle(style.theme), id: style.reference.id, version: String(style.reference.version), serverVersion: style.reference.version,
     serverStyle: style, reviewed: !requiresReview, requiresReview, compatibilityWarnings: warnings,
-    templateName: style.theme.name,
+    templateName: style.theme.name, company,
     // Server geometry is rendered through the scene endpoint, never as caller-supplied SVG/image URLs.
   };
 }

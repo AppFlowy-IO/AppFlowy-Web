@@ -7,6 +7,8 @@ import {
   loadPresentation,
   loadSavedDeck,
   loadSourceSnapshot,
+  getPresentationStatus,
+  PresentationAPIError,
   saveSession,
 } from '../presentation-client';
 import PresentationStudio from '../PresentationStudio';
@@ -28,6 +30,7 @@ jest.mock('../presentation-client', () => ({
   loadPresentation: jest.fn(),
   loadSavedDeck: jest.fn(),
   loadSourceSnapshot: jest.fn(),
+  getPresentationStatus: jest.fn(),
   loadStructuralMap: jest.fn(),
   editMap: jest.fn(),
   exportDeck: jest.fn(),
@@ -54,6 +57,9 @@ jest.mock('../SlidesWorkflow', () => ({
       <button onClick={() => void props.onApplyOutline()}>Accept story</button>
       <button onClick={() => void props.onDownload?.('export-retry-id', new AbortController().signal)}>Download</button>
       <span data-testid='outline-error'>{props.outlineError?.message}</span>
+      <span data-testid='allowance'>{props.remainingSlides}</span>
+      <span data-testid='draft'>{props.plan?.title}</span>
+      <span data-testid='can-edit'>{String(props.canEdit)}</span>
       <span data-testid='narrative'>{String(props.hasNarrative)}</span>
     </div>
   ),
@@ -151,12 +157,41 @@ beforeEach(() => {
   (loadSavedDeck as jest.Mock).mockResolvedValue(deck);
   (saveSession as jest.Mock).mockResolvedValue({ revision: 1 });
   (exportDeck as jest.Mock).mockResolvedValue({ blob: new Blob(['pptx']), fileName: 'deck.pptx', status });
+  (getPresentationStatus as jest.Mock).mockResolvedValue(status);
 });
 
 const open = (initialDeck?: SavedDeck) =>
   render(
     <PresentationStudio workspaceId='workspace' userId='user' snapshot={source} canWrite initialDeck={initialDeck} />
   );
+
+test('402 refreshes allowance without reloading or losing the story draft and previous deck', async () => {
+  run.mockRejectedValue(new PresentationAPIError('Choose fewer slides or upgrade.', 'SLIDE_GENERATION_LIMIT', 402));
+  jest.mocked(getPresentationStatus).mockResolvedValue({ ...status, remainingSlides: 4 } as never);
+  open(deck);
+  await waitFor(() => expect(screen.getByText('Generate').disabled).toBe(false));
+  fireEvent.click(screen.getByText('Edit story'));
+  fireEvent.click(screen.getByText('Change story'));
+  fireEvent.click(screen.getByText('Accept story'));
+  await waitFor(() => expect(getPresentationStatus).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByTestId('allowance').textContent).toBe('4'));
+  expect(screen.getByTestId('draft').textContent).toBe('Edited title');
+  expect(screen.getByTestId('deck').textContent).toBe('saved-deck:1');
+  expect(screen.getByTestId('stage').textContent).toBe('story');
+  expect(loadPresentation).toHaveBeenCalledTimes(1);
+});
+
+test('zero slides still opens the saved deck and permits story editing without generation', async () => {
+  jest.mocked(loadPresentation).mockResolvedValue({ status: { ...status, remainingSlides: 0 }, session: null, styles: [] } as never);
+  open(deck);
+  await waitFor(() => expect(screen.getByTestId('allowance').textContent).toBe('0'));
+  expect(screen.getByTestId('stage').textContent).toBe('preview');
+  expect(screen.getByTestId('can-edit').textContent).toBe('true');
+  fireEvent.click(screen.getByText('Edit story'));
+  fireEvent.click(screen.getByText('Change story'));
+  expect(screen.getByTestId('draft').textContent).toBe('Edited title');
+  expect(run).not.toHaveBeenCalled();
+});
 
 test('generated outline acceptance reuses the durable artifact without another generation or import', async () => {
   open();

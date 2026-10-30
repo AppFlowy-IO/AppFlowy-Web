@@ -12,6 +12,7 @@ import { collapseBranches, expandBranch, indexMap, initialCollapsed, layoutMap, 
 import MindMapNodePopover from './MindMapNodePopover';
 import MindMapToolbar from './MindMapToolbar';
 import PresentationPaywall from './PresentationPaywall';
+import { MINDMAP_STYLE_MESSAGE, presentationUpgradeRequired } from './presentation-policy';
 import { MapNode, MindMap, MapOrigin } from './types';
 import { Action, Notice } from './ui';
 import { usePresentationFullscreen } from './usePresentationFullscreen';
@@ -97,6 +98,7 @@ const MindMapNode = memo(function MindMapNode({
 
 export default function MindMapViewer({
   onUpgrade,
+  canUsePaidStyles,
   generationPaywall,
   map,
   origin,
@@ -112,6 +114,7 @@ export default function MindMapViewer({
   onClosePresentation,
 }: {
   onUpgrade?: () => void;
+  canUsePaidStyles?: boolean;
   generationPaywall?: string;
   map: MindMap;
   origin?: MapOrigin;
@@ -141,10 +144,13 @@ export default function MindMapViewer({
 
   const transform = useRef<ReactZoomPanPinchRef>(null);
   const [collapsed, setCollapsed] = useState(() => initialCollapsed(index));
-  const [structure, setStructure] = useState<MapStructure>(mapStyle?.structure ?? 'right');
-  const [branchLine, setBranchLine] = useState<MapBranchLine>(mapStyle?.branchLine ?? 'rounded');
+  const [selectedStructure, setStructure] = useState<MapStructure>(mapStyle?.structure ?? 'right');
+  const [selectedBranchLine, setBranchLine] = useState<MapBranchLine>(mapStyle?.branchLine ?? 'rounded');
+  const structure = canUsePaidStyles === false ? 'right' : selectedStructure;
+  const branchLine = canUsePaidStyles === false ? 'rounded' : selectedBranchLine;
   const [savedStyle, setSavedStyle] = useState(mapStyle);
   const [styleError, setStyleError] = useState('');
+  const [styleUpgrade, setStyleUpgrade] = useState(false);
   const styleSaving = useRef(false);
 
   // Adopt a new saved style during render, so the map never paints or fits with the previous style first.
@@ -156,14 +162,22 @@ export default function MindMapViewer({
 
   async function changeStyle(next: { structure: MapStructure; branchLine: MapBranchLine }) {
     if (styleSaving.current) return;
+    if (canUsePaidStyles === false && (next.structure !== 'right' || next.branchLine !== 'rounded')) {
+      setStyleError(MINDMAP_STYLE_MESSAGE);
+      setStyleUpgrade(true);
+      return;
+    }
+
     styleSaving.current = true;
     setStyleError('');
+    setStyleUpgrade(false);
     try {
       await onStyleChange?.(next);
       setStructure(next.structure);
       setBranchLine(next.branchLine);
     } catch (error) {
       setStyleError(error instanceof Error ? error.message : 'Unable to save map style.');
+      setStyleUpgrade(presentationUpgradeRequired(error));
     } finally {
       styleSaving.current = false;
     }
@@ -439,9 +453,9 @@ export default function MindMapViewer({
       }}
     >
       {styleError && (
-        <p role='alert' className='absolute left-4 top-4 z-50'>
-          {styleError}
-        </p>
+        <div role='alert' className='absolute left-4 right-4 top-4 z-50'>
+          {styleUpgrade && onUpgrade ? <PresentationPaywall message={styleError} onUpgrade={onUpgrade} /> : styleError}
+        </div>
       )}
       <TransformWrapper
         // Remount only to fit a new drill-down root. A resized canvas refits in place.
@@ -682,7 +696,6 @@ export default function MindMapViewer({
           </Action>
         </div>
       </div>
-      {styleError && <p role='alert'>{styleError}</p>}
       {map.warnings.map((warning) => (
         <Notice key={warning}>{warning}</Notice>
       ))}

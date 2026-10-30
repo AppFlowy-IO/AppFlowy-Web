@@ -1,5 +1,6 @@
 /** Cloud presentation workflows: request identity, job polling and UI projections. */
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
+import { presentationQuotaReason } from './presentation-policy';
 
 import {
   artifactToDeck, generationRequest, isMapArtifact, reviewedStyleToStyle, serverOptions, sourceSelections,
@@ -98,7 +99,7 @@ export async function listStyles(scope: Pick<PresentationScope, 'workspaceId'>, 
       styles.push(...await Promise.all(page.items.slice(start, start + 4).map(async (item) => {
         const record = await readArtifact<ReviewedStyle>(scope, item.id, item.version, signal);
 
-        return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style');
+        return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style', [], record.company ?? item.company);
       })));
     }
 
@@ -163,18 +164,18 @@ export async function importPresentationTemplate(scope: Pick<PresentationScope, 
   return reviewedStyleToStyle(candidate.style, candidate.requiresReview, candidate.warnings);
 }
 
-export async function reviewPresentationStyle(scope: Pick<PresentationScope, 'workspaceId'>, style: PresentationStyle, signal?: AbortSignal): Promise<PresentationStyle> {
+export async function reviewPresentationStyle(scope: Pick<PresentationScope, 'workspaceId'>, style: PresentationStyle, signal?: AbortSignal, company?: boolean): Promise<PresentationStyle> {
   if (!style.serverStyle || !style.serverVersion) throw new PresentationAPIError('Upload a template before reviewing it.', 'TEMPLATE_NOT_SAVED', 400);
-  const record = await reviewStyle(scope, style.id, style.serverVersion, style.serverStyle, signal);
+  const record = await reviewStyle(scope, style.id, style.serverVersion, style.serverStyle, signal, company);
 
-  return reviewedStyleToStyle(record.content, false, style.compatibilityWarnings);
+  return reviewedStyleToStyle(record.content, false, style.compatibilityWarnings, record.company ?? style.company);
 }
 
 export async function analyzePresentationTemplate(scope: Pick<PresentationScope, 'workspaceId'>, style: PresentationStyle, signal?: AbortSignal): Promise<PresentationStyle> {
   if (!style.serverStyle || !style.serverVersion) throw new PresentationAPIError('Upload a template before analyzing it.', 'TEMPLATE_NOT_SAVED', 400);
   const record = await analyzeTemplate(scope, style.id, style.serverVersion, signal);
 
-  return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style', style.compatibilityWarnings);
+  return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style', style.compatibilityWarnings, record.company ?? style.company);
 }
 
 export const reviewPresentationTemplate = reviewPresentationStyle;
@@ -216,7 +217,9 @@ export async function waitForJob(scope: PresentationScope, initial: JobStatus, s
           const reason = job.errorReason ?? (job.state === 'canceled' ? 'JOB_CANCELED' : 'GENERATION_FAILED');
 
           // A failed job reports why through its reason, such as an AI provider without credit.
-          throw new PresentationAPIError(presentationErrorMessage(reason) ?? 'The presentation job did not complete.', reason, 409, false, { jobId: job.id, state: job.state });
+          const upgradeRequired = presentationQuotaReason(reason);
+
+          throw new PresentationAPIError(presentationErrorMessage(reason) ?? 'The presentation job did not complete.', reason, upgradeRequired ? 402 : 409, false, { jobId: job.id, state: job.state, ...(upgradeRequired && { upgradeRequired }) });
         }
 
         return job;

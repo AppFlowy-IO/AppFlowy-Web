@@ -1,4 +1,5 @@
 import { FeatureValue, PricingCatalog, PricingPlan, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { presentationRows } from '@/components/billing/__tests__/fixtures/presentation-pricing';
 import {
   PricingTranslate,
   findPlan,
@@ -8,6 +9,7 @@ import {
   getPlanPrice,
   isFreePlan,
   localizeFeatureLabel,
+  localizeFeatureTooltip,
   localizeFeatureValue,
   splitPriceTemplate,
   toSubscriptionPlan,
@@ -143,6 +145,12 @@ describe('plan lookup helpers', () => {
 });
 
 describe('localization helpers', () => {
+  it.each(presentationRows)('keeps the server benefit and tooltip for $key on older clients', (row) => {
+    expect(localizeFeatureLabel(t, row.key, row.label)).toBe(row.label);
+    expect(localizeFeatureTooltip(t, row.key, row.tooltip)).toBe(row.tooltip);
+    expect(localizeFeatureValue(t, row.values.free)).toBe(row.values.free.display);
+    expect(formatFeatureBullet(t, { key: row.key, label: row.label, value: row.values.pro })).toBe(row.label);
+  });
   it('localizes feature labels with the server label as fallback', () => {
     expect(localizeFeatureLabel(t, 'storage', 'Storage (server)')).toBe('Storage');
     expect(localizeFeatureLabel(t, 'quantum_sync', 'Quantum sync')).toBe('Quantum sync');

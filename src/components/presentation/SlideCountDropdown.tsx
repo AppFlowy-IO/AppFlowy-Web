@@ -11,16 +11,23 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import { CUSTOM_SLIDE_MESSAGE } from './presentation-policy';
+import PresentationPaywall from './PresentationPaywall';
+
 export default function SlideCountDropdown({
   value,
   maxCount,
   disabled,
   onValueChange,
+  allowed,
+  onUpgrade,
 }: {
   value?: number;
   maxCount?: number;
   disabled: boolean;
   onValueChange: (value: number) => void;
+  allowed?: boolean;
+  onUpgrade?: () => void;
 }) {
   const slideCounts = Array.from({ length: Math.max(0, Math.floor(maxCount ?? 0)) }, (_, index) => index + 1);
   const [open, setOpen] = useState(false);
@@ -67,10 +74,10 @@ export default function SlideCountDropdown({
       <DropdownMenuContent
         align='start'
         container={triggerRef.current?.closest('[role="dialog"]') ?? undefined}
-        className='z-[1500] max-h-[min(256px,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-0'
+        className={`z-[1500] max-h-[min(256px,var(--radix-dropdown-menu-content-available-height))] ${allowed === false ? 'w-80 max-w-[90vw]' : 'w-[var(--radix-dropdown-menu-trigger-width)] min-w-0'}`}
         onEscapeKeyDown={(event) => event.stopPropagation()}
       >
-        <DropdownMenuRadioGroup
+        {allowed === false && onUpgrade ? <PresentationPaywall message={CUSTOM_SLIDE_MESSAGE} onUpgrade={onUpgrade} /> : <DropdownMenuRadioGroup
           aria-label='Custom slide count'
           value={value === undefined ? '' : String(value)}
           onValueChange={(next) => onValueChange(Number(next))}
@@ -85,7 +92,7 @@ export default function SlideCountDropdown({
               {count}
             </DropdownMenuRadioItem>
           ))}
-        </DropdownMenuRadioGroup>
+        </DropdownMenuRadioGroup>}
       </DropdownMenuContent>
     </DropdownMenu>
   );

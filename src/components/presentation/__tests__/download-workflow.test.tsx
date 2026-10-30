@@ -172,6 +172,45 @@ test('submits an export above the former Free cap and surfaces the actual API en
   expect(input.onUpgrade).toHaveBeenCalledTimes(1);
 });
 
+test('export exhaustion offers Upgrade while leaving preview and editing available', async () => {
+  const download = jest.fn();
+  const input = { ...props(download), isPro: false, remainingSlides: 8, exportAvailable: false, maxExportSlides: 12 };
+
+  render(<SlidesWorkflow {...input} />);
+  fireEvent.click(screen.getByText('Export PPTX'));
+  expect(screen.getByText(/one lifetime PowerPoint export/)).toBeTruthy();
+  fireEvent.click(screen.getByText('Download PowerPoint (.pptx)'));
+  expect(download).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Upgrade to Pro' }));
+  expect(input.onUpgrade).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText('Back to preview'));
+  expect(screen.getByText('Export PPTX')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Edit story plan' })).toBeTruthy();
+});
+
+test('zero generated slides remaining does not block the first export', async () => {
+  const download = jest.fn().mockRejectedValue(new Error('Delivery interrupted'));
+  const input = { ...props(download), isPro: false, remainingSlides: 0, canGenerate: false, exportAvailable: true, maxExportSlides: 12 };
+
+  render(<SlidesWorkflow {...input} />);
+  fireEvent.click(screen.getByText('Export PPTX'));
+  fireEvent.click(screen.getByText('Download PowerPoint (.pptx)'));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).toBeNull();
+});
+
+test.each([[413, true, true], [413, false, false], [403, true, false], [429, true, false], [503, true, false]])('export HTTP %i upgradeRequired=%s shows Upgrade=%s', async (status, upgradeRequired, expected) => {
+  const download = jest.fn().mockRejectedValue(Object.assign(new Error('Download failed'), { status, details: { upgradeRequired } }));
+  const input = { ...props(download), onStatusRefresh: jest.fn() };
+
+  render(<SlidesWorkflow {...input} />);
+  fireEvent.click(screen.getByText('Export PPTX'));
+  fireEvent.click(screen.getByText('Download PowerPoint (.pptx)'));
+  await screen.findByText(/Download failed/);
+  expect(Boolean(screen.queryByRole('button', { name: 'Upgrade to Pro' }))).toBe(expected);
+  expect(input.onStatusRefresh).toHaveBeenCalledTimes(expected ? 1 : 0);
+});
+
 function presentDeck() {
   const input = props(jest.fn());
   const plan = {

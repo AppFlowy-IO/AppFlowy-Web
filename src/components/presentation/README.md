@@ -58,7 +58,35 @@ Changing settings cancels a pending click so it cannot submit an obsolete select
 Session writes are scheduled by preference edits and merge only those fields into the latest saved
 payload. Opening a studio does not clear deck/narrative references or another mode's map style.
 
-The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts; it does not reconstruct quotas from a plan label or historical usage. Preset/custom choices retain their explicit request mode. Export, custom-count and map-style admission are decided by the API. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
+The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts. Preset/custom choices retain their explicit request mode. Proactive controls explain known restrictions; the API remains authoritative for admission. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
+
+### Paywall and status integration
+
+`GET /status` adds `isPro`, `generatedSlides`, `remainingExports` (null means unlimited),
+`exportAvailable`, `maxExportSlides`, and `capabilities.{customSlideCount,mindmapStyles,companyStyles}`.
+They are optional in the Web DTO for rollout compatibility. Explicit values win; older responses
+fall back to `plan` and existing export usage. `maxSlides` is the current request budget (including
+zero), separate from the immutable deck's export-size limit. The Free allowance counts **12
+generated slides per workspace**, not 12 decks; its single export is independent of generation.
+
+Free Custom is gated even for four slides. A request above the remaining slide allowance offers
+Auto/smaller presets and Upgrade while retaining settings. Known shared-AI exhaustion offers
+Upgrade for a new AI mind map; unknown, unmetered and unlimited accounting never manufacture an
+exhaustion claim. Explicit `aiResponses.unlimited: true` overrides stale finite/zero counters.
+Left-facing, two-sided, top-down and curved map edits are paid. After downgrade,
+the viewer uses right-facing/rounded rendering without rewriting saved map content or preferences.
+Saved opening, previews, presenting, outline editing and ordinary template uploads remain usable
+at zero generated slides. An unused export still works then; retrying an existing export receipt
+does not consume a second export.
+
+HTTP 402 offers Upgrade unless the server explicitly says otherwise. HTTP 413 does so **only**
+with `details.upgradeRequired: true`; 403, transient 429 and 503 never offer an upgrade as a fix.
+Durable job reasons include canonical `AI_LIMIT` and legacy `AI_RESPONSE_LIMIT`. Quota denials
+refresh status without reloading content, as do successful mutations and window focus. Generation
+and export success also accept the refreshed status returned by their coordinator. Upgrade exits
+fullscreen first, preserves the page/query/draft, and opens `action=change_plan` for billing owners;
+members receive the workspace-owner instruction. Comparison benefits use the Billing catalog,
+including server labels/values when new keys have no client translation.
 
 [`ServerSlideCanvas.tsx`](./ServerSlideCanvas.tsx) renders the saved server scene used by native PowerPoint export. All thumbnails share one scene load and deduplicated, bounded private image reads; a deck read with its scene reuses that scene and fetches only its images. Slides render before their images, and an image that cannot be shown is marked unavailable without hiding the deck. Images use authenticated Blob requests with workspace, artifact version and asset revision. Object URLs are revoked on replacement/unmount. Source changes or permission failures do not fall back to fixture generation.
 
@@ -72,7 +100,7 @@ Story-plan editing preserves the saved artifact version and source revision. Acc
 
 Canonical source references resolve through the server evidence envelope. A historical deck/map whose source envelope cannot be proven to match the open page remains viewable but cannot silently reuse that page's citations or regeneration evidence. The artifact catalog supports a captured source-page filter. Full regeneration after a page edit creates a new deck; targeted slide/story edits still require matching evidence.
 
-Template uploads produce candidates requiring explicit review. Review preserves the imported template geometry, assets and mandatory footer, then saves a new server version. Arbitrary browser-created company styles, logo uploads and workspace-default style changes have no matching server API and are not presented as persisted operations.
+Template uploads produce candidates requiring explicit review. Review preserves the imported template geometry, assets and mandatory footer, then saves a new server version. Ordinary generation-setup import/review omits `company` and remains available on Free up to 5 MiB. Settings' company configuration save sends `company: true` to `PUT /styles/{id}/review`; Cloud requires paid access and workspace ownership. `company` is a top-level artifact/catalog flag, not a field inside `ReviewedStyle`. Omitting it on subsequent reviews cannot demote an existing company style; edits remain gated. Owners may delete company styles after downgrade. Existing deck previews never require company-style configuration access. Logo uploads and global workspace-default assignment have no matching operation here.
 
 Explicit map/deck JSON imports are available through the typed API adapter. Ordinary generation and the separate administrator prompt tests use the server workflows above. Prompt compilation, provider calls, output validation and native exports are implemented only on the server; the prototype implementation and historical prompt copies have been removed from Web.
 
@@ -101,6 +129,36 @@ existing resize observers measure its new size without reconnecting every unit.
 - `pnpm type-check` and `pnpm build` validate integration with the main Web application.
 
 Mocked HTTP contract tests do not prove a deployed provider's output quality or a live account's entitlement behavior. Live generation/export should be exercised against a Cloud deployment containing the presentation feature with an authorized workspace.
+
+### Paywall regression matrix
+
+| Requirement | Web regression coverage |
+| --- | --- |
+| Free Custom4 intercepted before model work; settings preserved | `server-controls`, `setup-paywalls`, `PresentEntry` |
+| 8 requested / 4 remaining: smaller preset plus Upgrade | `setup-paywalls` |
+| Zero slides: saved Open, edit and preview stay available | `setup-paywalls`, `workflow-server`, `download-workflow`, existing `generation-reuse` suites |
+| Export exhaustion independent of generation; first export after zero slides; receipt retry | `presentation-paywall-policy`, `download-workflow`, `server-client` |
+| Shared AI exhausted / unknown / unlimited / unmetered | `ai-map-availability`, `presentation-paywall-policy`, `usePresentationAccess` |
+| Each of three paid structures and curved branches; paid save; downgrade view | `mindmap-viewer-renders` |
+| Paid owner company save sends true; member denied; downgrade deletion | `company-style-paywalls`, `server-client` |
+| Ordinary Free 5 MiB imports/review stay free | `company-style-paywalls`, `imported-template-workflow`, `server-client` |
+| 402 refresh; 413 conditional Upgrade; 403/429/503 no Upgrade | `workflow-server`, `company-style-paywalls`, `download-workflow`, `presentation-paywall-policy` |
+| Status refresh retains draft/content; stale workspace results discarded; no repeated source analysis | `presentation-status-refresh`, `workflow-server`, `assessment-workflow` |
+| Billing benefit fallback for all eight new rows | `utils/pricing`, `billing/UpgradePlan` |
+| Fullscreen owner/member upgrade, query/draft preservation, actual comparison dialog | `usePresentationAccess`; Chromium `playwright/e2e/presentation/paywalls.spec.ts` |
+
+Run the Jest suites with `pnpm exec jest src/components/presentation/__tests__ src/components/billing/__tests__/UpgradePlan.test.tsx src/utils/__tests__/pricing.test.ts --runInBand --no-coverage`.
+Run the browser regression with `pnpm exec playwright test --config playwright.presentation.config.ts paywalls.spec.ts`.
+Jest uses mocked HTTP/coordinators. Playwright mounts real controls, the upgrade hook/router and
+comparison dialog with fixture workspace/catalog data; it blocks business API requests and never
+clicks Checkout. It does not assert server quota enforcement. Backend capability, company HTTP,
+atomic accounting and billing catalog tests are owned/run separately in Cloud and Service; Web
+test passes do not establish deployment of those changes. The repository uses Playwright rather
+than an active Cypress configuration for these browser regressions.
+
+Local validation on 2026-10-30: all 62 listed Jest suites passed (514 tests), and both isolated
+Chromium paywall regressions passed. The Web production TypeScript check passed. These results
+cover local, uncommitted source, not a deployed main branch or real checkout/paid generation.
 
 The 2026-10-29 Chrome run verified Open/Generate switching and reading the existing 13-slide deck
 without generation. Delivery Control Room's two database slides made zero additional blob or

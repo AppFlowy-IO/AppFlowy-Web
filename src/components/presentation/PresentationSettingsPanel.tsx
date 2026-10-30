@@ -1,14 +1,16 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { listStyles } from './presentation-client';
-import { templateUploadLimit } from './presentation-policy';
+import { presentationCapabilities, templateUploadLimit } from './presentation-policy';
 import StyleSettings from './StyleSettings';
 import { Action, Notice } from './ui';
 import { usePresentationAccess } from './usePresentationAccess';
+import { usePresentationStatusRefresh } from './usePresentationStatusRefresh';
 
+import type { PresentationStatus } from './server-contract';
 import type { PresentationStyle } from './types';
 import './presentation.css';
 
@@ -23,7 +25,12 @@ export default function PresentationSettingsPanel() {
   const [attempt, setAttempt] = useState(0);
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminIdentity, setAdminIdentity] = useState(identity);
-  const { status, canManageStyles, isLoading, hasError } = usePresentationAccess();
+  const { status, canManageStyles, isLoading, hasError, onUpgrade } = usePresentationAccess();
+  const [updatedStatus, setUpdatedStatus] = useState<{ identity: string; status: PresentationStatus }>();
+  const acceptStatus = useCallback((next: PresentationStatus) => setUpdatedStatus({ identity, status: next }), [identity]);
+  const refreshStatus = usePresentationStatusRefresh(workspaceId ?? '', String(userId ?? ''), acceptStatus);
+  const currentStatus = updatedStatus?.identity === identity ? updatedStatus.status : status;
+  const capabilities = presentationCapabilities(currentStatus);
 
   // Close prompt administration for another workspace or user before it renders for them. Retrying
   // the style request leaves it open, so its unsaved text and test inputs survive.
@@ -73,7 +80,11 @@ export default function PresentationSettingsPanel() {
           key={identity}
           scope={{ workspaceId }}
           styles={current.styles}
-          maxTemplateBytes={templateUploadLimit(status)}
+          maxTemplateBytes={templateUploadLimit(currentStatus)}
+          companyStyles={capabilities?.companyStyles}
+          isPro={capabilities?.isPro}
+          onUpgrade={onUpgrade}
+          onStatusRefresh={refreshStatus}
           editable={canManageStyles}
           onChange={(styles) => setResult({ ...current, identity, styles })}
         />

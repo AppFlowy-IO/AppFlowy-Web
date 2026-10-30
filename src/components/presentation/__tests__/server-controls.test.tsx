@@ -39,3 +39,16 @@ test('style selections reach the owning action without inferring entitlement fro
   expect(onBranchLine).toHaveBeenCalledWith('curved');
   expect(screen.queryByText(/upgrade/i)).toBeNull();
 });
+
+test('Free Custom offers Upgrade before selecting even four slides, preserving the selection', async () => {
+  const onValueChange = jest.fn();
+  const onUpgrade = jest.fn();
+
+  render(<SlideCountDropdown value={4} maxCount={12} allowed={false} disabled={false} onValueChange={onValueChange} onUpgrade={onUpgrade} />);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Custom' }), { key: 'ArrowDown' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+  expect(screen.getByText(/including counts below 12/)).toBeTruthy();
+  expect(onUpgrade).toHaveBeenCalledTimes(1);
+  expect(onValueChange).not.toHaveBeenCalled();
+  expect(screen.queryByRole('menuitemradio')).toBeNull();
+});

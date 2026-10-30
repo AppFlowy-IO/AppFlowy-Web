@@ -2,7 +2,8 @@ import { Check, Palette, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { analyzePresentationTemplate, deleteArtifact, importPresentationTemplate, reviewPresentationStyle } from './presentation-client';
-import { templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
+import { COMPANY_STYLE_MESSAGE, presentationUpgradeRequired, templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
+import PresentationPaywall from './PresentationPaywall';
 import SlideCanvas from './SlideCanvas';
 import { LAYOUTS, type PresentationStyle } from './types';
 import { Action, Notice } from './ui';
@@ -16,15 +17,24 @@ export default function StyleSettings({
   editable = true,
   scope,
   maxTemplateBytes = 5 * 1024 * 1024,
+  companyStyles,
+  isPro,
+  onUpgrade,
+  onStatusRefresh,
 }: {
   styles: PresentationStyle[];
   onChange: (styles: PresentationStyle[]) => void | Promise<void>;
   editable?: boolean;
   scope: Pick<PresentationScope, 'workspaceId'>;
   maxTemplateBytes?: number | null;
+  companyStyles?: boolean;
+  isPro?: boolean;
+  onUpgrade?: () => void;
+  onStatusRefresh?: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<PresentationStyle>();
   const [status, setStatus] = useState('');
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [layout, setLayout] = useState<(typeof LAYOUTS)[number]>('title');
   const [busy, setBusy] = useState(false);
   const request = useRef<AbortController>();
@@ -32,6 +42,7 @@ export default function StyleSettings({
   useEffect(() => {
     setDraft(undefined);
     setStatus('');
+    setUpgradeRequired(false);
     setBusy(false);
     return () => {
       request.current?.abort();
@@ -57,12 +68,17 @@ export default function StyleSettings({
     request.current = controller;
     setBusy(true);
     setStatus('');
+    setUpgradeRequired(false);
     try {
       await work(controller.signal);
     } catch (error) {
-      if (!controller.signal.aborted) setStatus(error instanceof Error ? error.message : 'Unable to update the style.');
+      if (!controller.signal.aborted) {
+        setStatus(error instanceof Error ? error.message : 'Unable to update the style.');
+        setUpgradeRequired(presentationUpgradeRequired(error));
+      }
     } finally {
       if (request.current === controller) {
+        if (!controller.signal.aborted) void onStatusRefresh?.();
         request.current = undefined;
         setBusy(false);
       }
@@ -72,6 +88,12 @@ export default function StyleSettings({
   const save = () =>
     run(async (signal) => {
       if (!draft?.serverStyle || !draft.serverVersion) return;
+      if (companyStyles === false) {
+        setStatus(COMPANY_STYLE_MESSAGE);
+        setUpgradeRequired(true);
+        return;
+      }
+
       if (!draft.name.trim() || !/^#[\da-f]{6}$/i.test(draft.color) || !/^#[\da-f]{6}$/i.test(draft.background)) {
         setStatus('Enter a style name and valid six-digit colors.');
         return;
@@ -82,7 +104,7 @@ export default function StyleSettings({
         name: draft.name.trim(),
         serverStyle: { ...draft.serverStyle, theme: { ...draft.serverStyle.theme, name: draft.name.trim() } },
       };
-      const saved = await reviewPresentationStyle(scope, candidate, signal);
+      const saved = await reviewPresentationStyle(scope, candidate, signal, true);
 
       if (signal.aborted) return;
       await onChange([...styles.filter((style) => style.id !== saved.id), saved]);
@@ -128,6 +150,7 @@ export default function StyleSettings({
               if (!file) return;
               if (maxTemplateBytes !== null && file.size > maxTemplateBytes) {
                 setStatus(templateUploadSizeMessage(maxTemplateBytes));
+                setUpgradeRequired(isPro === false);
                 return;
               }
 
@@ -300,7 +323,8 @@ export default function StyleSettings({
           </div>
         </div>
       )}
-      {status && <Notice>{status}</Notice>}
+      {status && (upgradeRequired && onUpgrade ? <PresentationPaywall message={status} onUpgrade={onUpgrade} /> : <Notice>{status}</Notice>)}
+      {editable && companyStyles === false && !upgradeRequired && onUpgrade && <PresentationPaywall message={COMPANY_STYLE_MESSAGE} onUpgrade={onUpgrade} />}
     </div>
   );
 }
