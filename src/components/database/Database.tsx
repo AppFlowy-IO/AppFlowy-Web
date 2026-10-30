@@ -1348,7 +1348,9 @@ function Database(props: Database2Props) {
   const missingRowRecoveryLifecycleRef = useRef<unknown>(null);
 
   const scheduleMissingRowRecovery = useCallback(() => {
-    if (readOnly) return;
+    // A failed transport does not prove a lying watermark. Its error stays
+    // terminal until Retry remounts the database with a new lifecycle.
+    if (readOnly || emittedLoadStatesRef.current.has('failed')) return;
     if (missingRowRecoveryLifecycleRef.current === databaseLifecycleIdentity) return;
 
     const databaseId = getDatabaseId();
@@ -1578,7 +1580,8 @@ function Database(props: Database2Props) {
         if (!isCurrentPrefetch()) return;
 
         residentRefreshInFlightRef.current = false;
-        prefetchPromisesRef.current.delete(prefetchKey);
+        // Keep this terminal pass memoized: a later row read must not start a
+        // new source request after the dashboard released this load's slot.
         gate.resolve(); // Unblock ensureRow on failure
         rowPass.set({ blobPrefetchComplete: true, seedsReady: true });
         // Rows still load one by one, but the pass itself did not complete.

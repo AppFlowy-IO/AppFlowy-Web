@@ -2875,6 +2875,106 @@ describe('Database blob prefetch lifecycle', () => {
     canonicalRowDoc.destroy();
   });
 
+  it('keeps a failed initial row walk terminal until the widget explicitly retries', async () => {
+    const doc = createDatabaseDoc('failed-initial-walk');
+    const emptyRow = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const hydratedRow = createHydratedRowDoc('retry-row');
+    const states: string[] = [];
+    const createRow = jest.fn(async () => emptyRow);
+    const props = {
+      ...databaseProps(doc),
+      createRow,
+      onLoadStateChange: (state: string) => states.push(state),
+    };
+
+    mockedOpenRowDoc.mockResolvedValue(emptyRow);
+    mockedPrefetch.mockRejectedValueOnce(new Error('Initial source transport failed'));
+    const { rerender, unmount } = render(<Database key='initial' {...props} />);
+
+    try {
+      await waitFor(() => expect(states).toContain('failed'));
+      expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+      expect(mockedPrefetch.mock.calls[0][1]).toBe('database-id');
+
+      // The failed walk opened the row gate and released its dashboard slot.
+      // A later visible-row read cannot infer a lying watermark from that failure.
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(emptyRow);
+      expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+      expect(states).not.toContain('complete');
+
+      // The card's Retry remounts its database. It must get a fresh row walk,
+      // without inheriting the previous mount's terminal failure.
+      mockedOpenRowDoc.mockResolvedValue(hydratedRow);
+      createRow.mockResolvedValue(hydratedRow);
+      mockedPrefetch.mockImplementation(async (_workspace, _database, options) => {
+        options?.onSeedsReady?.();
+      });
+      rerender(<Database key='retry' {...props} />);
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(hydratedRow);
+      expect(states).toContain('first-data');
+      expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      doc.destroy();
+      emptyRow.destroy();
+      hydratedRow.destroy();
+    }
+  });
+
+  it('starts a fresh pass when a cancelled widget resumes with the same source document', async () => {
+    const doc = createDatabaseDoc('cancelled-initial-walk');
+    const rowDoc = createHydratedRowDoc('resumed-row');
+    const states: string[] = [];
+    let reject!: (reason: Error) => void;
+    const cancelledPass = new Promise<void>((_resolve, rejectPass) => {
+      reject = rejectPass;
+    });
+    const props = {
+      ...databaseProps(doc),
+      createRow: jest.fn(async () => rowDoc),
+      onLoadStateChange: (state: string) => states.push(state),
+    };
+
+    mockedPrefetch.mockImplementationOnce(() => cancelledPass as ReturnType<typeof prefetchDatabaseBlobDiff>);
+    const first = render(<Database {...props} />);
+
+    await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+    first.unmount();
+    await act(async () => {
+      reject(new DOMException('Widget left the viewport', 'AbortError'));
+      await cancelledPass.catch(() => undefined);
+    });
+    expect(states).not.toContain('failed');
+
+    mockedOpenRowDoc.mockResolvedValue(rowDoc);
+    mockedPrefetch.mockImplementation(async (_workspace, _database, options) => {
+      options?.onSeedsReady?.();
+    });
+    const resumed = render(<Database {...props} />);
+
+    try {
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        await requestEnsureRow();
+      });
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+      expect(states).toContain('first-data');
+      expect(states).not.toContain('failed');
+      expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+    } finally {
+      resumed.unmount();
+      doc.destroy();
+      rowDoc.destroy();
+    }
+  });
+
   it('releases a row sync that finishes registering after its lifecycle ended', async () => {
     const firstDoc = createDatabaseDoc('shared-guid');
     const secondDoc = createDatabaseDoc('shared-guid');
