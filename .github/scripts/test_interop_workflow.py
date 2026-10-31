@@ -47,7 +47,9 @@ class InteropWorkflowTest(unittest.TestCase):
 
     def test_complete_exact_pair_uses_tools_but_partial_or_conflicting_pairs_fail(self):
         pair = {"CLOUD_SOURCE_SHA": "b" * 40, "IMAGE_RUN_ID": "123"}
-        self.assertEqual(self.selection(**pair)[0], 0)
+        code, output = self.selection(**pair)
+        self.assertEqual(code, 0)
+        self.assertIn("needs-tools=true", output)
         for values in ({"CLOUD_SOURCE_SHA": "b" * 40}, {"IMAGE_RUN_ID": "123"},
                        {**pair, "PUBLISHED_VERSION": "latest"},
                        {"CLOUD_SOURCE_SHA": "main", "IMAGE_RUN_ID": "123"},
@@ -64,8 +66,41 @@ class InteropWorkflowTest(unittest.TestCase):
         self.assertEqual(exact["uses"], "./.ci-runtime-tools/.github/actions/desktop-cloud-runtime")
         self.assertEqual(exact["with"]["runtime-profile"], "web")
         self.assertEqual(exact["with"]["ci-tools-ref"], "${{ env.CI_TOOLS_REF }}")
+        self.assertEqual(exact["if"], "steps.cloud-selection.outputs.enabled == 'true'")
         self.assertNotIn("continue-on-error", exact)
         self.assertRegex(WORKFLOW["jobs"]["test"]["env"]["CI_TOOLS_REF"], r"'[a-f0-9]{40}'")
+
+    def test_only_immutable_tools_reachable_from_ci_main_can_run(self):
+        verify = self.step("Verify CI runtime tools are reviewed on main")
+        checkout = self.step("Check out the pinned CI runtime tools")
+        steps = WORKFLOW["jobs"]["test"]["steps"]
+        self.assertLess(steps.index(verify), steps.index(checkout))
+        self.assertLess(steps.index(checkout), steps.index(self.step("Select verified prebuilt Cloud artifacts")))
+        self.assertEqual(verify["if"], "steps.cloud-input.outputs.needs-tools == 'true'")
+        self.assertEqual(checkout["if"], verify["if"])
+        self.assertEqual(verify["env"]["GH_TOKEN"], "${{ secrets.CI_TOKEN }}")
+        self.assertNotIn("continue-on-error", verify)
+        self.assertNotIn("continue-on-error", checkout)
+        with tempfile.TemporaryDirectory() as directory:
+            gh = Path(directory) / "gh"
+            gh.write_text('''#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == "api repos/AppFlowy-IO/AppFlowy-CI/compare/$CI_TOOLS_REF...main --jq .merge_base_commit.sha" ]] || exit 9
+[[ "$GH_API_STATUS" == 0 ]] || exit "$GH_API_STATUS"
+printf '%s\\n' "$GH_MERGE_BASE"
+''')
+            gh.chmod(0o755)
+            for merge_base, api_status, accepted in (("a" * 40, "0", True),
+                                                     ("b" * 40, "0", False),
+                                                     ("", "0", False),
+                                                     ("a" * 40, "1", False)):
+                with self.subTest(merge_base=merge_base, api_status=api_status):
+                    env = {**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                           "CI_TOOLS_REF": "a" * 40, "GH_MERGE_BASE": merge_base,
+                           "GH_API_STATUS": api_status}
+                    result = subprocess.run(["bash", "-c", verify["run"]], env=env,
+                                            text=True, capture_output=True)
+                    self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_automatic_selection_uses_the_helper_and_never_requests_image_builds(self):
         script = self.step("Select verified prebuilt Cloud artifacts")["run"]

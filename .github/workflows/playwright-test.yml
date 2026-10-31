@@ -17,7 +17,7 @@ on:
         description: Optional successful private image build for cloud_source_sha
         default: ''
       ci_tools_ref:
-        description: Optional immutable AppFlowy-CI tools revision for paired workflow validation
+        description: Optional immutable AppFlowy-CI tools revision already merged into main
         default: ''
       desktop_ref:
         description: Desktop commit or branch to test (defaults to main)
@@ -245,7 +245,7 @@ jobs:
       # moves its workspace to one of these; every other test keeps a random
       # namespace and so the default, non-SSR response.
       APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
-      CI_TOOLS_REF: ${{ inputs.ci_tools_ref || 'b3f66faf5cd465b6ed62081da21f9e94722f0fe6' }}
+      CI_TOOLS_REF: ${{ inputs.ci_tools_ref || 'c0e13cc13fb6c704f55d09ffde9adfad606bc897' }}
     strategy:
       fail-fast: false
       matrix:
@@ -288,6 +288,19 @@ jobs:
         id: desktop
         if: matrix.test-group.name == 'template-interop'
         run: echo "ref=$(git -C AppFlowy-Premium rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify CI runtime tools are reviewed on main
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CI_TOKEN }}
+        run: |
+          set -euo pipefail
+          merge_base=$(gh api "repos/AppFlowy-IO/AppFlowy-CI/compare/$CI_TOOLS_REF...main" \
+            --jq '.merge_base_commit.sha')
+          if [[ "$merge_base" != "$CI_TOOLS_REF" ]]; then
+            echo '::error::CI runtime tools must be an immutable commit already merged into AppFlowy-CI main'
+            exit 1
+          fi
 
       - name: Check out the pinned CI runtime tools
         if: steps.cloud-input.outputs.needs-tools == 'true'

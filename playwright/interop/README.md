@@ -59,9 +59,10 @@ identities. This avoids accidentally testing a new client against an older
 `latest-amd64` image. It never builds or publishes a server.
 
 Dispatch accepts `cloud_source_sha` together with `cloud_image_run_id` to select a
-particular existing build. `ci_tools_ref` can pin a reviewed CI-tools branch commit
-while validating paired workflow changes. Both caller and tools revisions appear
-in the uploaded `exact-cloud-manifest-template-interop` artifact.
+particular existing build. `ci_tools_ref` can pin an immutable CI-tools commit
+already merged into AppFlowy-CI `main`. The workflow verifies its ancestry through
+GitHub before checking out or executing tools with CI credentials. Both caller and
+tools revisions appear in the uploaded `exact-cloud-manifest-template-interop` artifact.
 
 An explicit `cloud_version` selects the published-image path instead; the workflow
 resolves its immutable digest and source revision before starting the stack.
