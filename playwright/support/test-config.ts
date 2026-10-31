@@ -43,8 +43,11 @@ export const TestConfig = {
 } as const;
 
 /** Point an immutable build at a test server through the app's runtime config. */
-export async function installRuntimeTestConfig(context: BrowserContext) {
-  if (process.env.APPFLOWY_TEST_RUNTIME_CONFIG !== '1') return;
+export async function installRuntimeTestConfig(
+  context: BrowserContext,
+  { required = false }: { required?: boolean } = {}
+) {
+  if (!required && process.env.APPFLOWY_TEST_RUNTIME_CONFIG !== '1') return;
   const config = {
     APPFLOWY_BASE_URL: process.env.APPFLOWY_BASE_URL,
     APPFLOWY_GOTRUE_BASE_URL: process.env.APPFLOWY_GOTRUE_BASE_URL,
@@ -52,7 +55,7 @@ export async function installRuntimeTestConfig(context: BrowserContext) {
   };
 
   for (const [key, value] of Object.entries(config)) {
-    if (!value) throw new Error(`${key} must be explicit when APPFLOWY_TEST_RUNTIME_CONFIG=1`);
+    if (!value) throw new Error(`${key} must be explicit for runtime test configuration`);
   }
 
   await context.addInitScript((runtime) => {

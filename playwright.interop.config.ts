@@ -11,6 +11,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 240000,
+  globalSetup: './playwright/interop/global-setup.ts',
   use: { ...base.use, baseURL: origin, trace: 'retain-on-failure' },
   webServer: {
     command: `pnpm dev --host 127.0.0.1 --port ${new URL(origin).port || 3089} --strictPort`,
