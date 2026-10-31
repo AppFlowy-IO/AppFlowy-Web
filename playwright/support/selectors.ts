@@ -546,19 +546,26 @@ export const ChartSettingsSelectors = {
   selectedTick: (row: Locator) => row.locator('[data-slot="dropdown-menu-tick"]'),
 };
 
-const drilldownDialog = (page: Page) => page.getByRole('dialog');
+// By test id: the filter chips' editor popovers are dialogs too.
+const drilldownDialog = (page: Page) => page.getByTestId('chart-row-popup');
 
 /**
  * Drill-down popup (`ChartRowListPopup`), opened by clicking the chart element
- * of a category that has rows.
+ * of a category that has rows: the category as a filter chip over the whole
+ * database, and the matching rows as a grid with a column per visible field.
  */
 export const ChartDrilldownSelectors = {
   dialog: drilldownDialog,
-  /** The category label and its row count, e.g. "Option A" and "(1 rows)". */
-  title: (page: Page) => drilldownDialog(page).locator('.MuiDialogTitle-root'),
-  closeButton: (page: Page) => drilldownDialog(page).locator('.MuiDialogTitle-root').getByRole('button'),
-  /** One button per row of the category, named by the row's primary field. */
-  rows: (page: Page) => drilldownDialog(page).locator('.MuiDialogContent-root').getByRole('button'),
+  /** The category label, e.g. "Option A". */
+  title: (page: Page) => page.getByTestId('chart-row-popup-title'),
+  closeButton: (page: Page) => page.getByTestId('chart-row-popup-close'),
+  /** The popup's rules, starting with the category, e.g. "Type: Is Option A". */
+  filterChips: (page: Page) => drilldownDialog(page).getByTestId('database-filter-condition'),
+  addFilterButton: (page: Page) => page.getByTestId('chart-row-popup-add-filter'),
+  /** One grid row per matching row of the database. */
+  rows: (page: Page) => page.getByTestId('chart-row-popup-row'),
+  /** Each row's first column: the primary field in the default field order. */
+  rowTitles: (page: Page) => page.locator('[data-testid="chart-row-popup-row"] > :first-child'),
 };
 
 /**

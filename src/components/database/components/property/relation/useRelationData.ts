@@ -12,7 +12,7 @@ import {
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { EventType, on } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
-import { View, YDatabaseField } from '@/application/types';
+import { UIVariant, View, YDatabaseField } from '@/application/types';
 
 import {
   buildRelationDatabaseCandidates,
@@ -455,20 +455,25 @@ export interface UseRelationDataOptions {
 
 export function useRelationData(fieldId: string, options: UseRelationDataOptions = {}) {
   const { enabled = true } = options;
-  const { eventEmitter, getViewIdFromDatabaseId, loadViewMeta, loadViews, workspaceId } = useDatabaseContext();
+  const { eventEmitter, getViewIdFromDatabaseId, loadViewMeta, loadViews, variant, workspaceId } = useDatabaseContext();
+  // Published snapshots use a sentinel workspace ID and expose only published
+  // metadata. A private catalog 401 invalidates the session and can otherwise
+  // make mounted public relation headers repeatedly restart the same request.
+  const usesWorkspaceCatalog = variant !== UIVariant.Publish;
+  const catalogEnabled = enabled && usesWorkspaceCatalog;
   const { field: localField } = useFieldSelector(fieldId);
   const field = options.field ?? localField;
   const relationOption: RelationTypeOption | null = field ? parseRelationTypeOption(field) : null;
   const relatedDatabaseId = relationOption?.database_id || null;
   const catalogRevision = useSyncExternalStore(
     subscribeWorkspaceDatabaseCatalog,
-    () => getWorkspaceDatabaseCatalogRevision(workspaceId),
+    () => usesWorkspaceCatalog ? getWorkspaceDatabaseCatalogRevision(workspaceId) : SERVER_CATALOG_REVISION,
     () => SERVER_CATALOG_REVISION
   );
-  const catalogSnapshot = getCachedWorkspaceDatabaseCatalog(workspaceId);
+  const catalogSnapshot = usesWorkspaceCatalog ? getCachedWorkspaceDatabaseCatalog(workspaceId) : undefined;
   const cachedCandidateResult = useSyncExternalStore(
     subscribeToCache,
-    () => getCachedResult(workspaceId) ?? EMPTY_RESULT,
+    () => usesWorkspaceCatalog ? getCachedResult(workspaceId) ?? EMPTY_RESULT : EMPTY_RESULT,
     () => EMPTY_RESULT
   );
   const result =
@@ -483,20 +488,21 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     enabled,
     catalogRevision,
     catalogSnapshot,
-    loading: enabled && Boolean(fieldId) && !getCachedResultForCatalog(workspaceId, catalogSnapshot),
+    loading: catalogEnabled && Boolean(fieldId) && !getCachedResultForCatalog(workspaceId, catalogSnapshot),
   }));
 
   // Effects from a newly enabled picker run in one commit. Derive that
   // activation's loading state synchronously so the fallback effect cannot
   // race ahead of the catalog effect's state update.
-  const catalogLoading =
+  const catalogLoading = catalogEnabled && (
     loadingState.workspaceId === workspaceId &&
     loadingState.fieldId === fieldId &&
     loadingState.enabled === enabled &&
     loadingState.catalogRevision === catalogRevision &&
     loadingState.catalogSnapshot === catalogSnapshot
       ? loadingState.loading
-      : enabled && Boolean(fieldId) && !getCachedResultForCatalog(workspaceId, catalogSnapshot);
+      : Boolean(fieldId) && !getCachedResultForCatalog(workspaceId, catalogSnapshot)
+  );
   const catalogRelatedViewId = relatedDatabaseId ? result.relations[relatedDatabaseId] : null;
   const selectedCandidate = useMemo(
     () => result.candidates.find((candidate) => candidate.databaseId === relatedDatabaseId),
@@ -639,7 +645,7 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
   }, [catalogRevision, selectedCandidate]);
 
   useEffect(() => {
-    if (!enabled || !fieldId) {
+    if (!catalogEnabled || !fieldId) {
       setLoadingState(withLoading(workspaceId, fieldId, enabled, catalogRevision, catalogSnapshot, false));
       return;
     }
@@ -681,7 +687,7 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     return () => {
       cancelled = true;
     };
-  }, [catalogRevision, catalogSnapshot, enabled, fieldId, loadCurrentViews, workspaceId]);
+  }, [catalogEnabled, catalogRevision, catalogSnapshot, enabled, fieldId, loadCurrentViews, workspaceId]);
 
   const fallbackRelatedViewId =
     fallbackSelectedView.databaseId === relatedDatabaseId ? fallbackSelectedView.viewId : null;

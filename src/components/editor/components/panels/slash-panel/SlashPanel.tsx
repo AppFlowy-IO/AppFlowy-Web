@@ -943,7 +943,7 @@ export function SlashPanel({
         },
       },
       {
-        label: t('document.slashMenu.name.pdf', { defaultValue: 'PDF' }),
+        label: t('document.slashMenu.name.pdf', { defaultValue: 'PDF Embed' }),
         key: 'pdf',
         icon: <PDFIcon />,
         group: SlashMenuGroupKey.Media,

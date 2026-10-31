@@ -248,9 +248,15 @@ export interface PDFBlockData extends BlockData {
   name?: string;
   uploaded_at?: number;
   url?: string;
-  url_type?: FieldURLType;
+  // Flutter uses string values; retain support for existing web numeric values.
+  url_type?: FieldURLType | 'network' | 'cloud' | 'local' | 0;
   retry_local_url?: string;
   pending_upload_id?: string;
+  widthFactor?: number;
+  heightFactor?: number;
+  caption?: string;
+  needPassword?: boolean;
+  upload_error?: boolean;
 }
 
 export enum GalleryLayout {

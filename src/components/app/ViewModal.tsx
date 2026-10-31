@@ -274,18 +274,18 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [onClose]);
 
   // AppBusinessLayer can close this modal directly when permission is
-  // revoked, bypassing handleClose. Clear the retained Y.Doc before paint so
-  // revoked content cannot remain mounted during the exit transition or flash
-  // when the same target is reopened.
+  // revoked, bypassing handleClose. An explicit read denial must also clear
+  // the retained document, even before the parent closes the modal. Pending
+  // permission checks keep the already authorized document in read-only mode.
   useLayoutEffect(() => {
-    if (open) return;
+    if (open && probedObjectPermission?.can_read !== false) return;
 
     loadRequestRevisionRef.current += 1;
     setDoc(undefined);
     setSyncBound(false);
     setFallbackMeta(null);
     setNotFound(false);
-  }, [open]);
+  }, [open, probedObjectPermission?.can_read]);
 
   useEffect(
     () => () => {
@@ -443,16 +443,19 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!open || !canReadEffectiveView || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    // A visibility-triggered re-probe temporarily removes the permission entry.
+    // Loading still requires confirmed read access above, but unmounting an
+    // already loaded editor here would reload PDFs and lose their scroll state.
+    if (!open || probedObjectPermission?.can_read === false || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
         workspaceId={workspaceId || ''}
         doc={doc.doc}
-        readOnly={isReadOnly}
-        canComment={canComment}
-        canWrite={canWrite}
-        canShare={canShare}
+        readOnly={!canReadEffectiveView || isReadOnly}
+        canComment={canReadEffectiveView && canComment}
+        canWrite={canReadEffectiveView && canWrite}
+        canShare={canReadEffectiveView && canShare}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -494,6 +497,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     doc,
     open,
     canReadEffectiveView,
+    probedObjectPermission?.can_read,
     viewMeta,
     View,
     requestInstance,

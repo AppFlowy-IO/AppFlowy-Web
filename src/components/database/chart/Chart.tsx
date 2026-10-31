@@ -57,17 +57,16 @@ export function Chart() {
     onRendered?.();
   }, [onRendered]);
 
-  // Use same padding as DatabaseTabs for alignment. The 20px bottom padding
-  // keeps tilted category labels, which hang below the chart's SVG, from
-  // being clipped when this scroll container is only as tall as the widget
-  // (embedded blocks, published pages).
+  // Use same padding as DatabaseTabs for alignment. The bar and line charts
+  // size the band under the plot to their tilted labels, so nothing hangs
+  // below the widget.
   const horizontalPadding = paddingStart === undefined ? 96 : paddingStart;
 
   return (
     <ChartProvider>
       <div
         data-testid="database-chart"
-        className={`database-chart relative chart-${viewId} flex w-full flex-1 flex-col items-start justify-start overflow-y-auto overflow-x-hidden pb-5`}
+        className={`database-chart relative chart-${viewId} flex w-full flex-1 flex-col items-start justify-start overflow-y-auto overflow-x-hidden`}
         style={{
           paddingLeft: horizontalPadding,
           paddingRight: horizontalPadding,

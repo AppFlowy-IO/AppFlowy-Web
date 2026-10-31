@@ -63,7 +63,7 @@ import {
   YjsDatabaseKey,
 } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
-import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
+import { compareTimestampDays, isTimestampInDayRange, isTimestampInSameDay } from '@/utils/time';
 
 export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter, fields?: YDatabaseFields) {
   const fieldId = filter.get(YjsDatabaseKey.field_id);
@@ -1112,19 +1112,19 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
       return isTimestampInSameDay(data, timestamp.toString());
     case DateFilterCondition.DateStartsBefore:
       if (!data) return false;
-      return isTimestampBefore(data, timestamp.toString());
+      return compareTimestampDays(data, timestamp.toString()) < 0;
     case DateFilterCondition.DateStartsAfter:
       if (!data) return false;
-      return isAfterOneDay(data, timestamp.toString());
+      return compareTimestampDays(data, timestamp.toString()) > 0;
     case DateFilterCondition.DateStartsOnOrBefore:
       if (!data) return false;
-      return isTimestampBefore(data, timestamp.toString()) || isTimestampInSameDay(data, timestamp.toString());
+      return compareTimestampDays(data, timestamp.toString()) <= 0;
     case DateFilterCondition.DateStartsOnOrAfter:
       if (!data) return false;
-      return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
+      return compareTimestampDays(data, timestamp.toString()) >= 0;
     case DateFilterCondition.DateStartsBetween:
       if (!data) return false;
-      return isTimestampBetweenRange(data, start.toString(), end.toString());
+      return isTimestampInDayRange(data, start.toString(), end.toString());
     default:
       return false;
   }
@@ -1147,10 +1147,7 @@ function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp
   }
 
   if (resolved.start !== undefined && resolved.end !== undefined) {
-    // resolved.end is local midnight of the last day; extend to end-of-day for inclusive matching.
-    const endInclusive = resolved.end + 24 * 60 * 60 - 1;
-
-    return isTimestampBetweenRange(target, resolved.start.toString(), endInclusive.toString());
+    return isTimestampInDayRange(target, resolved.start.toString(), resolved.end.toString());
   }
 
   return false;
@@ -1188,38 +1185,34 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       return isTimestampInSameDay(endTimestamp, timestamp.toString());
     case DateFilterCondition.DateStartsBefore:
       if (!data) return false;
-      return isTimestampBefore(data, timestamp.toString());
+      return compareTimestampDays(data, timestamp.toString()) < 0;
     case DateFilterCondition.DateEndsBefore:
       if (!endTimestamp) return false;
-      return isTimestampBefore(endTimestamp, timestamp.toString());
+      return compareTimestampDays(endTimestamp, timestamp.toString()) < 0;
     case DateFilterCondition.DateStartsAfter:
       if (!data) return false;
-      return isAfterOneDay(data, timestamp.toString());
+      return compareTimestampDays(data, timestamp.toString()) > 0;
     case DateFilterCondition.DateEndsAfter:
       if (!endTimestamp) return false;
-      return isAfterOneDay(endTimestamp, timestamp.toString());
+      return compareTimestampDays(endTimestamp, timestamp.toString()) > 0;
     case DateFilterCondition.DateStartsOnOrBefore:
       if (!data) return false;
-      return isTimestampBefore(data, timestamp.toString()) || isTimestampInSameDay(data, timestamp.toString());
+      return compareTimestampDays(data, timestamp.toString()) <= 0;
     case DateFilterCondition.DateEndsOnOrBefore:
       if (!endTimestamp) return false;
-      return (
-        isTimestampBefore(endTimestamp, timestamp.toString()) || isTimestampInSameDay(endTimestamp, timestamp.toString())
-      );
+      return compareTimestampDays(endTimestamp, timestamp.toString()) <= 0;
     case DateFilterCondition.DateStartsOnOrAfter:
       if (!data) return false;
-      return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
+      return compareTimestampDays(data, timestamp.toString()) >= 0;
     case DateFilterCondition.DateEndsOnOrAfter:
       if (!endTimestamp) return false;
-      return (
-        isTimestampBefore(timestamp.toString(), endTimestamp) || isTimestampInSameDay(timestamp.toString(), endTimestamp)
-      );
+      return compareTimestampDays(endTimestamp, timestamp.toString()) >= 0;
     case DateFilterCondition.DateStartsBetween:
       if (!data) return false;
-      return isTimestampBetweenRange(data, start.toString(), end.toString());
+      return isTimestampInDayRange(data, start.toString(), end.toString());
     case DateFilterCondition.DateEndsBetween:
       if (!endTimestamp) return false;
-      return isTimestampBetweenRange(endTimestamp, start.toString(), end.toString());
+      return isTimestampInDayRange(endTimestamp, start.toString(), end.toString());
     default:
       return false;
   }

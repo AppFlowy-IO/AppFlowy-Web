@@ -1548,8 +1548,9 @@ function Database(props: Database2Props) {
     ]
   );
 
-  // The main database can change tabs while the nonmodal peek stays open.
-  // Navigation inside the peek continues to use the view that opened it.
+  // Navigation inside the peek continues to use the view that opened it,
+  // which differs from the active tab for a relation link or while a tab
+  // switch waits for the peek's edits to save.
   const handleNavigateInPeek = useCallback(
     (rowId: string, viewId?: string) => {
       const permissions = !viewId || viewId === modalState.viewId ? modalState.permissions : undefined;
@@ -1598,6 +1599,28 @@ function Database(props: Database2Props) {
       rowMap: null,
     });
   }, []);
+
+  // Desktop #1531: switching tabs closes the peek opened from the previous
+  // tab, once its pending edits pass the save barrier the close button uses.
+  // A failed save keeps it open, and a row opened from another view (a
+  // relation link) does not belong to the tab.
+  const latestActiveViewId = useRef(activeViewId);
+
+  useEffect(() => {
+    const previousViewId = latestActiveViewId.current;
+
+    latestActiveViewId.current = activeViewId;
+    if (previousViewId === activeViewId || !modalState.rowId || modalState.viewId !== previousViewId) return;
+    const request = rowOpenRequest.current;
+    const prepare = prepareRowNavigation.current;
+
+    void (async () => {
+      if (prepare && !(await prepare())) return;
+      // Another row took the peek, or the user returned to its tab, while saving.
+      if (request !== rowOpenRequest.current || latestActiveViewId.current === previousViewId) return;
+      handleCloseRowModal();
+    })();
+  }, [activeViewId, handleCloseRowModal, modalState.rowId, modalState.viewId]);
 
   const handleOpenPeekAsPage = useCallback(
     async (rowId: string) => {

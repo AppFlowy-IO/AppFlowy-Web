@@ -412,7 +412,7 @@ describe('sync protocol', () => {
       }),
       { broadcast: false, source: 'manifest' }
     );
-    expect(onManifestSync).toHaveBeenCalledWith(doc.guid, expect.any(Promise));
+    expect(onManifestSync).not.toHaveBeenCalled();
   });
 
   it('does not publish an empty DatabaseRow as a manifest response', () => {

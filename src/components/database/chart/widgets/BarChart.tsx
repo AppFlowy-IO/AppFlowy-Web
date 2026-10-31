@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import {
   AXIS_LINE_PROPS,
   AxisTickProps,
-  CATEGORY_AXIS_HEIGHT,
+  barCategoryAxisLayout,
   GRID_LINE_PROPS,
   NO_MARGIN,
   PLOT_SURFACE_OVERFLOW_CLASS,
@@ -46,7 +46,6 @@ interface BarChartWidgetProps {
 
 /** Gap between a bar's top and its value label (fl_chart `tooltipMargin`). */
 const BAR_VALUE_LABEL_GAP = 4;
-const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
 
 /**
  * Bar chart value-axis label (desktop's `_buildLeftTitle`): 12px regular in
@@ -85,7 +84,7 @@ function BarChartBody({ data, onBarClick, aggregationType, width = 0, height = 0
 
   const bars = useMemo(() => data.map((item, index) => ({ item, color: resolveChartItemColor(item, index) })), [data]);
   const rows = useMemo(() => data.map((item, index) => ({ index, value: item.value })), [data]);
-  const categoryTick = useMemo(() => renderCategoryAxisTick(data.map((item) => item.label)), [data]);
+  const labels = useMemo(() => data.map((item) => item.label), [data]);
   const axis = useMemo(() => {
     const maxValue = data.reduce((max, item) => Math.max(max, item.value), 0);
     const axisMax = computeBarAxisMax(maxValue);
@@ -105,9 +104,12 @@ function BarChartBody({ data, onBarClick, aggregationType, width = 0, height = 0
   const titleWidth = aggregationLabel ? CHART_TITLE_VERTICAL_WIDTH : 0;
   const chartWidth = Math.max(0, width - titleWidth);
   const plotWidth = Math.max(0, chartWidth - VALUE_AXIS_WIDTH);
-  const plotHeight = Math.max(0, height - CATEGORY_AXIS_HEIGHT);
   // `BarChartAlignment.spaceAround` centers every bar in an equal segment.
   const segmentWidth = bars.length > 0 ? plotWidth / bars.length : 0;
+  // Each label has its bar's segment; the band grows to hold the labels once they tilt.
+  const categoryAxis = useMemo(() => barCategoryAxisLayout(labels, segmentWidth), [labels, segmentWidth]);
+  const categoryTick = useMemo(() => renderCategoryAxisTick(labels, categoryAxis), [labels, categoryAxis]);
+  const plotHeight = Math.max(0, height - categoryAxis.height);
   const activeIndex = hoveredIndex !== null && hoveredIndex < bars.length ? hoveredIndex : null;
   const hovered = activeIndex === null ? null : bars[activeIndex];
 
@@ -194,7 +196,7 @@ function BarChartBody({ data, onBarClick, aggregationType, width = 0, height = 0
           <XAxis
             dataKey='index'
             type='category'
-            height={CATEGORY_AXIS_HEIGHT}
+            height={categoryAxis.height}
             interval={0}
             tickLine={false}
             tickSize={0}
@@ -217,7 +219,7 @@ function BarChartBody({ data, onBarClick, aggregationType, width = 0, height = 0
             // fall back to its own fractional ticks for an empty list.
             tick={axis.labelValues.length > 0 ? ValueAxisTick : false}
           />
-          <Bar dataKey='value' barSize={calculateBarWidth(bars.length)} radius={BAR_RADIUS} isAnimationActive={false}>
+          <Bar dataKey='value' barSize={calculateBarWidth(bars.length)} isAnimationActive={false}>
             {bars.map(({ color }, index) => (
               <Cell key={index} fill={color} />
             ))}

@@ -1,5 +1,6 @@
-import { Download, expect, Page, TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+
+import { Download, expect, Locator, Page, TestInfo } from '@playwright/test';
 
 import { fixtureHTML, test } from '../../support/integrations-server';
 
@@ -9,6 +10,19 @@ const editor = (page: Page) => page.getByTestId('editor-content');
 const source = (page: Page) => block(page).locator('pre.code-block-source');
 const snapshot = (page: Page) => page.getByTestId('code-document-snapshot');
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function textBeforeCaret(element: Locator) {
+  return element.evaluate((root) => {
+    const selection = window.getSelection();
+
+    if (!selection?.isCollapsed || !selection.anchorNode || !root.contains(selection.anchorNode)) return null;
+    const range = document.createRange();
+
+    range.selectNodeContents(root);
+    range.setEnd(selection.anchorNode, selection.anchorOffset);
+    return range.toString();
+  });
+}
 
 async function insertCode(page: Page, text = '', mermaid = false) {
   await editor(page).click();
@@ -894,14 +908,22 @@ test('triple click selects one code line and four clicks select the whole block'
   await source(page).click({ position: { x: 25, y: 30 }, clickCount: 3 });
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('second line');
   await source(page).click({ position: { x: 25, y: 30 }, clickCount: 4 });
-  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(text);
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(text);
   await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => textBeforeCaret(source(page))).toBe('');
   await page.keyboard.press('ArrowDown');
-  await page.keyboard.insertText('X');
+  await expect.poll(() => textBeforeCaret(source(page))).toBe('first line\n');
+  // Typing runs keydown selection reconciliation before input. insertText skips
+  // keydown and can race Slate's throttled selectionchange after ArrowDown.
+  await page.keyboard.type('X');
   await expect(source(page)).toHaveText('first line\nXsecond line\nthird line');
+  await expect(snapshot(page)).toContainText(JSON.stringify('first line\nXsecond line\nthird line'));
+  await expect.poll(() => textBeforeCaret(source(page))).toBe('first line\nX');
   await page.keyboard.press('ArrowUp');
-  await page.keyboard.insertText('Y');
+  await expect.poll(() => textBeforeCaret(source(page))).toBe('f');
+  await page.keyboard.type('Y');
   await expect(source(page)).toHaveText('fYirst line\nXsecond line\nthird line');
+  await expect(snapshot(page)).toContainText(JSON.stringify('fYirst line\nXsecond line\nthird line'));
 });
 
 test('code nested in callout, rich marks stay literal, read-only copy and saved data', async ({ page, context }) => {
@@ -1135,11 +1157,19 @@ test('inline code suppresses mention, link, slash, emoji and formatting panels',
     data: {},
     children: [{ type: 'text', children: [{ text: 'abcdef', code: true }] }],
   });
-  await editor(page).click();
-  await page.keyboard.press('Home');
+  // The editor also contains a trailing blank paragraph. Clicking its center
+  // can focus that paragraph; Home then stays there on Linux. Select the code
+  // word itself and collapse to its start before moving inside the mark.
+  const inlineLeaf = editor(page).locator('[data-slate-leaf]').first();
+
+  await inlineLeaf.click({ clickCount: 2 });
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('abcdef');
+  await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
+  await expect.poll(() => textBeforeCaret(inlineLeaf)).toBe('ab');
   await page.keyboard.type('@user + [[ / :smile:');
+  await expect(inlineLeaf).toHaveText('ab@user + [[ / :smile:cdef');
   await page.keyboard.press('Shift+ArrowLeft');
   await page.keyboard.press(`${mod}+b`);
   await expect(page.getByTestId('selection-toolbar')).toHaveCSS('opacity', '0');

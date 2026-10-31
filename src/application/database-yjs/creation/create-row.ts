@@ -19,6 +19,7 @@ import { CollabOrigin, Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } fr
 import { applyYDoc } from '@/application/ydoc/apply';
 
 import { decodeBase64Bytes, decodeCreatedRowCollab, encodeCreationCollab } from './encoded-collab';
+import { repairLegacyDatabaseViewIds } from './legacy-view-ids';
 import { recordCommittedRowCreation } from './row-creation-history';
 import { CreatedRowReceipt, DefaultRowRequest, PreparedRowIntent } from './row-creation-types';
 import { prepareTemplateRowGraph } from './row-template-graph';
@@ -42,6 +43,8 @@ export interface CloudRowCreationIntent extends PreparedRowIntent {
   registerRow(): Promise<YDoc>;
   template?: DatabaseRowTemplate;
   documentState?: Uint8Array;
+  /** A template editor source owns a complete graph without visible row membership. */
+  isTemplateSource?: boolean;
   /** Copies retain raw storage types, including cells awaiting a field conversion. */
   preserveCellStorage?: boolean;
   historyGroup?: object;
@@ -137,7 +140,7 @@ function assertRow(doc: Y.Doc, rowId: string, databaseId: string): void {
   }
 }
 
-function assertMembership(doc: Y.Doc, databaseId: string, viewId: string, rowId: string): void {
+function assertMembership(doc: Y.Doc, databaseId: string, viewId: string, rowId: string, hidden = false): void {
   const database = doc.getMap('data').get('database');
   const views = database instanceof Y.Map ? database.get('views') : undefined;
   const view = views instanceof Y.Map ? views.get(viewId) : undefined;
@@ -149,7 +152,7 @@ function assertMembership(doc: Y.Doc, databaseId: string, viewId: string, rowId:
     !(database instanceof Y.Map) ||
     database.get('id') !== databaseId ||
     !(orders instanceof Y.Array) ||
-    !orders.toArray().some((order: { id?: string }) => order.id === rowId)
+    orders.toArray().some((order: { id?: string }) => order.id === rowId) === hidden
   ) {
     throw new Error('Created Row membership is incomplete');
   }
@@ -208,6 +211,8 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
   databaseDoc.on('destroy', onDestroy);
   try {
     assertAtomicCreationAvailable(owner);
+    if (intent.isTemplateSource && (!intent.documentState || !intent.template))
+      throw new Error('A template source requires a complete creation graph');
     const request = prepareDefaultRowRequest(intent, uuidv4());
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
     const anchor = 'row_id' in intent.position ? intent.position.row_id : undefined;
@@ -238,6 +243,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
             position: intent.position,
             positionViewIds,
             rowDoc: intent.rowDoc,
+            isTemplateSource: intent.isTemplateSource,
             template: intent.template,
             documentState: intent.documentState,
             signal: controller.signal,
@@ -294,7 +300,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     };
 
     await assertStorageCurrent();
-    await waitForDatabaseViewSource(requirements, {
+    const sourceOptions = {
       read: async () => {
         const result = await read([{ objectId: databaseId, collabType: Types.Database }]);
 
@@ -304,7 +310,22 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
       assertCurrent,
       signal: controller.signal,
       deadline,
-    });
+    };
+    const source = await waitForDatabaseViewSource(requirements, sourceOptions);
+    const repaired = await repairLegacyDatabaseViewIds(requirements, source, { ...sourceOptions, owner });
+
+    if (repaired) {
+      await assertStorageCurrent();
+      const published = await publishWithDatabaseStorageFence(capturedFence, () => {
+        assertCurrent();
+        withDatabaseStorageFence(databaseDoc, capturedFence, () =>
+          Y.applyUpdate(databaseDoc, repaired.missingUpdate, CollabOrigin.Remote)
+        );
+      });
+
+      if (!published) throw new Error('Database storage changed before view repair activation');
+    }
+
     assertCurrent();
     const receipt = graph
       ? await submitTemplateRow(owner, databaseId, graph, version, controller.signal, deadline)
@@ -332,7 +353,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
 
         Y.applyUpdate(candidate, Y.encodeStateAsUpdate(databaseDoc));
         Y.applyUpdate(candidate, update);
-        assertMembership(candidate, databaseId, sourceViewId, rowId);
+        assertMembership(candidate, databaseId, sourceViewId, rowId, intent.isTemplateSource);
         rowState = Y.encodeStateAsUpdate(row);
         databaseUpdate = update;
       } catch {
@@ -367,7 +388,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
         Y.applyUpdate(row, currentRow.missingUpdate);
         Y.applyUpdate(current, currentDatabase.missingUpdate);
         assertRow(row, rowId, databaseId);
-        assertMembership(current, databaseId, sourceViewId, rowId);
+        assertMembership(current, databaseId, sourceViewId, rowId, intent.isTemplateSource);
         rowState = currentRow.missingUpdate;
         databaseUpdate = currentDatabase.missingUpdate;
       } finally {
@@ -396,7 +417,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
 
     if (registered !== localRow) throw new Error('Created Row provider did not bind its activated cache');
     assertCurrent();
-    recordCommittedRowCreation(databaseDoc, rowId, intent.historyGroup);
+    if (!intent.isTemplateSource) recordCommittedRowCreation(databaseDoc, rowId, intent.historyGroup);
     return rowId;
   } catch (error) {
     if (committed) throw new CommittedRowActivationError(rowId, error);

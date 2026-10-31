@@ -777,6 +777,253 @@ export const collab = $root.collab = (() => {
         return Rid;
     })();
 
+    collab.DeleteSetMetadata = (function() {
+
+        /**
+         * Properties of a DeleteSetMetadata.
+         * @memberof collab
+         * @interface IDeleteSetMetadata
+         * @property {Uint8Array|null} [digest] DeleteSetMetadata digest
+         * @property {Uint8Array|null} [deleteSetV1] DeleteSetMetadata deleteSetV1
+         */
+
+        /**
+         * Constructs a new DeleteSetMetadata.
+         * @memberof collab
+         * @classdesc Deletion coverage is separate from the insertion clocks in a state vector.
+         * @implements IDeleteSetMetadata
+         * @constructor
+         * @param {collab.IDeleteSetMetadata=} [properties] Properties to set
+         */
+        function DeleteSetMetadata(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DeleteSetMetadata digest.
+         * @member {Uint8Array} digest
+         * @memberof collab.DeleteSetMetadata
+         * @instance
+         */
+        DeleteSetMetadata.prototype.digest = $util.newBuffer([]);
+
+        /**
+         * DeleteSetMetadata deleteSetV1.
+         * @member {Uint8Array} deleteSetV1
+         * @memberof collab.DeleteSetMetadata
+         * @instance
+         */
+        DeleteSetMetadata.prototype.deleteSetV1 = $util.newBuffer([]);
+
+        /**
+         * Creates a new DeleteSetMetadata instance using the specified properties.
+         * @function create
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {collab.IDeleteSetMetadata=} [properties] Properties to set
+         * @returns {collab.DeleteSetMetadata} DeleteSetMetadata instance
+         */
+        DeleteSetMetadata.create = function create(properties) {
+            return new DeleteSetMetadata(properties);
+        };
+
+        /**
+         * Encodes the specified DeleteSetMetadata message. Does not implicitly {@link collab.DeleteSetMetadata.verify|verify} messages.
+         * @function encode
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {collab.IDeleteSetMetadata} message DeleteSetMetadata message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DeleteSetMetadata.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.digest != null && Object.hasOwnProperty.call(message, "digest"))
+                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.digest);
+            if (message.deleteSetV1 != null && Object.hasOwnProperty.call(message, "deleteSetV1"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.deleteSetV1);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DeleteSetMetadata message, length delimited. Does not implicitly {@link collab.DeleteSetMetadata.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {collab.IDeleteSetMetadata} message DeleteSetMetadata message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DeleteSetMetadata.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DeleteSetMetadata message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.DeleteSetMetadata} DeleteSetMetadata
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DeleteSetMetadata.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.DeleteSetMetadata();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.digest = reader.bytes();
+                        break;
+                    }
+                case 2: {
+                        message.deleteSetV1 = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DeleteSetMetadata message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.DeleteSetMetadata} DeleteSetMetadata
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DeleteSetMetadata.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DeleteSetMetadata message.
+         * @function verify
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DeleteSetMetadata.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.digest != null && message.hasOwnProperty("digest"))
+                if (!(message.digest && typeof message.digest.length === "number" || $util.isString(message.digest)))
+                    return "digest: buffer expected";
+            if (message.deleteSetV1 != null && message.hasOwnProperty("deleteSetV1"))
+                if (!(message.deleteSetV1 && typeof message.deleteSetV1.length === "number" || $util.isString(message.deleteSetV1)))
+                    return "deleteSetV1: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a DeleteSetMetadata message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.DeleteSetMetadata} DeleteSetMetadata
+         */
+        DeleteSetMetadata.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.DeleteSetMetadata)
+                return object;
+            let message = new $root.collab.DeleteSetMetadata();
+            if (object.digest != null)
+                if (typeof object.digest === "string")
+                    $util.base64.decode(object.digest, message.digest = $util.newBuffer($util.base64.length(object.digest)), 0);
+                else if (object.digest.length >= 0)
+                    message.digest = object.digest;
+            if (object.deleteSetV1 != null)
+                if (typeof object.deleteSetV1 === "string")
+                    $util.base64.decode(object.deleteSetV1, message.deleteSetV1 = $util.newBuffer($util.base64.length(object.deleteSetV1)), 0);
+                else if (object.deleteSetV1.length >= 0)
+                    message.deleteSetV1 = object.deleteSetV1;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DeleteSetMetadata message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {collab.DeleteSetMetadata} message DeleteSetMetadata
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DeleteSetMetadata.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                if (options.bytes === String)
+                    object.digest = "";
+                else {
+                    object.digest = [];
+                    if (options.bytes !== Array)
+                        object.digest = $util.newBuffer(object.digest);
+                }
+                if (options.bytes === String)
+                    object.deleteSetV1 = "";
+                else {
+                    object.deleteSetV1 = [];
+                    if (options.bytes !== Array)
+                        object.deleteSetV1 = $util.newBuffer(object.deleteSetV1);
+                }
+            }
+            if (message.digest != null && message.hasOwnProperty("digest"))
+                object.digest = options.bytes === String ? $util.base64.encode(message.digest, 0, message.digest.length) : options.bytes === Array ? Array.prototype.slice.call(message.digest) : message.digest;
+            if (message.deleteSetV1 != null && message.hasOwnProperty("deleteSetV1"))
+                object.deleteSetV1 = options.bytes === String ? $util.base64.encode(message.deleteSetV1, 0, message.deleteSetV1.length) : options.bytes === Array ? Array.prototype.slice.call(message.deleteSetV1) : message.deleteSetV1;
+            return object;
+        };
+
+        /**
+         * Converts this DeleteSetMetadata to JSON.
+         * @function toJSON
+         * @memberof collab.DeleteSetMetadata
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DeleteSetMetadata.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DeleteSetMetadata
+         * @function getTypeUrl
+         * @memberof collab.DeleteSetMetadata
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DeleteSetMetadata.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.DeleteSetMetadata";
+        };
+
+        return DeleteSetMetadata;
+    })();
+
     collab.SyncRequest = (function() {
 
         /**
@@ -786,6 +1033,8 @@ export const collab = $root.collab = (() => {
          * @property {collab.IRid|null} [lastMessageId] SyncRequest lastMessageId
          * @property {Uint8Array|null} [stateVector] SyncRequest stateVector
          * @property {string|null} [version] SyncRequest version
+         * @property {collab.IDeleteSetMetadata|null} [deleteSet] SyncRequest deleteSet
+         * @property {string|null} [databaseRestoreId] SyncRequest databaseRestoreId
          */
 
         /**
@@ -832,6 +1081,36 @@ export const collab = $root.collab = (() => {
         SyncRequest.prototype.version = "";
 
         /**
+         * SyncRequest deleteSet.
+         * @member {collab.IDeleteSetMetadata|null|undefined} deleteSet
+         * @memberof collab.SyncRequest
+         * @instance
+         */
+        SyncRequest.prototype.deleteSet = null;
+
+        /**
+         * SyncRequest databaseRestoreId.
+         * @member {string|null|undefined} databaseRestoreId
+         * @memberof collab.SyncRequest
+         * @instance
+         */
+        SyncRequest.prototype.databaseRestoreId = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * SyncRequest _databaseRestoreId.
+         * @member {"databaseRestoreId"|undefined} _databaseRestoreId
+         * @memberof collab.SyncRequest
+         * @instance
+         */
+        Object.defineProperty(SyncRequest.prototype, "_databaseRestoreId", {
+            get: $util.oneOfGetter($oneOfFields = ["databaseRestoreId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
          * Creates a new SyncRequest instance using the specified properties.
          * @function create
          * @memberof collab.SyncRequest
@@ -861,6 +1140,10 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.stateVector);
             if (message.version != null && Object.hasOwnProperty.call(message, "version"))
                 writer.uint32(/* id 3, wireType 2 =*/26).string(message.version);
+            if (message.deleteSet != null && Object.hasOwnProperty.call(message, "deleteSet"))
+                $root.collab.DeleteSetMetadata.encode(message.deleteSet, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+            if (message.databaseRestoreId != null && Object.hasOwnProperty.call(message, "databaseRestoreId"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.databaseRestoreId);
             return writer;
         };
 
@@ -909,6 +1192,14 @@ export const collab = $root.collab = (() => {
                         message.version = reader.string();
                         break;
                     }
+                case 4: {
+                        message.deleteSet = $root.collab.DeleteSetMetadata.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 6: {
+                        message.databaseRestoreId = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -944,6 +1235,7 @@ export const collab = $root.collab = (() => {
         SyncRequest.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
+            let properties = {};
             if (message.lastMessageId != null && message.hasOwnProperty("lastMessageId")) {
                 let error = $root.collab.Rid.verify(message.lastMessageId);
                 if (error)
@@ -955,6 +1247,16 @@ export const collab = $root.collab = (() => {
             if (message.version != null && message.hasOwnProperty("version"))
                 if (!$util.isString(message.version))
                     return "version: string expected";
+            if (message.deleteSet != null && message.hasOwnProperty("deleteSet")) {
+                let error = $root.collab.DeleteSetMetadata.verify(message.deleteSet);
+                if (error)
+                    return "deleteSet." + error;
+            }
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                properties._databaseRestoreId = 1;
+                if (!$util.isString(message.databaseRestoreId))
+                    return "databaseRestoreId: string expected";
+            }
             return null;
         };
 
@@ -982,6 +1284,13 @@ export const collab = $root.collab = (() => {
                     message.stateVector = object.stateVector;
             if (object.version != null)
                 message.version = String(object.version);
+            if (object.deleteSet != null) {
+                if (typeof object.deleteSet !== "object")
+                    throw TypeError(".collab.SyncRequest.deleteSet: object expected");
+                message.deleteSet = $root.collab.DeleteSetMetadata.fromObject(object.deleteSet);
+            }
+            if (object.databaseRestoreId != null)
+                message.databaseRestoreId = String(object.databaseRestoreId);
             return message;
         };
 
@@ -1008,6 +1317,7 @@ export const collab = $root.collab = (() => {
                         object.stateVector = $util.newBuffer(object.stateVector);
                 }
                 object.version = "";
+                object.deleteSet = null;
             }
             if (message.lastMessageId != null && message.hasOwnProperty("lastMessageId"))
                 object.lastMessageId = $root.collab.Rid.toObject(message.lastMessageId, options);
@@ -1015,6 +1325,13 @@ export const collab = $root.collab = (() => {
                 object.stateVector = options.bytes === String ? $util.base64.encode(message.stateVector, 0, message.stateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateVector) : message.stateVector;
             if (message.version != null && message.hasOwnProperty("version"))
                 object.version = message.version;
+            if (message.deleteSet != null && message.hasOwnProperty("deleteSet"))
+                object.deleteSet = $root.collab.DeleteSetMetadata.toObject(message.deleteSet, options);
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                object.databaseRestoreId = message.databaseRestoreId;
+                if (options.oneofs)
+                    object._databaseRestoreId = "databaseRestoreId";
+            }
             return object;
         };
 

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Saved web page import regression</title>
+    <script>
+      window.__savedHtmlImportScriptExecuted = true;
+      const savedAnalyticsPayload = '__SAVED_SCRIPT_PAYLOAD__';
+    </script>
+    <style>
+      body {
+        color: #222;
+      }
+      nav {
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav><a href="/archive">Archive home</a></nav>
+    </header>
+    <main>
+      <article>
+        <div>
+          <div>
+            <h1>Saved article: an HTML import should finish</h1>
+            <p>Article opening: Chinese technology companies and research teams.</p>
+            <p>Preserve <strong>bold emphasis</strong>, <em>italic emphasis</em>, and Unicode: 中文 — café.</p>
+            <h2>What the saved page contains</h2>
+            <ul>
+              <li>The article text</li>
+              <li>A figure embedded in the HTML</li>
+            </ul>
+            <img alt="Embedded import reference" src="__EMBEDDED_IMAGE__" />
+            <p>Article ending: this sentence must survive import and reload exactly once.</p>
+          </div>
+        </div>
+      </article>
+    </main>
+    <footer><p>Saved web page footer</p></footer>
+  </body>
+</html>

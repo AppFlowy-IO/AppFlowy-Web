@@ -1,0 +1,46 @@
+name: Notify self-hosted deployment of Web release
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Successfully published Docker image tag
+        type: string
+        required: true
+    secrets:
+      PUBLIC_REPO_TOKEN:
+        required: true
+
+permissions: {}
+
+jobs:
+  notify:
+    if: >-
+      github.repository == 'AppFlowy-IO/AppFlowy-Web' &&
+      !endsWith(inputs.tag || github.event.release.tag_name, '_test')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Request a Web image-pin update
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          IMAGE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        with:
+          github-token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          script: |
+            const tag = process.env.IMAGE_TAG;
+            if (tag.endsWith('_test')) return;
+            await github.rest.repos.createDispatchEvent({
+              owner: 'AppFlowy-IO',
+              repo: 'AppFlowy-SelfHost-Commercial',
+              event_type: 'selfhost-images-published',
+              client_payload: {
+                source: 'web', tag,
+                services: ['appflowy_web'],
+                source_repository: `${context.repo.owner}/${context.repo.repo}`,
+                source_url: context.payload.release?.html_url ||
+                  `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              },
+            });

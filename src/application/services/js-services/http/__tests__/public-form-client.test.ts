@@ -294,4 +294,40 @@ describe('public form HTTP client', () => {
     expect(mockInvalidToken).not.toHaveBeenCalled();
     expect(JSON.parse(window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? '{}')).toEqual(nextToken);
   });
+
+  it.each(['network', 429, 503])('retains credentials and surfaces temporary refresh failure: %s', async (status) => {
+    const stored = {
+      access_token: 'access-a', refresh_token: 'refresh-a', expires_at: 1,
+    };
+    const failure = typeof status === 'number'
+      ? { response: { status, data: { error_code: 'refresh_token_not_found' } } }
+      : new Error('Network unavailable');
+    const fetchMock = jest.fn();
+
+    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(stored));
+    mockRefreshToken.mockRejectedValueOnce(failure);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(client.post('/api/workspace/public-form/test/submit', { answers: {} })).rejects.toBe(failure);
+
+    expect(mockInvalidToken).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(TOKEN_STORAGE_KEY) ?? '{}')).toEqual(stored);
+  });
+
+  it('invalidates a confirmed revoked session without submitting anonymously', async () => {
+    const failure = { response: { status: 400, data: { error_code: 'session_not_found' } } };
+    const fetchMock = jest.fn();
+
+    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({
+      access_token: 'access-a', refresh_token: 'refresh-a', expires_at: 1,
+    }));
+    mockRefreshToken.mockRejectedValueOnce(failure);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(client.post('/api/workspace/public-form/test/submit', { answers: {} })).rejects.toBe(failure);
+
+    expect(mockInvalidToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -1,15 +1,17 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 
-import { importCsvFilesAsDatabases, importDocumentFiles } from '@/components/app/import/import-service';
+import { ViewLayout } from '@/application/types';
+import { importCsvFilesAsDatabases, importDocumentFiles, importHtmlFiles } from '@/components/app/import/import-service';
 import ImportDialog from '@/components/app/import/ImportDialog';
 import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
 
 const toView = jest.fn();
+const addPage = jest.fn();
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAppOperations: () => ({ addPage: jest.fn() }),
+  useAppOperations: () => ({ addPage }),
   useCurrentWorkspaceId: () => 'workspace-1',
   useOpenPageModal: () => jest.fn(),
   useToView: () => toView,
@@ -30,11 +32,13 @@ jest.mock('@/components/app/import/import-service', () => ({
   importNotionZipToView: jest.fn(),
   importCsvFilesAsDatabases: jest.fn(),
   importDocumentFiles: jest.fn(),
+  importHtmlFiles: jest.fn(),
   populateDocumentWithMarkdown: jest.fn(),
   stripFileExtension: (name: string) => name,
 }));
 
 const importDocs = importDocumentFiles as jest.MockedFunction<typeof importDocumentFiles>;
+const importHtml = jest.mocked(importHtmlFiles);
 
 function renderDialog() {
   const onOpenChange = jest.fn();
@@ -51,6 +55,7 @@ describe('ImportDialog document file tiles', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     importDocs.mockReset();
+    importHtml.mockReset();
     updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
       status: 'available', info: { enable_page_history: true, self_hosted: false },
     });
@@ -102,6 +107,28 @@ describe('ImportDialog document file tiles', () => {
     expect(toView).toHaveBeenCalledWith('view-a');
   });
 
+  it('imports HTML through browser parsing and ordinary page creation', async () => {
+    importHtml.mockResolvedValue({ items: [{ fileName: 'article.html', viewId: 'html-view' }], aborted: false });
+    addPage.mockResolvedValue({ view_id: 'html-view' });
+    const { onOpenChange } = renderDialog();
+    const files = [new File(['<p>Article</p>'], 'article.html')];
+
+    pick('import-html-input', files);
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(importDocs).not.toHaveBeenCalled();
+    expect(importHtml).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      files,
+      signal: expect.any(AbortSignal),
+      onFileStart: expect.any(Function),
+      createPage: expect.any(Function),
+    });
+    await importHtml.mock.calls[0][0].createPage('article');
+    expect(addPage).toHaveBeenCalledWith('parent-1', expect.objectContaining({ name: 'article', layout: ViewLayout.Document }));
+    expect(toView).toHaveBeenCalledWith('html-view');
+  });
+
   it('reports converter warnings and failed files, and stays open when files remain', async () => {
     importDocs.mockResolvedValue({
       items: [
@@ -141,7 +168,6 @@ describe('ImportDialog document file tiles', () => {
   it.each([
     ['pdf', 30],
     ['docx', 60],
-    ['html', 60],
   ] as const)('sends all %s files for server size validation', async (format, sizeMiB) => {
     const small = new File(['s'], `small.${format}`);
     const big = new File(['b'], `big.${format}`);
@@ -265,7 +291,7 @@ describe('ImportDialog document file tiles', () => {
   it('shows the batch counter and lets the close button cancel the batch', async () => {
     let resolveBatch: (value: { items: []; aborted: boolean }) => void = () => undefined;
 
-    importDocs.mockImplementation(
+    importHtml.mockImplementation(
       ({ onFileStart, signal }) =>
         new Promise((resolve) => {
           onFileStart?.(1, 3);
@@ -287,7 +313,7 @@ describe('ImportDialog document file tiles', () => {
     fireEvent.click(close);
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(importDocs.mock.calls[0][0].signal?.aborted).toBe(true);
+    expect(importHtml.mock.calls[0][0].signal?.aborted).toBe(true);
     resolveBatch({ items: [], aborted: true });
   });
 });

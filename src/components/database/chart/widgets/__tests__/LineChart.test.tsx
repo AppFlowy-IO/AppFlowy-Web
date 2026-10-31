@@ -1,7 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ComponentProps } from 'react';
 
-import { CHART_COLORS, ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
+import {
+  CHART_COLORS,
+  CHART_EMPTY_VALUE_COLOR,
+  ChartAggregationType,
+  ChartDataItem,
+} from '@/application/database-yjs/chart.type';
+import { lineCategoryAxisLayout } from '@/components/database/chart/widgets/chartAxis';
 import { getChartTooltipPosition } from '@/components/database/chart/widgets/ChartTooltip';
 import { LineChartWidget } from '@/components/database/chart/widgets/LineChart';
 
@@ -16,6 +22,11 @@ jest.mock('react-i18next', () => {
   });
   return { useTranslation: () => ({ t: i18n.t.bind(i18n) }) };
 });
+
+// jsdom has no canvas: 6px per character stands in for the caption font.
+jest.mock('@/components/database/chart/widgets/chartTextMeasure', () => ({
+  measureCategoryLabelWidth: (text: string) => text.length * 6,
+}));
 
 class ResizeObserverMock implements ResizeObserver {
   constructor(private readonly callback: ResizeObserverCallback) {}
@@ -74,7 +85,6 @@ const ITEMS: ChartDataItem[] = [
 ];
 // Max 2.5 -> 20% headroom rounds up to an axis max of 5, ticks every 1.
 const AXIS_MAX = 5;
-const COLORS = [OPTION_COLOR, CHART_COLORS[1], CHART_COLORS[2], CHART_COLORS[3], CHART_COLORS[4]];
 
 function renderLineChart(props: Partial<ComponentProps<typeof LineChartWidget>> = {}) {
   return render(<LineChartWidget data={ITEMS} aggregationType={ChartAggregationType.Count} {...props} />);
@@ -93,10 +103,6 @@ function texts(container: HTMLElement, selector: string) {
   return Array.from(container.querySelectorAll(selector)).map((node) => node.textContent);
 }
 
-function dotRadii(container: HTMLElement) {
-  return Array.from(container.querySelectorAll('.recharts-dot')).map((dot) => Number(dot.getAttribute('r')));
-}
-
 describe('LineChartWidget', () => {
   const originalResizeObserver = globalThis.ResizeObserver;
 
@@ -108,7 +114,7 @@ describe('LineChartWidget', () => {
     globalThis.ResizeObserver = originalResizeObserver;
   });
 
-  it('draws a straight theme-colored line through one ringed dot per point', () => {
+  it('draws a straight 2px line in the series color through the points, with no markers', () => {
     const { container } = renderLineChart();
 
     expect(screen.getByTestId('line-chart-widget')).toBeTruthy();
@@ -116,28 +122,53 @@ describe('LineChartWidget', () => {
 
     const curve = container.querySelector('.recharts-line .recharts-line-curve');
 
-    expect(curve?.getAttribute('stroke')).toBe('var(--fill-theme-thick)');
-    expect(curve?.getAttribute('stroke-width')).toBe('3');
+    expect(curve?.getAttribute('stroke')).toBe('#91B5FB');
+    expect(curve?.getAttribute('stroke-width')).toBe('2');
     expect(curve?.getAttribute('stroke-linecap')).toBe('round');
     // Linear segments only, and no area fill under the line.
     expect(curve?.getAttribute('d')).not.toMatch(/C/);
     expect(container.querySelector('.recharts-area')).toBeNull();
+    expect(container.querySelectorAll('.recharts-dot')).toHaveLength(0);
 
-    const dots = Array.from(container.querySelectorAll('.recharts-dot'));
+    // The line runs through the point of every category.
+    const vertices = Array.from((curve?.getAttribute('d') ?? '').matchAll(/[ML]([\d.]+),([\d.]+)/g));
 
-    expect(dots).toHaveLength(ITEMS.length);
-    dots.forEach((dot, index) => {
-      expect(Number(dot.getAttribute('cx'))).toBeCloseTo(pointX(index));
-      expect(Number(dot.getAttribute('cy'))).toBeCloseTo(pointY(ITEMS[index].value));
-      expect(dot.getAttribute('fill')).toBe(COLORS[index]);
-      expect(dot.getAttribute('stroke')).toBe('var(--icon-on-fill)');
-      expect(dot.getAttribute('stroke-width')).toBe('2');
+    expect(vertices).toHaveLength(ITEMS.length);
+    vertices.forEach(([, x, y], index) => {
+      expect(Number(x)).toBeCloseTo(pointX(index));
+      expect(Number(y)).toBeCloseTo(pointY(ITEMS[index].value));
     });
-    // A 4px dot inside a 2px ring.
-    expect(dotRadii(container)).toEqual([5, 5, 5, 5, 5]);
     expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual(
       ITEMS.map((item) => item.label)
     );
+  });
+
+  it('tilts the category labels once a slot is narrower than 100px, inside a band measured to hold them', () => {
+    const items = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ label: `A long category ${index}`, value: index, rowIds: [] }));
+    const ticks = () => Array.from(container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick text'));
+    // 742 / 7 = 106px per slot: upright, 8px under the axis in the 40px band.
+    const { container, rerender } = renderLineChart({ data: items(7) });
+
+    expect(ticks().every((tick) => tick.getAttribute('transform') === null)).toBe(true);
+    expect(Number(ticks()[0].getAttribute('y'))).toBe(PLOT_HEIGHT + 17);
+
+    // 742 / 8 = 92.75px per slot: tilted, centered in a band of the widest label plus 8px.
+    rerender(<LineChartWidget data={items(8)} aggregationType={ChartAggregationType.Count} />);
+    const layout = lineCategoryAxisLayout(
+      items(8).map((item) => item.label),
+      PLOT_WIDTH / 8,
+      (text) => text.length * 6
+    );
+    const plotHeight = HEIGHT - layout.height;
+
+    expect(layout.height).toBeCloseTo(108 * Math.sin(0.5) + 18 * Math.cos(0.5) + 8);
+    ticks().forEach((tick) => {
+      const y = Number(tick.getAttribute('y'));
+
+      expect(y).toBeCloseTo(plotHeight + layout.labelCenter);
+      expect(tick.getAttribute('transform')).toBe(`rotate(${(-0.5 * 180) / Math.PI} ${tick.getAttribute('x')} ${y})`);
+    });
   });
 
   it('titles the value axis with the aggregation like desktop', () => {
@@ -206,8 +237,8 @@ describe('LineChartWidget', () => {
     expectLabels();
   });
 
-  it('hovers the point within 10px along x: bigger dot, dashed line and a raised tooltip', () => {
-    const { container } = renderLineChart();
+  it('hovers the point within 10px along x: dashed line and a raised tooltip', () => {
+    renderLineChart();
     const plot = screen.getByTestId('line-chart-plot');
 
     fireEvent.mouseMove(plot, { clientX: pointX(2) + 9.5, clientY: 30 });
@@ -223,7 +254,6 @@ describe('LineChartWidget', () => {
     expect(tooltip.textContent).toContain('Click to view data');
     expect(parseFloat(tooltip.parentElement?.style.left ?? '')).toBeCloseTo(expected.left);
     expect(parseFloat(tooltip.parentElement?.style.top ?? '')).toBeCloseTo(expected.top);
-    expect(dotRadii(container)).toEqual([5, 5, 7, 5, 5]);
     expect(plot.className).toContain('cursor-pointer');
 
     const hoverLine = screen.getByTestId('line-chart-hover-line');
@@ -234,7 +264,6 @@ describe('LineChartWidget', () => {
     fireEvent.mouseLeave(plot);
     expect(screen.queryByTestId('chart-tooltip')).toBeNull();
     expect(screen.queryByTestId('line-chart-hover-line')).toBeNull();
-    expect(dotRadii(container)).toEqual([5, 5, 5, 5, 5]);
   });
 
   it('ignores the pointer away from the points or outside the plot', () => {
@@ -259,8 +288,9 @@ describe('LineChartWidget', () => {
     renderLineChart({ onPointClick });
     const plot = screen.getByTestId('line-chart-plot');
 
+    // The "No {field}" category is grey on every chart.
     fireEvent.click(plot, { clientX: pointX(4) - 3, clientY: 200 });
-    expect(onPointClick).toHaveBeenLastCalledWith({ ...ITEMS[4], color: CHART_COLORS[4] });
+    expect(onPointClick).toHaveBeenLastCalledWith({ ...ITEMS[4], color: CHART_EMPTY_VALUE_COLOR });
 
     fireEvent.click(plot, { clientX: pointX(0), clientY: 200 });
     expect(onPointClick).toHaveBeenLastCalledWith({ ...ITEMS[0], color: OPTION_COLOR });
@@ -293,7 +323,7 @@ describe('LineChartWidget', () => {
       ],
     });
 
-    expect(container.querySelectorAll('.recharts-dot')).toHaveLength(2);
+    expect(texts(container, '.recharts-label-list text')).toEqual(['2', '3']);
     expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual(['Kept', 'Also kept']);
 
     fireEvent.click(screen.getByTestId('line-chart-plot'), { clientX: pointX(1, 2), clientY: 100 });

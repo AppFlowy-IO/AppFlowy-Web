@@ -58,8 +58,9 @@ function DatabaseRowModal({
   const duplicatePending = useRef(false);
   const [selectedMode, setMode] = useState<RowPeekMode>();
   const sourceLayout = Number(view?.get(YjsDatabaseKey.layout));
-  const defaultMode =
-    sourceLayout === DatabaseViewLayout.Calendar || sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
+  // Desktop opens timeline rows with `showRowAsCenterPeek`; every other
+  // layout, calendar events included since desktop #1531, opens a side peek.
+  const defaultMode = sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
   const mode = selectedMode ?? defaultMode;
   const canShowSide = layout?.canShow === true && !openPageModalViewId;
   const side = mode === 'side' && canShowSide;
