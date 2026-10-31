@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 
 import { View, YDatabaseView } from '@/application/types';
@@ -8,6 +8,7 @@ import { type ReorderResult, useReorderMonitor } from '@/components/_shared/reor
 import { AFScroller } from '@/components/_shared/scroller';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
 import { DatabaseTabItem } from '@/components/database/components/tabs/DatabaseTabItem';
+import { revealTabInScroller } from '@/components/database/components/tabs/tab-reveal';
 import { useTabScroller } from '@/components/database/components/tabs/useTabScroller';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList } from '@/components/ui/tabs';
@@ -34,6 +35,7 @@ export interface DatabaseViewTabsProps {
   setRenameView: (view: View) => void;
   onDuplicateView?: (viewId: string) => void;
   duplicateDisabled?: boolean;
+  duplicateDisabledReason?: string;
   pendingScrollToViewId?: string | null;
   setPendingScrollToViewId?: (id: string | null) => void;
   onBeforeViewAdded?: () => void;
@@ -58,6 +60,7 @@ export function DatabaseViewTabs({
   setRenameView,
   onDuplicateView,
   duplicateDisabled,
+  duplicateDisabledReason,
   pendingScrollToViewId,
   setPendingScrollToViewId,
   onBeforeViewAdded,
@@ -68,6 +71,9 @@ export function DatabaseViewTabs({
   const [tabsWidth, setTabsWidth] = useState<number | null>(null);
   const [tabsContainer, setTabsContainer] = useState<HTMLDivElement | null>(null);
   const tabRefs = useRef<Map<string, HTMLElement>>(new Map());
+  // Radix can report mouse selection and its following focus before the owner
+  // commits the controlled value. Coalesce only that pointer interaction.
+  const pointerSelectionRef = useRef<{ viewId?: string } | null>(null);
 
   // Drag-to-reorder for the tab bar (horizontal). The owning component
   // (DatabaseViews) applies the new order and persists it.
@@ -96,6 +102,32 @@ export function DatabaseViewTabs({
     onReorder: handleReorder,
   });
 
+  const activeViewId = viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId;
+  const viewIdsKey = viewIds.join(',');
+  const activeViewIdRef = useRef(activeViewId);
+
+  // The strip's own scroll container. Revealing a tab moves only this element
+  // (never `scrollIntoView`, which would also scroll a hosting document).
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToView = useCallback((viewId: string) => {
+    const element = tabRefs.current.get(viewId);
+
+    if (element) {
+      if (scrollerRef.current) revealTabInScroller(scrollerRef.current, element);
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  // The strip's visible width settles after mount (its box is sized from the
+  // measured tabs, then the toolbar beside it renders): reveal the active tab
+  // again from the strip's resize observer.
+  const revealActiveTab = useCallback(() => {
+    if (activeViewIdRef.current) scrollToView(activeViewIdRef.current);
+  }, [scrollToView]);
+
   const {
     setScrollerContainer,
     showScrollLeftButton,
@@ -103,23 +135,25 @@ export function DatabaseViewTabs({
     scrollLeft,
     scrollRight,
     handleObserverScroller,
-  } = useTabScroller();
+  } = useTabScroller({ onResize: revealActiveTab });
 
-  const scrollToView = useCallback((viewId: string) => {
-    const element = tabRefs.current.get(viewId);
+  const setScroller = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollerRef.current = el;
+      setScrollerContainer(el);
+    },
+    [setScrollerContainer]
+  );
 
-    if (element) {
-      element.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center',
-      });
-      return true;
-    }
+  // Keep the active tab visible (W16): on mount, when the selection or the
+  // tab list changes, and whenever the tabs are measured anew.
+  useLayoutEffect(() => {
+    activeViewIdRef.current = activeViewId;
+    if (activeViewId) scrollToView(activeViewId);
+  }, [activeViewId, viewIdsKey, tabsWidth, scrollToView]);
 
-    return false;
-  }, []);
-
+  // A just-added tab is revealed even when it does not become the active one:
+  // `setSelectedViewId` is optional, and the owner may keep the selection.
   useEffect(() => {
     if (!pendingScrollToViewId) return;
 
@@ -165,13 +199,14 @@ export function DatabaseViewTabs({
     };
   }, [tabsContainer]);
 
-  const setTabRef = (viewId: string, el: HTMLElement | null) => {
+  // Stable, so the memoized tab items do not re-render with the strip.
+  const setTabRef = useCallback((viewId: string, el: HTMLElement | null) => {
     if (el) {
       tabRefs.current.set(viewId, el);
     } else {
       tabRefs.current.delete(viewId);
     }
-  };
+  }, []);
 
   return (
     <div className='relative flex h-[34px] flex-1 items-center justify-start overflow-hidden'>
@@ -212,7 +247,7 @@ export function DatabaseViewTabs({
         }}
         className={'relative flex h-full flex-1'}
         overflowYHidden
-        ref={setScrollerContainer}
+        ref={setScroller}
         onScroll={handleObserverScroller}
       >
         <div
@@ -223,11 +258,23 @@ export function DatabaseViewTabs({
           }}
         >
           <Tabs
-            value={viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId}
-            onValueChange={(viewId) => {
-              if (setSelectedViewId) {
-                setSelectedViewId(viewId);
+            value={activeViewId}
+            onMouseDownCapture={(event) => {
+              pointerSelectionRef.current = event.button === 0 && !event.ctrlKey ? {} : null;
+            }}
+            onMouseUpCapture={() => { pointerSelectionRef.current = null; }}
+            onKeyDownCapture={() => { pointerSelectionRef.current = null; }}
+            onBlurCapture={(event) => {
+              if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
+                pointerSelectionRef.current = null;
               }
+            }}
+            onValueChange={(viewId) => {
+              const pointer = pointerSelectionRef.current;
+
+              if (pointer?.viewId === viewId) return;
+              if (pointer) pointer.viewId = viewId;
+              setSelectedViewId?.(viewId);
             }}
             className='relative flex h-full overflow-hidden'
           >
@@ -253,6 +300,7 @@ export function DatabaseViewTabs({
                     onOpenDeleteModal={setDeleteConfirmOpen}
                     onDuplicate={onDuplicateView}
                     duplicateDisabled={duplicateDisabled}
+                    duplicateDisabledReason={duplicateDisabledReason}
                     onOpenRenameModal={setRenameView}
                     setTabRef={setTabRef}
                     reorderInstanceId={reorderEnabled ? reorderInstanceId : undefined}

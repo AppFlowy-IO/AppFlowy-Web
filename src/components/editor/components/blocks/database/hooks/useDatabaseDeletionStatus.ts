@@ -1,8 +1,11 @@
-
 import { useEffect, useRef, useState } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { ViewService } from '@/application/services/domains';
+import {
+  captureWorkspaceViewMetadataAccessToken,
+  primeWorkspaceViewMetadataFromServer,
+} from '@/application/services/js-services/workspace-view-metadata';
 import type { View } from '@/application/types';
 
 import { isViewGoneError } from '../utils/databaseBlockUtils';
@@ -49,6 +52,83 @@ function subscribeTrashUpdated(eventEmitter: EventEmitter, callback: TrashUpdate
   };
 }
 
+interface PendingViewProbe {
+  viewId: string;
+  resolve: (view: View) => void;
+  reject: (error: unknown) => void;
+}
+
+/** Mount probes waiting for the end of the current tick, by workspace. */
+const pendingViewProbes = new Map<string, PendingViewProbe[]>();
+
+function flushViewProbes(workspaceId: string) {
+  const probes = pendingViewProbes.get(workspaceId) ?? [];
+  const viewIds = Array.from(new Set(probes.map((probe) => probe.viewId)));
+
+  pendingViewProbes.delete(workspaceId);
+  const accessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
+
+  // Shared by the probes of one view: a lookup of its own gives the server's
+  // answer for it (deleted, refused, failed), which the batch cannot.
+  const lookups = new Map<string, Promise<View>>();
+  const lookUp = (viewId: string) => {
+    let lookup = lookups.get(viewId);
+
+    if (!lookup) {
+      lookup = ViewService.get(workspaceId, viewId);
+      lookups.set(viewId, lookup);
+    }
+
+    return lookup;
+  };
+
+  const settle = (views: Map<string, View>) => {
+    probes.forEach(({ viewId, resolve, reject }) => {
+      const view = views.get(viewId);
+
+      if (view) resolve(view);
+      else lookUp(viewId).then(resolve, reject);
+    });
+  };
+
+  if (viewIds.length < 2) {
+    settle(new Map());
+    return;
+  }
+
+  // The batch returns the views it could read and leaves the others out.
+  ViewService.getMultiple(workspaceId, viewIds, 1).then(
+    (views) => {
+      primeWorkspaceViewMetadataFromServer(workspaceId, views, accessToken);
+      settle(new Map(views.map((view) => [view.view_id, view])));
+    },
+    () => settle(new Map())
+  );
+}
+
+/**
+ * The metadata of `viewId` for a mount probe. A dashboard mounts a probe per
+ * widget: the lookups of one tick go out as one batch request instead of one
+ * request per view. A view already cached is not asked for again.
+ */
+function loadViewForMountProbe(workspaceId: string, viewId: string): Promise<View> {
+  const cached = ViewService.getCached(workspaceId, viewId) ?? ViewService.getCachedMetadata(workspaceId, viewId);
+
+  if (cached) return Promise.resolve(cached);
+
+  return new Promise((resolve, reject) => {
+    let probes = pendingViewProbes.get(workspaceId);
+
+    if (!probes) {
+      probes = [];
+      pendingViewProbes.set(workspaceId, probes);
+      queueMicrotask(() => flushViewProbes(workspaceId));
+    }
+
+    probes.push({ viewId, resolve, reject });
+  });
+}
+
 interface UseDatabaseDeletionStatusProps {
   workspaceId: string;
   viewId: string;
@@ -61,9 +141,9 @@ interface UseDatabaseDeletionStatusProps {
 
 /**
  * Tracks whether an embedded database's container is in trash or permanently
- * deleted. Mount probes share the workspace trash coordinator; later updates
- * consume the app-level authoritative payload without starting another trash
- * request for every embedded block.
+ * deleted. Mount probes share the workspace trash coordinator and one batch
+ * request for their views; later updates consume the app-level authoritative
+ * payload without starting another trash request for every embedded block.
  */
 export function useDatabaseDeletionStatus({
   workspaceId,
@@ -107,7 +187,7 @@ export function useDatabaseDeletionStatus({
 
       try {
         const [viewResult, trashResult] = await Promise.allSettled([
-          refreshView ? ViewService.refresh(workspaceId, viewId) : ViewService.get(workspaceId, viewId),
+          refreshView ? ViewService.refresh(workspaceId, viewId) : loadViewForMountProbe(workspaceId, viewId),
           freshTrashItems === undefined ? ViewService.getTrashCached(workspaceId) : Promise.resolve(freshTrashItems),
         ]);
 

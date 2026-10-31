@@ -11,11 +11,21 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-export function ClearSortingConfirm ({ open, onClose, onRemoved }: {
+interface ClearSortingConfirmProps {
   open: boolean;
   onClose: () => void;
   onRemoved?: () => void;
-}) {
+}
+
+/**
+ * Rendered only while open (the dialog has no exit animation): a closed
+ * confirm renders nothing, so lists can keep one per row (W8).
+ */
+export function ClearSortingConfirm (props: ClearSortingConfirmProps) {
+  return props.open ? <ClearSortingConfirmDialog {...props} /> : null;
+}
+
+function ClearSortingConfirmDialog ({ open, onClose, onRemoved }: ClearSortingConfirmProps) {
   const { t } = useTranslation();
   const clearSortingDispatch = useClearSortingDispatch();
 

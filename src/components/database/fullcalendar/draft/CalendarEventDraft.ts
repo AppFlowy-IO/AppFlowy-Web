@@ -14,6 +14,7 @@ import {
   YDatabase,
   YDatabaseCell,
   YDatabaseCells,
+  YDatabaseFilters,
   YDatabaseRow,
   YDoc,
   YjsDatabaseKey,
@@ -96,7 +97,17 @@ export class CalendarEventDraft {
   private readonly files = new Map<string, { file: File; remote?: string }>();
   private readonly originalOptions = new Map<string, ReturnType<typeof parseSelectOptionTypeOptions>>();
 
-  constructor(readonly source: DatabaseContextState, readonly dateFieldId: string, selection: CalendarDraftSelection) {
+  /**
+   * `prefillFilters`: the filters the calendar applies right now (in a
+   * dashboard widget, the viewer's private ones and the global filters,
+   * `useEffectiveViewFilters`); without them, the view's saved filters.
+   */
+  constructor(
+    readonly source: DatabaseContextState,
+    readonly dateFieldId: string,
+    selection: CalendarDraftSelection,
+    prefillFilters?: YDatabaseFilters
+  ) {
     const database = source.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
 
     this.database = new Y.Map() as YDatabase;
@@ -141,7 +152,9 @@ export class CalendarEventDraft {
         row,
         database: this.database,
         template,
-        filters: this.database.get(YjsDatabaseKey.views)?.get(source.activeViewId)?.get(YjsDatabaseKey.filters),
+        filters:
+          prefillFilters ??
+          this.database.get(YjsDatabaseKey.views)?.get(source.activeViewId)?.get(YjsDatabaseKey.filters),
         calendarFieldId: dateFieldId,
         cellsData: isSystemTime ? undefined : { [dateFieldId]: dateData },
       });

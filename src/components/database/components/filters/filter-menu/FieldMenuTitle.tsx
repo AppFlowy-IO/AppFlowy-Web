@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { useFieldSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import { useEnterAdvancedMode, useRemoveFilter } from '@/application/database-yjs/dispatch';
 import { useDetachedFilterStore } from '@/application/database-yjs/dispatch/detached-filters';
@@ -41,7 +41,7 @@ function FieldMenuTitle({
   const enterAdvancedMode = useEnterAdvancedMode();
   // Detached rules stay a flat AND list, so they offer no advanced mode.
   const supportsAdvancedFilters = !useDetachedFilterStore();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const { field } = useFieldSelector(fieldId);

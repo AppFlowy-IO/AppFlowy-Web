@@ -105,7 +105,7 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
   }, []);
 
   return (
-    <Popover modal open={open} onOpenChange={onOpenChange}>
+    <Popover modal='backdrop' open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger className={'absolute left-0 top-0 z-[-1] h-full w-full'} />
       <PopoverContent
         data-testid="person-cell-menu"

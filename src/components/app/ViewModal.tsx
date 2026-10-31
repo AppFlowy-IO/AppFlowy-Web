@@ -436,6 +436,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Feed:
       case ViewLayout.Form:
       case ViewLayout.Timeline:
+      case ViewLayout.Dashboard:
         return DatabaseView;
       default:
         return null;
@@ -481,6 +482,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
         loadDatabasePrompts={operations.loadDatabasePrompts}
         testDatabasePromptConfig={operations.testDatabasePromptConfig}
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}

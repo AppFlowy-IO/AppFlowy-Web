@@ -30,7 +30,13 @@ const config: StorybookConfig = {
       shouldRemoveUndefinedFromOptional: true,
     },
   },
-  async viteFinal(config) {
+  async viteFinal(config, { configType }) {
+    // Static Storybook builds do not emit these intermediate maps. Skip them
+    // to keep chunk rendering within Node's default heap.
+    if (configType === 'PRODUCTION' && config.esbuild && typeof config.esbuild === 'object') {
+      config.esbuild.sourcemap = false;
+    }
+
     if (config.resolve) {
       const existingAlias = Array.isArray(config.resolve.alias)
         ? config.resolve.alias

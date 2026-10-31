@@ -36,6 +36,15 @@ interface AppSyncLayerProps {
 
 const WS_READY_STATE_OPEN = 1;
 
+// Decoded protobuf messages inherit null for absent optional strings. Only an
+// own field can intentionally clear a cached profile value.
+function hasProfileField(
+  change: notification.IWorkspaceMemberProfileChanged,
+  field: keyof notification.IWorkspaceMemberProfileChanged
+): boolean {
+  return Object.prototype.hasOwnProperty.call(change, field) && change[field] !== undefined;
+}
+
 function exactSlowSyncResult(item: SlowSyncOutboxItem, results: CollabFullSyncBatchResult[]): CollabFullSyncBatchResult {
   if (results.length !== 1 || results[0].objectId !== item.objectId || results[0].collabType !== item.collabType) {
     throw new Error(`Slow-sync response did not exactly match collab ${item.objectId}`);
@@ -559,24 +568,24 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
                 };
 
                 // Apply notification updates, handling optional fields correctly
-                // undefined = field not in notification (preserve existing)
-                // null/empty string = field explicitly cleared
+                // Absent/undefined fields preserve existing values. An explicitly
+                // present null/empty string clears the corresponding value.
                 // Note: profileChange uses camelCase (avatarUrl) from proto, we convert to snake_case (avatar_url) for database
                 const updatedProfile = {
                   ...baseProfile,
                   name: profileChange.name ?? baseProfile.name,
                   avatar_url:
-                    profileChange.avatarUrl !== undefined ? profileChange.avatarUrl || null : baseProfile.avatar_url,
+                    hasProfileField(profileChange, 'avatarUrl') ? profileChange.avatarUrl || null : baseProfile.avatar_url,
                   cover_image_url:
-                    profileChange.coverImageUrl !== undefined
+                    hasProfileField(profileChange, 'coverImageUrl')
                       ? profileChange.coverImageUrl || null
                       : baseProfile.cover_image_url,
                   custom_image_url:
-                    profileChange.customImageUrl !== undefined
+                    hasProfileField(profileChange, 'customImageUrl')
                       ? profileChange.customImageUrl || null
                       : baseProfile.custom_image_url,
                   description:
-                    profileChange.description !== undefined
+                    hasProfileField(profileChange, 'description')
                       ? profileChange.description || null
                       : baseProfile.description,
                 };
@@ -604,22 +613,22 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
           name: profileChange.name ?? existingProfile?.name ?? '',
           email: existingProfile?.email ?? '',
           role: existingProfile?.role ?? 0,
-          // Handle optional fields: undefined = preserve, null/empty = clear
+          // Absent/undefined fields preserve; explicitly present null/empty values clear.
           // Note: profileChange uses camelCase (avatarUrl) from proto, we convert to snake_case (avatar_url) for database
           avatar_url:
-            profileChange.avatarUrl !== undefined
+            hasProfileField(profileChange, 'avatarUrl')
               ? profileChange.avatarUrl || null
               : existingProfile?.avatar_url ?? null,
           cover_image_url:
-            profileChange.coverImageUrl !== undefined
+            hasProfileField(profileChange, 'coverImageUrl')
               ? profileChange.coverImageUrl || null
               : existingProfile?.cover_image_url ?? null,
           custom_image_url:
-            profileChange.customImageUrl !== undefined
+            hasProfileField(profileChange, 'customImageUrl')
               ? profileChange.customImageUrl || null
               : existingProfile?.custom_image_url ?? null,
           description:
-            profileChange.description !== undefined
+            hasProfileField(profileChange, 'description')
               ? profileChange.description || null
               : existingProfile?.description ?? null,
           invited: existingProfile?.invited ?? false,

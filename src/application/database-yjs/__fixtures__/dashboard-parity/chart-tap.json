@@ -1,0 +1,171 @@
+{
+  "fixture": "chart-tap",
+  "version": 1,
+  "encoding": {
+    "resolveChartTap": "resolveChartTap({mobile, chartType, selectedKey, tappedKey}) -> drill | select | clear (WP14 §1.4.6), the first rule that applies: tapped null (a tap outside every mark) -> clear; not mobile (a desktop click) -> drill; the Number chart (no categories) -> drill; tapped equal to selected (code units, no normalization) -> drill; otherwise select.",
+    "fields": "mobile: the mobile context (web useMobileContext(), desktop DashboardBloc.state.mobileContext); chart_type: a ChartTypePB name (Bar, Line, HorizontalBar, Donut, NumberChart); selected: the category whose tooltip a previous tap shows, or null; tapped: the category key of the tapped mark (R-GROUPKEY, __empty__ for the empty category, \"\" for the Number card; a segment or a line point taps its category), or null.",
+    "after": "What the chart does next: select keeps tapped as the selection and shows its tooltip (with the footer \"Tap again to view data\") until the next tap; drill opens the drill-down of the tapped mark and drops the selection; clear drops the selection and hides the tooltip."
+  },
+  "cases": [
+    {
+      "name": "desktop: a click on a bar drills at once",
+      "mobile": false,
+      "chart_type": "Bar",
+      "selected": null,
+      "tapped": "opt_doing",
+      "expected": "drill"
+    },
+    {
+      "name": "desktop: a click on another category drills, whatever is selected",
+      "mobile": false,
+      "chart_type": "Donut",
+      "selected": "opt_todo",
+      "tapped": "opt_doing",
+      "expected": "drill"
+    },
+    {
+      "name": "desktop: a click on the Number card drills",
+      "mobile": false,
+      "chart_type": "NumberChart",
+      "selected": null,
+      "tapped": "",
+      "expected": "drill"
+    },
+    {
+      "name": "desktop: a click outside every mark clears",
+      "mobile": false,
+      "chart_type": "Line",
+      "selected": null,
+      "tapped": null,
+      "expected": "clear"
+    },
+    {
+      "name": "mobile: the first tap on a bar selects its category",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": null,
+      "tapped": "opt_doing",
+      "expected": "select"
+    },
+    {
+      "name": "mobile: a second tap on the selected bar drills",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": "opt_doing",
+      "tapped": "opt_doing",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: a tap on another bar moves the selection",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": "opt_doing",
+      "tapped": "opt_todo",
+      "expected": "select"
+    },
+    {
+      "name": "mobile: a tap outside every mark clears the selection",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": "opt_doing",
+      "tapped": null,
+      "expected": "clear"
+    },
+    {
+      "name": "mobile: a tap outside every mark with nothing selected clears",
+      "mobile": true,
+      "chart_type": "HorizontalBar",
+      "selected": null,
+      "tapped": null,
+      "expected": "clear"
+    },
+    {
+      "name": "mobile: the first tap on a line point selects its category",
+      "mobile": true,
+      "chart_type": "Line",
+      "selected": null,
+      "tapped": "2026-03",
+      "expected": "select"
+    },
+    {
+      "name": "mobile: a second tap on the same line category drills",
+      "mobile": true,
+      "chart_type": "Line",
+      "selected": "2026-03",
+      "tapped": "2026-03",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: a second tap on a horizontal bar drills",
+      "mobile": true,
+      "chart_type": "HorizontalBar",
+      "selected": "checked",
+      "tapped": "checked",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: the first tap on a donut slice selects it",
+      "mobile": true,
+      "chart_type": "Donut",
+      "selected": null,
+      "tapped": "opt_done",
+      "expected": "select"
+    },
+    {
+      "name": "mobile: a second tap on the selected donut slice drills",
+      "mobile": true,
+      "chart_type": "Donut",
+      "selected": "opt_done",
+      "tapped": "opt_done",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: the empty category selects like any other",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": null,
+      "tapped": "__empty__",
+      "expected": "select"
+    },
+    {
+      "name": "mobile: a second tap on the empty category drills",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": "__empty__",
+      "tapped": "__empty__",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: keys compare exactly, so another case is another category",
+      "mobile": true,
+      "chart_type": "Bar",
+      "selected": "a",
+      "tapped": "A",
+      "expected": "select"
+    },
+    {
+      "name": "mobile: the Number card drills at once",
+      "mobile": true,
+      "chart_type": "NumberChart",
+      "selected": null,
+      "tapped": "",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: the Number card drills even with a stale selection",
+      "mobile": true,
+      "chart_type": "NumberChart",
+      "selected": "opt_doing",
+      "tapped": "",
+      "expected": "drill"
+    },
+    {
+      "name": "mobile: a tap outside the Number card clears",
+      "mobile": true,
+      "chart_type": "NumberChart",
+      "selected": null,
+      "tapped": null,
+      "expected": "clear"
+    }
+  ]
+}

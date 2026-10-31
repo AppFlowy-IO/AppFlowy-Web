@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 
 import { useDatabaseContext, useFieldsSelector, useReadOnly, useRowMetaSelector } from '@/application/database-yjs';
 import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
@@ -23,10 +24,14 @@ jest.mock('@/components/database/board/BoardProvider', () => ({
   useBoardSelection: jest.fn(),
 }));
 
+const mockCardFieldRenders = jest.fn();
+
 jest.mock('@/components/database/components/field/CardField', () => ({
   __esModule: true,
-  default: ({ editing }: { editing?: boolean }) =>
-    editing ? <textarea aria-label='card title' /> : <span>Card title</span>,
+  default: ({ editing }: { editing?: boolean }) => {
+    mockCardFieldRenders();
+    return editing ? <textarea aria-label='card title' /> : <span>Card title</span>;
+  },
 }));
 
 jest.mock('@/components/database/components/board/card/CardToolbar', () => ({
@@ -87,6 +92,31 @@ describe('CardPrimitive', () => {
 
     expect(setEditingCardId).not.toHaveBeenCalled();
     expect(navigateToRow).not.toHaveBeenCalled();
+  });
+
+  it('renders its fields again only when its own props change, not with every render of its card', () => {
+    let rerenderCard: () => void = () => undefined;
+    let moveCard: () => void = () => undefined;
+
+    function Card() {
+      const [, setRenders] = useState(0);
+      const [rowId, setRowId] = useState('row-1');
+
+      rerenderCard = () => setRenders((renders) => renders + 1);
+      moveCard = () => setRowId('row-2');
+      return <CardPrimitive columnId='todo' groupFieldId='status-field' rowId={rowId} />;
+    }
+
+    render(<Card />);
+    const firstRenders = mockCardFieldRenders.mock.calls.length;
+
+    expect(firstRenders).toBeGreaterThan(0);
+    // The board's drag context or column changed: the card renders, its body does not.
+    act(() => rerenderCard());
+    expect(mockCardFieldRenders).toHaveBeenCalledTimes(firstRenders);
+
+    act(() => moveCard());
+    expect(mockCardFieldRenders.mock.calls.length).toBeGreaterThan(firstRenders);
   });
 
   it('opens a card title inside a non-editable board embedded in an editable document', () => {

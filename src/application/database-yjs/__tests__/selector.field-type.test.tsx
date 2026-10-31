@@ -92,7 +92,7 @@ function createFixture() {
   return { field, rowDoc, wrapper };
 }
 
-function createCalendarFixture() {
+function createCalendarFixture({ rowDocLoaded = true }: { rowDocLoaded?: boolean } = {}) {
   const calendarFieldId = 'calendar-field-id';
   const primaryFieldId = 'primary-field-id';
   const databaseDoc = new Y.Doc({ guid: databaseId }) as YDoc;
@@ -148,9 +148,11 @@ function createCalendarFixture() {
     databaseDoc,
     databasePageId: viewId,
     activeViewId: viewId,
-    rowMap: { [rowId]: rowDoc },
+    // A row document still on its way is asked for (`ensureRow`) and waited for.
+    rowMap: rowDocLoaded ? { [rowId]: rowDoc } : {},
+    ensureRow: jest.fn(() => new Promise<void>(() => undefined)),
     workspaceId: 'workspace-id',
-  } as DatabaseContextState;
+  } as unknown as DatabaseContextState & { ensureRow: jest.Mock; rowMap: Record<string, YDoc> };
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <AFConfigContext.Provider
       value={{
@@ -159,11 +161,11 @@ function createCalendarFixture() {
         openLoginModal: () => undefined,
       }}
     >
-      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+      <DatabaseContext.Provider value={{ ...contextValue }}>{children}</DatabaseContext.Provider>
     </AFConfigContext.Provider>
   );
 
-  return { calendarField, wrapper };
+  return { calendarField, contextValue, rowDoc, wrapper };
 }
 
 describe('field-schema-aware selectors', () => {
@@ -192,11 +194,32 @@ describe('field-schema-aware selectors', () => {
     });
   });
 
+  it('says the calendar loads while a row document has not arrived, and settles once it has', async () => {
+    const { contextValue, rowDoc, wrapper } = createCalendarFixture({ rowDocLoaded: false });
+    const { result, rerender } = renderHook(() => useCalendarEventsSelector(), { wrapper });
+
+    // The row is known from the view but cannot be placed: not "No date", loading.
+    await waitFor(() => {
+      expect(result.current.loading).toBe(true);
+    });
+    expect(result.current.events).toEqual([]);
+    expect(contextValue.ensureRow).toHaveBeenCalledWith(rowId);
+
+    contextValue.rowMap = { [rowId]: rowDoc };
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+      expect(result.current.events).toHaveLength(1);
+    });
+  });
+
   it('recomputes lazy calendar values and clears stale events for an incompatible target type', async () => {
     const { calendarField, wrapper } = createCalendarFixture();
     const { result } = renderHook(() => useCalendarEventsSelector(), { wrapper });
 
     await waitFor(() => {
+      expect(result.current.loading).toBe(false);
       expect(result.current.events).toHaveLength(1);
       expect(result.current.events[0]?.title).toBe('Experiment Alpha');
       expect(result.current.events[0]?.start?.getFullYear()).toBe(2025);

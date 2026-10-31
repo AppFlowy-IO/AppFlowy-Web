@@ -175,12 +175,12 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  #body .row-peek-banner-actions > div {
+  #body .row-peek-banner-actions > .row-peek-banner-controls {
     opacity: 0;
   }
 
-  #body .row-peek-banner-actions:hover > div,
-  #body .row-peek-banner-actions:focus-within > div {
+  #body .row-peek-banner-actions:hover > .row-peek-banner-controls,
+  #body .row-peek-banner-actions:focus-within > .row-peek-banner-controls {
     opacity: 1;
   }
 }

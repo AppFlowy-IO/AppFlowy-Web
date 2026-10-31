@@ -156,8 +156,11 @@ describe('serializePublishedPage', () => {
       ).toBe('<figure><img src="https://x/1.png" alt=""></figure>');
     });
 
-    it('renders embedded database blocks as nothing', () => {
-      expect(body([blk('grid', null, { view_id: 'x' })])).toBe('');
+    it.each(['grid', 'dashboard'])('leaves embedded %s rendering to the client', (type) => {
+      expect(body([blk(type, null, { view_id: 'x' })])).toBe('');
+      expect(body([blk(type, null, { view_id: 'x' }, [blk('paragraph', [leaf('Nested content')])])])).toBe(
+        '<p>Nested content</p>'
+      );
     });
 
     it('skips the outline block, whose headings are already rendered', () => {

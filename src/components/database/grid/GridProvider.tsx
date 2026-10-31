@@ -13,6 +13,7 @@ import { useDatabaseHistoryScope } from '@/components/database/databaseHistorySc
 import {
   createGridInteractionStore,
   GridContext,
+  GridHydrationContext,
   GridInteractionContext,
 } from '@/components/database/grid/useGridContext';
 
@@ -68,7 +69,7 @@ function GridProviderContent({
   historyScopeId,
   ownsHistoryScope,
 }: GridProviderContentProps) {
-  const { rowOrders } = grouping;
+  const { rowOrders, hydrating } = grouping;
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
   const { isDocumentBlock, activeViewId } = useDatabaseContext();
   // Each database view owns independent transient interaction state.
@@ -82,6 +83,7 @@ function GridProviderContent({
     lastVisibleRowId,
   } = useRenderRows(rowOrders, {
     grouping,
+    hydrating,
     visibleRowLimit: embeddedVisibleRowLimit,
   });
   const initialRowsRef = useRef(initialRows);
@@ -205,15 +207,17 @@ function GridProviderContent({
 
   return (
     <GridContext.Provider value={contextValue}>
-      <GridInteractionContext.Provider value={interactionContextValue}>
-        <div
-          ref={ref}
-          data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
-          className={'flex min-h-0 flex-1 flex-col'}
-        >
-          {children}
-        </div>
-      </GridInteractionContext.Provider>
+      <GridHydrationContext.Provider value={hydrating}>
+        <GridInteractionContext.Provider value={interactionContextValue}>
+          <div
+            ref={ref}
+            data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
+            className={'flex min-h-0 flex-1 flex-col'}
+          >
+            {children}
+          </div>
+        </GridInteractionContext.Provider>
+      </GridHydrationContext.Provider>
     </GridContext.Provider>
   );
 }

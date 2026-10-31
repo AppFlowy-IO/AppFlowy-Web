@@ -10,6 +10,7 @@ import { gatherDatabasePublishData } from '@/application/services/js-services/pu
 import {
   CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
+  CreateDatabaseViewPayload,
   CreatePagePayload,
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
@@ -488,6 +489,32 @@ export function usePageOperations({
     [currentWorkspaceId, loadOutline]
   );
 
+  // Create database view (linked view using new endpoint)
+  const createDatabaseView = useCallback(
+    async (viewId: string, payload: CreateDatabaseViewPayload) => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      try {
+        const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
+
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        // The database response already contains the new view and its Yjs
+        // update. Do not hold tab creation and navigation behind a separate
+        // workspace-wide outline refresh: either outline request can remain
+        // pending while the linked view itself was created successfully.
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[createDatabaseView] failed to refresh outline after creating a linked view', error);
+        });
+        return res;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, loadOutline]
+  );
+
   // Upload file
   const uploadFile = useCallback(
     async (viewId: string, file: File, onProgress?: (n: number) => void) => {
@@ -704,6 +731,7 @@ export function usePageOperations({
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,
+    createDatabaseView,
     uploadFile,
     getSubscriptions,
     getPricingCatalog,

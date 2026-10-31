@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly } from '@/application/database-yjs/context';
+import { useConditionsReadOnly } from '@/application/database-yjs';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,7 +21,7 @@ function DateTimeFilterStartEndDateSelect ({
   disabled?: boolean,
 }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
 
   const conditions = useMemo(() => [{
     value: true,

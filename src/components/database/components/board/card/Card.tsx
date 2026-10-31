@@ -30,7 +30,7 @@ export const Card = memo(
   }) => {
     const { groupFieldId, rowId, type, columnId } = props;
     const ref = useRef<HTMLDivElement | null>(null);
-    const { instanceId, registerCard } = useBoardDragContext();
+    const { instanceId, registerCard, sorted } = useBoardDragContext();
     const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
     const [state, setState] = useState<State>(idleState);
     const readOnly = useReadOnly();
@@ -58,7 +58,7 @@ export const Card = memo(
       return combine(
         draggable({
           element: element,
-          getInitialData: () => ({ type: 'card', itemId: rowId, instanceId }),
+          getInitialData: () => ({ type: 'card', itemId: rowId, columnId, instanceId }),
           onGenerateDragPreview: () => {
             setState({ type: 'preview' });
           },
@@ -75,8 +75,9 @@ export const Card = memo(
         }),
         dropTargetForElements({
           element: element,
+          // A sorted board drops on the column only: no card target, so no indicator between cards.
           canDrop: ({ source }) => {
-            return source.data.instanceId === instanceId && source.data.type === 'card';
+            return !sorted && source.data.instanceId === instanceId && source.data.type === 'card';
           },
           getIsSticky: () => true,
           getData: ({ input, element }) => {
@@ -106,7 +107,7 @@ export const Card = memo(
           },
         })
       );
-    }, [instanceId, rowId, readOnly, editing]);
+    }, [instanceId, rowId, columnId, readOnly, editing, sorted]);
 
     return (
       <div ref={ref} className={'relative w-full'}>

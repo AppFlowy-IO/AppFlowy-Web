@@ -1,0 +1,285 @@
+{
+  "fixture": "relative-dates",
+  "version": 1,
+  "encoding": {
+    "spec": "The content of a DateStartsRelative (28) / DateEndsRelative (29) filter. Readers default an unknown or missing direction to this, a missing or non-numeric amount to 1 (numbers are floored and clamped to 1..9999), and an unknown or missing unit to week.",
+    "ranges": "relativeDateRange(spec, today) as inclusive local dates [start, end]. Weeks run Monday..Sunday; months and years shift by calendar months, clamping the day to the month's length.",
+    "matches": "Whether a date cell passes the filter on `today`. 28 compares the start date; 29 compares the end date, or the start date when the cell has no end. Dates are local dates; null is no date."
+  },
+  "ranges": [
+    {
+      "name": "past 7 days",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "start": "2024-06-05",
+      "end": "2024-06-12"
+    },
+    {
+      "name": "next 2 weeks",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "start": "2024-06-12",
+      "end": "2024-06-26"
+    },
+    {
+      "name": "this week",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "week"},
+      "start": "2024-06-10",
+      "end": "2024-06-16"
+    },
+    {
+      "name": "this week on a Sunday",
+      "today": "2024-06-16",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "week"},
+      "start": "2024-06-10",
+      "end": "2024-06-16"
+    },
+    {
+      "name": "this week on a Monday",
+      "today": "2024-06-10",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "week"},
+      "start": "2024-06-10",
+      "end": "2024-06-16"
+    },
+    {
+      "name": "this month",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "month"},
+      "start": "2024-06-01",
+      "end": "2024-06-30"
+    },
+    {
+      "name": "this month in a leap February",
+      "today": "2024-02-10",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "month"},
+      "start": "2024-02-01",
+      "end": "2024-02-29"
+    },
+    {
+      "name": "this year",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "year"},
+      "start": "2024-01-01",
+      "end": "2024-12-31"
+    },
+    {
+      "name": "this day",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "day"},
+      "start": "2024-06-12",
+      "end": "2024-06-12"
+    },
+    {
+      "name": "past month from March 31 of a leap year",
+      "today": "2024-03-31",
+      "spec": {"relative_direction": "past", "relative_amount": 1, "relative_unit": "month"},
+      "start": "2024-02-29",
+      "end": "2024-03-31"
+    },
+    {
+      "name": "past month from March 31",
+      "today": "2023-03-31",
+      "spec": {"relative_direction": "past", "relative_amount": 1, "relative_unit": "month"},
+      "start": "2023-02-28",
+      "end": "2023-03-31"
+    },
+    {
+      "name": "next month from January 31",
+      "today": "2024-01-31",
+      "spec": {"relative_direction": "next", "relative_amount": 1, "relative_unit": "month"},
+      "start": "2024-01-31",
+      "end": "2024-02-29"
+    },
+    {
+      "name": "next year from February 29",
+      "today": "2024-02-29",
+      "spec": {"relative_direction": "next", "relative_amount": 1, "relative_unit": "year"},
+      "start": "2024-02-29",
+      "end": "2025-02-28"
+    },
+    {
+      "name": "past year from February 29",
+      "today": "2024-02-29",
+      "spec": {"relative_direction": "past", "relative_amount": 1, "relative_unit": "year"},
+      "start": "2023-02-28",
+      "end": "2024-02-29"
+    },
+    {
+      "name": "an empty spec is this week",
+      "today": "2024-06-12",
+      "spec": {},
+      "start": "2024-06-10",
+      "end": "2024-06-16"
+    },
+    {
+      "name": "amount 0 reads as 1",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "past", "relative_amount": 0, "relative_unit": "day"},
+      "start": "2024-06-11",
+      "end": "2024-06-12"
+    },
+    {
+      "name": "a fractional amount is floored",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "next", "relative_amount": 2.7, "relative_unit": "day"},
+      "start": "2024-06-12",
+      "end": "2024-06-14"
+    },
+    {
+      "name": "an amount that is not a number reads as 1",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "past", "relative_amount": "3", "relative_unit": "day"},
+      "start": "2024-06-11",
+      "end": "2024-06-12"
+    },
+    {
+      "name": "amounts above 9999 are clamped",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "past", "relative_amount": 10000, "relative_unit": "day"},
+      "start": "1997-01-26",
+      "end": "2024-06-12"
+    },
+    {
+      "name": "an unknown unit reads as week",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "past", "relative_amount": 1, "relative_unit": "decade"},
+      "start": "2024-06-05",
+      "end": "2024-06-12"
+    },
+    {
+      "name": "an unknown direction reads as this",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "sideways", "relative_amount": 3, "relative_unit": "month"},
+      "start": "2024-06-01",
+      "end": "2024-06-30"
+    },
+    {
+      "name": "this ignores the amount",
+      "today": "2024-06-12",
+      "spec": {"relative_direction": "this", "relative_amount": 5, "relative_unit": "year"},
+      "start": "2024-01-01",
+      "end": "2024-12-31"
+    }
+  ],
+  "matches": [
+    {
+      "name": "start on the first day of the range",
+      "condition": 28,
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-05",
+      "expected": true
+    },
+    {
+      "name": "start today",
+      "condition": 28,
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-12",
+      "expected": true
+    },
+    {
+      "name": "start before the range",
+      "condition": 28,
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-04",
+      "expected": false
+    },
+    {
+      "name": "start after the range",
+      "condition": 28,
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-13",
+      "expected": false
+    },
+    {
+      "name": "only the end inside the range does not count for 28",
+      "condition": 28,
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "today": "2024-06-12",
+      "cell_start": "2024-05-30",
+      "cell_end": "2024-06-08",
+      "expected": false
+    },
+    {
+      "name": "no date",
+      "condition": 28,
+      "spec": {"relative_direction": "past", "relative_amount": 7, "relative_unit": "day"},
+      "today": "2024-06-12",
+      "cell_start": null,
+      "expected": false
+    },
+    {
+      "name": "end on the last day of the range",
+      "condition": 29,
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "today": "2024-06-12",
+      "cell_start": "2024-05-01",
+      "cell_end": "2024-06-26",
+      "expected": true
+    },
+    {
+      "name": "end after the range",
+      "condition": 29,
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-12",
+      "cell_end": "2024-06-27",
+      "expected": false
+    },
+    {
+      "name": "end before the range",
+      "condition": 29,
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-01",
+      "cell_end": "2024-06-11",
+      "expected": false
+    },
+    {
+      "name": "no end: the start decides",
+      "condition": 29,
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-20",
+      "expected": true
+    },
+    {
+      "name": "no end and a start after the range",
+      "condition": 29,
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "today": "2024-06-12",
+      "cell_start": "2024-06-27",
+      "expected": false
+    },
+    {
+      "name": "no date at all",
+      "condition": 29,
+      "spec": {"relative_direction": "next", "relative_amount": 2, "relative_unit": "week"},
+      "today": "2024-06-12",
+      "cell_start": null,
+      "expected": false
+    },
+    {
+      "name": "an end on the first of the month",
+      "condition": 29,
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "month"},
+      "today": "2024-06-12",
+      "cell_start": "2024-05-20",
+      "cell_end": "2024-06-01",
+      "expected": true
+    },
+    {
+      "name": "an end in the previous month",
+      "condition": 29,
+      "spec": {"relative_direction": "this", "relative_amount": 1, "relative_unit": "month"},
+      "today": "2024-06-12",
+      "cell_start": "2024-05-01",
+      "cell_end": "2024-05-31",
+      "expected": false
+    }
+  ]
+}

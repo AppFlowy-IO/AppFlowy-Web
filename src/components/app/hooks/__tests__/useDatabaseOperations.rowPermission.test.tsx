@@ -5,6 +5,7 @@ import { ViewService } from '@/application/services/domains';
 import { openRowSubDocument } from '@/application/view-loader';
 import { useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
 import { useDatabaseOperations } from '@/components/app/hooks/useDatabaseOperations';
+import { Log } from '@/utils/log';
 
 jest.mock('@/application/services/domains', () => ({
   AIService: {},
@@ -59,11 +60,17 @@ describe('useDatabaseOperations row document permission errors', () => {
 
   it('preserves record-not-found from the direct read for row-page initialization', async () => {
     const missing = { code: ERROR_CODE.RECORD_NOT_FOUND, message: 'Collab not found' };
+    const logError = jest.spyOn(Log, 'error').mockImplementation(() => undefined);
 
     mockOpenRowSubDocument.mockRejectedValue(missing);
     const { result } = renderHook(() => useDatabaseOperations());
 
-    await expect(result.current.loadRowDocument('document-id')).rejects.toBe(missing);
+    try {
+      await expect(result.current.loadRowDocument('document-id')).rejects.toBe(missing);
+      expect(logError).not.toHaveBeenCalled();
+    } finally {
+      logError.mockRestore();
+    }
   });
 
   it('does not misclassify quota errors as object permission denials', async () => {

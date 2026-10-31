@@ -1,39 +1,66 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs';
 
-function FieldLabel ({ type, ...props }: { type: FieldType } & React.HTMLAttributes<HTMLDivElement>) {
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * The localized name of a property type (the strings of the property type
+ * picker). The one table for every place that names a type; an unknown type
+ * has no name.
+ */
+export function getFieldTypeName(type: FieldType, t: Translate): string {
+  switch (type) {
+    case FieldType.RichText:
+      return t('grid.field.textFieldName');
+    case FieldType.Number:
+      return t('grid.field.numberFieldName');
+    case FieldType.DateTime:
+      return t('grid.field.dateFieldName');
+    case FieldType.SingleSelect:
+      return t('grid.field.singleSelectFieldName');
+    case FieldType.MultiSelect:
+      return t('grid.field.multiSelectFieldName');
+    case FieldType.Checkbox:
+      return t('grid.field.checkboxFieldName');
+    case FieldType.URL:
+      return t('grid.field.urlFieldName');
+    case FieldType.Checklist:
+      return t('grid.field.checklistFieldName');
+    case FieldType.LastEditedTime:
+      return t('grid.field.updatedAtFieldName');
+    case FieldType.CreatedTime:
+      return t('grid.field.createdAtFieldName');
+    case FieldType.CreatedBy:
+      return t('grid.field.createdByFieldName');
+    case FieldType.LastEditedBy:
+      return t('grid.field.lastEditedByFieldName');
+    case FieldType.Relation:
+      return t('grid.field.relationFieldName');
+    case FieldType.Summary:
+      return t('grid.field.summaryFieldName');
+    case FieldType.Translate:
+      return t('grid.field.translateFieldName');
+    case FieldType.Media:
+      return t('grid.field.mediaFieldName');
+    case FieldType.Person:
+      return t('grid.field.personFieldName');
+    case FieldType.Time:
+      return t('grid.field.timeFieldName');
+    case FieldType.Rollup:
+      return t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
+    case FieldType.Formula:
+      return t('grid.field.formulaFieldName', { defaultValue: 'Formula' });
+    default:
+      return '';
+  }
+}
+
+function FieldLabel({ type, ...props }: { type: FieldType } & React.HTMLAttributes<HTMLDivElement>) {
   const { t } = useTranslation();
 
-  const text = useMemo(() => {
-    return {
-      [FieldType.RichText]: t('grid.field.textFieldName'),
-      [FieldType.Number]: t('grid.field.numberFieldName'),
-      [FieldType.DateTime]: t('grid.field.dateFieldName'),
-      [FieldType.SingleSelect]: t('grid.field.singleSelectFieldName'),
-      [FieldType.MultiSelect]: t('grid.field.multiSelectFieldName'),
-      [FieldType.Checkbox]: t('grid.field.checkboxFieldName'),
-      [FieldType.URL]: t('grid.field.urlFieldName'),
-      [FieldType.Checklist]: t('grid.field.checklistFieldName'),
-      [FieldType.LastEditedTime]: t('grid.field.updatedAtFieldName'),
-      [FieldType.CreatedTime]: t('grid.field.createdAtFieldName'),
-      [FieldType.CreatedBy]: t('grid.field.createdByFieldName'),
-      [FieldType.LastEditedBy]: t('grid.field.lastEditedByFieldName'),
-      [FieldType.Relation]: t('grid.field.relationFieldName'),
-      [FieldType.Summary]: t('grid.field.summaryFieldName'),
-      [FieldType.Translate]: t('grid.field.translateFieldName'),
-      [FieldType.Media]: t('grid.field.mediaFieldName'),
-      [FieldType.Person]: t('grid.field.personFieldName'),
-      [FieldType.Time]: t('grid.field.timeFieldName'),
-      [FieldType.Rollup]: t('grid.field.rollupFieldName', { defaultValue: 'Rollup' }),
-      [FieldType.Formula]: t('grid.field.formulaFieldName', { defaultValue: 'Formula' }),
-    }[type];
-  }, [t, type]);
-
-  return (
-    <div {...props}>{text}</div>
-  );
+  return <div {...props}>{getFieldTypeName(type, t)}</div>;
 }
 
 export default FieldLabel;

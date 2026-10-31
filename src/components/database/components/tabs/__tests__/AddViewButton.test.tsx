@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
+import * as Y from 'yjs';
 
 import { AtomicCreationPendingError } from '@/application/atomic-creation/journal';
 import { AtomicCreationRecord } from '@/application/atomic-creation/types';
-import { DatabaseViewLayout } from '@/application/types';
+import { DatabaseViewLayout, YDatabase, YDatabaseView, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
 import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
@@ -12,6 +13,7 @@ import { updateServerInfo } from '@/utils/server-info';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
+let mockDatabaseDoc: YDoc | undefined;
 
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
   useDatabaseViewCreation: () => ({
@@ -25,7 +27,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('@/application/database-yjs/context', () => ({
-  useDatabaseContext: () => ({ workspaceId: 'workspace-id' }),
+  useDatabaseContext: () => ({ workspaceId: 'workspace-id', databaseDoc: mockDatabaseDoc }),
 }));
 
 jest.mock('sonner', () => ({
@@ -34,7 +36,8 @@ jest.mock('sonner', () => ({
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => (key === 'form.builderName' ? 'Form builder' : key),
+    t: (key: string, options?: { defaultValue?: string }) =>
+      key === 'form.builderName' ? 'Form builder' : options?.defaultValue ?? key,
   }),
 }));
 
@@ -76,12 +79,35 @@ describe('AddViewButton', () => {
       status: 'available',
       info: { enable_page_history: true, self_hosted: false },
     });
+    mockDatabaseDoc = undefined;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('allows view creation beyond the legacy dashboard presentation hint', async () => {
+    mockDatabaseDoc = new Y.Doc() as YDoc;
+    const database = new Y.Map() as YDatabase;
+    const views = new Y.Map() as YDatabaseViews;
+
+    mockDatabaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    database.set(YjsDatabaseKey.views, views);
+    views.set('primary', new Y.Map() as YDatabaseView);
+    views.set('owned-hidden', new Y.Map() as YDatabaseView);
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, max_dashboard_widgets: 2 },
+    });
+    render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AddViewButton databasePageId='database' onViewAdded={jest.fn()} /></MemoryRouter>);
+    const grid = screen.getByRole('button', { name: 'grid.menuName' });
+
+    expect(screen.getByRole('button', { name: 'board.menuName' }).hasAttribute('disabled')).toBe(false);
+    expect(grid.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(grid);
+    await waitFor(() => expect(mockAddView).toHaveBeenCalledTimes(1));
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it.each(['pending', 'committed'] as const)('distinguishes %s creation without weakening unknown-outcome errors', async (state) => {
@@ -134,11 +160,7 @@ describe('AddViewButton', () => {
     mockAddView.mockRejectedValueOnce({ code: 1090, message });
     render(
       <MemoryRouter>
-        <AddViewButton
-          databasePageId='database-page-id'
-          onAfterAddView={onAfterAddView}
-          onViewAdded={onViewAdded}
-        />
+        <AddViewButton databasePageId='database-page-id' onAfterAddView={onAfterAddView} onViewAdded={onViewAdded} />
       </MemoryRouter>
     );
 
@@ -191,6 +213,25 @@ describe('AddViewButton', () => {
 
     expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Feed, 'feed.menuName');
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('feed-view-id'));
+  });
+
+  it('creates a Dashboard view and selects it', async () => {
+    const onViewAdded = jest.fn();
+
+    mockAddView.mockResolvedValue('dashboard-view-id');
+    render(
+      <MemoryRouter>
+        <AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+
+    const option = screen.getByTestId('add-dashboard-view-button');
+
+    expect(option.textContent).toBe('Dashboard');
+    fireEvent.click(option);
+
+    expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard, 'Dashboard');
+    await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('dashboard-view-id'));
   });
 
   it('completes with the latest same-database callbacks and preserves concurrently added view IDs', async () => {
@@ -278,7 +319,7 @@ describe('AddViewButton', () => {
     expect(nextOnAfterAddView).not.toHaveBeenCalled();
   });
 
-  it('shows Form and Timeline creation options by default', () => {
+  it('offers Dashboard, Form and Timeline creation by default', () => {
     render(
       <MemoryRouter>
         <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
@@ -287,6 +328,7 @@ describe('AddViewButton', () => {
 
     expect(screen.getByTestId('add-form-view-option')).toBeTruthy();
     expect(screen.getByTestId('add-timeline-view-button')).toBeTruthy();
+    expect(screen.getByTestId('add-dashboard-view-button')).toBeTruthy();
     expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
     expect(mockAddView).not.toHaveBeenCalled();
   });
@@ -311,5 +353,28 @@ describe('AddViewButton', () => {
       expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Form, 'Form builder');
       expect(onViewAdded).toHaveBeenCalledWith('form-view-id');
     });
+  });
+
+  it('offers no Dashboard in a mobile context (a 390px window)', () => {
+    const initialWidth = window.innerWidth;
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+
+    try {
+      render(
+        <MemoryRouter>
+          <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByTestId('add-dashboard-view-button')).toBeNull();
+      // Every other layout can still be created there.
+      expect(screen.getByTestId('add-timeline-view-button')).toBeTruthy();
+      expect(screen.getByTestId('add-form-view-option')).toBeTruthy();
+      expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
+      expect(mockAddView).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    }
   });
 });

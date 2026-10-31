@@ -4,7 +4,10 @@ import { ERROR_CODE } from '@/application/constants';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { ErrorType } from '@/application/utils/error-utils';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
-import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+import {
+  clearObjectPermissionCache,
+  useViewActionPermissions,
+} from '@/components/app/view-actions/useViewActionPermissions';
 
 import type { ReactNode } from 'react';
 
@@ -56,6 +59,8 @@ describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
     mockGetView.mockReset();
+    // Answers are shared between hooks for a few seconds: each test asks afresh.
+    clearObjectPermissionCache();
   });
 
   it('retains a missing-resource error separately from denied access and clears it on recovery', async () => {

@@ -166,7 +166,9 @@ describe('typed formula targets combined with rollup calculations', () => {
 
   it('calculates earliest formula date from timestamps', async () => {
     const f = fixture(F.RichText, 'parseDate(prop("source"))', ['2026-09-26', '2026-09-24'], C.DateEarliest);
-    expect((await evaluateRollupCell(f.context)).rawDate?.data).toBe(String(Date.parse('2026-09-24') / 1000));
+    // Date-only formula values use the local calendar day, like Date cells.
+    // Date.parse('YYYY-MM-DD') instead assumes UTC and fails outside UTC.
+    expect((await evaluateRollupCell(f.context)).rawDate?.data).toBe(String(new Date(2026, 8, 24).getTime() / 1000));
   });
 
   it.each([

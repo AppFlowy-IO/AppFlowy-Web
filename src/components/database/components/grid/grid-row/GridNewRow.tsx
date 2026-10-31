@@ -43,6 +43,7 @@ function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?
       type='button'
       disabled={pending}
       aria-busy={pending}
+      data-parity-id='dash-widget-grid-new-row'
       data-testid='grid-new-row'
       onClick={() => {
         void run(createRow);
@@ -52,8 +53,11 @@ function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?
       }
       data-group-id={groupId}
     >
-      {pending ? <RowCreationSpinner className='h-5 w-5' /> : <PlusIcon className={'h-5 w-5'} />}
-      {t('grid.row.newRow')}
+      {/* "+ New page" (addendum A6): the 16px add glyph and the shared grid.row.newRow label. */}
+      {pending ? <RowCreationSpinner className='h-4 w-4' /> : <PlusIcon aria-hidden='true' className={'h-4 w-4'} data-parity-id='dash-widget-grid-new-row__icon' />}
+      <span className='leading-5' data-parity-id='dash-widget-grid-new-row__label'>
+        {t('grid.row.newRow')}
+      </span>
     </button>
   );
 }

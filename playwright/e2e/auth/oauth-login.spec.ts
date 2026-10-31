@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+
 import { TestConfig } from '../../support/test-config';
 
 /**
@@ -33,8 +34,9 @@ test.describe('Real Authentication Login', () => {
     });
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    // Clear localStorage before each test
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    // Use a static same-origin document so no unauthenticated app bootstrap can
+    // finish after this test installs its authenticated session.
+    await page.goto('/appflowy.svg', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => localStorage.clear());
   });
 
@@ -45,9 +47,11 @@ test.describe('Real Authentication Login', () => {
       headers: { 'Content-Type': 'application/json' },
       failOnStatusCode: false,
     });
+
     expect(tokenResponse.status()).toBe(200);
 
     const tokenData = await tokenResponse.json();
+
     expect(tokenData.access_token).toBeTruthy();
     expect(tokenData.refresh_token).toBeTruthy();
 
@@ -56,6 +60,7 @@ test.describe('Real Authentication Login', () => {
       `${apiUrl}/api/user/verify/${tokenData.access_token}`,
       { failOnStatusCode: false, timeout: 30000 }
     );
+
     expect([200, 201]).toContain(verifyResponse.status());
 
     // Step 3: Store token in localStorage
@@ -77,6 +82,7 @@ test.describe('Real Authentication Login', () => {
 
     // Step 7: Verify token is still in localStorage
     const token = await page.evaluate(() => localStorage.getItem('token'));
+
     expect(token).not.toBeNull();
   });
 
@@ -86,6 +92,7 @@ test.describe('Real Authentication Login', () => {
       data: { email: testEmail, password: testPassword },
       headers: { 'Content-Type': 'application/json' },
     });
+
     expect(tokenResponse.status()).toBe(200);
     const tokenData = await tokenResponse.json();
 
@@ -103,6 +110,11 @@ test.describe('Real Authentication Login', () => {
     await page.goto('/app', { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
 
+    // The URL changes before authentication and workspace initialization finish.
+    // Reload an established session, after the authenticated shell is ready.
+    await expect(page.getByTestId('current-workspace-name')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('current-workspace-name')).not.toHaveText('');
+
     // Step 2: Reload the page
     await page.reload();
 
@@ -113,6 +125,7 @@ test.describe('Real Authentication Login', () => {
 
     // Step 4: Verify token still exists
     const token = await page.evaluate(() => localStorage.getItem('token'));
+
     expect(token).not.toBeNull();
   });
 
@@ -150,6 +163,7 @@ test.describe('Real Authentication Login', () => {
       data: { email: testEmail, password: originalPassword },
       headers: { 'Content-Type': 'application/json' },
     });
+
     expect(loginResponse.status()).toBe(200);
     latestAccessToken = (await loginResponse.json()).access_token;
 
@@ -162,6 +176,7 @@ test.describe('Real Authentication Login', () => {
         },
         data: { password: newPassword },
       });
+
       expect(changeResponse.status()).toBe(200);
       passwordChanged = true;
 
@@ -174,6 +189,7 @@ test.describe('Real Authentication Login', () => {
           failOnStatusCode: false,
         }
       );
+
       expect(oldPasswordResponse.status()).toBe(400);
 
       // Step 4: Login with new password
@@ -184,6 +200,7 @@ test.describe('Real Authentication Login', () => {
           headers: { 'Content-Type': 'application/json' },
         }
       );
+
       expect(newLoginResponse.status()).toBe(200);
       latestAccessToken = (await newLoginResponse.json()).access_token;
 
@@ -204,6 +221,7 @@ test.describe('Real Authentication Login', () => {
             headers: { 'Content-Type': 'application/json' },
             failOnStatusCode: false,
           });
+
           if (recovery.ok()) {
             latestAccessToken = (await recovery.json()).access_token;
           }
@@ -229,6 +247,7 @@ test.describe('Real Authentication Login', () => {
         headers: { 'Content-Type': 'application/json' },
       }
     );
+
     expect(finalLoginResponse.status()).toBe(200);
   });
 });

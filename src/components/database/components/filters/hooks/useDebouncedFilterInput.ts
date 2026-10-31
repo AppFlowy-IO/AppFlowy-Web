@@ -1,7 +1,16 @@
 import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { FilterInputFlushContext } from './FilterInputFlushContext';
+
+/** A saved (view) filter's text value waits this long after the last key before it is written. */
 export const FILTER_INPUT_DEBOUNCE_MS = 500;
+/**
+ * A dashboard global filter's text input (its value and its name) waits this
+ * long: the desktop value (`globalFilterInputDebounce`), so both clients
+ * re-filter after the same pause.
+ */
+export const GLOBAL_FILTER_INPUT_DEBOUNCE_MS = 300;
 
 type UpdateFilterContent = (params: {
   filterId: string;
@@ -14,6 +23,8 @@ interface UseDebouncedFilterInputParams {
   filterId: string;
   fieldId: string;
   updateFilter: UpdateFilterContent;
+  /** How long the input waits after the last edit; `FILTER_INPUT_DEBOUNCE_MS` by default. */
+  debounceMs?: number;
 }
 
 type FilterInputTarget = Pick<UseDebouncedFilterInputParams, 'filterId' | 'fieldId'>;
@@ -23,7 +34,9 @@ export function useDebouncedFilterInput({
   filterId,
   fieldId,
   updateFilter,
+  debounceMs = FILTER_INPUT_DEBOUNCE_MS,
 }: UseDebouncedFilterInputParams) {
+  const inputFlushers = useContext(FilterInputFlushContext);
   const [value, setValue] = useState(content);
   const updateFilterRef = useRef(updateFilter);
 
@@ -38,14 +51,29 @@ export function useDebouncedFilterInput({
           ...target,
           content: nextContent,
         });
-      }, FILTER_INPUT_DEBOUNCE_MS),
-    []
+      }, debounceMs),
+    [debounceMs]
   );
 
   useEffect(() => {
     debouncedUpdate.cancel();
     setValue(content);
   }, [content, debouncedUpdate, fieldId, filterId]);
+
+  useLayoutEffect(() => {
+    if (!inputFlushers) return;
+    const flush = () => {
+      debouncedUpdate.flush();
+    };
+
+    inputFlushers.add(flush);
+    return () => {
+      // On a scope change the child can clean up before its host. Commit the
+      // old input before unregistering it so the host still collects the edit.
+      flush();
+      inputFlushers.delete(flush);
+    };
+  }, [debouncedUpdate, inputFlushers]);
 
   useEffect(() => {
     return () => {

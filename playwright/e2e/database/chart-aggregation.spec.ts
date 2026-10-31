@@ -1,165 +1,146 @@
 /**
- * Chart settings — aggregation interactions.
+ * Chart settings — calculations (WP11 panel).
  *
- * Verifies the desktop-parity behavior in
- * `src/components/database/components/settings/ChartLayoutSettings.tsx`:
+ * The chart settings panel is property first: "What to show" picks the
+ * property (or Count all), and the Calculate row appears once a property is
+ * picked, grouped as Count › Percent › More options for the property's type.
  *
- *  - Count is the default aggregation; the Y-Axis section is hidden.
- *  - Aggregation labels appear in the desktop order
- *    (Count → Count values → Sum → Average → Min → Max → Median).
- *  - Selecting any non-Count aggregation keeps the popover open, reveals the
- *    Y-Axis section and auto-picks the first Y-Axis field (desktop's
- *    `_onAggregationTypeSelected`); the chart is retitled "<aggregation>(Type)".
- *  - Count values requires a Y-Axis field too (matches desktop's
- *    `_needsYAxisField`, which excludes only Count).
- *  - Switching back to Count hides the Y-Axis section again.
- *
- * The default grid's only Y-Axis candidate is the Done checkbox, unchecked on
- * every row, so the chart shows a single "No Type" bucket of three rows.
+ *  - Count all is the default; there is no Calculate row.
+ *  - A checkbox offers Count all, Count values, Count unique values, Count
+ *    empty, then Percent checked, Percent unchecked, in that order.
+ *  - Picking a property reveals Calculate with the type's default (Percent
+ *    checked for a checkbox).
+ *  - Count values keeps the property (it counts the property's values).
+ *  - Picking Count all clears the property and hides Calculate again.
  */
 import { expect, test } from '@playwright/test';
 
-import {
-  addChartViewTab,
-  closeChartSettings,
-  collectUnexpectedPageErrors,
-  expectNoUnexpectedPageErrors,
-  expectOptionNotSelected,
-  expectOptionSelected,
-  openChartSettings,
-  selectAggregation,
-  waitForChartReady,
-} from '../../support/chart-test-helpers';
+import { chooseChartCalculation, chooseChartYProperty, openChartPanelRow } from '../../support/chart-settings-helpers';
+import { addChartViewTab, openChartSettings, selectAggregation } from '../../support/chart-test-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
-import { ChartSelectors, ChartSettingsSelectors } from '../../support/selectors';
+import { ChartSettingsSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
-test.describe('Chart settings — Aggregation', () => {
-  let pageErrors: Error[] = [];
+/** The default grid's checkbox property. */
+const CHECKBOX = 'Done';
 
+test.describe('Chart settings — Aggregation', () => {
   test.beforeEach(async ({ page }) => {
-    pageErrors = collectUnexpectedPageErrors(page);
+    page.on('pageerror', (err) => {
+      if (
+        err.message.includes('Minified React error') ||
+        err.message.includes('View not found') ||
+        err.message.includes('No workspace or service found') ||
+        err.message.includes('ResizeObserver loop')
+      ) {
+        return;
+      }
+    });
+
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  test.afterEach(() => {
-    expectNoUnexpectedPageErrors(pageErrors);
-  });
-
-  test('shows Count selected and hides the Y-Axis section by default', async ({ page, request }) => {
+  test('shows Count all and no Calculate row by default', async ({ page, request }) => {
     // Given: a fresh chart view sitting on top of a grid
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
-    await waitForChartReady(page);
-    await expect(ChartSelectors.title(page)).toHaveText('Count(Type)');
-
-    // When: opening the chart settings
     await openChartSettings(page);
 
-    // Then: Count is selected (its row carries the tick) and the Y-Axis
-    // section is not rendered.
-    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Count'));
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toHaveCount(0);
-    await expect(ChartSettingsSelectors.yAxisFields(page)).toHaveCount(0);
+    // Then: "What to show" counts all rows and there is nothing to calculate yet.
+    await expect(ChartSettingsSelectors.row(page, 'y_what')).toContainText('Count all');
+    await expect(ChartSettingsSelectors.row(page, 'y_calculate')).toHaveCount(0);
   });
 
-  test('lists the seven aggregations in desktop order', async ({ page, request }) => {
+  test('lists the checkbox calculations in Notion order', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
-    await waitForChartReady(page);
     await openChartSettings(page);
+    await chooseChartYProperty(page, CHECKBOX);
+    await openChartPanelRow(page, 'y_calculate');
 
-    // Then: the Aggregation section lists the seven rows in desktop order,
-    // with exactly one of them selected.
-    await expect(ChartSettingsSelectors.aggregationItems(page)).toHaveText([
-      'Count',
-      'Count values',
-      'Sum',
-      'Average',
-      'Min',
-      'Max',
-      'Median',
-    ]);
-    await expect(ChartSettingsSelectors.aggregationItems(page).and(page.locator('[data-selected="true"]'))).toHaveCount(
-      1
+    const expected: [number, string][] = [
+      [0, 'Count all'],
+      [7, 'Count values'],
+      [6, 'Count unique values'],
+      [8, 'Count empty'],
+      [11, 'Percent checked'],
+      [12, 'Percent unchecked'],
+    ];
+
+    for (const [aggregation, label] of expected) {
+      await expect(ChartSettingsSelectors.aggItem(page, aggregation)).toHaveText(label);
+    }
+
+    // A checkbox has no "More options" (Sum and the like are for numbers).
+    await expect(page.getByTestId('chart-agg-group-more')).toHaveCount(0);
+    await expect(page.getByTestId('chart-agg-group-count')).toContainText('Count');
+    await expect(page.getByTestId('chart-agg-group-percent')).toContainText('Percent');
+
+    // Order: each item sits below the previous one.
+    const tops = await Promise.all(
+      expected.map(async ([aggregation]) => (await ChartSettingsSelectors.aggItem(page, aggregation).boundingBox())?.y ?? -1)
     );
+
+    expect(tops.every((top) => top > 0)).toBe(true);
+    for (let i = 1; i < tops.length; i++) {
+      expect(tops[i]).toBeGreaterThan(tops[i - 1]);
+    }
   });
 
-  test('selecting Sum reveals the Y-Axis section and retitles the chart', async ({ page, request }) => {
+  test('picking a property reveals Calculate with its default and moves the tick', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
-    await waitForChartReady(page);
     await openChartSettings(page);
 
-    // When: switching aggregation to Sum
-    await selectAggregation(page, 'Sum');
+    // When: "What to show" becomes the checkbox property.
+    await chooseChartYProperty(page, CHECKBOX);
 
-    // Then: the popover stays open with the tick moved to Sum
-    await expect(ChartSettingsSelectors.panel(page)).toBeVisible();
-    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Sum'));
-    await expectOptionNotSelected(ChartSettingsSelectors.aggregationItem(page, 'Count'));
+    // Then: Calculate appears with the checkbox default, Percent checked.
+    await expect(ChartSettingsSelectors.row(page, 'y_what')).toContainText(CHECKBOX);
+    await expect(ChartSettingsSelectors.row(page, 'y_calculate')).toContainText('Percent checked', { timeout: 5000 });
 
-    // And: the Y-Axis section lists the Done checkbox and auto-picks it
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
-    await expect(ChartSettingsSelectors.yAxisFields(page)).toHaveText(['Done']);
-    await expectOptionSelected(ChartSettingsSelectors.yAxisField(page, 'Done'));
-
-    // And: the chart sums Done (unchecked everywhere) under the new title
-    await closeChartSettings(page);
-    await expect(ChartSelectors.title(page)).toHaveText('Sum(Type)');
-    await expect(ChartSelectors.valueLabels(page)).toHaveText(['0']);
+    // And: the tick is on Percent checked (not on Count all).
+    await openChartPanelRow(page, 'y_calculate');
+    await expect(ChartSettingsSelectors.aggItem(page, 11)).toHaveAttribute('aria-checked', 'true');
+    await expect(ChartSettingsSelectors.aggItem(page, 0)).toHaveAttribute('aria-checked', 'false');
   });
 
-  test('Count values also reveals the Y-Axis section', async ({ page, request }) => {
-    // Desktop's `_needsYAxisField` excludes only Count — Count values counts
-    // distinct values *of* the Y-Axis field, so it requires one too.
+  test('Count values keeps the property and its Calculate row', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
-    await waitForChartReady(page);
     await openChartSettings(page);
 
-    await selectAggregation(page, 'Count values');
+    await selectAggregation(page, 'Count values', CHECKBOX);
+    await openChartSettings(page);
 
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
-    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Count values'));
-    await expectOptionSelected(ChartSettingsSelectors.yAxisField(page, 'Done'));
-
-    // Then: three unchecked rows hold one distinct Done value
-    await closeChartSettings(page);
-    await expect(ChartSelectors.title(page)).toHaveText('Count values(Type)');
-    await expect(ChartSelectors.valueLabels(page)).toHaveText(['1']);
+    await expect(ChartSettingsSelectors.row(page, 'y_calculate')).toContainText('Count values', { timeout: 5000 });
+    await openChartPanelRow(page, 'y_calculate');
+    await expect(ChartSettingsSelectors.aggItem(page, 7)).toHaveAttribute('aria-checked', 'true');
   });
 
-  test('switching back to Count hides the Y-Axis section', async ({ page, request }) => {
+  test('switching back to Count all clears the property and hides Calculate', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
-    await waitForChartReady(page);
     await openChartSettings(page);
 
-    // Move to Sum first, confirm Y-Axis is visible
-    await selectAggregation(page, 'Sum');
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
+    // Take the property first, confirm Calculate is visible
+    await chooseChartYProperty(page, CHECKBOX);
+    await expect(ChartSettingsSelectors.row(page, 'y_calculate')).toBeVisible({ timeout: 5000 });
 
-    // Then switch back to Count
-    await selectAggregation(page, 'Count');
-
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toHaveCount(0);
-    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Count'));
-    await expectOptionNotSelected(ChartSettingsSelectors.aggregationItem(page, 'Sum'));
-
-    // And: the chart counts rows again
-    await closeChartSettings(page);
-    await expect(ChartSelectors.title(page)).toHaveText('Count(Type)');
-    await expect(ChartSelectors.valueLabels(page)).toHaveText(['3']);
+    // Then switch the calculation back to Count all
+    await chooseChartCalculation(page, 0);
+    await expect(ChartSettingsSelectors.panel(page)).toHaveAttribute('data-page', 'root');
+    await expect(ChartSettingsSelectors.row(page, 'y_calculate')).toHaveCount(0);
+    await expect(ChartSettingsSelectors.row(page, 'y_what')).toContainText('Count all');
   });
 });

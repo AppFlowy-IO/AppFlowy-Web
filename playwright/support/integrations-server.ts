@@ -15,6 +15,9 @@ export const test = base.extend<object, { integrationsURL: string }>({
             'playwright/support/math-equation.fixture.tsx',
             'playwright/support/code-block.fixture.tsx',
             'playwright/support/pdf.fixture.tsx',
+            'playwright/support/dashboard-owned-clone.fixture.tsx',
+            'playwright/support/dashboard-view-startup.fixture.tsx',
+            'playwright/support/chart-settings.fixture.tsx',
           ],
         },
         server: { host: '127.0.0.1', port: 0, strictPort: false },
@@ -31,7 +34,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
   ],
 });
 
-export function fixtureHTML(entry: 'connections' | 'integrations' | 'math-equation' | 'code-block' | 'pdf') {
+export function fixtureHTML(entry: 'connections' | 'integrations' | 'math-equation' | 'code-block' | 'pdf' | 'dashboard-owned-clone' | 'dashboard-view-startup' | 'chart-settings') {
   return `<!doctype html><html lang="en"><head><title>AppFlowy integration tests</title></head>
   <body id="body"><div id="root"></div><script type="module">
     import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);

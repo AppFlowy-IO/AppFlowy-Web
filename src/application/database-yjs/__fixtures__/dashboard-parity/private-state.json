@@ -1,0 +1,659 @@
+{
+  "fixture": "private-state",
+  "version": 1,
+  "encoding": {
+    "storage_key": "af.dashboard.private.v1:{workspace_id}:{user_id}:{dashboard_view_id}; null (no persistence) when any id is missing or empty.",
+    "filters": "Persisted view-filter maps: {id, filter_type (0 And, 1 Or, 2 Data), field_id, ty, condition, content, children}. Numbers may arrive as numeric strings.",
+    "sorts": "Persisted sort maps: {id, field_id, condition (0 ascending, 1 descending)}.",
+    "global_value": "A private global-filter value {condition, content, option_names?}; option_names lists the names of the option ids in content, in the same order. Two values are equal when the conditions are equal, the contents are equal after canonicalizing them by field type, and the option names are equal as a multiset (absent equals empty).",
+    "payload": "The device-local value: {v: 1, saved_at, global_filters: {<global filter id>: value}, widgets: {<view id>: {filters?, sorts?}}}. A missing widget part follows the saved view.",
+    "decoded": "The state a decoder returns: {global_filters, widgets}, or null when the stored value is discarded (and its key removed).",
+    "field_types": "FieldType integers: 0 RichText, 1 Number, 2 DateTime, 3 SingleSelect, 4 MultiSelect, 5 Checkbox, 10 Relation, 15 Person."
+  },
+  "storage_key": [
+    {
+      "name": "every id known",
+      "workspace_id": "ws-1",
+      "user_id": "42",
+      "dashboard_view_id": "dash-1",
+      "expected": "af.dashboard.private.v1:ws-1:42:dash-1"
+    },
+    {
+      "name": "no user (anonymous or a failed profile fetch)",
+      "workspace_id": "ws-1",
+      "user_id": null,
+      "dashboard_view_id": "dash-1",
+      "expected": null
+    },
+    {
+      "name": "no workspace (publish view)",
+      "workspace_id": "",
+      "user_id": "42",
+      "dashboard_view_id": "dash-1",
+      "expected": null
+    }
+  ],
+  "filter_equality": [
+    {
+      "name": "ids are ignored",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}],
+      "b": [{"id": "other", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}],
+      "equal": true
+    },
+    {
+      "name": "top-level order is ignored",
+      "a": [
+        {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"},
+        {"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"}
+      ],
+      "b": [
+        {"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"},
+        {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}
+      ],
+      "equal": true
+    },
+    {
+      "name": "nested children order is ignored",
+      "a": [
+        {
+          "id": "g1",
+          "filter_type": 1,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"},
+            {
+              "id": "g2",
+              "filter_type": 0,
+              "children": [
+                {"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"},
+                {"id": "f3", "filter_type": 2, "field_id": "done", "ty": 5, "condition": 0}
+              ]
+            }
+          ]
+        }
+      ],
+      "b": [
+        {
+          "id": "x1",
+          "filter_type": 1,
+          "children": [
+            {
+              "id": "x2",
+              "filter_type": 0,
+              "children": [
+                {"id": "y3", "filter_type": 2, "field_id": "done", "ty": 5, "condition": 0},
+                {"id": "y2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"}
+              ]
+            },
+            {"id": "y1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}
+          ]
+        }
+      ],
+      "equal": true
+    },
+    {
+      "name": "select content order and spacing are ignored",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "tags", "ty": 4, "condition": 2, "content": "o-a,o-b"}],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "tags", "ty": 4, "condition": 2, "content": "o-b, o-a"}],
+      "equal": true
+    },
+    {
+      "name": "numeric-string enums equal numbers",
+      "a": [
+        {
+          "id": "f1",
+          "filter_type": "2",
+          "field_id": "stage",
+          "ty": "3",
+          "condition": "0",
+          "content": "o-done"
+        }
+      ],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}],
+      "equal": true
+    },
+    {
+      "name": "an empty content equals a missing one",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "title", "ty": 0, "condition": 7, "content": ""}],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "title", "ty": 0, "condition": 7}],
+      "equal": true
+    },
+    {
+      "name": "checkbox content is ignored",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "done", "ty": 5, "condition": 0, "content": "Yes"}],
+      "b": [{"id": "f2", "filter_type": 2, "field_id": "done", "ty": 5, "condition": 0}],
+      "equal": true
+    },
+    {
+      "name": "date content keys are sorted and null keys dropped",
+      "a": [
+        {
+          "id": "f1",
+          "filter_type": 2,
+          "field_id": "due",
+          "ty": 2,
+          "condition": 0,
+          "content": "{\"timestamp\":1718150400,\"start\":null,\"end\":null}"
+        }
+      ],
+      "b": [
+        {
+          "id": "f1",
+          "filter_type": 2,
+          "field_id": "due",
+          "ty": 2,
+          "condition": 0,
+          "content": "{\"timestamp\":1718150400}"
+        }
+      ],
+      "equal": true
+    },
+    {
+      "name": "relation ids compare as a set",
+      "a": [
+        {
+          "id": "f1",
+          "filter_type": 2,
+          "field_id": "deals",
+          "ty": 10,
+          "condition": 0,
+          "content": "[\"r-2\",\"r-1\"]"
+        }
+      ],
+      "b": [
+        {
+          "id": "f1",
+          "filter_type": 2,
+          "field_id": "deals",
+          "ty": 10,
+          "condition": 0,
+          "content": "[\"r-1\",\"r-2\"]"
+        }
+      ],
+      "equal": true
+    },
+    {
+      "name": "a different condition is not equal",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 1, "content": "o-done"}],
+      "equal": false
+    },
+    {
+      "name": "a different field is not equal",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "phase", "ty": 3, "condition": 0, "content": "o-done"}],
+      "equal": false
+    },
+    {
+      "name": "text content is compared verbatim",
+      "a": [{"id": "f1", "filter_type": 2, "field_id": "title", "ty": 0, "condition": 2, "content": "Acme"}],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "title", "ty": 0, "condition": 2, "content": "Acme "}],
+      "equal": false
+    },
+    {
+      "name": "AND and OR groups differ",
+      "a": [
+        {
+          "id": "g1",
+          "filter_type": 0,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"},
+            {"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"}
+          ]
+        }
+      ],
+      "b": [
+        {
+          "id": "g1",
+          "filter_type": 1,
+          "children": [
+            {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"},
+            {"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"}
+          ]
+        }
+      ],
+      "equal": false
+    },
+    {
+      "name": "lists are multisets",
+      "a": [
+        {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"},
+        {"id": "f2", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}
+      ],
+      "b": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}],
+      "equal": false
+    }
+  ],
+  "sort_equality": [
+    {
+      "name": "ids are ignored",
+      "a": [{"id": "s1", "field_id": "points", "condition": 1}],
+      "b": [{"id": "other", "field_id": "points", "condition": 1}],
+      "equal": true
+    },
+    {
+      "name": "order is significant",
+      "a": [{"id": "s1", "field_id": "points", "condition": 1}, {"id": "s2", "field_id": "stage", "condition": 0}],
+      "b": [{"id": "s2", "field_id": "stage", "condition": 0}, {"id": "s1", "field_id": "points", "condition": 1}],
+      "equal": false
+    },
+    {
+      "name": "a different direction is not equal",
+      "a": [{"id": "s1", "field_id": "points", "condition": 1}],
+      "b": [{"id": "s1", "field_id": "points", "condition": 0}],
+      "equal": false
+    },
+    {
+      "name": "a different length is not equal",
+      "a": [{"id": "s1", "field_id": "points", "condition": 1}],
+      "b": [{"id": "s1", "field_id": "points", "condition": 1}, {"id": "s2", "field_id": "stage", "condition": 0}],
+      "equal": false
+    },
+    {"name": "two empty lists are equal", "a": [], "b": [], "equal": true}
+  ],
+  "global_value_equality": [
+    {
+      "name": "select contents compare as sets",
+      "field_type": 3,
+      "a": {"condition": 0, "content": "o-b,o-a"},
+      "b": {"condition": 0, "content": "o-a, o-b"},
+      "equal": true
+    },
+    {
+      "name": "date JSON ignores key order and null keys",
+      "field_type": 2,
+      "a": {"condition": 5, "content": "{\"end\":1718755200,\"start\":1718150400,\"timestamp\":null}"},
+      "b": {"condition": 5, "content": "{\"start\":1718150400,\"end\":1718755200}"},
+      "equal": true
+    },
+    {
+      "name": "checkbox content is ignored",
+      "field_type": 5,
+      "a": {"condition": 0, "content": "Yes"},
+      "b": {"condition": 0, "content": ""},
+      "equal": true
+    },
+    {
+      "name": "a trailing space in text is significant",
+      "field_type": 0,
+      "a": {"condition": 2, "content": "Acme "},
+      "b": {"condition": 2, "content": "Acme"},
+      "equal": false
+    },
+    {
+      "name": "a different condition is not equal",
+      "field_type": 3,
+      "a": {"condition": 0, "content": "o-a"},
+      "b": {"condition": 1, "content": "o-a"},
+      "equal": false
+    },
+    {
+      "name": "option names in another order are equal",
+      "field_type": 4,
+      "a": {"condition": 2, "content": "o-eu,o-us", "option_names": ["Europe", "United States"]},
+      "b": {"condition": 2, "content": "o-us,o-eu", "option_names": ["United States", "Europe"]},
+      "equal": true
+    },
+    {
+      "name": "different option names are not equal",
+      "field_type": 3,
+      "a": {"condition": 0, "content": "o-eu", "option_names": ["Europe"]},
+      "b": {"condition": 0, "content": "o-eu", "option_names": ["EMEA"]},
+      "equal": false
+    },
+    {
+      "name": "absent option names equal an empty list",
+      "field_type": 3,
+      "a": {"condition": 0, "content": "o-eu"},
+      "b": {"condition": 0, "content": "o-eu", "option_names": []},
+      "equal": true
+    }
+  ],
+  "payload_decode": [
+    {"name": "bad JSON is discarded", "raw": "{not json", "expected": null},
+    {
+      "name": "another version is discarded",
+      "raw": "{\"v\":2,\"global_filters\":{},\"widgets\":{}}",
+      "expected": null
+    },
+    {"name": "a non-object value is discarded", "raw": "[1,2]", "expected": null},
+    {
+      "name": "a partial global entry is dropped",
+      "raw": "{\"v\":1,\"saved_at\":1759200000000,\"global_filters\":{\"gf-stage\":{\"condition\":0,\"content\":\"o-done\"},\"gf-no-content\":{\"condition\":1},\"gf-no-condition\":{\"content\":\"x\"},\"gf-bad-condition\":{\"condition\":\"two\",\"content\":\"x\"}},\"widgets\":{}}",
+      "expected": {"global_filters": {"gf-stage": {"condition": 0, "content": "o-done"}}, "widgets": {}}
+    },
+    {
+      "name": "a numeric-string condition is coerced",
+      "raw": "{\"v\":1,\"global_filters\":{\"gf-points\":{\"condition\":\"2\",\"content\":\"5\"}},\"widgets\":{}}",
+      "expected": {"global_filters": {"gf-points": {"condition": 2, "content": "5"}}, "widgets": {}}
+    },
+    {
+      "name": "a part that is not an array is dropped",
+      "raw": "{\"v\":1,\"global_filters\":{},\"widgets\":{\"view-a\":{\"filters\":[{\"id\":\"f1\",\"filter_type\":2,\"field_id\":\"stage\",\"ty\":3,\"condition\":0,\"content\":\"o-done\"}],\"sorts\":\"bad\"}}}",
+      "expected": {
+        "global_filters": {},
+        "widgets": {
+          "view-a": {
+            "filters": [
+              {
+                "id": "f1",
+                "filter_type": 2,
+                "field_id": "stage",
+                "ty": 3,
+                "condition": 0,
+                "content": "o-done"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "a part with an item that is not an object is dropped",
+      "raw": "{\"v\":1,\"global_filters\":{},\"widgets\":{\"view-a\":{\"filters\":[{\"id\":\"f1\",\"filter_type\":2,\"field_id\":\"stage\",\"ty\":3,\"condition\":0,\"content\":\"o-done\"},3],\"sorts\":[{\"id\":\"s1\",\"field_id\":\"points\",\"condition\":1}]}}}",
+      "expected": {
+        "global_filters": {},
+        "widgets": {"view-a": {"sorts": [{"id": "s1", "field_id": "points", "condition": 1}]}}
+      }
+    },
+    {
+      "name": "an entry with no parts left is dropped",
+      "raw": "{\"v\":1,\"global_filters\":{},\"widgets\":{\"view-a\":{\"sorts\":\"bad\"},\"view-b\":{},\"view-c\":\"x\"}}",
+      "expected": {"global_filters": {}, "widgets": {}}
+    },
+    {
+      "name": "global_filters and widgets that are not objects read as empty",
+      "raw": "{\"v\":1,\"global_filters\":[],\"widgets\":\"x\"}",
+      "expected": {"global_filters": {}, "widgets": {}}
+    },
+    {
+      "name": "option names are kept when every item is a string",
+      "raw": "{\"v\":1,\"global_filters\":{\"gf-region\":{\"condition\":2,\"content\":\"o-eu,o-us\",\"option_names\":[\"Europe\",\"United States\"]}},\"widgets\":{}}",
+      "expected": {
+        "global_filters": {"gf-region": {"condition": 2, "content": "o-eu,o-us", "option_names": ["Europe", "United States"]}},
+        "widgets": {}
+      }
+    },
+    {
+      "name": "option names of another shape are ignored",
+      "raw": "{\"v\":1,\"global_filters\":{\"gf-mixed\":{\"condition\":2,\"content\":\"o-eu,o-us\",\"option_names\":[\"Europe\",3]},\"gf-text\":{\"condition\":0,\"content\":\"o-eu\",\"option_names\":\"Europe\"}},\"widgets\":{}}",
+      "expected": {
+        "global_filters": {"gf-mixed": {"condition": 2, "content": "o-eu,o-us"}, "gf-text": {"condition": 0, "content": "o-eu"}},
+        "widgets": {}
+      }
+    },
+    {
+      "name": "unknown top-level keys are ignored",
+      "raw": "{\"v\":1,\"saved_at\":1759200000000,\"zz_future\":{\"x\":1},\"global_filters\":{},\"widgets\":{\"view-a\":{\"sorts\":[{\"id\":\"s1\",\"field_id\":\"points\",\"condition\":1}]}}}",
+      "expected": {
+        "global_filters": {},
+        "widgets": {"view-a": {"sorts": [{"id": "s1", "field_id": "points", "condition": 1}]}}
+      }
+    }
+  ],
+  "payload_encode": [
+    {
+      "name": "dirty entries are written with the version and the time",
+      "state": {
+        "global_filters": {"gf-region": {"condition": 2, "content": "o-eu", "option_names": ["Europe"]}},
+        "widgets": {
+          "view-a": {
+            "filters": [
+              {
+                "id": "f1",
+                "filter_type": 2,
+                "field_id": "stage",
+                "ty": 3,
+                "condition": 0,
+                "content": "o-done"
+              }
+            ]
+          }
+        }
+      },
+      "now": 1759200000000,
+      "expected": {
+        "v": 1,
+        "saved_at": 1759200000000,
+        "global_filters": {"gf-region": {"condition": 2, "content": "o-eu", "option_names": ["Europe"]}},
+        "widgets": {
+          "view-a": {
+            "filters": [
+              {
+                "id": "f1",
+                "filter_type": 2,
+                "field_id": "stage",
+                "ty": 3,
+                "condition": 0,
+                "content": "o-done"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "clean widget entries and empty option names are omitted",
+      "state": {
+        "global_filters": {"gf-region": {"condition": 4, "content": "", "option_names": []}},
+        "widgets": {"view-a": {}, "view-b": {"sorts": [{"id": "s1", "field_id": "points", "condition": 1}]}}
+      },
+      "now": 1759200000001,
+      "expected": {
+        "v": 1,
+        "saved_at": 1759200000001,
+        "global_filters": {"gf-region": {"condition": 4, "content": ""}},
+        "widgets": {"view-b": {"sorts": [{"id": "s1", "field_id": "points", "condition": 1}]}}
+      }
+    },
+    {
+      "name": "nothing dirty removes the key",
+      "state": {"global_filters": {}, "widgets": {"view-a": {}}},
+      "now": 1759200000002,
+      "expected": null
+    }
+  ],
+  "restore_global": [
+    {
+      "name": "a missing id and a value equal to saved are dropped",
+      "saved": [
+        {
+          "id": "gf-stage",
+          "name": "Stage",
+          "ty": 3,
+          "condition": 0,
+          "content": "o-done",
+          "targets": {"db-sales": "stage"},
+          "target_order": ["db-sales"]
+        },
+        {
+          "id": "gf-owner",
+          "name": "Owner",
+          "ty": 0,
+          "condition": 2,
+          "content": "",
+          "targets": {"db-sales": "owner"},
+          "target_order": ["db-sales"]
+        }
+      ],
+      "values": {
+        "gf-stage": {"condition": 0, "content": "o-done"},
+        "gf-owner": {"condition": 2, "content": "Ana"},
+        "gf-deleted": {"condition": 0, "content": "x"}
+      },
+      "expected": {"gf-owner": {"condition": 2, "content": "Ana"}}
+    },
+    {
+      "name": "a select value equal as a set is dropped, a renamed option is kept",
+      "saved": [
+        {
+          "id": "gf-region",
+          "name": "Region",
+          "ty": 4,
+          "condition": 2,
+          "content": "o-eu,o-us",
+          "option_names": ["Europe", "United States"],
+          "targets": {"db-sales": "region"},
+          "target_order": ["db-sales"]
+        },
+        {
+          "id": "gf-tier",
+          "name": "Tier",
+          "ty": 3,
+          "condition": 0,
+          "content": "o-gold",
+          "option_names": ["Gold"],
+          "targets": {"db-sales": "tier"},
+          "target_order": ["db-sales"]
+        }
+      ],
+      "values": {
+        "gf-region": {"condition": 2, "content": "o-us,o-eu", "option_names": ["United States", "Europe"]},
+        "gf-tier": {"condition": 0, "content": "o-gold", "option_names": ["Platinum"]}
+      },
+      "expected": {"gf-tier": {"condition": 0, "content": "o-gold", "option_names": ["Platinum"]}}
+    }
+  ],
+  "restore_widget": [
+    {
+      "name": "a filter on a missing field is dropped",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {"filters": [], "sorts": []},
+      "entry": {
+        "filters": [
+          {"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"},
+          {"id": "f2", "filter_type": 2, "field_id": "gone", "ty": 0, "condition": 2, "content": "x"}
+        ]
+      },
+      "expected": {
+        "filters": [{"id": "f1", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}]
+      }
+    },
+    {
+      "name": "a filter on a retyped field is dropped",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {"filters": [], "sorts": []},
+      "entry": {
+        "filters": [
+          {"id": "f1", "filter_type": 2, "field_id": "points", "ty": 0, "condition": 2, "content": "5"},
+          {"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"}
+        ]
+      },
+      "expected": {
+        "filters": [{"id": "f2", "filter_type": 2, "field_id": "points", "ty": 1, "condition": 2, "content": "5"}]
+      }
+    },
+    {
+      "name": "a group left without children is dropped",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {"filters": [], "sorts": []},
+      "entry": {
+        "filters": [
+          {
+            "id": "g1",
+            "filter_type": 1,
+            "children": [
+              {"id": "f1", "filter_type": 2, "field_id": "gone", "ty": 0, "condition": 2, "content": "x"},
+              {"id": "f2", "filter_type": 2, "field_id": "lost", "ty": 5, "condition": 0}
+            ]
+          },
+          {"id": "f3", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}
+        ]
+      },
+      "expected": {
+        "filters": [{"id": "f3", "filter_type": 2, "field_id": "stage", "ty": 3, "condition": 0, "content": "o-done"}]
+      }
+    },
+    {
+      "name": "a nested group keeps its valid children",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {"filters": [], "sorts": []},
+      "entry": {
+        "filters": [
+          {
+            "id": "g1",
+            "filter_type": 0,
+            "children": [
+              {
+                "id": "f1",
+                "filter_type": 2,
+                "field_id": "stage",
+                "ty": 3,
+                "condition": 0,
+                "content": "o-done"
+              },
+              {"id": "f2", "filter_type": 2, "field_id": "gone", "ty": 0, "condition": 2, "content": "x"}
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "filters": [
+          {
+            "id": "g1",
+            "filter_type": 0,
+            "children": [
+              {
+                "id": "f1",
+                "filter_type": 2,
+                "field_id": "stage",
+                "ty": 3,
+                "condition": 0,
+                "content": "o-done"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a part equal to saved is dropped",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {
+        "filters": [
+          {
+            "id": "saved-1",
+            "filter_type": 2,
+            "field_id": "stage",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-done"
+          }
+        ],
+        "sorts": [{"id": "saved-s", "field_id": "points", "condition": 0}]
+      },
+      "entry": {
+        "filters": [
+          {
+            "id": "private-1",
+            "filter_type": 2,
+            "field_id": "stage",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-done"
+          }
+        ],
+        "sorts": [{"id": "private-s", "field_id": "points", "condition": 1}]
+      },
+      "expected": {"sorts": [{"id": "private-s", "field_id": "points", "condition": 1}]}
+    },
+    {
+      "name": "a sort on a missing field is dropped",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {"filters": [], "sorts": []},
+      "entry": {
+        "sorts": [{"id": "s1", "field_id": "gone", "condition": 0}, {"id": "s2", "field_id": "points", "condition": 1}]
+      },
+      "expected": {"sorts": [{"id": "s2", "field_id": "points", "condition": 1}]}
+    },
+    {
+      "name": "an entry that sanitizes to the saved conditions restores nothing",
+      "fields": {"stage": 3, "points": 1},
+      "saved": {"filters": [], "sorts": []},
+      "entry": {
+        "filters": [{"id": "f1", "filter_type": 2, "field_id": "gone", "ty": 0, "condition": 2, "content": "x"}],
+        "sorts": [{"id": "s1", "field_id": "gone", "condition": 0}]
+      },
+      "expected": {}
+    }
+  ]
+}

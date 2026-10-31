@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CheckboxFilter, CheckboxFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { CheckboxFilter, useConditionsReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { checkboxFilterConditions } from '@/components/database/components/filters/filter-conditions';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -13,23 +14,11 @@ import { useConditionsContext } from '../../conditions/context';
 // the value list (Checked / Unchecked) and picking a value closes the popover.
 function CheckboxFilterMenu({ filter }: { filter: CheckboxFilter }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const updateFilter = useUpdateFilter();
   const setOpenFilterId = useConditionsContext()?.setOpenFilterId;
 
-  const conditions = useMemo(
-    () => [
-      {
-        value: CheckboxFilterCondition.IsChecked,
-        text: t('grid.checkboxFilter.isChecked'),
-      },
-      {
-        value: CheckboxFilterCondition.IsUnChecked,
-        text: t('grid.checkboxFilter.isUnchecked'),
-      },
-    ],
-    [t]
-  );
+  const conditions = useMemo(() => checkboxFilterConditions(t), [t]);
 
   return (
     <div className={'flex flex-col gap-1'} data-testid='checkbox-filter'>

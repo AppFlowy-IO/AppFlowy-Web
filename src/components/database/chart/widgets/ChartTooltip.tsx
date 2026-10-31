@@ -1,106 +1,125 @@
 import { useTranslation } from 'react-i18next';
 
-import { cn } from '@/lib/utils';
+import { DASHBOARD_GEOMETRY, DASHBOARD_TYPOGRAPHY } from '@/application/database-yjs/dashboard-geometry';
+import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 
-/**
- * Tooltip box size desktop's `PositionedChartTooltip` assumes when it centers
- * the tooltip on an anchor and clamps it inside the chart.
- */
-export const CHART_TOOLTIP_WIDTH = 180;
-export const CHART_TOOLTIP_HEIGHT = 80;
-const CHART_TOOLTIP_EDGE_MARGIN = 8;
-
-/**
- * Small colored square with a theme border ring (desktop's
- * `ChartIndicatorDot`), so light option colors stay visible on both the
- * tooltip and the page background.
- */
-export function ChartIndicatorDot({ color, className }: { color?: string; className?: string }) {
-  return (
-    <span data-testid='chart-indicator-dot' className={cn('flex shrink-0 p-0.5', className)}>
-      <span className='flex rounded-100 border border-border-primary p-px'>
-        <span className='h-3 w-3 rounded-[2px]' style={{ backgroundColor: color }} />
-      </span>
-    </span>
-  );
-}
-
-interface ChartTooltipProps {
-  label: string;
-  value: number;
+export interface ChartTooltipRow {
   color?: string;
+  name: string;
+  /** Already formatted (R-FORMAT `tooltip`, plus the share for donuts and percent bars). */
+  value: string;
+  /** The series a row of a grouped chart shows (WP12). */
+  seriesKey?: string;
 }
 
+export interface ChartTooltipProps {
+  /** Group title above the rows (WP12's multi-series charts: the category). */
+  title?: string;
+  rows: ChartTooltipRow[];
+  /** Series rows left out after the first ten: a "+{n} more" row. */
+  more?: number;
+  /** The drill-down hint footer, shown when the chart opens a drill-down. */
+  showDrilldownHint?: boolean;
+  /** The category the tooltip describes (its label), as `data-category` for tests and the probes. */
+  category?: string;
+  /**
+   * A mobile context (WP14 §1.4.6): the tooltip follows taps, so the hint
+   * reads "Tap again to view data" instead of "Click to view data".
+   */
+  mobile?: boolean;
+}
+
+const { tooltip } = DASHBOARD_GEOMETRY;
+
 /**
- * Hover tooltip shared by every chart type (desktop's `ChartTooltip`): the
- * category with its color and value, a divider, then the drill-down hint.
- * Desktop prints the value as `item.value.toInt()`, so fractions truncate.
- *
- * The box sizes to its content with no cap, like desktop's `IntrinsicWidth`
- * inside a `Positioned` that sets only `left` and `top`: a long category name
- * (already cut to 15 characters on the axis) reads in full here, and the
- * label's ellipsis never applies. Positioning still assumes the 180×80 box.
+ * Chart tooltip (spec §8.8): a swatch, the name and the value per row, and
+ * the drill-down hint. Presentational; `ChartTooltipLayer` positions it.
  */
-export function ChartTooltip({ label, value, color }: ChartTooltipProps) {
+export function ChartTooltip({
+  title,
+  rows,
+  more = 0,
+  showDrilldownHint = false,
+  category,
+  mobile = false,
+}: ChartTooltipProps) {
   const { t } = useTranslation();
 
   return (
-    <div data-testid='chart-tooltip' className='flex w-max flex-col rounded-300 bg-surface-inverse p-3 shadow-tooltip'>
-      <div className='flex min-w-0 items-center'>
-        <ChartIndicatorDot color={color} />
-        <span className='ml-2 min-w-0 truncate text-sm font-medium leading-5 text-text-inverse'>{label}</span>
-        <span className='ml-3 shrink-0 text-sm leading-5 text-text-inverse'>{Math.trunc(value)}</span>
-      </div>
-      <div data-testid='chart-tooltip-divider' className='my-2 h-px shrink-0 bg-border-secondary' />
-      <span className='truncate text-xs leading-[18px] text-text-tertiary'>
-        {t('chart.tooltip.clickToView', 'Click to view data')}
-      </span>
-    </div>
-  );
-}
-
-/**
- * Top-left corner for a tooltip centered on `anchor` and lifted
- * `verticalGap` px above it, clamped 8px inside the chart (desktop's
- * `PositionedChartTooltip`).
- */
-export function getChartTooltipPosition(
-  anchor: { x: number; y: number },
-  chartSize: { width: number; height: number },
-  verticalGap = 20
-): { left: number; top: number } {
-  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
-
-  return {
-    left: clamp(
-      anchor.x - CHART_TOOLTIP_WIDTH / 2,
-      CHART_TOOLTIP_EDGE_MARGIN,
-      chartSize.width - CHART_TOOLTIP_WIDTH - CHART_TOOLTIP_EDGE_MARGIN
-    ),
-    top: clamp(
-      anchor.y - CHART_TOOLTIP_HEIGHT / 2 - verticalGap,
-      CHART_TOOLTIP_EDGE_MARGIN,
-      chartSize.height - CHART_TOOLTIP_HEIGHT - CHART_TOOLTIP_EDGE_MARGIN
-    ),
-  };
-}
-
-interface PositionedChartTooltipProps extends ChartTooltipProps {
-  anchor: { x: number; y: number };
-  chartSize: { width: number; height: number };
-  verticalGap?: number;
-}
-
-/**
- * Absolutely positioned {@link ChartTooltip}. Pointer events pass through so
- * the tooltip never steals hover from the element underneath it.
- */
-export function PositionedChartTooltip({ anchor, chartSize, verticalGap, ...tooltip }: PositionedChartTooltipProps) {
-  const { left, top } = getChartTooltipPosition(anchor, chartSize, verticalGap);
-
-  return (
-    <div className='pointer-events-none absolute z-10' style={{ left, top }}>
-      <ChartTooltip {...tooltip} />
+    <div
+      data-testid='chart-tooltip'
+      data-category={category}
+      data-mobile={mobile ? 'true' : undefined}
+      data-parity-id='dash-chart-tooltip'
+      className='overflow-hidden border border-chart-tooltip-border bg-chart-tooltip-bg text-xs shadow-dash-tooltip'
+      style={{
+        borderRadius: tooltip.radius,
+        maxWidth: tooltip.maxWidth,
+        maxHeight: tooltip.maxHeight,
+        lineHeight: `${DASHBOARD_TYPOGRAPHY.tooltip.lineHeight}px`,
+      }}
+    >
+      {title ? (
+        <div className='truncate px-3 pt-2.5 font-medium text-text-primary' data-testid='chart-tooltip-title'>
+          {title}
+        </div>
+      ) : null}
+      {rows.map((row, index) => (
+        <div
+          className='flex items-center'
+          data-series={row.seriesKey}
+          data-testid='chart-tooltip-row'
+          key={`${row.seriesKey ?? row.name}-${index}`}
+          style={{
+            gap: tooltip.gap,
+            padding: `${tooltip.rowPaddingBlock}px ${tooltip.rowPaddingInline}px`,
+          }}
+        >
+          <span className='flex min-w-0 items-center gap-2'>
+            <span
+              className='shrink-0'
+              style={{
+                width: tooltip.swatch,
+                height: tooltip.swatch,
+                borderRadius: tooltip.swatchRadius,
+                backgroundColor: row.color,
+              }}
+            />
+            <span className='truncate text-text-secondary' data-testid='chart-tooltip-name'>
+              {row.name}
+            </span>
+          </span>
+          <span className='ml-auto whitespace-nowrap tabular-nums text-text-tertiary' data-testid='chart-tooltip-value'>
+            {row.value}
+          </span>
+        </div>
+      ))}
+      {more > 0 ? (
+        <div
+          className='text-text-tertiary'
+          data-testid='chart-tooltip-more'
+          style={{ padding: `${tooltip.rowPaddingBlock}px ${tooltip.rowPaddingInline}px` }}
+        >
+          {t('chart.settings.moreSeries', { n: more, defaultValue: `+${more} more` })}
+        </div>
+      ) : null}
+      {showDrilldownHint ? (
+        <>
+          <div className='mx-3 h-px bg-chart-tooltip-border' data-parity-id='dash-chart-tooltip__divider' />
+          <div
+            className='flex items-center gap-1.5 p-3 text-text-secondary'
+            data-parity-id='dash-chart-tooltip__footer'
+            data-testid='chart-tooltip-footer'
+          >
+            <BulletedListIcon className='h-3.5 w-3.5 shrink-0' />
+            <span>
+              {mobile
+                ? t('chart.tooltip.tapAgainToView', { defaultValue: 'Tap again to view data' })
+                : t('chart.tooltip.clickToView', { defaultValue: 'Click to view data' })}
+            </span>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

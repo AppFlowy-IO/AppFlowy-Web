@@ -57,7 +57,6 @@ const mockGridContext = {
   rows: [],
   rowOrders: [] as unknown[] | undefined,
   setShowStickyHeader: jest.fn(),
-  rowResizeStore: { subscribe: () => jest.fn() },
 };
 const mockVirtualizers = {
   parentRef: createRef<HTMLDivElement>(),

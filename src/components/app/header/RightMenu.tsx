@@ -98,7 +98,7 @@ function RightMenu() {
       {actionViewId ? (
         <ShareButton
           viewId={actionViewId}
-          publishViewId={routeViewId}
+          publishViewId={activeViewId}
           hidePublish={hasRowPageRoute}
           presentationViewId={hasRowPageRoute ? rowPage?.documentId : undefined}
           presentationTitle={rowPage?.title}

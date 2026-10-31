@@ -343,8 +343,11 @@ export function useDatabaseOperations(
         Log.debug('[loadRowDocument] loaded', { documentId });
         return doc;
       } catch (e) {
+        // Empty row pages are initialized by the caller after this authoritative
+        // miss. Preserve that signal without logging normal first opens as errors.
+        if (isRecordNotFoundError(e)) throw e;
         Log.error('[loadRowDocument] failed to load', e);
-        if (isPermissionDeniedError(e) || isRecordNotFoundError(e)) throw e;
+        if (isPermissionDeniedError(e)) throw e;
         return null;
       }
     },

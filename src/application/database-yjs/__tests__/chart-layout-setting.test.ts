@@ -1,3 +1,5 @@
+import type { ChartLayoutSettings } from '@/application/database-yjs/chart-layout-setting';
+import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/chart-extended-settings';
 import { act, renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import * as Y from 'yjs';
@@ -12,8 +14,7 @@ import {
 import {
   CHART_LAYOUT_SETTINGS_KEY,
   ChartAggregationType,
-  ChartLayoutKeys,
-  type ChartLayoutSettings,
+  NATIVE_CHART_LAYOUT_KEYS as ChartLayoutKeys,
   ChartType,
   LegacyChartLayoutKeys,
   parseChartAggregationTypePb,
@@ -153,7 +154,7 @@ describe('readChartLayoutSetting', () => {
   describe('aggregation_type_pb sidecar', () => {
     it('restores CountValues on read (sidecar_restores_count_values_on_read)', () => {
       expect(readChartLayoutSetting(chartViewWithSidecar(big(0), big(6)))?.aggregationType).toBe(
-        ChartAggregationType.CountValues
+        ChartAggregationType.CountUnique
       );
     });
 
@@ -178,7 +179,7 @@ describe('readChartLayoutSetting', () => {
       expect(readChartLayoutSetting(chartViewWithSidecar(big(3)))?.aggregationType).toBe(ChartAggregationType.Min);
     });
 
-    it.each([big(99), big(7), big(-1), big(2147483647)])(
+    it.each([big(99), big(17), big(-1), big(2147483647)])(
       'falls back to the typed value for the unknown sidecar %s (malformed_sidecar_value_falls_back_to_typed_value)',
       (sidecar) => {
         expect(readChartLayoutSetting(chartViewWithSidecar(big(2), sidecar))?.aggregationType).toBe(
@@ -203,9 +204,9 @@ describe('readChartLayoutSetting', () => {
     it.each([
       // `parse_chart_aggregation_type_pb(*n as i32)` keeps only the low 32 bits.
       [big('4294967301'), ChartAggregationType.Median],
-      [big('-4294967290'), ChartAggregationType.CountValues],
+      [big('-4294967290'), ChartAggregationType.CountUnique],
       [big('-9223372036854775808'), ChartAggregationType.Count],
-      [big('4294967303'), ChartAggregationType.Max],
+      [big('4294967313'), ChartAggregationType.Max],
     ])('truncates the sidecar %s to 32 bits like desktop', (sidecar, expected) => {
       const { map } = createChartMap({ aggregation_type: big(4), aggregation_type_pb: sidecar });
 
@@ -280,7 +281,7 @@ describe('readChartLayoutSetting', () => {
     });
 
     it.each<[string, () => unknown]>([
-      ['chart_type', () => big(4)],
+      ['chart_type', () => big(5)],
       ['chart_type', () => big(-1)],
       ['chart_type', () => big(256)],
       ['chart_type', () => big('1099511627777')],
@@ -308,8 +309,8 @@ describe('readChartLayoutSetting', () => {
       ['show_empty_values', () => 'true'],
       ['show_empty_values', () => null],
       ['show_empty_values', () => big(1)],
-      ['aggregation_type', () => big(5)],
-      ['aggregation_type', () => big(6)],
+      ['aggregation_type', () => big(17)],
+      ['aggregation_type', () => big(18)],
       ['aggregation_type', () => big(-1)],
       ['aggregation_type', () => 2.5],
       ['aggregation_type', () => '1'],
@@ -321,6 +322,18 @@ describe('readChartLayoutSetting', () => {
       const { map } = createChartMap({ ...VALID, [key]: value() });
 
       expect(readChartLayoutSetting(map)).toEqual(RESET);
+    });
+
+    it.each([5, 6, 12, 16])('reads a legacy Dashboard aggregation %s without resetting its fields', (aggregation) => {
+      const { map } = createChartMap({ chart_type: big(1), x_field_id: 'category',
+        y_field_id: 'value', show_empty_values: false, aggregation_type: big(aggregation) });
+
+      expect(readChartLayoutSetting(map)).toEqual(setting({ chartType: ChartType.Line,
+        xFieldId: 'category', yFieldId: 'value', aggregationType: aggregation }));
+      writeChartLayoutSetting(map, { xFieldId: 'updated' });
+      expect(map.get('aggregation_type')).toBe(big(0));
+      expect(map.get('aggregation_type_pb')).toBe(big(aggregation));
+      expect(readChartLayoutSetting(map)?.yFieldId).toBe('value');
     });
 
     it('accepts JS numbers without a fractional part, as yrs accepts Any::Number', () => {
@@ -400,7 +413,7 @@ describe('readChartLayoutSetting', () => {
         chartType: ChartType.Donut,
         xFieldId: 'lx',
         omitEmptyValues: false,
-        aggregationType: ChartAggregationType.CountValues,
+        aggregationType: ChartAggregationType.CountUnique,
         yFieldId: 'ly',
         dateCondition: DateGroupCondition.Day,
       });
@@ -438,7 +451,7 @@ describe('readChartLayoutSetting', () => {
       expect(readChartLayoutSetting(createChartMap({ ...LEGACY, chartType: value }).map)?.chartType).toBe(ChartType.Bar);
     });
 
-    it.each([9, -1, 2.5, 'abc'])('falls back to Count for the unknown aggregationType %p', (value) => {
+    it.each([17, -1, 2.5, 'abc'])('falls back to Count for the unknown aggregationType %p', (value) => {
       expect(readChartLayoutSetting(createChartMap({ ...LEGACY, aggregationType: value }).map)?.aggregationType).toBe(
         ChartAggregationType.Count
       );
@@ -539,7 +552,7 @@ describe('writeChartLayoutSetting', () => {
     [ChartAggregationType.Min, 3],
     [ChartAggregationType.Max, 4],
     [ChartAggregationType.Median, 0],
-    [ChartAggregationType.CountValues, 0],
+    [ChartAggregationType.CountUnique, 0],
   ])(
     'stores aggregation %i as the collab value %i plus the full value in the sidecar',
     (aggregationType, collabValue) => {
@@ -643,7 +656,7 @@ describe('writeChartLayoutSetting', () => {
         aggregationType: undefined,
         dateCondition: undefined,
       },
-      { chartType: 9 as ChartType, aggregationType: 7 as ChartAggregationType, dateCondition: 5 as DateGroupCondition },
+      { chartType: 9 as ChartType, aggregationType: 17 as ChartAggregationType, dateCondition: 5 as DateGroupCondition },
       { chartType: NaN as ChartType, aggregationType: 1.5 as ChartAggregationType, dateCondition: -1 },
       { xFieldId: 7 as unknown as string, omitEmptyValues: 'yes' as unknown as boolean },
     ];
@@ -658,7 +671,7 @@ describe('writeChartLayoutSetting', () => {
 
   it('creates no Yjs items when nothing changes, like yrs try_update', () => {
     const { doc, map } = createChartMap();
-    const patch = { chartType: ChartType.Donut, xFieldId: 'x', aggregationType: ChartAggregationType.CountValues };
+    const patch = { chartType: ChartType.Donut, xFieldId: 'x', aggregationType: ChartAggregationType.CountUnique };
 
     writeChartLayoutSetting(map, patch);
     const before = Y.encodeStateVector(doc);
@@ -717,7 +730,7 @@ describe('writeChartLayoutSetting', () => {
     const result = writeChartLayoutSetting(map, { xFieldId: 'x' });
 
     expect(result).toEqual(
-      setting({ xFieldId: 'x', aggregationType: ChartAggregationType.CountValues, dateCondition: DateGroupCondition.Relative })
+      setting({ xFieldId: 'x', aggregationType: ChartAggregationType.CountUnique, dateCondition: DateGroupCondition.Relative })
     );
     expect(map.get(ChartLayoutKeys.chartType)).toBe(big(0));
     expect(readChartLayoutSetting(map)).toEqual(result);
@@ -741,7 +754,7 @@ describe('writeChartLayoutSetting', () => {
       chartType: ChartType.Line,
       xFieldId: 'legacy-x',
       omitEmptyValues: true,
-      aggregationType: ChartAggregationType.CountValues,
+      aggregationType: ChartAggregationType.CountUnique,
       yFieldId: 'legacy-y',
       dateCondition: DateGroupCondition.Relative,
     });
@@ -906,7 +919,7 @@ const DESKTOP_FIXTURES = [
       chartType: ChartType.Donut,
       xFieldId: 'x',
       omitEmptyValues: false,
-      aggregationType: ChartAggregationType.CountValues,
+      aggregationType: ChartAggregationType.CountUnique,
       yFieldId: 'y',
       dateCondition: DateGroupCondition.Week,
     },
@@ -994,7 +1007,7 @@ describe('wire values match desktop (setting_entities.rs)', () => {
       ChartAggregationType.Min,
       ChartAggregationType.Max,
       ChartAggregationType.Median,
-      ChartAggregationType.CountValues,
+      ChartAggregationType.CountUnique,
     ]).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect([
       DateGroupCondition.Relative,
@@ -1008,7 +1021,7 @@ describe('wire values match desktop (setting_entities.rs)', () => {
 
   it('parses every aggregation and rejects unknown values (parse_chart_aggregation_type_pb)', () => {
     [0, 1, 2, 3, 4, 5, 6].forEach((value) => expect(parseChartAggregationTypePb(value)).toBe(value));
-    [7, 99, -1, 2147483647, 1.5, NaN].forEach((value) => expect(parseChartAggregationTypePb(value)).toBeNull());
+    [17, 99, -1, 2147483647, 1.5, NaN].forEach((value) => expect(parseChartAggregationTypePb(value)).toBeNull());
   });
 
   it('downgrades only Median and CountValues for the collab enum', () => {
@@ -1017,6 +1030,14 @@ describe('wire values match desktop (setting_entities.rs)', () => {
     ).toEqual([0, 1, 2, 3, 4, 0, 0]);
   });
 });
+
+function dashboardSetting(value: ChartLayoutSettings | null) {
+  if (!value) return null;
+  const { omitEmptyValues, ...base } = value;
+
+  return { ...base, showEmptyValues: !omitEmptyValues, cumulative: false, extended: DEFAULT_CHART_EXTENDED_SETTINGS,
+    numberFormat: 'auto', titleText: '' };
+}
 
 describe('chart setting hooks', () => {
   const viewId = 'view-id';
@@ -1064,7 +1085,7 @@ describe('chart setting hooks', () => {
 
   it('returns the stored setting on the first render', () => {
     const { wrapper } = createDatabase(DESKTOP_LINE_MEDIAN_RELATIVE);
-    const renders: (ChartLayoutSettings | null)[] = [];
+    const renders: ReturnType<typeof useChartLayoutSetting>[] = [];
 
     renderHook(
       () => {
@@ -1076,7 +1097,7 @@ describe('chart setting hooks', () => {
       { wrapper }
     );
 
-    expect(renders[0]).toEqual(readChartLayoutSetting(createChartMap(DESKTOP_LINE_MEDIAN_RELATIVE).map));
+    expect(renders[0]).toEqual(dashboardSetting(readChartLayoutSetting(createChartMap(DESKTOP_LINE_MEDIAN_RELATIVE).map)));
   });
 
   it('returns null without a chart setting and picks one up from a remote update', () => {
@@ -1102,7 +1123,7 @@ describe('chart setting hooks', () => {
       Y.applyUpdate(databaseDoc, Y.encodeStateAsUpdate(remote, Y.encodeStateVector(databaseDoc)));
     });
 
-    expect(result.current).toEqual(readChartLayoutSetting(chart));
+    expect(result.current).toEqual(dashboardSetting(readChartLayoutSetting(chart)));
   });
 
   it('returns null when the chart entry is not a map', () => {
@@ -1139,14 +1160,14 @@ describe('chart setting hooks', () => {
       expect.objectContaining({ chart_type: big(3), aggregation_type: big(0), aggregation_type_pb: big(5), y_field_id: 'y' })
     );
     expect(result.current.setting).toEqual(
-      setting({ chartType: ChartType.Donut, aggregationType: ChartAggregationType.Median, yFieldId: 'y' })
+      dashboardSetting(setting({ chartType: ChartType.Donut, aggregationType: ChartAggregationType.Median, yFieldId: 'y' }))
     );
 
     act(() => {
       result.current.update({ aggregationType: ChartAggregationType.Count, yFieldId: undefined });
     });
 
-    expect(result.current.setting).toEqual(setting({ chartType: ChartType.Donut }));
+    expect(result.current.setting).toEqual(dashboardSetting(setting({ chartType: ChartType.Donut })));
   });
 
   it('replaces a chart entry that is not a map, like desktop get_or_init', () => {
@@ -1160,7 +1181,7 @@ describe('chart setting hooks', () => {
     });
 
     expect(view.get(YjsDatabaseKey.layout_settings).get(CHART_LAYOUT_SETTINGS_KEY)).toBeInstanceOf(Y.Map);
-    expect(result.current.setting).toEqual(setting({ chartType: ChartType.Line }));
+    expect(result.current.setting).toEqual(dashboardSetting(setting({ chartType: ChartType.Line })));
   });
 });
 

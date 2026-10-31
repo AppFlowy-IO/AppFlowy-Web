@@ -22,7 +22,7 @@ export interface TimelineRowModel {
  */
 export function useTimelineRows(includeUndated: boolean) {
   const { rowOrders } = useTimelineRowSource();
-  const { events, emptyEvents, hasEndField } = useTimelineEventsSelector();
+  const { events, emptyEvents, hasEndField, loading } = useTimelineEventsSelector();
 
   const rows = useMemo<TimelineRowModel[]>(() => {
     const byRowId = new Map<string, CalendarEvent>();
@@ -58,5 +58,12 @@ export function useTimelineRows(includeUndated: boolean) {
     return result;
   }, [events, emptyEvents, includeUndated, rowOrders]);
 
-  return { rows, emptyEvents, rowOrders: rowOrders ?? EMPTY_ROW_ORDERS, hasEndField };
+  return {
+    rows,
+    emptyEvents,
+    rowOrders: rowOrders ?? EMPTY_ROW_ORDERS,
+    hasEndField,
+    /** The view's rows (or their documents) are still being read: the lanes are not the result yet. */
+    loading,
+  };
 }

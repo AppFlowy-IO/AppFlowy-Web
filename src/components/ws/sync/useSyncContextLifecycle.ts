@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { validate as uuidValidate } from 'uuid';
 import * as Y from 'yjs';
 
+import { releaseRowDocSyncBinding, retainRowDocSyncBinding } from '@/application/database-blob/row-doc-retention';
 import { initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types } from '@/application/types';
 import { messages } from '@/proto/messages';
@@ -77,7 +78,10 @@ export function useSyncContextLifecycle(
     return nextRefCount;
   }, [refs]);
 
-  const unregisterSyncContext = useCallback((objectId: string, options?: { flushPending?: boolean }) => {
+  const unregisterSyncContext = useCallback((
+    objectId: string,
+    options?: { flushPending?: boolean; docDestroyed?: boolean }
+  ) => {
     const ctx = refs.registeredContexts.current.get(objectId);
 
     if (!ctx) return;
@@ -115,6 +119,12 @@ export function useSyncContextLifecycle(
 
     refs.registeredContexts.current.delete(objectId);
     refs.contextRefCounts.current.delete(objectId);
+    // The row doc cache keeps a row in memory only while a row map or a sync
+    // context references it; this context no longer does.
+    if (ctx.collabType === Types.DatabaseRow) {
+      releaseRowDocSyncBinding(objectId, ctx.doc, { docDestroyed: options?.docDestroyed });
+    }
+
     Log.debug(`Unregistered sync context for objectId ${objectId}`);
   }, [refs]);
 
@@ -221,13 +231,14 @@ export function useSyncContextLifecycle(
         refs.registeredContexts.current.get(syncContext.doc.guid) === syncContext &&
         (canRetry?.() ?? false);
       refs.registeredContexts.current.set(syncContext.doc.guid, syncContext);
+      if (syncContext.collabType === Types.DatabaseRow) retainRowDocSyncBinding(syncContext.doc.guid);
       const handleDocDestroy = () => {
         const objectId = syncContext.doc.guid;
         const flushPending = !refs.skipFlushOnDestroy.current.has(objectId);
 
         cancelDeferredCleanup(objectId);
         refs.skipFlushOnDestroy.current.delete(objectId);
-        unregisterSyncContext(objectId, { flushPending });
+        unregisterSyncContext(objectId, { flushPending, docDestroyed: true });
       };
 
       syncContext.doc.on('destroy', handleDocDestroy);

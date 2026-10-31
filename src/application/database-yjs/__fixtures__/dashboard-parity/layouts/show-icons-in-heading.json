@@ -1,0 +1,12 @@
+{
+  "cases": [
+    { "name": "absent", "stored": { "rows": [], "future_key": { "a": 1 } }, "read": false },
+    { "name": "true", "stored": { "show_icons_in_heading": true }, "read": true },
+    { "name": "wrong type", "stored": { "show_icons_in_heading": "yes" }, "read": false }
+  ],
+  "write": {
+    "before": { "rows": [], "show_widget_titles": false, "future_key": { "a": 1 } },
+    "update": { "show_icons_in_heading": true },
+    "after": { "rows": [], "show_widget_titles": false, "future_key": { "a": 1 }, "show_icons_in_heading": true }
+  }
+}

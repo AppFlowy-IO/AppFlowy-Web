@@ -1,433 +1,324 @@
-import { memo, useContext, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pie, PieChart, type SectorProps } from 'recharts';
+import { Cell, Customized, Pie, PieChart } from 'recharts';
 
-import { ChartAggregationType, ChartClickItem, ChartDataItem } from '@/application/database-yjs/chart.type';
-import { ThemeModeContext } from '@/components/main/useAppThemeMode';
-import { cn } from '@/lib/utils';
+import { formatShare } from '@/application/database-yjs/chart-format';
+import {
+  CHART_DONUT_CENTER_WIDTH_FACTOR,
+  computeDonutGeometry,
+  DonutLabelLayout,
+  layoutDonutLabels,
+  TextMeasurer,
+} from '@/application/database-yjs/chart-scale';
+import { ChartDataItem, ChartSeriesData, ChartType } from '@/application/database-yjs/chart.type';
+import { DASHBOARD_TYPOGRAPHY } from '@/application/database-yjs/dashboard-geometry';
+import { ChartNoDataState } from '@/components/database/chart/ChartStates';
+import { toCategoryItems, toDrillItem, truncationCaptionCount } from '@/components/database/chart/hooks/chartSeries';
+import { useChartContext } from '@/components/database/chart/useChartContext';
 
-import { ChartNoValidData } from './ChartNoValidData';
-import { ChartTitle, useChartAggregationLabel } from './ChartTitle';
-import { CHART_TOOLTIP_WIDTH, ChartIndicatorDot, PositionedChartTooltip } from './ChartTooltip';
-import { chartDataEqual, resolveDonutSectionColors } from './chartUtils';
-import { useElementSize } from './useElementSize';
+import { ChartFrame } from './ChartFrame';
+import { CHART_ENTRY_ANIMATION_MS, chartItemKey } from './chartUtils';
+import { useChartMeasure } from './measureText';
+import { useChartA11yRows, useChartItemTooltip, useChartLegend } from './useChartFrameModels';
+import { useChartHover } from './useChartHover';
+import { useChartAnimation } from './useReducedMotion';
 
 interface DonutChartWidgetProps {
-  data: ChartDataItem[];
-  onSliceClick?: (item: ChartClickItem) => void;
-  aggregationType?: ChartAggregationType;
+  /** The series build (WP12): a donut ignores Group by, so its one series is `__all__`. */
+  data: ChartSeriesData;
+  /** Opens the drill-down of the clicked slice. */
+  onItemClick?: (item: ChartDataItem) => void;
+  /** Fill a dashboard widget card instead of the standalone 400px height. */
+  fill?: boolean;
 }
 
-// Ring geometry from desktop's `_DonutChartContentState`: the design's thin
-// ring (24px against a 130px hole) scaled to this 70px hole.
-const INNER_RADIUS = 70; // `_centerSpaceRadius`
-const RING_WIDTH = 13; // `_pieRadius`
-const HOVERED_RING_FACTOR = 1.5; // the hovered section thickens, 24 → 36 in the design
-const SECTION_GAP = 2; // `_sectionsSpace`
-/** Every section but the active one drops to this opacity (`donutDimmedOpacity`). */
-const DIMMED_OPACITY = 0.4;
+/** The props Recharts passes to a Pie `label` renderer. */
+interface PieLabelProps {
+  index?: number;
+}
 
-// Leader geometry from desktop's `_SectionLeader`. Leaders start flush with
-// the ring's outer edge, so their start follows the ring geometry.
-const LEADER_START_RADIUS = INNER_RADIUS + RING_WIDTH + SECTION_GAP / 2;
-const LEADER_RADIAL_LENGTH = 40;
-const LEADER_HORIZONTAL_LENGTH = 20;
-const LEADER_SINGLE_LINE_LENGTH = 50;
-const SAME_LINE_EPSILON = 0.5;
-const LABEL_WIDTH = 96;
-const LABEL_HEIGHT = 36;
-const LABEL_EDGE_MARGIN = 4;
-/** Gap between the end of a leader line and its label. */
-const LABEL_LINE_GAP = 4;
-const TOOLTIP_GAP = 8;
+interface PointerLike {
+  clientX?: number;
+  clientY?: number;
+}
 
-const polarX = (cx: number, radius: number, angle: number) => cx + radius * Math.cos(angle);
-const polarY = (cy: number, radius: number, angle: number) => cy + radius * Math.sin(angle);
-const polarPoint = (cx: number, cy: number, radius: number, angle: number) =>
-  `${polarX(cx, radius, angle)},${polarY(cy, radius, angle)}`;
+const { donutTotal, donutCaption, donutOutsideLabel } = DASHBOARD_TYPOGRAPHY;
+
+/** The largest font size, at most `size`, at which `text` fits `maxWidth` (the measurer is 12px). */
+function fitFontSize(text: string, size: number, maxWidth: number, measure: TextMeasurer) {
+  const width = (measure(text) * size) / 12;
+
+  return width > maxWidth && width > 0 ? Math.max(12, (size * maxWidth) / width) : size;
+}
 
 /**
- * SVG path of one ring section between the screen angles `start` < `end`
- * (radians, clockwise from 3 o'clock). Like fl_chart's `sectionsSpace`, each
- * section gives up half of the gap along both straight edges, so neighbors are
- * split by a band of constant width (not a wedge); a lone section is a full ring.
+ * One slice's outside label with its leader, and the slice anchor (always
+ * drawn): the BDD steps hover and click a slice at its `data-x` / `data-y`.
  */
-function donutSectionPath(cx: number, cy: number, inner: number, outer: number, start: number, end: number) {
-  const sweep = end - start;
-
-  if (sweep >= 2 * Math.PI - 1e-6) {
-    // Outer circle clockwise, inner circle counter-clockwise: the nonzero rule leaves the hole empty.
-    return [
-      `M${cx + outer},${cy}`,
-      `A${outer},${outer} 0 1 1 ${cx - outer},${cy}`,
-      `A${outer},${outer} 0 1 1 ${cx + outer},${cy}`,
-      `M${cx + inner},${cy}`,
-      `A${inner},${inner} 0 1 0 ${cx - inner},${cy}`,
-      `A${inner},${inner} 0 1 0 ${cx + inner},${cy}`,
-      'Z',
-    ].join(' ');
-  }
-
-  const halfGap = SECTION_GAP / 2;
-  // Radius where the two inset edges meet; closer to the center the gap eats the whole section.
-  const apexRadius = sweep >= Math.PI ? 0 : halfGap / Math.sin(sweep / 2);
-
-  if (apexRadius >= outer) return '';
-
-  const outerInset = Math.asin(halfGap / outer);
-  const outerArc = `A${outer},${outer} 0 ${sweep - 2 * outerInset > Math.PI ? 1 : 0} 1 ${polarPoint(
-    cx,
-    cy,
-    outer,
-    end - outerInset
-  )}`;
-
-  if (apexRadius > inner) {
-    return `M${polarPoint(cx, cy, apexRadius, start + sweep / 2)} L${polarPoint(
-      cx,
-      cy,
-      outer,
-      start + outerInset
-    )} ${outerArc} Z`;
-  }
-
-  const innerInset = Math.asin(halfGap / inner);
-  const innerArc = `A${inner},${inner} 0 ${sweep - 2 * innerInset > Math.PI ? 1 : 0} 0 ${polarPoint(
-    cx,
-    cy,
-    inner,
-    start + innerInset
-  )}`;
-
-  return [
-    `M${polarPoint(cx, cy, inner, start + innerInset)}`,
-    `L${polarPoint(cx, cy, outer, start + outerInset)}`,
-    outerArc,
-    `L${polarPoint(cx, cy, inner, end - innerInset)}`,
-    innerArc,
-    'Z',
-  ].join(' ');
-}
-
-type SectionState = 'idle' | 'active' | 'dimmed';
-
-function renderSection(
-  { cx = 0, cy = 0, innerRadius = 0, outerRadius = 0, startAngle = 0, endAngle = 0, fill }: SectorProps,
-  state: SectionState
-) {
-  // Recharts angles are degrees counter-clockwise; with `endAngle={-360}` the
-  // sections run clockwise from 3 o'clock like desktop's fl_chart pie.
-  const start = (-startAngle * Math.PI) / 180;
-  const end = (-endAngle * Math.PI) / 180;
-  const outer = state === 'active' ? innerRadius + (outerRadius - innerRadius) * HOVERED_RING_FACTOR : outerRadius;
+function SliceLabel({ layout, label }: { layout: DonutLabelLayout; label: string }) {
+  const [p1, p2, p3] = layout.leader;
 
   return (
-    <path
-      data-testid='donut-chart-section'
-      className='cursor-pointer'
-      d={donutSectionPath(cx, cy, innerRadius, outer, Math.min(start, end), Math.max(start, end))}
-      fill={fill}
-      // The fills are opaque, so the opacity is the design's dimming factor as is.
-      fillOpacity={state === 'dimmed' ? DIMMED_OPACITY : 1}
+    <g>
+      <g
+        data-label={label}
+        data-testid='chart-donut-slice-anchor'
+        data-x={layout.anchor.x.toFixed(2)}
+        data-y={layout.anchor.y.toFixed(2)}
+      />
+      {layout.visible ? (
+        <>
+          <polyline
+            fill='none'
+            pointerEvents='none'
+            points={`${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`}
+            stroke='var(--border-primary)'
+            strokeWidth={1}
+          />
+          <text
+            className='fill-current text-chart-outside-label'
+            data-label={label}
+            data-parity-id='dash-donut-outside-label'
+            data-testid='chart-donut-outside-label'
+            dominantBaseline='central'
+            style={{ fontSize: donutOutsideLabel.size, lineHeight: `${donutOutsideLabel.lineHeight}px` }}
+            textAnchor={layout.side === 'right' ? 'start' : 'end'}
+            x={layout.textX}
+            y={layout.textY}
+          >
+            {layout.text}
+          </text>
+        </>
+      ) : null}
+    </g>
+  );
+}
+
+/**
+ * The ring's outer circle, without paint: the visual parity probe measures
+ * `dash-donut-ring` on it. Recharts renders it through `<Customized>`, which
+ * adds the whole chart state to the element's props, so this component takes
+ * only its own and none of them reaches the DOM.
+ */
+function DonutRingOutline({ centerX, centerY, radius }: { centerX: number; centerY: number; radius: number }) {
+  return (
+    <circle
+      cx={centerX}
+      cy={centerY}
+      data-parity-id='dash-donut-ring'
+      data-testid='chart-donut-ring'
+      fill='none'
+      pointerEvents='none'
+      r={radius}
+      stroke='none'
     />
   );
 }
 
-const renderIdleSection = (props: SectorProps) => renderSection(props, 'idle');
-const renderActiveSection = (props: SectorProps) => renderSection(props, 'active');
-const renderDimmedSection = (props: SectorProps) => renderSection(props, 'dimmed');
-
-interface DonutSection {
-  item: ChartDataItem;
-  /** Ring, leader line, legend dot and drill-down color. */
-  color: string;
-  /** Leader label and tooltip dot color: the fill's readable tone. */
-  textColor: string;
-  /** Angular midpoint in radians, clockwise from 3 o'clock. */
-  midAngle: number;
+interface DonutPlotProps {
+  /** The positive items, in display order. */
+  slices: ChartDataItem[];
+  total: number;
+  width: number;
+  /** The plot height; `legendHeight` is reserved below it. */
+  height: number;
+  legendHeight: number;
+  clickable: boolean;
+  onSliceClick: (_: unknown, index: number, event?: unknown) => void;
+  onSliceEnter: (_: unknown, index: number, event?: PointerLike) => void;
+  onSliceLeave: () => void;
 }
 
-interface LeaderLayout {
-  points: string;
-  lineEndX: number;
-  lineEndY: number;
-  /** Right-half labels extend right from the line end, left-half ones extend left. */
-  rightSide: boolean;
-  labelTop: number;
-  tooltipX: number;
-}
-
-/** Desktop's `_SectionLeader` geometry for a section centered at `midAngle`. */
-function layoutLeader(midAngle: number, width: number, height: number): LeaderLayout {
+/**
+ * The ring, its outside labels and the total. Memoized: hovering a slice
+ * changes none of its props, so neither the geometry nor the label layout
+ * (which measures every label) runs again until the data or the size changes.
+ */
+const DonutPlot = memo(function DonutPlot({
+  slices,
+  total,
+  width,
+  height,
+  legendHeight,
+  clickable,
+  onSliceClick,
+  onSliceEnter,
+  onSliceLeave,
+}: DonutPlotProps) {
+  const { t } = useTranslation();
+  const { style, format } = useChartContext();
+  const { measure10, measure12 } = useChartMeasure();
+  // No animation while the widget box resizes, nor after it until the data changes (W21). Recharts
+  // starts a pie whose animation turns back on from empty, so that first new data sweeps in.
+  const animation = useChartAnimation(slices);
   const cx = width / 2;
   const cy = height / 2;
-  const rightSide = Math.cos(midAngle) >= 0;
-  const direction = rightSide ? 1 : -1;
-  const startX = polarX(cx, LEADER_START_RADIUS, midAngle);
-  const startY = polarY(cy, LEADER_START_RADIUS, midAngle);
-  const elbowX = polarX(cx, LEADER_START_RADIUS + LEADER_RADIAL_LENGTH, midAngle);
-  const elbowY = polarY(cy, LEADER_START_RADIUS + LEADER_RADIAL_LENGTH, midAngle);
-  // At 3 or 9 o'clock the radial segment adds no height, so desktop draws one straight line.
-  const singleLine = Math.abs(startY - elbowY) < SAME_LINE_EPSILON;
-  const lineEndX = singleLine
-    ? startX + direction * LEADER_SINGLE_LINE_LENGTH
-    : elbowX + direction * LEADER_HORIZONTAL_LENGTH;
-  const lineEndY = singleLine ? startY : elbowY;
-  const points = singleLine
-    ? `${startX},${startY} ${lineEndX},${lineEndY}`
-    : `${startX},${startY} ${elbowX},${elbowY} ${lineEndX},${lineEndY}`;
-
-  return {
-    points,
-    lineEndX,
-    lineEndY,
-    rightSide,
-    // Centered on the line end, then kept inside the chart's top and bottom edges.
-    labelTop: Math.max(
-      LABEL_EDGE_MARGIN,
-      Math.min(lineEndY - LABEL_HEIGHT / 2, height - LABEL_HEIGHT - LABEL_EDGE_MARGIN)
-    ),
-    // Desktop's anchor beside the label; its left-half formula adds the gap, kept for parity.
-    tooltipX: rightSide
-      ? lineEndX + LABEL_WIDTH + TOOLTIP_GAP + CHART_TOOLTIP_WIDTH / 2
-      : lineEndX - LABEL_WIDTH + TOOLTIP_GAP - CHART_TOOLTIP_WIDTH / 2,
-  };
-}
-
-function SectionLeader({
-  section,
-  layout,
-  total,
-  chartWidth,
-  dimmed,
-}: {
-  section: DonutSection;
-  layout: LeaderLayout;
-  total: number;
-  chartWidth: number;
-  dimmed: boolean;
-}) {
-  const { item, color, textColor } = section;
-  const percentage = ((item.value / total) * 100).toFixed(1);
+  const geometry = useMemo(
+    () => computeDonutGeometry(width, height + legendHeight, legendHeight, style.showDataLabels),
+    [width, height, legendHeight, style.showDataLabels]
+  );
+  const labels = useMemo(
+    () =>
+      layoutDonutLabels(
+        slices.map((item) => ({ name: item.label, value: item.value, valueText: format(item.value, 'label') })),
+        { cx, cy, outer: geometry.outer, inner: geometry.inner, labelsOn: geometry.labelsOn },
+        { width, height },
+        measure10
+      ),
+    [slices, format, cx, cy, geometry, width, height, measure10]
+  );
+  const renderLabel = useCallback(
+    ({ index = 0 }: PieLabelProps) =>
+      labels[index] ? <SliceLabel label={slices[index].label} layout={labels[index]} /> : null,
+    [labels, slices]
+  );
+  const ring = useMemo(
+    () => <DonutRingOutline centerX={cx} centerY={cy} radius={geometry.outer} />,
+    [cx, cy, geometry.outer]
+  );
+  const centerWidth = CHART_DONUT_CENTER_WIDTH_FACTOR * geometry.inner;
+  const totalText = format(total, 'center');
+  const totalFont = fitFontSize(totalText, geometry.totalFont, centerWidth, measure12);
 
   return (
-    <div
-      data-testid='donut-chart-leader'
-      className='pointer-events-none absolute inset-0'
-      // The design dims a whole section, line and label, as one group.
-      style={dimmed ? { opacity: DIMMED_OPACITY } : undefined}
-    >
-      <svg aria-hidden className='absolute inset-0 h-full w-full overflow-visible'>
-        <polyline points={layout.points} fill='none' stroke={color} strokeWidth={1} />
-      </svg>
-      {/* Each label reads outward from its own line end: left-aligned on the right half, right-aligned on the left. */}
-      <div
-        className={cn('absolute flex flex-col', layout.rightSide ? 'items-start text-left' : 'items-end text-right')}
-        style={{
-          top: layout.labelTop,
-          width: LABEL_WIDTH,
-          ...(layout.rightSide
-            ? { left: layout.lineEndX + LABEL_LINE_GAP }
-            : { right: chartWidth - layout.lineEndX + LABEL_LINE_GAP }),
-        }}
-      >
-        <span className='max-w-full truncate text-xs font-medium leading-[18px]' style={{ color: textColor }}>
-          {item.label}
-        </span>
-        <span
-          data-testid='donut-chart-leader-value'
-          className='mt-0.5 max-w-full truncate text-xs leading-[18px]'
-          style={{ color: textColor, opacity: 0.7 }}
+    <div className='relative h-full w-full'>
+      <PieChart height={height} width={width}>
+        <Pie
+          // Recharts' bar timing (400ms from the start) instead of the slower pie default.
+          animationBegin={0}
+          animationDuration={CHART_ENTRY_ANIMATION_MS}
+          cursor={clickable ? 'pointer' : undefined}
+          cx={cx}
+          cy={cy}
+          data={slices}
+          dataKey='value'
+          endAngle={-270}
+          innerRadius={geometry.inner}
+          isAnimationActive={animation}
+          label={renderLabel}
+          labelLine={false}
+          nameKey='label'
+          onClick={onSliceClick}
+          onMouseEnter={onSliceEnter}
+          onMouseLeave={onSliceLeave}
+          outerRadius={geometry.outer}
+          paddingAngle={0}
+          startAngle={90}
+          stroke='var(--dash-card-bg)'
+          strokeWidth={1}
         >
-          {`${Math.trunc(item.value)} (${percentage}%)`}
-        </span>
-      </div>
+          {slices.map((item) => (
+            <Cell fill={item.color} key={chartItemKey(item)} />
+          ))}
+        </Pie>
+        <Customized component={ring} />
+      </PieChart>
+      {geometry.showTotal ? (
+        <div
+          className='pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center'
+          style={{ left: cx, top: cy, maxWidth: centerWidth, gap: 2 }}
+        >
+          <div
+            className='max-w-full truncate tabular-nums text-text-primary'
+            data-parity-id='dash-donut-total'
+            data-testid='chart-donut-total'
+            data-value={total}
+            style={{ fontSize: totalFont, lineHeight: 1.1, fontWeight: donutTotal.weight }}
+          >
+            {totalText}
+          </div>
+          {geometry.showCaption ? (
+            <div
+              className='max-w-full truncate text-text-secondary'
+              data-parity-id='dash-donut-caption'
+              data-testid='chart-donut-caption'
+              style={{ fontSize: donutCaption.size, lineHeight: `${donutCaption.lineHeight}px` }}
+            >
+              {t('chart.total', { defaultValue: 'Total' })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
-}
+});
 
 /**
- * Desktop's `_DonutChartContent`: the ring with the total in its hole and a
- * leader + label per section, above a legend row. Hovering a section, or its
- * legend entry, thickens it, dims every other section and shows its tooltip.
+ * Donut chart (WP10 §2.2): positive values only, a thin ring with 1px gaps
+ * in the card color starting at 12 o'clock, the rounded total in the centre,
+ * outside labels with leaders, a paginated category legend.
  */
-function DonutChartContent({ data, onSliceClick, aggregationType }: DonutChartWidgetProps) {
-  const { t } = useTranslation();
-  const isDark = useContext(ThemeModeContext)?.isDark ?? false;
-  const chartRef = useRef<HTMLDivElement>(null);
-  const { width, height } = useElementSize(chartRef);
-  const aggregationLabel = useChartAggregationLabel(aggregationType);
-  // The ring and the legend report their own enter and leave events; keeping
-  // them apart means crossing from one to the other cannot race.
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [legendHoveredIndex, setLegendHoveredIndex] = useState<number | null>(null);
-
-  const total = useMemo(() => data.reduce((sum, item) => sum + item.value, 0), [data]);
-  const sections = useMemo<DonutSection[]>(() => {
-    let start = 0;
-
-    return data.map((item, index) => {
-      const sweep = (item.value / total) * 2 * Math.PI;
-      const midAngle = start + sweep / 2;
-      const { fill, text } = resolveDonutSectionColors(item, index, isDark);
-
-      start += sweep;
-      return { item, color: fill, textColor: text, midAngle };
-    });
-  }, [data, total, isDark]);
-  const pieData = useMemo(
-    () => sections.map(({ item, color }) => ({ label: item.label, value: item.value, fill: color })),
-    [sections]
-  );
-  const leaders = useMemo(
-    () => sections.map((section) => layoutLeader(section.midAngle, width, height)),
-    [sections, width, height]
-  );
-  const inRange = (index: number | null) => (index !== null && index >= 0 && index < sections.length ? index : null);
-  // The ring wins over the legend.
-  const active = inRange(hoveredIndex) ?? inRange(legendHoveredIndex);
-  const activeSection = active === null ? undefined : sections[active];
-  const activeLeader = active === null ? undefined : leaders[active];
-
-  const handleSectionClick = (index: number) => {
-    const section = sections[index];
-
-    if (!section) return;
-    // Desktop clears the hover once a section is tapped.
-    setHoveredIndex(null);
-    onSliceClick?.({ ...section.item, color: section.color });
-  };
-
-  const renderLeader = (index: number) => (
-    <SectionLeader
-      key={`${sections[index].item.label}-${index}`}
-      section={sections[index]}
-      layout={leaders[index]}
-      total={total}
-      chartWidth={width}
-      dimmed={active !== null && index !== active}
-    />
+function DonutChartWidgetImpl({ data, onItemClick, fill = false }: DonutChartWidgetProps) {
+  const { style, format, paint, mobile } = useChartContext();
+  // One item per category (its total and colour); slices, shares and the total come from the positive values only.
+  const items = useMemo(() => toCategoryItems(data, paint), [data, paint]);
+  const slices = useMemo(() => items.filter((item) => item.value > 0), [items]);
+  const total = useMemo(() => slices.reduce((sum, item) => sum + item.value, 0), [slices]);
+  const { hoveredIndex, pointer, show, leave, tap, frameHandlers } = useChartHover(slices, {
+    mobile,
+    chartType: ChartType.Donut,
+  });
+  const legend = useChartLegend(ChartType.Donut, style.legendPosition, slices);
+  const rows = useChartA11yRows(items, format);
+  const hovered = hoveredIndex === null ? undefined : slices[hoveredIndex];
+  const tooltip = useChartItemTooltip(
+    hovered,
+    hovered ? `${format(hovered.value, 'tooltip')} (${formatShare(hovered.value, total)})` : undefined,
+    hovered?.color,
+    Boolean(onItemClick),
+    mobile
   );
 
-  return (
-    <>
-      <div ref={chartRef} className='relative min-h-0 flex-1 overflow-hidden'>
-        {width > 0 && height > 0 && (
-          <>
-            <PieChart width={width} height={height} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-              <Pie
-                data={pieData}
-                dataKey='value'
-                nameKey='label'
-                cx='50%'
-                cy='50%'
-                innerRadius={INNER_RADIUS}
-                outerRadius={INNER_RADIUS + RING_WIDTH}
-                startAngle={0}
-                endAngle={-360}
-                paddingAngle={0}
-                isAnimationActive={false}
-                // Recharts applies `inactiveShape` only while an index is active, so -1 means "none hovered".
-                activeIndex={active ?? -1}
-                activeShape={renderActiveSection}
-                inactiveShape={active === null ? renderIdleSection : renderDimmedSection}
-                onMouseEnter={(_, index) => setHoveredIndex(index)}
-                onMouseLeave={() => setHoveredIndex(null)}
-                onClick={(_, index) => handleSectionClick(index)}
-              />
-            </PieChart>
-            <div
-              data-testid='donut-chart-center'
-              className='pointer-events-none absolute inset-0 flex flex-col items-center justify-center'
-            >
-              <span className='text-[32px] font-semibold leading-[39px] text-text-primary'>{Math.trunc(total)}</span>
-              <span className='text-xl leading-7 text-text-secondary'>{t('chart.total')}</span>
-              {aggregationLabel && (
-                <ChartTitle
-                  label={aggregationLabel}
-                  orientation='horizontal'
-                  className='text-xs leading-[18px] text-text-tertiary'
-                />
-              )}
-            </div>
-            {/* The active section's leader is drawn last so it sits above every other label. */}
-            {sections.map((_, index) => (index === active ? null : renderLeader(index)))}
-            {active !== null && renderLeader(active)}
-            {activeSection && activeLeader && (
-              <PositionedChartTooltip
-                label={activeSection.item.label}
-                value={activeSection.item.value}
-                color={activeSection.textColor}
-                anchor={{ x: activeLeader.tooltipX, y: activeLeader.lineEndY }}
-                chartSize={{ width, height }}
-                verticalGap={0}
-              />
-            )}
-          </>
-        )}
-      </div>
-      {/* Centered while it fits, scrolls horizontally from the first item once it doesn't. */}
-      <div data-testid='donut-chart-legend' className='mt-4 w-full shrink-0 overflow-x-auto'>
-        <div className='mx-auto flex w-max'>
-          {sections.map(({ item, color }, index) => (
-            <button
-              key={`${item.label}-${index}`}
-              type='button'
-              data-testid='donut-chart-legend-item'
-              className='flex items-center rounded-100 pr-5 hover:bg-fill-content-hover'
-              onClick={() => onSliceClick?.({ ...item, color })}
-              onMouseEnter={() => setLegendHoveredIndex(index)}
-              onMouseLeave={() => setLegendHoveredIndex(null)}
-            >
-              {/* Swatches stay at full color; only another entry's label steps back while one is active. */}
-              <ChartIndicatorDot color={color} />
-              <span
-                className={cn(
-                  'ml-1.5 whitespace-nowrap text-xs font-medium leading-[18px]',
-                  active !== null && index !== active ? 'text-text-tertiary' : 'text-text-primary'
-                )}
-              >
-                {item.label}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
+  // A slice click drills at once; in a mobile context the first tap shows its tooltip (`resolveChartTap`).
+  const handleClick = useCallback(
+    (_: unknown, index: number, event?: unknown) => {
+      const slice = slices[index];
+      const categoryIndex = slice ? data.categories.findIndex((category) => category.key === slice.key) : -1;
+
+      tap(categoryIndex === -1 ? null : { index, key: data.categories[categoryIndex].key }, event, () => {
+        const item = toDrillItem(data, { categoryIndex, seriesIndex: null }, paint);
+
+        if (item) onItemClick?.(item);
+      });
+    },
+    [slices, data, paint, onItemClick, tap]
   );
-}
+  const handleEnter = useCallback((_: unknown, index: number, event?: PointerLike) => show(index, event), [show]);
 
-/**
- * Donut chart (desktop's `DatabaseDonutChart`). Only categories with a
- * positive, finite value get a section.
- */
-function DonutChartWidgetImpl({ data, onSliceClick, aggregationType }: DonutChartWidgetProps) {
-  // Unlike the other charts, desktop's donut `_validateData` also drops zeros.
-  const validData = useMemo(() => data.filter((item) => Number.isFinite(item.value) && item.value > 0), [data]);
-
-  if (validData.length === 0) {
-    return (
-      <div data-testid='donut-chart-widget' className='h-[400px] w-full'>
-        <ChartNoValidData />
-      </div>
-    );
+  if (slices.length === 0) {
+    return <ChartNoDataState fill={fill} variant='donut' />;
   }
 
   return (
-    <div data-testid='donut-chart-widget' className='flex h-[400px] w-full flex-col py-6'>
-      <DonutChartContent data={validData} onSliceClick={onSliceClick} aggregationType={aggregationType} />
-    </div>
+    <ChartFrame
+      fill={fill}
+      frameHandlers={frameHandlers}
+      legend={legend}
+      pointer={pointer}
+      rows={rows}
+      testId='donut-chart-widget'
+      tooltip={tooltip}
+      truncationCount={truncationCaptionCount(data)}
+    >
+      {({ width, height, legendHeight }) => (
+        <DonutPlot
+          clickable={Boolean(onItemClick)}
+          height={height}
+          legendHeight={legendHeight}
+          onSliceClick={handleClick}
+          onSliceEnter={handleEnter}
+          onSliceLeave={leave}
+          slices={slices}
+          total={total}
+          width={width}
+        />
+      )}
+    </ChartFrame>
   );
 }
 
-// Memoized with content-equality so Yjs hydration micro-batches don't rebuild
-// the recharts SVG. `onSliceClick` is `useCallback`-stable in `ChartProvider`.
-export const DonutChartWidget = memo(DonutChartWidgetImpl, (prev, next) => {
-  return (
-    prev.onSliceClick === next.onSliceClick &&
-    prev.aggregationType === next.aggregationType &&
-    chartDataEqual(prev.data, next.data)
-  );
-});
+// `ChartProvider` hands over a new `data` array only when the content changed
+// and a stable `onItemClick`, so the default shallow comparison is enough.
+export const DonutChartWidget = memo(DonutChartWidgetImpl);
 
 export default DonutChartWidget;

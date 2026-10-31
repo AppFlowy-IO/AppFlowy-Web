@@ -14,13 +14,14 @@ import { slateContentInsertToYData, yDocToSlateContent } from '@/application/sla
 import { getDocument, initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, YDoc, YjsEditorKey } from '@/application/types';
 import { ERROR_CODE } from '@/application/constants';
-import { updateServerInfo } from '@/utils/server-info';
-import { getConfigValue } from '@/utils/runtime-config';
 import { Editor } from '@/components/editor';
 import AppTheme from '@/components/main/AppTheme';
 import { AFConfigContext } from '@/components/main/app.hooks';
+import { Toaster } from '@/components/ui/sonner';
 import { i18nInstance } from '@/i18n/config';
 import en from '@/@types/translations/en.json';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 import '@/styles/global.css';
 
 initAPIService({ baseURL: location.origin, gotrueURL: location.origin, wsURL: '' });
@@ -162,6 +163,7 @@ void i18nInstance.changeLanguage('en').then(() =>
     <AppTheme>
       <div className='min-h-screen bg-surface-primary text-text-primary'>
         <Fixture />
+        {query.has('image-hover') && <Toaster />}
       </div>
     </AppTheme>
   )
