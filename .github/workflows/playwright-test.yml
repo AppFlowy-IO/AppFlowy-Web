@@ -189,6 +189,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Ordinary runs skip template-interop until Desktop main has the SDK driver
+      # (AppFlowy-Premium #1547) and a Cloud release includes Cloud-Premium #1504.
+      # Dispatch with interop_only=true still runs it for paired validation.
       - name: Select test groups
         id: groups
         env:
@@ -198,7 +201,8 @@ jobs:
             const fs = require("fs");
             const groups = require("./.github/playwright-groups.json");
             const selected = process.env.INTEROP_ONLY === "true"
-              ? groups.filter(group => group.name === "template-interop") : groups;
+              ? groups.filter(group => group.name === "template-interop")
+              : groups.filter(group => group.name !== "template-interop");
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `groups=${JSON.stringify(selected)}\n`);
           '
 

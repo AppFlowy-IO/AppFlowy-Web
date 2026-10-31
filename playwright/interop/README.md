@@ -41,7 +41,9 @@ No installed Desktop preferences, `.env` files or user accounts are changed.
 ## CI
 
 The `template-interop` job in `playwright-test.yml` builds the SDK from Desktop
-`main` for ordinary Web changes. Workflow dispatch accepts an exact `desktop_ref`
+`main` for ordinary Web changes. Ordinary runs skip it for now, until Desktop
+`main` has the SDK driver (#1547) and a Cloud release includes #1504.
+Workflow dispatch accepts an exact `desktop_ref`
 and `interop_only=true` to validate paired changes before either PR merges.
 Desktop's `Web/Desktop template compatibility` workflow dispatches that suite
 with its exact PR head SHA and waits for the remote result. A failed remote run
