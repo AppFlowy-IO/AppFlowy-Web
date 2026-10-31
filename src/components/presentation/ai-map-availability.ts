@@ -15,6 +15,6 @@ export function aiMapUnavailableReason(status: PresentationStatus, canWrite: boo
       : "AI mind maps can't be generated until AI usage tracking is set up on this server. Ask your administrator.";
   }
 
-  if (ai.limit !== null && (ai.remaining ?? 0) <= 0) return 'This workspace has no AI responses left.';
+  if (ai.unlimited !== true && ai.limit !== null && (ai.remaining ?? 0) <= 0) return 'This workspace has no AI responses left.';
   return undefined;
 }

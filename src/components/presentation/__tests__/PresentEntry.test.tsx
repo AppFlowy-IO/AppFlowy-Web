@@ -143,7 +143,9 @@ it('opens compact AI ppt settings on the authorized page and closes back to the 
   expect(screen.getByText('Live document')).toBeTruthy();
   fireEvent.keyDown(screen.getByRole('button', { name: 'Custom', exact: true }), { key: 'Enter' });
   expect(mockUpgrade).not.toHaveBeenCalled();
-  fireEvent.click(await screen.findByRole('menuitemradio', { name: '5', exact: true }));
+  expect(await screen.findByText(/Custom slide counts require Pro/)).toBeTruthy();
+  expect(screen.queryByRole('menuitemradio', { name: '5', exact: true })).toBeNull();
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: 'Close generation settings' }));
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Create presentation settings' })).toBeNull());
 });

@@ -42,6 +42,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   PPT_EXPORT_LIMIT: 'This workspace has used its PowerPoint export allowance.',
   CUSTOM_SLIDE_COUNT: 'A paid plan is required for a custom slide count.',
   MINDMAP_STYLE: 'A paid plan is required for this mind-map style.',
+  COMPANY_STYLE: 'Pro is required to save or edit a company style.',
+  AI_LIMIT: 'This workspace has reached its AI response allowance.',
   AI_RESPONSE_LIMIT: 'This workspace has reached its AI response allowance.',
   AI_ACCOUNTING_NOT_READY: 'AI usage is temporarily unavailable. Please try again shortly.',
   AI_ACCOUNTING_BUSY: 'Another operation is using this allowance. Please try again shortly.',
@@ -178,8 +180,8 @@ export async function uploadTemplate(scope: WorkspaceScope, file: File, signal?:
     headers: { 'Content-Type': file.type || 'application/octet-stream' }, signal });
 }
 
-export const reviewStyle = (scope: WorkspaceScope, id: string, expectedVersion: number, style: ReviewedStyle, signal?: AbortSignal) =>
-  presentationRequest<Artifact<ReviewedStyle>>({ url: `${base(scope)}/styles/${segment(id)}/review`, method: 'PUT', data: { expectedVersion, style }, signal });
+export const reviewStyle = (scope: WorkspaceScope, id: string, expectedVersion: number, style: ReviewedStyle, signal?: AbortSignal, company?: boolean) =>
+  presentationRequest<Artifact<ReviewedStyle>>({ url: `${base(scope)}/styles/${segment(id)}/review`, method: 'PUT', data: { expectedVersion, style, ...(company !== undefined && { company }) }, signal });
 
 export const analyzeTemplate = (scope: WorkspaceScope, id: string, expectedVersion: number, signal?: AbortSignal) =>
   presentationRequest<Artifact<ReviewedStyle>>({ url: `${base(scope)}/styles/${segment(id)}/analyze`, method: 'POST', data: { expectedVersion }, signal });

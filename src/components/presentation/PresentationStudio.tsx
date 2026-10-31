@@ -24,7 +24,7 @@ import {
   styleReference,
   PresentationAPIError,
 } from './presentation-client';
-import { templateUploadLimit } from './presentation-policy';
+import { aiMapUpgradeMessage, CUSTOM_SLIDE_MESSAGE, presentationCapabilities, presentationUpgradeRequired, slideCountLimitMessage, templateUploadLimit } from './presentation-policy';
 import PresentationLoading, { MindMapLoading } from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
 import { describeSlideSources } from './slide-sources';
@@ -35,6 +35,7 @@ import { hasStoryPlanChanges, prepareStoryPlan } from './story-plan';
 import StyleSettings from './StyleSettings';
 import { Action, Notice } from './ui';
 import { useReusableGeneration } from './useReusableGeneration';
+import { usePresentationStatusRefresh } from './usePresentationStatusRefresh';
 import { regenerationReference } from './workflow-state';
 
 import type {
@@ -145,6 +146,8 @@ export default function PresentationStudio({
   const [runGeneration] = useState(createGenerationRunner);
   const assessmentCache = useRef(new Map<string, SlideAssessment>());
   const [status, setStatus] = useState<PresentationStatus>();
+  const refreshStatus = usePresentationStatusRefresh(workspaceId, userId, setStatus);
+  const capabilities = presentationCapabilities(status);
   const [mode, setMode] = useState<Mode>(initialMode === 'document' ? 'source' : initialMode);
   const [documentOpen, setDocumentOpen] = useState(initialMode === 'document');
   const [mapPresentationOpen, setMapPresentationOpen] = useState(presentMindMap);
@@ -470,7 +473,8 @@ export default function PresentationStudio({
 
   function report(error: unknown) {
     setNotice(error instanceof Error ? error.message : 'Presentation request failed.');
-    setUpgradeRequired(error instanceof PresentationAPIError && error.status === 402);
+    setUpgradeRequired(presentationUpgradeRequired(error));
+    if (presentationUpgradeRequired(error)) void refreshStatus();
   }
 
   function source(id: string) {
@@ -529,6 +533,23 @@ export default function PresentationStudio({
 
   async function generate(task: 'slides' | 'mindmap', slide?: Slide, editedPlan?: StoryPlan) {
     if (busy || !status) return;
+    const count = editedPlan?.slides.length ?? (slide ? 1 : options.slideCountMode === 'auto' ? 1 : options.slideCount);
+    const custom = serverOptions(options, style).slideCountMode === 'custom';
+    const denial = task === 'mindmap' ? aiMapUpgradeMessage(status)
+      : custom && capabilities?.customSlideCount === false ? CUSTOM_SLIDE_MESSAGE
+      : capabilities?.isPro === false ? slideCountLimitMessage(count, status) : undefined;
+
+    if (denial) {
+      if (editedPlan) setOutlineError({ message: denial, code: custom ? 'CUSTOM_SLIDE_COUNT' : 'SLIDE_GENERATION_LIMIT', upgradeRequired: true });
+      else {
+        setNotice(denial);
+        setUpgradeRequired(true);
+      }
+
+      void refreshStatus();
+      return;
+    }
+
     if (task === 'slides' && (slide || editedPlan) && activeDeck && !sourceMatches) {
       report(
         new PresentationAPIError(
@@ -609,9 +630,10 @@ export default function PresentationStudio({
           setOutlineError({
             message: error instanceof Error ? error.message : 'Regeneration failed.',
             code: error instanceof PresentationAPIError ? error.code : 'REGENERATION_FAILED',
-            upgradeRequired: error instanceof PresentationAPIError && error.status === 402,
+            upgradeRequired: presentationUpgradeRequired(error),
           });
         else report(error);
+        if (editedPlan && presentationUpgradeRequired(error)) void refreshStatus();
       }
     } finally {
       if (generation.current === controller) setBusy(false);
@@ -638,7 +660,7 @@ export default function PresentationStudio({
       expectedVersion: currentArtifact.version,
       map,
       style: mapStyle,
-    });
+    }).finally(refreshStatus);
 
     if (mapContext.current.key !== key || !mapContext.current.canWrite) {
       throw new Error('The source or your access changed. Reopen the map before editing.');
@@ -697,6 +719,8 @@ export default function PresentationStudio({
       sourceDetails={mapSourceDetails}
       origin={showAIMap ? (savedMapArtifact?.origin === 'ai' ? 'ai' : 'imported') : undefined}
       onUpgrade={upgrade}
+      canUsePaidStyles={capabilities?.mindmapStyles}
+      generationPaywall={canWrite && !reuse.job ? (upgradeRequired && notice ? notice : aiMapUpgradeMessage(status)) : undefined}
       canGenerate={!busy && !reuse.checking && !reuse.error && (!!reuse.job || canGenerateMap)}
       generateLabel={reuse.job ? 'Open mind map' : 'Generate with AI'}
       onGenerate={() => {
@@ -798,6 +822,7 @@ export default function PresentationStudio({
           {reuse.job ? 'Open mind map' : 'Generate AI mind map'}
         </Action>
       )}
+      {canWrite && !reuse.job && aiMapUpgradeMessage(status) && <PresentationPaywall message={aiMapUpgradeMessage(status)!} onUpgrade={upgrade} />}
       {mapPresentationOpen && <Action onClick={closeMapPresentation}>Back to page</Action>}
     </section>
   );
@@ -926,6 +951,7 @@ export default function PresentationStudio({
                   }}
                   onStyles={() => setMode('styles')}
                   canGenerate={canGenerate && !preparingSource && !!snapshot.serverSource}
+                  canImportTemplates={canWrite}
                   canRegenerate={canWrite && !busy}
                   canAssess={
                     !!status && canWrite && !preparingSource && !!snapshot.serverSource && status.remainingSlides > 0
@@ -936,6 +962,12 @@ export default function PresentationStudio({
                   maxSlides={status?.maxSlides}
                   maxTemplateBytes={templateUploadLimit(status)}
                   remainingSlides={status?.remainingSlides}
+                  isPro={capabilities?.isPro}
+                  customSlideCount={capabilities?.customSlideCount}
+                  companyStyles={capabilities?.companyStyles}
+                  exportAvailable={capabilities?.exportAvailable}
+                  maxExportSlides={capabilities?.maxExportSlides}
+                  onStatusRefresh={refreshStatus}
                   onUpgrade={onUpgrade ?? (() => setNotice('Open workspace billing to compare plans.'))}
                   sourceChanged={!!activeDeck && !!snapshot.serverSource && !sourceMatches}
                   hasNarrative={!!narrative}
@@ -980,6 +1012,10 @@ export default function PresentationStudio({
               scope={scope}
               editable={canManageStyles}
               maxTemplateBytes={templateUploadLimit(status)}
+              companyStyles={capabilities?.companyStyles}
+              isPro={capabilities?.isPro}
+              onUpgrade={upgrade}
+              onStatusRefresh={refreshStatus}
             />
           )}
           {mode === 'source' && (

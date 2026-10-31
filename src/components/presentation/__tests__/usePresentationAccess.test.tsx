@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { Role } from '@/application/types';
 
@@ -10,6 +11,7 @@ import { usePresentationAccess } from '../usePresentationAccess';
 
 const mockWorkspace = { id: 'workspace', role: Role.Owner, owner: { uid: 'owner' } };
 let mockWorkspaceId = 'workspace';
+let mockUserUid = 'owner';
 
 jest.mock('../presentation-client', () => ({
   getPresentationStatus: jest.fn(),
@@ -21,7 +23,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useUserWorkspaceInfo: () => ({ workspaces: [mockWorkspace] }),
 }));
 jest.mock('@/components/app/hooks/useServerInfo', () => ({ useIsOfficialHosted: () => true }));
-jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: 'owner' }) }));
+jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: mockUserUid }) }));
 jest.mock('sonner', () => ({ toast: { info: jest.fn() } }));
 
 const status: PresentationStatus = {
@@ -47,6 +49,30 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 beforeEach(() => {
   jest.mocked(getPresentationStatus).mockReset();
   mockWorkspaceId = 'workspace';
+  mockWorkspace.role = Role.Owner;
+  mockUserUid = 'owner';
+});
+
+test('nonowner exits fullscreen and is directed to the owner without changing the current route', async () => {
+  mockWorkspace.role = Role.Member;
+  mockUserUid = 'member';
+  jest.mocked(getPresentationStatus).mockResolvedValue(status);
+  const { result } = renderHook(() => ({ access: usePresentationAccess(), location: useLocation() }), { wrapper });
+
+  await waitFor(() => expect(result.current.access.isLoading).toBe(false));
+  const exit = jest.fn(async () => undefined);
+
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: document.body });
+  Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit });
+  try {
+    await act(() => result.current.access.onUpgrade());
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledWith('Ask your workspace owner to upgrade to Pro.');
+    expect(result.current.location.pathname).toBe('/app/workspace/page');
+    expect(result.current.location.search).toBe('?keep=1');
+  } finally {
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+  }
 });
 
 test('uses presentation reservations and opens the existing upgrade route after leaving fullscreen', async () => {

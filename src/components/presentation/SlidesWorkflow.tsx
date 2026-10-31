@@ -28,7 +28,7 @@ import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import FullscreenControl from './FullscreenControl';
-import { PresentationAPIError } from './presentation-client';
+import { presentationUpgradeRequired } from './presentation-policy';
 import PresentationPaywall from './PresentationPaywall';
 import PresentationSettingsDropdown from './PresentationSettingsDropdown';
 import ServerSlideCanvas, { ServerSlideSceneProvider } from './ServerSlideCanvas';
@@ -74,6 +74,7 @@ export interface SlidesWorkflowProps {
   onDiscardOutline: () => void;
   onStyles: () => void;
   canGenerate: boolean;
+  canImportTemplates?: boolean;
   canAssess?: boolean;
   promptBundleVersion?: string;
   assessmentCache?: Map<string, SlideAssessment>;
@@ -81,6 +82,12 @@ export interface SlidesWorkflowProps {
   canRegenerate?: boolean;
   remainingSlides?: number | null;
   maxSlides?: number;
+  isPro?: boolean;
+  customSlideCount?: boolean;
+  companyStyles?: boolean;
+  exportAvailable?: boolean;
+  maxExportSlides?: number;
+  onStatusRefresh?: () => Promise<void>;
   maxTemplateBytes?: number | null;
   onUpgrade: () => void;
   lab?: boolean;
@@ -374,6 +381,14 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
 
   async function download() {
     if (!onDownload || downloading) return;
+    // An uncertain delivery may already own the last export. Replaying its receipt stays free.
+    if (!retryId.current && props.isPro === false && (props.exportAvailable === false || (props.maxExportSlides !== undefined && (plan?.slides.length ?? 0) > props.maxExportSlides))) {
+      setDownloadError('Free workspaces have one lifetime PowerPoint export, for a deck of at most 12 slides. Upgrade to Pro for additional exports or larger decks.');
+      setDownloadUpgrade(true);
+      void props.onStatusRefresh?.();
+      return;
+    }
+
     const controller = new AbortController();
 
     downloadController.current = controller;
@@ -402,7 +417,8 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
     } catch (e) {
       if (!controller.signal.aborted) {
         setDownloadError((e as Error).message);
-        setDownloadUpgrade(e instanceof PresentationAPIError && e.status === 402);
+        setDownloadUpgrade(presentationUpgradeRequired(e));
+        if (presentationUpgradeRequired(e)) void props.onStatusRefresh?.();
       }
     } finally {
       if (downloadController.current === controller) setDownloading(false);
@@ -646,6 +662,9 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
           {style.compatibilityWarnings?.map((w) => (
             <Notice key={w}>{w}</Notice>
           ))}
+          {!downloadError && props.isPro === false && (props.exportAvailable === false || (props.maxExportSlides !== undefined && (plan?.slides.length ?? 0) > props.maxExportSlides)) && (
+            <PresentationPaywall message='Free workspaces have one lifetime PowerPoint export, for a deck of at most 12 slides. Upgrade to Pro for additional exports or larger decks. Preview and presenting remain available.' onUpgrade={props.onUpgrade} />
+          )}
           {downloadError &&
             (downloadUpgrade ? (
               <PresentationPaywall message={downloadError} onUpgrade={props.onUpgrade} />

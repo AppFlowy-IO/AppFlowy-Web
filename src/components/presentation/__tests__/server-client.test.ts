@@ -36,6 +36,28 @@ const status: PresentationStatus = { schemaVersion: 1, promptBundleVersion: 'bun
 const scene: DeckScene = { schemaVersion: 1, width: 1280, height: 720, title: 'Project', style: { id: '00000000-0000-0000-0000-000000000000', version: 1 }, theme, slides: [], warnings: [] };
 const reviewed: ReviewedStyle = { reference: { id, version: 1 }, theme, templateSlides: [{ id: 'imported-1', title: 'Reference', text: 'Reference text', textSlots: { title: 'Reference' }, elements: [] }] };
 function response(data: unknown, statusCode = 200) { return { data: { code: 0, data, message: 'OK' }, status: statusCode, headers: {} }; }
+
+test('company promotion is an explicit review-body field and result metadata stays outside ReviewedStyle', async () => {
+  mockRequest.mockResolvedValue(response({ ...artifact, content: reviewed, company: true }));
+  const style = { ...themeToStyle(theme), id, serverStyle: reviewed, serverVersion: 1 };
+  const result = await reviewPresentationStyle(scope, style, undefined, true);
+
+  expect(mockRequest).toHaveBeenLastCalledWith(expect.objectContaining({ method: 'PUT', data: { expectedVersion: 1, style: reviewed, company: true } }));
+  expect(result.company).toBe(true);
+  expect(result.serverStyle).not.toHaveProperty('company');
+  await reviewPresentationStyle(scope, result);
+  expect(mockRequest).toHaveBeenLastCalledWith(expect.objectContaining({ data: { expectedVersion: 1, style: reviewed } }));
+});
+
+test.each(['AI_LIMIT', 'AI_RESPONSE_LIMIT', 'COMPANY_STYLE', 'MINDMAP_STYLE', 'SLIDE_GENERATION_LIMIT', 'PPT_EXPORT_LIMIT'])('terminal %s quota failure retains upgrade semantics', async (reason) => {
+  await expect(waitForJob(scope, { ...job, state: 'failed', errorReason: reason })).rejects.toMatchObject({ status: 402, code: reason, details: expect.objectContaining({ upgradeRequired: true }) });
+});
+
+test('ordinary Free template review omits company promotion', async () => {
+  mockRequest.mockResolvedValue(response({ ...artifact, content: reviewed, company: false }));
+  await reviewPresentationStyle(scope, { ...themeToStyle(theme), id, serverStyle: reviewed, serverVersion: 1 });
+  expect(mockRequest).toHaveBeenLastCalledWith(expect.objectContaining({ data: { expectedVersion: 1, style: reviewed } }));
+});
 function route(config: AxiosRequestConfig) {
   if (config.url?.endsWith('/generate')) return response(job);
   if (config.url?.endsWith('/status')) return response(status);

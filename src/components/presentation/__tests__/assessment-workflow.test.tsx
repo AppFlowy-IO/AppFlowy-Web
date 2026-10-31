@@ -329,6 +329,28 @@ test('completed assessment survives setup remount and busy transitions, but chan
   jest.useRealTimers();
 });
 
+test('status refresh updates allowances without repeating completed source analysis', async () => {
+  jest.useFakeTimers();
+  jest.mocked(assessPresentation).mockClear().mockResolvedValue({ assessment: { condition: 'clear', recommendedSlideCount: 4 } } as never);
+  const props = setupProps({ canAssess: true, assessmentCache: new Map(), promptBundleVersion: 'bundle-1' });
+  const scope = { workspaceId: 'workspace', pageId: 'page' };
+  const view = render(<SlideGenerationSetup props={props} scope={scope} />);
+
+  try {
+    await act(async () => { jest.advanceTimersByTime(500); });
+    expect(assessPresentation).toHaveBeenCalledTimes(1);
+    view.rerender(<SlideGenerationSetup props={{ ...props, isPro: false, maxSlides: 0, remainingSlides: 0, canAssess: false, canGenerate: false }} scope={scope} />);
+    await act(async () => { jest.advanceTimersByTime(500); });
+    // A subsequent entitlement refresh may enable generation again without changing evidence.
+    view.rerender(<SlideGenerationSetup props={{ ...props, isPro: true, maxSlides: 100, remainingSlides: 100, exportAvailable: true }} scope={scope} />);
+    await act(async () => { jest.advanceTimersByTime(500); });
+    expect(assessPresentation).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('a saved deck reuses its analysis across theme and count changes without another request', async () => {
   jest.useFakeTimers();
   jest.mocked(assessPresentation).mockClear();

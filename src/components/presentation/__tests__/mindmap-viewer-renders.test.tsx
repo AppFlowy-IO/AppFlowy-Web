@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useLayoutEffect, type ReactNode } from 'react';
 
 import { mapBranchPath } from '../mindmap-layout';
@@ -90,6 +90,54 @@ function Probe({ children, onCommit }: { children: ReactNode; onCommit: () => vo
 
 const canvas = () => screen.getByRole('region', { name: 'Interactive mind map' });
 const zoom = () => screen.getByLabelText('Zoom level').textContent;
+
+test.each(['Left-facing tree', 'Two-sided mind map', 'Top-down tree', 'Curved branches'])('Free %s offers Upgrade without saving or changing map content', async (choice) => {
+  const onStyleChange = jest.fn();
+  const onUpgrade = jest.fn();
+
+  render(<MindMapViewer map={map} canUsePaidStyles={false} onStyleChange={onStyleChange} onUpgrade={onUpgrade} canGenerate={false} onGenerate={jest.fn()} onSlides={jest.fn()} onSource={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mind map styles' }));
+  fireEvent.click(screen.getByRole('radio', { name: choice }));
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Upgrade to Pro' }))[0]);
+  expect(onUpgrade).toHaveBeenCalledTimes(1);
+  expect(onStyleChange).not.toHaveBeenCalled();
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Right-facing tree' }).checked).toBe(true);
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Rounded branches' }).checked).toBe(true);
+  expect(screen.getByText('Launch plan')).toBeTruthy();
+});
+
+test.each(['Left-facing tree', 'Two-sided mind map', 'Top-down tree', 'Curved branches'])('paid %s persists through the server action', async (choice) => {
+  const onStyleChange = jest.fn().mockResolvedValue(undefined);
+
+  render(<MindMapViewer map={map} canUsePaidStyles onStyleChange={onStyleChange} onUpgrade={jest.fn()} canGenerate={false} onGenerate={jest.fn()} onSlides={jest.fn()} onSource={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mind map styles' }));
+  fireEvent.click(screen.getByRole('radio', { name: choice }));
+  await waitFor(() => expect(onStyleChange).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('radio', { name: choice }).checked).toBe(true));
+  expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).toBeNull();
+});
+
+test.each([[402, true], [403, false], [429, false], [503, false]])('map-style HTTP %i retains the map and shows Upgrade=%s', async (status, upgrade) => {
+  const onStyleChange = jest.fn().mockRejectedValue(Object.assign(new Error('Style failed'), { status }));
+
+  render(<MindMapViewer map={map} canUsePaidStyles onStyleChange={onStyleChange} onUpgrade={jest.fn()} canGenerate={false} onGenerate={jest.fn()} onSlides={jest.fn()} onSource={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mind map styles' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Left-facing tree' }));
+  await screen.findByText('Style failed');
+  expect(screen.queryAllByRole('button', { name: 'Upgrade to Pro' }).length > 0).toBe(upgrade);
+  expect(screen.getByText('Launch plan')).toBeTruthy();
+});
+
+test('downgrade displays default geometry without discarding saved content or persisting fallback', () => {
+  const onStyleChange = jest.fn();
+
+  render(<MindMapViewer map={map} mapStyle={{ structure: 'down', branchLine: 'curved' }} canUsePaidStyles={false} onStyleChange={onStyleChange} onUpgrade={jest.fn()} canGenerate={false} onGenerate={jest.fn()} onSlides={jest.fn()} onSource={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mind map styles' }));
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Right-facing tree' }).checked).toBe(true);
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Rounded branches' }).checked).toBe(true);
+  expect(onStyleChange).not.toHaveBeenCalled();
+  expect(screen.getByText('Launch plan')).toBeTruthy();
+});
 const mapRenders = () => jest.mocked(mapBranchPath).mock.calls.length;
 
 function resizeCanvas(width: number, height: number) {

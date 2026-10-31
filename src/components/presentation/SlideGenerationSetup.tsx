@@ -10,7 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip as AppTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { analyzePresentationTemplate, assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from './presentation-client';
-import { slideCountLimitMessage, templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
+import { COMPANY_STYLE_MESSAGE, CUSTOM_SLIDE_MESSAGE, presentationUpgradeRequired, slideCountLimitMessage, templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
+import PresentationPaywall from './PresentationPaywall';
 import PresentationSettingsDropdown from './PresentationSettingsDropdown';
 import { effectiveSlideOptions } from './slide-guidance';
 import { SLIDE_COUNT_PRESETS } from './slide-limits';
@@ -71,7 +72,6 @@ export default function SlideGenerationSetup({
   const cachedAssessment = props.assessmentCache?.get(cacheKey) ?? savedAssessment;
   const [draft, setDraft] = useState<PresentationStyle>();
   const templateApproved = !!style.serverStyle && !style.requiresReview && style.reviewed !== false;
-  const canAssess = (props.canAssess ?? canGenerate) && (designMode !== 'template' || (templateApproved && !draft));
   const [assessed, setAssessed] = useState<{
     key: string;
     purpose?: string;
@@ -89,6 +89,7 @@ export default function SlideGenerationSetup({
   const [assessmentAttempt, setAssessmentAttempt] = useState(0);
   const [assessing, setAssessing] = useState(false);
   const [notice, setNotice] = useState('');
+  const [noticeUpgrade, setNoticeUpgrade] = useState(false);
   const [importing, setImporting] = useState(false);
   const [analyzingTemplate, setAnalyzingTemplate] = useState(false);
   const templateRequest = useRef<AbortController>();
@@ -106,6 +107,9 @@ export default function SlideGenerationSetup({
     !autoCount &&
     (options.slideCountSelection === 'custom' ||
       (!options.slideCountSelection && !slideCounts.includes(options.slideCount)));
+  const customDenied = showCustomCount && props.customSlideCount === false;
+  const canAssess = (props.canAssess ?? canGenerate) && !customDenied && (designMode !== 'template' || (templateApproved && !draft));
+  const countPaywall = props.reuse?.available ? undefined : customDenied ? CUSTOM_SLIDE_MESSAGE : props.isPro === false ? limitMessage : undefined;
   const presetOptions = effectiveSlideOptions(options);
 
   useEffect(() => {
@@ -132,12 +136,17 @@ export default function SlideGenerationSetup({
     templateRequest.current = controller;
     setImporting(true);
     setNotice('');
+    setNoticeUpgrade(false);
     try {
       await work(controller.signal);
     } catch (error) {
-      if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : 'Unable to load the template.');
+      if (!controller.signal.aborted) {
+        setNotice(error instanceof Error ? error.message : 'Unable to load the template.');
+        setNoticeUpgrade(presentationUpgradeRequired(error));
+      }
     } finally {
       if (templateRequest.current === controller) {
+        if (!controller.signal.aborted) void props.onStatusRefresh?.();
         templateRequest.current = undefined;
         setImporting(false);
         setAnalyzingTemplate(false);
@@ -214,6 +223,8 @@ export default function SlideGenerationSetup({
             // A failed reassessment must not leave the previous answer enabling generation.
             setAssessed(undefined);
             setNotice(error.message);
+            setNoticeUpgrade(presentationUpgradeRequired(error));
+            if (presentationUpgradeRequired(error)) void props.onStatusRefresh?.();
           }
         })
         .finally(() => {
@@ -246,7 +257,7 @@ export default function SlideGenerationSetup({
   const submitting = busy || waitingForResult;
   const ready =
     hasSource &&
-    (props.reuse?.available || (canGenerate && !!assessment && !limitMessage)) &&
+    (props.reuse?.available || (canGenerate && !!assessment && !limitMessage && !customDenied)) &&
     !props.reuse?.error &&
     !busy &&
     (!assessing || props.reuse?.available) &&
@@ -488,7 +499,7 @@ export default function SlideGenerationSetup({
                   aria-label='Import presentation template'
                   type='file'
                   accept='.pptx,.potx'
-                  disabled={importing || !scope || !canGenerate}
+                  disabled={importing || !scope || !(props.canImportTemplates ?? canGenerate)}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
 
@@ -496,6 +507,7 @@ export default function SlideGenerationSetup({
                     if (!file || !scope) return;
                     if (maxTemplateBytes !== null && file.size > maxTemplateBytes) {
                       setNotice(templateUploadSizeMessage(maxTemplateBytes));
+                      setNoticeUpgrade(props.isPro === false);
                       return;
                     }
 
@@ -646,6 +658,12 @@ export default function SlideGenerationSetup({
                     disabled={importing || !review.name.trim() || requiresAnalysis}
                     onClick={() => {
                       if (!scope) return;
+                      if (review.company && props.companyStyles === false) {
+                        setNotice(COMPANY_STYLE_MESSAGE);
+                        setNoticeUpgrade(true);
+                        return;
+                      }
+
                       void runTemplateRequest(async (signal) => {
                         const selected = await reviewPresentationTemplate(scope, review, signal);
 
@@ -695,6 +713,8 @@ export default function SlideGenerationSetup({
               value={showCustomCount ? options.slideCount : undefined}
               maxCount={maxSlides}
               disabled={maxSlides === undefined}
+              allowed={props.customSlideCount}
+              onUpgrade={props.onUpgrade}
               onValueChange={(slideCount) => {
                 change({ slideCount, slideCountMode: 'fixed', slideCountSelection: 'custom' });
               }}
@@ -705,7 +725,7 @@ export default function SlideGenerationSetup({
               {remainingSlides} slides available for this request. Generating and regenerating use this allowance.
             </p>
           )}
-          {limitMessage && <Notice>{limitMessage}</Notice>}
+          {countPaywall ? <PresentationPaywall message={countPaywall} onUpgrade={props.onUpgrade} /> : limitMessage && !props.reuse?.available && <Notice>{limitMessage}</Notice>}
         </div>
         {purposeQuestion && (
           <label className='ps-field ps-ppt-question'>
@@ -818,14 +838,14 @@ export default function SlideGenerationSetup({
             {props.reuse.error} <Action onClick={props.reuse.onRetry}>Try again</Action>
           </Notice>
         )}
-        {notice && !props.reuse?.available && (
+        {notice && !props.reuse?.available && (noticeUpgrade ? <PresentationPaywall message={notice} onUpgrade={props.onUpgrade} /> : (
           <Notice>
             {notice}{' '}
             {!assessing && (
               <Action onClick={() => setAssessmentAttempt((attempt) => attempt + 1)}>Retry analysis</Action>
             )}
           </Notice>
-        )}
+        ))}
         {!hasSource && <Notice>Add some document content before generating.</Notice>}
       </div>
       <footer className='ps-ppt-setup-footer'>

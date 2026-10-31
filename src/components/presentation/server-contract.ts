@@ -82,11 +82,18 @@ export interface ReviewedStyle {
 }
 export interface PresentationStatus {
   schemaVersion: number; promptBundleVersion: string; plan: 'free' | 'paid';
+  /** Optional during rollout; older servers expose plan and lifetime usage instead. */
+  isPro?: boolean;
+  generatedSlides?: number;
+  remainingExports?: number | null;
+  exportAvailable?: boolean;
+  maxExportSlides?: number;
+  capabilities?: { customSlideCount: boolean; mindmapStyles: boolean; companyStyles: boolean };
   usage: { freeSlides: number; reservedSlides: number; freeExports: number; reservedExports: number };
   remainingSlides: number; themes: Theme[]; slideSchemas: number[]; maxSlides: number;
   /** Null means no upload-size cap; omitted by older servers. */
   maxTemplateBytes?: number | null;
-  aiResponses: { metered?: boolean; policy?: string; period?: string; accountingReady?: boolean;
+  aiResponses: { metered?: boolean; unlimited?: boolean; policy?: string; period?: string; accountingReady?: boolean;
     committed?: number | null; reserved?: number | null; limit?: number | null; remaining?: number | null;
     reason?: string; retryable?: boolean };
 }
@@ -105,6 +112,7 @@ export interface JobStatus {
 }
 export interface MindMapStyle { structure: 'right-facing' | 'left-facing' | 'two-sided' | 'top-down'; branchLine: 'rounded' | 'curved'; }
 export interface Artifact<T = ServerSlidePlan | MindMap | ReviewedStyle> {
+  company?: boolean;
   id: string; workspaceId: string; version: number; content: T; resultHash: string; sourceRevision: string | null;
   options?: ServerGenerationOptions | null;
   assessment?: SlideAssessment | null;
@@ -112,6 +120,7 @@ export interface Artifact<T = ServerSlidePlan | MindMap | ReviewedStyle> {
   promptBundleVersion: string | null; compiledPromptChecksum: string | null; providerModel: Json;
 }
 export interface ArtifactSummary {
+  company?: boolean;
   id: string; kind: 'deck' | 'map' | 'style'; version: number; createdAt: string;
   origin: string | null; sourceRevision: string | null;
 }

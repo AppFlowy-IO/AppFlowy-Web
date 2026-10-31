@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 import { aiMapUnavailableReason } from '../ai-map-availability';
@@ -12,6 +12,8 @@ type ViewerProps = {
   map: MindMap;
   origin?: string;
   canGenerate: boolean;
+  generationPaywall?: string;
+  onUpgrade?: () => void;
   onMapChange?: (map: MindMap) => Promise<void>;
   onClosePresentation?: () => void;
 };
@@ -33,7 +35,9 @@ jest.mock('../MindMapViewer', () => ({
   __esModule: true,
   default: (props: ViewerProps) => {
     mockViewerProps = props;
-    return <div data-testid='server-map'>{props.map.nodes.map((node) => node.label).join(', ')}</div>;
+    const Paywall = jest.requireActual('../PresentationPaywall').default;
+
+    return <div data-testid='server-map'>{props.map.nodes.map((node) => node.label).join(', ')}{props.generationPaywall && <Paywall message={props.generationPaywall} onUpgrade={props.onUpgrade} />}</div>;
   },
 }));
 jest.mock('../SlidesWorkflow', () => ({ __esModule: true, default: () => null }));
@@ -55,7 +59,6 @@ jest.mock('../ui', () => ({
   ),
   Notice: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-jest.mock('../PresentationPaywall', () => ({ __esModule: true, default: () => null }));
 jest.mock('@mui/material/Dialog', () => ({ __esModule: true, default: () => null }));
 
 function source(): PageSnapshot {
@@ -110,6 +113,32 @@ const props = () => ({
   canWrite: true,
 });
 
+test('shared AI exhaustion offers Upgrade while the saved map remains readable', async () => {
+  const onUpgrade = jest.fn();
+
+  jest.mocked(loadPresentation).mockResolvedValue(loaded(status({ accountingReady: true, limit: 20, remaining: 0 }), map('saved', 'Saved content', 'ai')));
+  render(<PresentationStudio {...props()} onUpgrade={onUpgrade} presentMindMap />);
+  await screen.findByText(/Saved content/);
+  fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+  expect(onUpgrade).toHaveBeenCalledTimes(1);
+  expect(mockViewerProps?.canGenerate).toBe(false);
+  expect(mockRunGeneration).not.toHaveBeenCalled();
+  expect(screen.getByText(/Saved content/)).toBeTruthy();
+});
+
+test.each([
+  [{ accountingReady: false, retryable: true }, false],
+  [{ accountingReady: true, limit: null, remaining: null }, true],
+  [{ unlimited: true, accountingReady: true, limit: 20, remaining: 0 }, true],
+  [{ metered: false }, true],
+])('AI availability %j does not offer an upgrade', async (ai, canGenerate) => {
+  jest.mocked(loadPresentation).mockResolvedValue(loaded(status(ai), map('saved', 'Saved content', 'ai')));
+  render(<PresentationStudio {...props()} onUpgrade={jest.fn()} presentMindMap />);
+  await screen.findByText('Saved content');
+  expect(mockViewerProps?.canGenerate).toBe(canGenerate);
+  expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).toBeNull();
+});
+
 beforeEach(() => {
   jest.resetAllMocks();
   mockViewerProps = undefined;
@@ -123,6 +152,7 @@ describe('aiMapUnavailableReason', () => {
     ['unmetered servers', status({ metered: false }), true, undefined],
     ['a remaining allowance', status({ metered: true, accountingReady: true, limit: 5, remaining: 1 }), true, undefined],
     ['an unlimited plan', status({ metered: true, accountingReady: true, limit: null, remaining: null }), true, undefined],
+    ['explicit unlimited overrides a stale counter', status({ unlimited: true, accountingReady: true, limit: 20, remaining: 0 }), true, undefined],
     ['readers', status({ metered: false }), false, 'edit access'],
     ['usage tracking that is not set up', notReady, true, 'administrator'],
     ['a temporary usage outage', status({ accountingReady: false, retryable: true }), true, 'Try again shortly'],

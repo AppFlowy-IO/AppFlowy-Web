@@ -70,8 +70,8 @@ export function usePresentationAccess(enabled = true) {
     refresh,
     onUpgrade,
     isPro: entitlement?.isPro ?? false,
-    // Status does not expose style-management entitlement. Keep the existing ownership affordance;
-    // import/review APIs authorize the action and return any applicable plan restriction.
+    // Ownership and company-style plan access are separate. Owners can still remove styles
+    // after a downgrade; only company configuration saves require the paid capability.
     canManageStyles: isOwner,
     isLoading: enabled && !current,
     hasError: !!current?.error,
