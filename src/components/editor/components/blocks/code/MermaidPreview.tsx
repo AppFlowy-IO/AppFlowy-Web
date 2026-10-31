@@ -8,7 +8,9 @@ import { notify } from '@/components/_shared/notify';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 
 import { copyDiagramImage, downloadDiagram } from './download-diagram';
-import { renderMermaid } from './mermaid-renderer';
+import { cachedMermaid, renderMermaid } from './mermaid-renderer';
+
+type RenderResult = { key: string; svg?: string; error?: string };
 
 export default function MermaidPreview({
   source,
@@ -24,15 +26,28 @@ export default function MermaidPreview({
   const isDark = !!useContext(ThemeModeContext)?.isDark;
   const { t } = useTranslation();
   const key = `${isDark}\n${source}`;
-  const [result, setResult] = useState<{ key: string; svg?: string; error?: string }>();
+  // A diagram rendered before (a revisit, or another copy of the same diagram) appears immediately.
+  const [result, setResult] = useState<RenderResult | undefined>(() => {
+    const svg = source.trim() ? cachedMermaid(source, isDark) : undefined;
+
+    return svg === undefined ? undefined : { key, svg };
+  });
   const [localExpanded, setLocalExpanded] = useState(false);
   const [copying, setCopying] = useState(false);
-  const svg = result?.key === key ? result.svg : undefined;
-  const error = result?.key === key ? result.error : undefined;
+  const settled = result?.key === key;
+  const svg = settled ? result.svg : undefined;
+  const error = settled ? result.error : undefined;
   const label = (key: string, fallback: string) => t(`document.plugins.codeBlock.${key}`, { defaultValue: fallback });
 
   useEffect(() => {
-    if (!source.trim()) return;
+    if (!source.trim() || settled) return;
+    const cached = cachedMermaid(source, isDark);
+
+    if (cached !== undefined) {
+      setResult({ key, svg: cached });
+      return;
+    }
+
     let current = true;
     const timer = window.setTimeout(() => {
       void renderMermaid(source, isDark, () => current)
@@ -48,7 +63,7 @@ export default function MermaidPreview({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [source, isDark, key]);
+  }, [source, isDark, key, settled]);
 
   const close = () => {
     setLocalExpanded(false);

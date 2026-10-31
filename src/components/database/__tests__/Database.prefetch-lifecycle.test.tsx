@@ -555,6 +555,28 @@ describe('Database blob prefetch lifecycle', () => {
     jest.restoreAllMocks();
   });
 
+  it.each([
+    { loadReadOnlyRows: true, variant: UIVariant.App, prefetchCount: 1 },
+    { loadReadOnlyRows: false, variant: UIVariant.App, prefetchCount: 0 },
+    { loadReadOnlyRows: true, variant: UIVariant.Publish, prefetchCount: 0 },
+  ])(
+    'fetches read-only rows only for authenticated opt-in views (opt-in: $loadReadOnlyRows, variant: $variant)',
+    async ({ loadReadOnlyRows, variant, prefetchCount }) => {
+      const doc = createDatabaseDoc('database-id');
+      const { unmount } = render(
+        <Database {...databaseProps(doc)} readOnly canWrite={false} loadReadOnlyRows={loadReadOnlyRows} variant={variant} />
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockedPrefetch).toHaveBeenCalledTimes(prefetchCount);
+      expect(mockDatabaseContext).toMatchObject({ readOnly: true, canWrite: false });
+      unmount();
+      doc.destroy();
+    }
+  );
+
   it.each(['peek', 'page'] as const)(
     'keeps the opened %s canonical row when bulk seeds finish in the same React batch',
     async (surface) => {
@@ -889,7 +911,7 @@ describe('Database blob prefetch lifecycle', () => {
       }
     });
 
-    it('recovers a row opened early that the walk did not bring after all', async () => {
+    it.each([false, true])('recovers a row opened early that the walk did not bring after all (read-only: %s)', async (readOnly) => {
       const doc = createDatabaseDoc('database-id');
       const liveRowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
       const deliveredDoc = createHydratedRowDoc('delivered-row');
@@ -897,7 +919,9 @@ describe('Database blob prefetch lifecycle', () => {
 
       mockedOpenRowDoc.mockResolvedValue(liveRowDoc);
       mockedSeedDoc.mockImplementation((key) => (key === rowKey ? deliveredDoc : null));
-      const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+      const { unmount } = render(
+        <Database {...databaseProps(doc)} createRow={createRow} readOnly={readOnly} loadReadOnlyRows={readOnly} />
+      );
 
       try {
         await flush();

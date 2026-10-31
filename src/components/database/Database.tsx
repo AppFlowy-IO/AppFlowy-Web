@@ -80,6 +80,7 @@ import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
+import { usePublishMountedDatabase } from './mounted-database';
 
 const PRIORITY_ROW_SEED_LIMIT = 200;
 /**
@@ -407,6 +408,10 @@ export interface Database2Props {
   doc: YDoc;
   initialRowMap?: Record<RowId, YDoc>;
   readOnly?: boolean;
+  /** Authenticated read-only embeds still need row data for filters and sorts. */
+  loadReadOnlyRows?: boolean;
+  /** Mounted app views may lend live loaders to read-only projections while they stay open. */
+  shareResources?: boolean;
   /**
    * Comment permission for the containing view. Independent from [readOnly]:
    * Read-and-comment access renders a read-only database but still allows
@@ -580,6 +585,7 @@ function Database(props: Database2Props) {
   });
 
   const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>(() => props.initialRowMap ?? {});
+  const skipRowPrefetch = readOnly && (!props.loadReadOnlyRows || props.variant === UIVariant.Publish);
   const [rowOrdersStore] = useState(createRowOrdersStore);
   const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
@@ -595,12 +601,12 @@ function Database(props: Database2Props) {
   const blobPrefetchGenerationRef = useRef(0);
   // A retained component can replace its document/workspace without remounting.
   const failedBlobPrefetchGenerationRef = useRef<number | null>(null);
-  // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
+  // Gate that ensureRow awaits. Resolves after batch preload (or immediately when skipRowPrefetch is true).
   const seedsGateRef = useRef(createDeferredGate());
   const [rowPass] = useState(createRowPassStore);
   const [seedsProgress] = useState(() => createSeedsProgressStore(SEEDS_PROGRESS_INTERVAL_MS));
-  // The walk was skipped (read-only, or a dashboard host): the prefetch counts
-  // as complete, although no seed was fetched. Read-only also opens the gate.
+  // The walk was skipped (a read-only snapshot, or a dashboard host): the prefetch
+  // counts as complete, although no seed was fetched. Snapshots also open the gate.
   const walkSkippedRef = useRef(false);
   // Rows the view lists first. Their `ensureRow` passes the seeds gate as soon
   // as a page of the walk in flight delivered them.
@@ -1352,7 +1358,7 @@ function Database(props: Database2Props) {
   const scheduleMissingRowRecovery = useCallback(() => {
     // A failed transport does not prove a lying watermark. Its error stays
     // terminal for this prefetch generation; a new lifecycle can recover.
-    if (readOnly || failedBlobPrefetchGenerationRef.current === blobPrefetchGenerationRef.current) return;
+    if (skipRowPrefetch || failedBlobPrefetchGenerationRef.current === blobPrefetchGenerationRef.current) return;
     if (missingRowRecoveryLifecycleRef.current === databaseLifecycleIdentity) return;
 
     const databaseId = getDatabaseId();
@@ -1391,7 +1397,7 @@ function Database(props: Database2Props) {
     }).catch((error) => {
       Log.warn('[Database] full blob resync for missing rows failed', { workspaceId, databaseId, error });
     });
-  }, [readOnly, workspaceId, databaseLifecycleIdentity, getDatabaseId, getPriorityRowIds]);
+  }, [skipRowPrefetch, workspaceId, databaseLifecycleIdentity, getDatabaseId, getPriorityRowIds]);
 
   // The rows `ensureRow` opened before the walk committed its seeds got no
   // seed. Apply the committed one now; a row the walk did not bring at all is
@@ -1480,9 +1486,9 @@ function Database(props: Database2Props) {
     const isCurrentPrefetch = () =>
       blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
 
-    // No walk in read-only mode (publish view): the publish API doesn't support
-    // the blob/diff endpoint. Rows load one by one, so they pass the gate.
-    if (readOnly) {
+    // Published snapshots do not have an authenticated blob endpoint.
+    // Presentations opt into fetching while their editing controls stay disabled.
+    if (skipRowPrefetch) {
       walkSkippedRef.current = true;
       gate.resolve();
       rowPass.set({ blobPrefetchComplete: true, seedsReady: true });
@@ -1596,7 +1602,7 @@ function Database(props: Database2Props) {
     blobPrefetchPromiseRef.current = promise;
     return promise;
   }, [
-    readOnly,
+    skipRowPrefetch,
     workspaceId,
     getDatabaseId,
     getPriorityRowIds,
@@ -2439,6 +2445,8 @@ function Database(props: Database2Props) {
       isDatabaseRowPage: !!rowId,
     };
   }, [sharedContextProps, doc, databasePageId, activeViewId, rowMap, rowId, ensurePageRow, ensureRow]);
+
+  usePublishMountedDatabase(mainContextValue, databaseName, props.shareResources);
 
   // Memoize modal context value separately - only compute when modal is open
   const modalContextValue = useMemo(

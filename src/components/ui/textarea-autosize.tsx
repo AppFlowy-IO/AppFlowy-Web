@@ -100,23 +100,12 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
       contentMirror.style.whiteSpace = 'pre-wrap'; // Preserve whitespace and line breaks
       contentMirror.style.boxSizing = 'content-box';
 
-      // Replace newlines with <br> to mimic textarea behavior
-      let content = currentValue as string;
+      // Measure literal text, including AI-generated content, without parsing HTML.
+      // pre-wrap preserves whitespace; the marker also measures an empty final line.
+      const content = `${currentValue}\u200B`;
 
-      if (content === '') {
-        content = '\u200B'; // Use zero-width space to ensure height is calculated
-      } else {
-        // Replace newlines with <br> and preserve spaces
-        content = content
-          .replace(/\n/g, '<br>\u200B') // Replace newlines with <br> and add zero-width space
-          .replace(/\s{2,}/g, (match) => {
-            // Replace multiple spaces with non-breaking spaces
-            return match.replace(/ /g, '&nbsp;');
-          });
-      }
-
-      if (contentMirror.innerHTML !== content) {
-        contentMirror.innerHTML = content;
+      if (contentMirror.textContent !== content) {
+        contentMirror.textContent = content;
       }
     }, [currentValue]);
 

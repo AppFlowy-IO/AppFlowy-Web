@@ -16,6 +16,8 @@ playwright.document-width.config.ts
 playwright.code-block.config.ts
 playwright.pdf.config.ts
 playwright.integrations.config.ts
+playwright.presentation.config.ts
+playwright.presentation-live.config.ts
 playwright.interop.config.ts
 playwright.bdd.config.ts
 playwright-snapshot.config.ts

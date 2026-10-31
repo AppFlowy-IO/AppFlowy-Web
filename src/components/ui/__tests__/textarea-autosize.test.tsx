@@ -57,6 +57,17 @@ describe('TextareaAutosize retained drafts', () => {
     );
   }
 
+  it('measures markup and whitespace as literal text without creating HTML elements', () => {
+    const draft = '<img src="invalid" onerror="alert(1)">\n  A & B\n';
+    const { container } = render(editor(false, draft));
+
+    act(() => { jest.runOnlyPendingTimers(); notifyResize(360); });
+
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe(draft);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('[aria-hidden="true"]')?.textContent).toBe(`${draft}\u200B`);
+  });
+
   it('preserves a scrollable multiline draft across a hidden resize and remeasures when shown', () => {
     const draft = Array.from({ length: 10 }, (_, index) => `Draft line ${index}`).join('\n');
     const { rerender } = render(editor(false, draft));

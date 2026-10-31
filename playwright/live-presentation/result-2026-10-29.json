@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-29",
+  "result": "passed",
+  "liveSuitePassed": true,
+  "requestChain": {
+    "web": "http://localhost:3000",
+    "gateway": "http://localhost:8100",
+    "cloud": "http://localhost:8000",
+    "aiService": "http://localhost:5001"
+  },
+  "source": {
+    "blockCount": 15,
+    "containsKnownMarker": true,
+    "createdThroughEditor": true
+  },
+  "completedUiChecks": [
+    "Password login and selection of the confirmed existing paid workspace",
+    "Task-owned editor document creation, reload and Cloud source revision verification",
+    "Custom count 13 submitted and a successful 13-slide artifact and scene saved",
+    "Reload and reopen the exact artifact from Share by ID, with no extra generation and the same scene hash",
+    "Edit the first story title and regenerate the same artifact as version 2 with 13 slides",
+    "Verify the edited title in the saved story, fetched scene and rendered preview",
+    "Download through a successful real export job and authenticated PowerPoint response",
+    "Verify 13 native editable PowerPoint slides and the edited first-slide title",
+    "Verify paid workflow leaves Free slide/export counters and pending reservations unchanged"
+  ],
+  "successfulJobs": [
+    {
+      "kind": "slides",
+      "resultVersion": 1,
+      "committedUnits": 13
+    },
+    {
+      "kind": "slides",
+      "resultVersion": 2,
+      "committedUnits": 13
+    },
+    {
+      "kind": "export",
+      "resultVersion": null,
+      "committedUnits": 1
+    }
+  ],
+  "usageBefore": {
+    "plan": "paid",
+    "freeExports": 0,
+    "freeSlides": 0,
+    "reservedExports": 0,
+    "reservedSlides": 0
+  },
+  "usageAfter": {
+    "plan": "paid",
+    "freeExports": 0,
+    "freeSlides": 0,
+    "reservedExports": 0,
+    "reservedSlides": 0
+  },
+  "presentationHttpFailures": 0,
+  "staticValidation": {
+    "webTypeScript": "passed",
+    "liveTestTypeScript": "passed",
+    "changedFilesEslint": "passed",
+    "catalogTests": "4 passed"
+  },
+  "limits": [
+    "This scenario covers one paid text-source workflow, not all model/media/deployment combinations.",
+    "PowerPoint package structure is checked; Office pixel parity is not established."
+  ],
+  "privacy": "Account, workspace, page, artifact and job IDs, credentials, provider bodies and source text are omitted from this checked-in report."
+}

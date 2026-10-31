@@ -18,6 +18,8 @@ import UpgradePlan from '@/components/billing/UpgradePlan';
 import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
 
+import { presentationPricing, presentationRows } from './fixtures/presentation-pricing';
+
 const defaultTranslations: Record<string, string> = {
   'subscribe.free': 'Client Free name',
   'subscribe.pro': 'Client Pro name',
@@ -211,6 +213,27 @@ describe('UpgradePlan', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('renders every new presentation benefit in server order without client translations', async () => {
+    renderModal(async () => presentationPricing);
+    const pro = await screen.findByTestId('pricing-plan-pro');
+    const free = screen.getByTestId('pricing-plan-free');
+    const table = screen.getByTestId('plan-comparison');
+
+    for (const row of presentationRows) {
+      expect(within(table).getByText(row.label)).toBeTruthy();
+      expect(within(free).getByText(row.values.free.display)).toBeTruthy();
+      expect(within(pro).getByText(row.values.pro.display)).toBeTruthy();
+    }
+
+    const labels = presentationRows.map((row) => within(table).getByText(row.label));
+
+    labels.slice(1).forEach((label, index) => {
+      expect(labels[index].compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+    expect(within(free).queryByText(/decks/i)).toBeNull();
+    await waitFor(() => expect(within(pro).getByTestId('pricing-upgrade-pro').hasAttribute('disabled')).toBe(false));
   });
 
   it('renders the comparison table with Pro highlighted as the upgrade target', async () => {

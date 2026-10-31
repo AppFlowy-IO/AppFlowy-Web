@@ -6,6 +6,7 @@ import { AccessService, ViewService } from '@/application/services/domains';
 import { EventType, on } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
 import { type CollabObjectPermission, View } from '@/application/types';
+import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPermission';
 import {
@@ -126,6 +127,7 @@ export function useViewActionPermissions(
   const requestSeq = useRef(0);
   const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
   const [objectPermission, setObjectPermission] = useState<CollabObjectPermission | null>(null);
+  const [permissionError, setPermissionError] = useState<ErrorType>();
   const [isLoadingViewActionPermissions, setIsLoadingViewActionPermissions] = useState(false);
   const [permissionRevision, setPermissionRevision] = useState(0);
   const allowCachedPermission = options?.allowCachedPermission === true;
@@ -140,6 +142,7 @@ export function useViewActionPermissions(
   useEffect(() => {
     setLoadedViewId(null);
     setObjectPermission(null);
+    setPermissionError(undefined);
     setIsLoadingViewActionPermissions(false);
   }, [viewId]);
 
@@ -151,6 +154,8 @@ export function useViewActionPermissions(
 
     const seq = ++requestSeq.current;
     const epoch = objectPermissionEpoch;
+
+    setPermissionError(undefined);
     const knownTarget =
       collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
 
@@ -212,6 +217,7 @@ export function useViewActionPermissions(
       .catch((error) => {
         if (cancelled || seq !== requestSeq.current || epoch !== objectPermissionEpoch) return;
         console.error(error);
+        setPermissionError(determineErrorType(error).type);
         setObjectPermission(null);
         setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
@@ -232,8 +238,20 @@ export function useViewActionPermissions(
   ]);
 
   const canLoadViewActionPermissions = Boolean(opened && workspaceId && viewId);
-  const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
-  const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
+  // Canonical cached permissions already match this view's target. Use them in this render,
+  // so switching authorized views does not briefly tear down and reload their shared database.
+  const cachedPermission =
+    activeObjectPermission && resolvedTarget && isCollabObjectPermissionForTarget(activeObjectPermission, resolvedTarget)
+      ? activeObjectPermission
+      : null;
+  const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || !!cachedPermission || loadedViewId === viewId;
+  const loadedPermission =
+    loadedViewId === viewId &&
+    objectPermission &&
+    (!resolvedTarget || isCollabObjectPermissionForTarget(objectPermission, resolvedTarget))
+      ? objectPermission
+      : null;
+  const permissionForCurrentView = cachedPermission ?? loadedPermission;
   const canRead = hasLoadedViewActionPermissions && permissionForCurrentView?.can_read === true;
   const canWrite = canRead && permissionForCurrentView.can_write;
   const canShare = canRead && permissionForCurrentView.can_share;
@@ -248,6 +266,7 @@ export function useViewActionPermissions(
     : false;
 
   return {
+    permissionError: !cachedPermission && loadedViewId === viewId ? permissionError : undefined,
     canRead,
     canShare,
     canWrite,
