@@ -1,0 +1,47 @@
+# This file is selected only for Server sources with hosted Gateway admission.
+# Compose resolves extends and bind paths against docker-compose-web-ci.yml.
+services:
+  appflowy_cloud:
+    extends:
+      file: ../.github/docker-compose-web-ci.override.yml
+      service: appflowy_cloud
+    environment:
+      APPFLOWY_GATEWAY_INTERNAL_URL: http://appflowy_gateway:8100
+    # Gateway initializes its schema after Cloud's migrations have completed.
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8000/api/ready]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  appflowy_worker:
+    environment:
+      APPFLOWY_GATEWAY_INTERNAL_URL: http://appflowy_gateway:8100
+    depends_on:
+      appflowy_gateway:
+        condition: service_healthy
+
+  nginx:
+    volumes:
+      - ./nginx/api-limits-ci.conf:/etc/nginx/api-limits/creation.conf:ro
+    depends_on:
+      appflowy_gateway:
+        condition: service_healthy
+
+  gateway_clickhouse:
+    extends:
+      file: docker-compose-ci.yml
+      service: gateway_clickhouse
+
+  appflowy_gateway:
+    extends:
+      file: docker-compose-ci.yml
+      service: appflowy_gateway
+    # The canonical Gateway/ClickHouse pair keeps its private network, while
+    # Gateway also joins the Web stack's Cloud, Worker, Postgres and Redis.
+    networks:
+      default:
+
+networks:
+  shared_network:
