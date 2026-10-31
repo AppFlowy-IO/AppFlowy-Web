@@ -245,7 +245,7 @@ jobs:
       # moves its workspace to one of these; every other test keeps a random
       # namespace and so the default, non-SSR response.
       APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
-      CI_TOOLS_REF: ${{ inputs.ci_tools_ref || 'd8fa1756c20fc1229f968fbbdfc915d33c3d2b6a' }}
+      CI_TOOLS_REF: ${{ inputs.ci_tools_ref || 'b3f66faf5cd465b6ed62081da21f9e94722f0fe6' }}
     strategy:
       fail-fast: false
       matrix:
