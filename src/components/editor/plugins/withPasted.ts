@@ -318,7 +318,11 @@ function handlePlainTextPaste(editor: ReactEditor, text: string): boolean {
       return handleMarkdownPaste(editor, text);
     }
 
-    // If not URL and not Markdown, insert as plain text
+    // If not URL and not Markdown, delete expanded selection so pasted text replaces it
+    if (editor.selection && Range.isExpanded(editor.selection)) {
+      Transforms.delete(editor);
+    }
+
     const point = editor.selection?.anchor as BasePoint;
 
     if (point) {
@@ -408,6 +412,10 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
     currentWorkspaceId &&
     appFlowyPageLink.workspaceId.toLowerCase() === currentWorkspaceId.toLowerCase()
   ) {
+    if (editor.selection && Range.isExpanded(editor.selection)) {
+      Transforms.delete(editor);
+    }
+
     const point = editor.selection?.anchor as BasePoint;
 
     if (point) {
@@ -579,6 +587,9 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
   if (blocks.length === 0) return false;
 
   try {
+    if (editor.selection && Range.isExpanded(editor.selection)) {
+      Transforms.delete(editor);
+    }
     const point = editor.selection?.anchor;
 
     if (!point) return false;
