@@ -85,6 +85,36 @@ describe('useBroadcastChannel', () => {
     expect(typeof payload.byteLength).toBe('number');
   });
 
+  it('delivers server coverage separately from peer traffic without another upload or server forward', () => {
+    const { result, rerender } = renderHook(({ name }) => useBroadcastChannel(name), {
+      initialProps: { name: 'workspace:A' },
+    });
+    const coverage = jest.fn();
+    const protocol = jest.fn();
+    const collab = jest.fn();
+    const manifest = { objectId: 'row-1', syncRequest: { stateVector: Uint8Array.of(0) } };
+
+    result.current.subscribeServerManifests!(coverage);
+    result.current.subscribeProtocolMessages(protocol);
+    result.current.subscribeCollabMessages!(collab);
+    act(() => result.current.postServerManifest!(manifest));
+    const signal = MockBroadcastChannel.instances[0].postMessage.mock.calls[0][0];
+
+    act(() => MockBroadcastChannel.instances[0].emitMessage(signal));
+    expect(coverage).toHaveBeenCalledWith(expect.objectContaining({ objectId: 'row-1' }));
+    expect(protocol).not.toHaveBeenCalled();
+    expect(collab).not.toHaveBeenCalled();
+    expect(result.current.lastBroadcastMessage).toBeNull();
+
+    act(() => MockBroadcastChannel.instances[0].emitMessage(messages.Message.encode({ collabMessage: manifest }).finish()));
+    expect(coverage).toHaveBeenCalledTimes(1);
+    expect(protocol).toHaveBeenCalledTimes(1);
+    expect(collab).toHaveBeenCalledTimes(1);
+    rerender({ name: 'workspace:B' });
+    act(() => MockBroadcastChannel.instances[0].emitMessage(signal));
+    expect(coverage).toHaveBeenCalledTimes(1);
+  });
+
   it('flushes protocol messages emitted before the channel effect opens', () => {
     renderHook(() => {
       const channel = useBroadcastChannel('workspace:A');

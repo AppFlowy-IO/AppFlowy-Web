@@ -121,6 +121,9 @@ function parseEmbeddedDatabase(value: unknown): TemplateEmbeddedDatabaseSnapshot
     name: asString(value.name),
     rawData,
     ...(typeof value.is_linked === 'boolean' ? { isLinked: value.is_linked } : {}),
+    ...(typeof value.permission_source_view_id === 'string'
+      ? { permissionSourceViewId: value.permission_source_view_id }
+      : {}),
   };
 }
 
@@ -194,6 +197,7 @@ function serializeEmbeddedDatabase(
     name: snapshot.name,
     raw_data: snapshot.rawData,
     ...(snapshot.isLinked === undefined ? {} : { is_linked: snapshot.isLinked }),
+    ...(snapshot.permissionSourceViewId === undefined ? {} : { permission_source_view_id: snapshot.permissionSourceViewId }),
   };
 }
 

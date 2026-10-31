@@ -14,9 +14,16 @@ export const createServer = async (req: Request) => {
   const reqUrl = new URL(req.url);
   const hostname = req.headers.get('host');
 
-  if (!reqUrl.pathname.startsWith('/health')) {
-    logger.info(`Request URL: ${hostname}${reqUrl.pathname}`);
+  if (reqUrl.pathname === '/health') {
+    return new Response('healthy\n', {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
   }
+
+  logger.info(`Request URL: ${hostname}${reqUrl.pathname}`);
 
   if (reqUrl.pathname === '/') {
     return new Response(null, {

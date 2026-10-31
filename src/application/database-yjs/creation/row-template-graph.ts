@@ -47,6 +47,7 @@ export type {
 
 interface Mount {
   sourceId: string;
+  permissionSourceViewId?: string;
   databaseId: string;
   parentDocument: string;
   primary: string;
@@ -241,6 +242,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
           const previous = mounts.get(sourceId);
           const mount: Mount = {
             sourceId,
+            permissionSourceViewId: snapshot?.permissionSourceViewId,
             databaseId: archive.database_id,
             parentDocument: current.targetId,
             primary: viewIds[0],
@@ -317,7 +319,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
 
     for (const [container, child] of containerAliases) ids.set(container, ids.get(child)!);
 
-    if (!mounts.size && documents.length === 1) {
+    if (!mounts.size && documents.length === 1 && !input.isTemplateSource) {
       addSeed(input.rowId, 'database_row', row);
       addSeed(documentId, 'document', document);
       return {
@@ -385,6 +387,11 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
       let currentSource: TemplateDatabaseArchive | undefined;
 
       if (!copied) {
+        const permissionSources = new Set(selected.flatMap((mount) =>
+          mount.permissionSourceViewId === undefined ? [] : [uuid(mount.permissionSourceViewId, 'template permission source')]
+        ));
+
+        if (permissionSources.size > 1) throw new Error('Template linked views have conflicting permission sources');
         const source = await sources.database(databaseId);
 
         currentSource = source.archive;
@@ -392,7 +399,9 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
         extension = {
           database_id: databaseId,
           database_restore_id: source.restoreId,
-          source_view_id: databaseId === input.databaseId ? input.sourceViewId : selected[0].sourceId,
+          source_view_id: databaseId === input.databaseId
+            ? input.sourceViewId
+            : permissionSources.values().next().value ?? selected[0].sourceId,
           views: [],
           dependency_fields: [],
         };
@@ -595,6 +604,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
           source_view_id: input.sourceViewId,
           position: input.position,
           position_view_ids: input.positionViewIds,
+          ...(input.isTemplateSource ? { omit_row_membership: true as const } : {}),
         },
         objects,
         views: sorted,

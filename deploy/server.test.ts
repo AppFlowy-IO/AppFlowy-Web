@@ -97,6 +97,17 @@ describe('deploy/server', () => {
     expect(mockReadFileSync).not.toHaveBeenCalled();
   });
 
+  it('answers readiness probes without calling the publish API or rendering HTML', async () => {
+    const response = await createServer(makeRequest('/health'));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('healthy\n');
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(mockBunFetch).not.toHaveBeenCalled();
+    expect(mockReadFileSync).not.toHaveBeenCalled();
+  });
+
   it('routes PDF proxy requests through the public-file handler instead of the app shell', async () => {
     const response = await createServer(makeRequest('/api/pdf-proxy?url=http%3A%2F%2F127.0.0.1%2Ffile.pdf'));
 

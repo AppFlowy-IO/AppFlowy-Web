@@ -337,7 +337,7 @@ export function updateTemplateFromSourceRow(
 ): DatabaseRowTemplate {
   const root = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
   const row = root.get(YjsEditorKey.database_row);
-  const meta = getMetaJSON(template.templateId, root.get(YjsEditorKey.meta));
+  const meta = getMetaJSON(row.get(YjsDatabaseKey.id), root.get(YjsEditorKey.meta));
   const primaryField = Array.from(database.get(YjsDatabaseKey.fields)?.values() ?? []).find((field) =>
     Boolean(field.get(YjsDatabaseKey.is_primary))
   );

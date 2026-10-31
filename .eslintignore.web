@@ -16,6 +16,7 @@ playwright.document-width.config.ts
 playwright.code-block.config.ts
 playwright.pdf.config.ts
 playwright.integrations.config.ts
+playwright.interop.config.ts
 playwright.bdd.config.ts
 playwright-snapshot.config.ts
 deploy/*.test.ts
