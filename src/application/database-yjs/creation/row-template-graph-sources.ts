@@ -28,7 +28,10 @@ export class TemplateSources {
   private completeDatabases = new Map<string, Promise<TemplateDatabaseArchive>>();
   private decodedBytes = 0;
 
-  constructor(private input: TemplateRowGraphInput, private check: () => void) {}
+  constructor(
+    private input: Pick<TemplateRowGraphInput, 'owner' | 'databaseId' | 'restoreId' | 'signal' | 'deadline'>,
+    private check: () => void
+  ) {}
 
   view(id: string): Promise<View> {
     let pending = this.views.get(id);

@@ -241,7 +241,13 @@ export async function dragEventToDate(page: Page, eventIndex: number, targetDate
   const dateStr = formatDateForCalendar(targetDate);
   const targetCell = CalendarSelectors.dayCellByDate(page, dateStr);
 
+  // A just-created event is a read-only draft until its row saves, and FullCalendar
+  // turns a drag on it into a text selection.
+  await expect(event).toHaveClass(/\bfc-event-draggable\b/);
   await event.scrollIntoViewIfNeeded();
+  // FullCalendar ignores pointer positions outside the visible scroll area, so a target in
+  // the month grid's last row (e.g. tomorrow on Oct 31) must be scrolled on screen as well.
+  await targetCell.scrollIntoViewIfNeeded();
   const eventBox = await event.boundingBox();
   const targetBox = await targetCell.boundingBox();
 
