@@ -51,8 +51,22 @@ fails the Desktop check; the summary links the paired run.
 
 The reverse path also requires Cloud compound creation with `omit_row_membership`
 support. Deploy that server change before Web uses the new materialization path.
-Dispatch accepts `cloud_version` for a verified candidate image; the workflow
+Paired interop defaults to a verified, already-built Cloud artifact set matching
+the tested Desktop's shared API pins. The CI runtime helper resolves the generated
+Client's Server candidate, selects a successful unexpired image build, compares
+the generated source, and verifies archive, loaded-image, and actual-container
+identities. This avoids accidentally testing a new client against an older
+`latest-amd64` image. It never builds or publishes a server.
+
+Dispatch accepts `cloud_source_sha` together with `cloud_image_run_id` to select a
+particular existing build. `ci_tools_ref` can pin a reviewed CI-tools branch commit
+while validating paired workflow changes. Both caller and tools revisions appear
+in the uploaded `exact-cloud-manifest-template-interop` artifact.
+
+An explicit `cloud_version` selects the published-image path instead; the workflow
 resolves its immutable digest and source revision before starting the stack.
+Ordinary Web jobs continue using published images. Exact artifact inputs require
+`interop_only=true`, and an incomplete pair or mixed selection fails immediately.
 
 Initial delivery requires the companion Web (#679), Desktop (#1547), and Cloud
 changes. Validate their exact revisions together; normal runs use peer `main` and
