@@ -4,11 +4,12 @@ import i18next from 'i18next';
 
 import { errorCodeNumber, ErrorSource, readErrorIdentity, TransportFailure } from '@/application/errors/error-message';
 import { AFCloudConfig } from '@/application/services/services.type';
-import { captureTokenSession, getTokenParsed, invalidToken, invalidTokenForSession, isTokenSessionCurrent, type TokenSessionWitness } from '@/application/session/token';
+import { captureTokenSession, getTokenParsed, invalidTokenForSession, isTokenSessionCurrent, type TokenSessionWitness } from '@/application/session/token';
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { applyErrorCapability } from './error-capability';
+import { isAuthRefreshFailure } from './auth-refresh-error';
 import { initGrantService, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
 
@@ -17,6 +18,8 @@ declare module 'axios' {
     /** Captured command ownership, checked again by its adapter immediately before sending. */
     atomicCreationOwner?: { assertCurrent(): void };
     authSessionWitness?: TokenSessionWitness;
+    /** A safe read gets at most one retry after authentication recovery. */
+    authRefreshAttempted?: boolean;
     skipResponseCache?: boolean;
   }
 }
@@ -491,10 +494,15 @@ export function initAPIService(config: AFCloudConfig) {
   });
 
   initGrantService(config.gotrueURL);
+  const apiClient = axiosInstance;
 
   axiosInstance.interceptors.request.use(
     async (config) => {
       config.atomicCreationOwner?.assertCurrent();
+      if (config.authSessionWitness && !isTokenSessionCurrent(config.authSessionWitness)) {
+        throw new Error('Request session changed');
+      }
+
       // Ordinary requests can join the same refresh as an atomic command. Every
       // waiter must retain its original login lifetime before that shared await.
       const session = captureTokenSession();
@@ -521,11 +529,11 @@ export function initAPIService(config: AFCloudConfig) {
 
           access_token = newToken?.access_token || '';
         } catch (e) {
-          console.warn('[initAPIService][request] refresh token failed, marking token invalid', {
+          console.warn('[initAPIService][request] refresh token failed', {
             url: requestUrlForLog(config.url),
             message: (e as Error)?.message,
           });
-          invalidTokenForSession(session);
+          if (isAuthRefreshFailure(e)) invalidTokenForSession(session);
           throw e;
         }
       }
@@ -547,34 +555,40 @@ export function initAPIService(config: AFCloudConfig) {
   );
 
   const handleUnauthorized = async (error: unknown) => {
-    const axiosError = error as AxiosError;
-    const status = axiosError.response?.status;
+    if (!axios.isAxiosError(error)) return Promise.reject(error);
+    const axiosError = error;
+    const request = axiosError.config;
+    const session = request?.authSessionWitness;
 
-    if (status === 401) {
-      const session = axiosError.config?.authSessionWitness;
+    // An anonymous public request has no login to invalidate. In particular,
+    // emitting SESSION_INVALID here restarts catalog consumers and can turn
+    // one mistaken public-page request into an endless stream of 401s.
+    if (axiosError.response?.status !== 401 || !request || !session ||
+      !isTokenSessionCurrent(session) || request.authRefreshAttempted || request.signal?.aborted) {
+      return Promise.reject(error);
+    }
 
-      if (session && !isTokenSessionCurrent(session)) return Promise.reject(error);
-      const token = getTokenParsed();
+    const token = getTokenParsed();
 
-      if (!token) {
-        console.warn('[initAPIService][response] 401 without token, emitting invalid token');
-        if (session) invalidTokenForSession(session);
-        else invalidToken();
-        return Promise.reject(error);
+    if (!token) return Promise.reject(error);
+
+    request.authRefreshAttempted = true;
+    try {
+      // An older response may arrive after another caller already rotated the
+      // token. Reuse that token instead of consuming its refresh token again.
+      if (request.headers.Authorization === `Bearer ${token.access_token}`) {
+        await refreshToken(token.refresh_token);
       }
+    } catch (refreshError) {
+      if (isAuthRefreshFailure(refreshError)) invalidTokenForSession(session);
+      // Preserve a temporary GoTrue failure's identity: returning the obsolete
+      // Cloud 401 can make callers incorrectly treat an outage as revocation.
+      return Promise.reject(refreshError);
+    }
 
-      const refresh_token = token.refresh_token;
-
-      try {
-        await refreshToken(refresh_token);
-      } catch (e) {
-        console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
-          message: (e as Error)?.message,
-          url: requestUrlForLog(axiosError.config?.url),
-        });
-        if (session) invalidTokenForSession(session);
-        else invalidToken();
-      }
+    if (isTokenSessionCurrent(session) && !request.atomicCreationOwner &&
+      ['get', 'head', 'options'].includes(request.method?.toLowerCase() ?? '')) {
+      return apiClient.request(request);
     }
 
     return Promise.reject(error);
