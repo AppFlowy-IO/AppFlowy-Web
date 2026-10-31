@@ -589,6 +589,7 @@ jobs:
 
           if [ "$TEST_GROUP" = "template-interop" ]; then
             pnpm exec tsc --noEmit --project playwright/tsconfig.interop.json
+            pnpm test:interop:bootstrap
             BASE_URL=http://127.0.0.1:3089 pnpm test:interop:desktop
           elif [ "$TEST_BDD" = "true" ]; then
             pnpm exec playwright test -c playwright.bdd.config.ts "${test_args[@]}" $TEST_SPEC
