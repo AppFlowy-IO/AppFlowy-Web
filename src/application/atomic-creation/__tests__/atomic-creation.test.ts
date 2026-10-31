@@ -396,12 +396,39 @@ it('does not invalidate a replacement account after an ordinary request returns 
   expect(refresh).not.toHaveBeenCalled();
 });
 
-it('still clears the current login when its ordinary request cannot refresh', async () => {
+it.each([400, 401, 403])('clears the current login when GoTrue rejects its refresh token with HTTP %s', async (status) => {
   saveGoTrueAuth(JSON.stringify(token('user', true)));
-  grant.defaults.adapter = async () => { throw new Error('refresh denied'); };
+  grant.defaults.adapter = async (config) => {
+    throw new axios.AxiosError('refresh denied', 'ERR_BAD_REQUEST', config, undefined, {
+      ...reply(config, undefined),
+      status,
+      data: { error_code: 'refresh_token_not_found', msg: 'Invalid Refresh Token: Refresh Token Not Found' },
+    });
+  };
 
   await expect(getAxios()!.get('/ordinary-expired')).rejects.toThrow('refresh denied');
   expect(getTokenParsed()).toBeNull();
+  expect(send).not.toHaveBeenCalled();
+});
+
+it.each(['ordinary', 'atomic'])('preserves the login and command owner after a temporary refresh failure for an %s read', async (kind) => {
+  const currentToken = token('user', true);
+
+  saveGoTrueAuth(JSON.stringify(currentToken));
+  const owner = captureAtomicCreationOwner('workspace');
+
+  grant.defaults.adapter = async () => { throw new Error('refresh unavailable'); };
+
+  if (kind === 'ordinary') {
+    await expect(getAxios()!.get('/ordinary-expired')).rejects.toThrow('refresh unavailable');
+  } else {
+    await expect(atomicRead(owner, '/atomic-expired')).rejects.toMatchObject({
+      diagnosticMessage: 'refresh unavailable',
+    });
+  }
+
+  expect(getTokenParsed()).toEqual(currentToken);
+  expect(() => owner.assertCurrent()).not.toThrow();
   expect(send).not.toHaveBeenCalled();
 });
 
