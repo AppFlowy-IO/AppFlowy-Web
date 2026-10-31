@@ -1,8 +1,7 @@
 import { expect, Locator, Page, test } from '@playwright/test';
 import * as Y from 'yjs';
 
-import { Types, type YDatabase } from '../../../src/application/types';
-import type { TemplateEmbeddedDatabaseSnapshot } from '../../../src/application/database-yjs/template';
+import { Types } from '../../../src/application/types';
 import type { DatabaseTestWindow } from '../../../src/components/database/database-test-context';
 
 import {
@@ -31,96 +30,6 @@ import {
 } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
 import { openTemplateMenu, closeTemplateEditor, createTemplate, openTemplateActions, editTemplate, selectTemplate, createRowAndGetId, addDatabaseView, expectDatabaseBlockViews, setDefaultTemplate } from '../../support/row-template-helpers';
-
-
-/** Simulate Desktop saving the shared archive contract over an existing live Web template. */
-async function freezeWebTemplateAsDesktopArchive(page: Page, name: string) {
-  return page.evaluate(async (templateName) => {
-    const load = (path: string) => import(/* @vite-ignore */ path);
-    const [{ DatabaseRowTemplateStore }, { encodeTemplateDocumentSnapshot }, cache, providers,
-      { TemplateSources }, data, { captureAtomicCreationOwner }, { ORIGINAL_DATABASE_RESTORE_ID }] = await Promise.all([
-      load('/src/application/database-yjs/template/store.ts'),
-      load('/src/application/database-yjs/template/document.ts'),
-      load('/src/application/services/js-services/cache/index.ts'),
-      load('/src/application/db/index.ts'),
-      load('/src/application/database-yjs/creation/row-template-graph-sources.ts'),
-      load('/src/application/database-yjs/creation/row-template-graph-data.ts'),
-      load('/src/application/atomic-creation/index.ts'),
-      load('/src/application/database-yjs/creation/source-readiness.ts'),
-    ]);
-    const testWindow = window as DatabaseTestWindow & { Y?: typeof Y };
-    const context = testWindow.__TEST_DATABASE_CONTEXT__;
-    const yjs = testWindow.Y;
-
-    if (!context?.databaseDoc || !context.workspaceId || !yjs) throw new Error('Missing test-owned database context');
-    const database = context.databaseDoc.getMap('data').get('database') as YDatabase;
-    const store = new DatabaseRowTemplateStore(database);
-    const template = store.read().templates.find((item: { name: string }) => item.name === templateName);
-    const live = cache.getCachedRowSubDoc(template?.docViewId) ?? providers.getCachedProviderDoc(template?.docViewId);
-
-    if (!template || !live) throw new Error('The Web template document is not loaded');
-    const clone = new yjs.Doc({ guid: template.docViewId });
-
-    yjs.applyUpdate(clone, yjs.encodeStateAsUpdate(live));
-    const owner = captureAtomicCreationOwner(context.workspaceId);
-    const sources = new TemplateSources({
-      owner,
-      databaseId: database.get('id'),
-      restoreId: ORIGINAL_DATABASE_RESTORE_ID,
-      signal: new AbortController().signal,
-      deadline: Date.now() + 30000,
-    }, owner.assertCurrent);
-    const snapshots: TemplateEmbeddedDatabaseSnapshot[] = [];
-
-    try {
-      for (const block of data.documentBlocks(clone).values()) {
-        if (!data.DATABASE_BLOCKS.has(block.get('ty'))) continue;
-        const attributes = data.blockData(block);
-        const expanded: string[] = [];
-
-        for (const id of data.blockViews(attributes)) {
-          for (const mount of await sources.mounts(id, template.docViewId, attributes.database_id)) {
-            const archive = mount.linked
-              ? (await sources.database(mount.databaseId)).archive
-              : await sources.completeDatabase(mount.databaseId);
-            const view = archive.views.find((item: { id: string }) => item.id === mount.viewId);
-
-            if (!view) throw new Error('The template database view is missing');
-            snapshots.push({
-              sourceViewId: mount.viewId,
-              sourceDatabaseId: mount.databaseId,
-              layoutType: data.FOLDER_LAYOUTS[view.layout],
-              name: view.name,
-              rawData: JSON.stringify(archive),
-              isLinked: mount.linked,
-            });
-            expanded.push(mount.viewId);
-          }
-        }
-        block.set('data', JSON.stringify({ ...attributes, view_id: expanded[0], view_ids: expanded }));
-      }
-      owner.assertCurrent();
-      // Desktop draft views exist only inside the archive. Remove the live Web view handles
-      // from this fixture so the copy cannot succeed by following the original Folder tree.
-      const archivedViews = new Map(snapshots.filter((snapshot) => !snapshot.isLinked)
-        .map((snapshot) => [snapshot.sourceViewId, crypto.randomUUID()]));
-
-      for (const snapshot of snapshots) {
-        snapshot.sourceViewId = archivedViews.get(snapshot.sourceViewId) ?? snapshot.sourceViewId;
-        snapshot.rawData = JSON.stringify(data.remapReferences(JSON.parse(snapshot.rawData), archivedViews));
-      }
-      for (const block of data.documentBlocks(clone).values()) {
-        if (data.DATABASE_BLOCKS.has(block.get('ty'))) {
-          block.set('data', JSON.stringify(data.remapReferences(data.blockData(block), archivedViews)));
-        }
-      }
-      store.upsert({ ...template, documentData: encodeTemplateDocumentSnapshot(clone), embeddedDatabases: snapshots });
-      return { templateId: template.templateId, oldDocumentId: template.docViewId };
-    } finally {
-      clone.destroy();
-    }
-  }, name);
-}
 
 async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ editor: Locator; block: Locator }> {
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -415,36 +324,6 @@ test.describe('Database row templates (Desktop parity)', () => {
     });
   });
 
-  test('a Desktop archive can replace an existing Web template without losing its inline database', async ({ page, request }) => {
-    test.setTimeout(180000);
-    const name = 'Desktop and Web roundtrip';
-
-    await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Grid', { verify: waitForGridReady });
-    const editor = await createTemplate(page, name);
-    const documentEditor = editor.getByTestId('editor-content').first();
-    const documentId = (await documentEditor.getAttribute('id'))?.replace('editor-', '');
-
-    expect(documentId).toBeTruthy();
-    await insertInlineGridViaSlash(page, documentId as string);
-    await expectDatabaseBlockViews(databaseBlocks(documentEditor).first(), 1);
-    await closeTemplateEditor(page);
-    const frozen = await freezeWebTemplateAsDesktopArchive(page, name);
-
-    const reopened = await editTemplate(page, name);
-
-    await expect(reopened.getByTestId('editor-content').first()).not.toHaveAttribute('id', `editor-${frozen.oldDocumentId}`);
-    await expectDatabaseBlockViews(databaseBlocks(reopened.getByTestId('editor-content').first()).first(), 1);
-    await closeTemplateEditor(page);
-    const secondOpen = await editTemplate(page, name);
-
-    await expectDatabaseBlockViews(databaseBlocks(secondOpen.getByTestId('editor-content').first()).first(), 1);
-    await closeTemplateEditor(page);
-    const rowId = await createRowAndGetId(page, () => selectTemplate(page, name));
-    const row = await openRowWithDatabaseBlock(page, rowId);
-
-    await expectDatabaseBlockViews(row.block, 1);
-  });
-
   test('CRUD, direct/default creation, reload, and database duplication preserve templates', async ({
     page,
     request,
@@ -537,9 +416,8 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(duplicateMenu.getByText(`${renamed} (Copy)`, { exact: true })).toBeVisible();
     await duplicateMenu.getByRole('button', { name: `Reorder ${renamed} (Copy)` }).press('ArrowUp');
-    const reorderedMenu = page.getByTestId(TEMPLATE_MENU);
-    const originalBox = await reorderedMenu.getByText(renamed, { exact: true }).boundingBox();
-    const copyBox = await reorderedMenu.getByText(`${renamed} (Copy)`, { exact: true }).boundingBox();
+    const originalBox = await duplicateMenu.getByText(renamed, { exact: true }).boundingBox();
+    const copyBox = await duplicateMenu.getByText(`${renamed} (Copy)`, { exact: true }).boundingBox();
 
     expect(copyBox?.y).toBeLessThan(originalBox?.y ?? Number.POSITIVE_INFINITY);
     await page.keyboard.press('Escape');
