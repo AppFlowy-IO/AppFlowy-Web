@@ -8,8 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       cloud_version:
-        description: Cloud image tag containing hidden template graph support
-        default: latest-amd64
+        description: Optional published Cloud tag; paired interop otherwise selects verified prebuilt artifacts
+        default: ''
+      cloud_source_sha:
+        description: Optional immutable Cloud source; must accompany cloud_image_run_id
+        default: ''
+      cloud_image_run_id:
+        description: Optional successful private image build for cloud_source_sha
+        default: ''
+      ci_tools_ref:
+        description: Optional immutable AppFlowy-CI tools revision already merged into main
+        default: ''
       desktop_ref:
         description: Desktop commit or branch to test (defaults to main)
         default: main
@@ -198,10 +207,15 @@ jobs:
         id: groups
         env:
           INTEROP_ONLY: ${{ inputs.interop_only }}
+          CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
+          CLOUD_IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
         run: |
           node -e '
             const fs = require("fs");
             const groups = require("./.github/playwright-groups.json");
+            if ((process.env.CLOUD_SOURCE_SHA || process.env.CLOUD_IMAGE_RUN_ID) && process.env.INTEROP_ONLY !== "true") {
+              throw new Error("Exact Cloud artifacts require interop_only=true");
+            }
             const selected = process.env.INTEROP_ONLY === "true"
               ? groups.filter(group => group.name === "template-interop")
               : groups.filter(group => group.name !== "template-interop");
@@ -233,6 +247,7 @@ jobs:
       # moves its workspace to one of these; every other test keeps a random
       # namespace and so the default, non-SSR response.
       APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
+      CI_TOOLS_REF: ${{ inputs.ci_tools_ref || 'c0e13cc13fb6c704f55d09ffde9adfad606bc897' }}
     strategy:
       fail-fast: false
       matrix:
@@ -243,6 +258,73 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Validate compatibility runtime selection
+        id: cloud-input
+        if: matrix.test-group.name == 'template-interop'
+        env:
+          CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
+          IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
+          PUBLISHED_VERSION: ${{ inputs.cloud_version }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$CLOUD_SOURCE_SHA$IMAGE_RUN_ID" ]]; then
+            [[ "$CLOUD_SOURCE_SHA" =~ ^[a-f0-9]{40}$ && "$IMAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+            [[ -z "$PUBLISHED_VERSION" ]] || exit 1
+          fi
+          if [[ -z "$PUBLISHED_VERSION" ]]; then
+            [[ "$CI_TOOLS_REF" =~ ^[a-f0-9]{40}$ ]] || exit 1
+            echo 'needs-tools=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Desktop SDK under test
+        if: matrix.test-group.name == 'template-interop'
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-Premium
+          ref: ${{ inputs.desktop_ref || 'main' }}
+          token: ${{ secrets.CI_TOKEN }}
+          path: AppFlowy-Premium
+
+      - name: Resolve tested Desktop revision
+        id: desktop
+        if: matrix.test-group.name == 'template-interop'
+        run: echo "ref=$(git -C AppFlowy-Premium rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify CI runtime tools are reviewed on main
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CI_TOKEN }}
+        run: |
+          set -euo pipefail
+          merge_base=$(gh api "repos/AppFlowy-IO/AppFlowy-CI/compare/$CI_TOOLS_REF...main" \
+            --jq '.merge_base_commit.sha')
+          if [[ "$merge_base" != "$CI_TOOLS_REF" ]]; then
+            echo '::error::CI runtime tools must be an immutable commit already merged into AppFlowy-CI main'
+            exit 1
+          fi
+
+      - name: Check out the pinned CI runtime tools
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-CI
+          ref: ${{ env.CI_TOOLS_REF }}
+          token: ${{ secrets.CI_TOKEN }}
+          persist-credentials: false
+          path: .ci-runtime-tools
+
+      - name: Select verified prebuilt Cloud artifacts
+        id: cloud-selection
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CI_TOKEN }}
+          CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
+          IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
+        run: |
+          python3 .ci-runtime-tools/.github/scripts/desktop_cloud_runtime.py select \
+            --desktop AppFlowy-Premium --profile web --ci-ref "$CI_TOOLS_REF" \
+            --cloud-source-sha "$CLOUD_SOURCE_SHA" --image-run-id "$IMAGE_RUN_ID"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -261,6 +343,7 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
       - name: Resolve latest Cloud release
+        if: steps.cloud-selection.outputs.enabled != 'true'
         run: |
           digest=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_IMAGE_TAG}" \
             --format '{{json .Manifest.Digest}}' | jq -er 'select(test("^sha256:[0-9a-f]{64}$"))')
@@ -314,11 +397,16 @@ jobs:
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
+          EXACT_CLOUD: ${{ steps.cloud-selection.outputs.enabled }}
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_IMAGE_VERSION }}
           APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
         run: |
+          if [[ "$EXACT_CLOUD" == true ]]; then
+            pnpm install --frozen-lockfile
+            exit 0
+          fi
           # Start Docker pull in background
           (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker appflowy_search) &
           DOCKER_PID=$!
@@ -329,7 +417,23 @@ jobs:
           # Wait for Docker pull to complete
           wait $DOCKER_PID
 
+      - name: Start the verified exact Cloud runtime
+        id: exact-cloud
+        if: steps.cloud-selection.outputs.enabled == 'true'
+        uses: ./.ci-runtime-tools/.github/actions/desktop-cloud-runtime
+        with:
+          cloud-source-sha: ${{ steps.cloud-selection.outputs.cloud-source-sha }}
+          image-run-id: ${{ steps.cloud-selection.outputs.image-run-id }}
+          desktop-ref: ${{ steps.desktop.outputs.ref }}
+          desktop-path: AppFlowy-Premium
+          cloud-path: AppFlowy-Cloud-Premium
+          ci-tools-ref: ${{ env.CI_TOOLS_REF }}
+          runtime-profile: web
+          compose-override: ${{ github.workspace }}/.github/docker-compose-web-ci.override.yml
+          github-token: ${{ secrets.CI_TOKEN }}
+
       - name: Verify Cloud revision and report backend image versions
+        if: steps.cloud-selection.outputs.enabled != 'true'
         run: |
           cloud_image="appflowyinc/appflowy_cloud_premium:${CLOUD_IMAGE_VERSION}"
           actual_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$cloud_image")
@@ -379,10 +483,12 @@ jobs:
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
           RUST_LOG: appflowy_cloud=info
         run: |
-          docker compose \
-            -f docker-compose-web-ci.yml \
-            -f ../.github/docker-compose-web-ci.override.yml \
-            up -d
+          if [[ "${{ steps.cloud-selection.outputs.enabled }}" != true ]]; then
+            docker compose \
+              -f docker-compose-web-ci.yml \
+              -f ../.github/docker-compose-web-ci.override.yml \
+              up -d
+          fi
 
           echo "Waiting for backend services..."
           timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
@@ -422,15 +528,6 @@ jobs:
             echo "Waiting for SSR server... ($(date +%T))"
             sleep 2
           done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
-
-      - name: Checkout Desktop SDK under test
-        if: matrix.test-group.name == 'template-interop'
-        uses: actions/checkout@v4
-        with:
-          repository: AppFlowy-IO/AppFlowy-Premium
-          ref: ${{ inputs.desktop_ref || 'main' }}
-          token: ${{ secrets.CI_TOKEN }}
-          path: AppFlowy-Premium
 
       - name: Install Desktop SDK prerequisites
         if: matrix.test-group.name == 'template-interop'
@@ -504,6 +601,15 @@ jobs:
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+
+      - name: Upload exact Cloud runtime manifest
+        if: always() && steps.cloud-input.outputs.needs-tools == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-cloud-manifest-${{ matrix.test-group.name }}
+          path: ${{ runner.temp }}/desktop-cloud-manifest.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Capture backend logs
         if: failure()
