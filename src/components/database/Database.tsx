@@ -59,6 +59,7 @@ import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
+import { usePublishMountedDatabase } from './mounted-database';
 
 const PRIORITY_ROW_SEED_LIMIT = 200;
 
@@ -145,6 +146,10 @@ export interface Database2Props {
   doc: YDoc;
   initialRowMap?: Record<RowId, YDoc>;
   readOnly?: boolean;
+  /** Authenticated read-only embeds still need row data for filters and sorts. */
+  loadReadOnlyRows?: boolean;
+  /** Mounted app views may lend live loaders to read-only projections while they stay open. */
+  shareResources?: boolean;
   /**
    * Comment permission for the containing view. Independent from [readOnly]:
    * Read-and-comment access renders a read-only database but still allows
@@ -305,6 +310,7 @@ function Database(props: Database2Props) {
   });
 
   const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>(() => props.initialRowMap ?? {});
+  const skipRowPrefetch = readOnly && (!props.loadReadOnlyRows || props.variant === UIVariant.Publish);
   const [rowOrdersStore] = useState(createRowOrdersStore);
   const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
@@ -909,9 +915,9 @@ function Database(props: Database2Props) {
     const isCurrentPrefetch = () =>
       blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
 
-    // Skip blob prefetch in read-only mode (publish view)
-    // The publish API doesn't support blob/diff endpoint
-    if (readOnly) {
+    // Published snapshots do not have an authenticated blob endpoint.
+    // Presentations opt into fetching while their editing controls stay disabled.
+    if (skipRowPrefetch) {
       gate.resolve();
       setBlobPrefetchComplete(true);
       setSeedsReady(true);
@@ -971,7 +977,7 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(prefetchKey, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewNeedsFullRowData, runBatchPreload]);
+  }, [skipRowPrefetch, workspaceId, getDatabaseId, getPriorityRowIds, activeViewNeedsFullRowData, runBatchPreload]);
 
   useEffect(() => {
     retainDatabaseRowDocSeedCache(currentDatabaseId);
@@ -1050,7 +1056,7 @@ function Database(props: Database2Props) {
   const missingRowRecoveryLifecycleRef = useRef<unknown>(null);
 
   const scheduleMissingRowRecovery = useCallback(() => {
-    if (readOnly) return;
+    if (skipRowPrefetch) return;
     if (missingRowRecoveryLifecycleRef.current === databaseLifecycleIdentity) return;
 
     const databaseId = getDatabaseId();
@@ -1089,7 +1095,7 @@ function Database(props: Database2Props) {
     }).catch((error) => {
       Log.warn('[Database] full blob resync for missing rows failed', { workspaceId, databaseId, error });
     });
-  }, [readOnly, workspaceId, databaseLifecycleIdentity, getDatabaseId, getPriorityRowIds]);
+  }, [skipRowPrefetch, workspaceId, databaseLifecycleIdentity, getDatabaseId, getPriorityRowIds]);
 
   const ensureRow = useCallback(
     async (rowId: string, priority: 'background' | 'interactive' = 'background') => {
@@ -1764,6 +1770,8 @@ function Database(props: Database2Props) {
       isDatabaseRowPage: !!rowId,
     };
   }, [sharedContextProps, doc, databasePageId, activeViewId, rowMap, rowId, ensurePageRow, ensureRow]);
+
+  usePublishMountedDatabase(mainContextValue, databaseName, props.shareResources);
 
   // Memoize modal context value separately - only compute when modal is open
   const modalContextValue = useMemo(

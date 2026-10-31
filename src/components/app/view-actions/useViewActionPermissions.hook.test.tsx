@@ -1,9 +1,12 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
 
+import { ERROR_CODE } from '@/application/constants';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
+import { ErrorType } from '@/application/utils/error-utils';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+
+import type { ReactNode } from 'react';
 
 const mockGetObjectPermission = jest.fn();
 const mockGetView = jest.fn();
@@ -53,6 +56,25 @@ describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
     mockGetView.mockReset();
+  });
+
+  it('retains a missing-resource error separately from denied access and clears it on recovery', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockRejectedValueOnce({ code: ERROR_CODE.RECORD_NOT_FOUND, message: 'missing database' });
+    const view = createView();
+    const { result, rerender } = renderHook(({ opened }) => useViewActionPermissions(view, opened), {
+      initialProps: { opened: true },
+    });
+
+    await waitFor(() => expect(result.current.permissionError).toBe(ErrorType.PageNotFound));
+    expect(result.current.canRead).toBe(false);
+    mockGetObjectPermission.mockResolvedValue(createPermission());
+    rerender({ opened: false });
+    rerender({ opened: true });
+    await waitFor(() => expect(result.current.canRead).toBe(true));
+    expect(result.current.permissionError).toBeUndefined();
+    error.mockRestore();
   });
 
   it('resolves action gates from the object-permission endpoint', async () => {
@@ -180,5 +202,74 @@ describe('useViewActionPermissions', () => {
     await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
     expect(result.current.canManageViewActions).toBe(true);
     expect(mockGetObjectPermission).not.toHaveBeenCalled();
+  });
+
+  it('keeps cached database tabs readable in every render and applies revoked access immediately', () => {
+    const permission = createPermission({ object_id: 'database-id', collab_type: Types.Database });
+    let permissions = { grid: permission, list: permission };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppNavigationContext.Provider value={{ objectPermissions: permissions }}>
+        {children}
+      </AppNavigationContext.Provider>
+    );
+    const reads: boolean[] = [];
+    const { result, rerender } = renderHook(
+      ({ viewId }) => {
+        const result = useViewActionPermissions(
+          createView({
+            view_id: viewId,
+            layout: ViewLayout.Grid,
+            extra: { is_space: false, database_id: 'database-id' },
+          }),
+          true
+        );
+
+        reads.push(result.canRead);
+        return result;
+      },
+      { wrapper, initialProps: { viewId: 'grid' } }
+    );
+
+    rerender({ viewId: 'list' });
+    expect(reads.every(Boolean)).toBe(true);
+    expect(mockGetObjectPermission).not.toHaveBeenCalled();
+    permissions = { ...permissions, list: { ...permission, can_read: false, can_write: false } };
+    reads.length = 0;
+    rerender({ viewId: 'list' });
+    expect(reads.every((canRead) => !canRead)).toBe(true);
+    expect(result.current.canWrite).toBe(false);
+  });
+
+  it('never reuses the old permission after the same view is mapped to another database', async () => {
+    const permission = createPermission({ object_id: 'database-id', collab_type: Types.Database });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppNavigationContext.Provider value={{ objectPermissions: { 'view-id': permission } }}>
+        {children}
+      </AppNavigationContext.Provider>
+    );
+    const reads: boolean[] = [];
+
+    mockGetObjectPermission.mockReturnValue(new Promise(() => undefined));
+    const { rerender } = renderHook(
+      ({ databaseId }) => {
+        const result = useViewActionPermissions(
+          createView({
+            layout: ViewLayout.Grid,
+            extra: { is_space: false, database_id: databaseId },
+          }),
+          true
+        );
+
+        reads.push(result.canRead);
+        return result;
+      },
+      { wrapper, initialProps: { databaseId: 'database-id' } }
+    );
+
+    expect(reads.every(Boolean)).toBe(true);
+    reads.length = 0;
+    rerender({ databaseId: 'other-database' });
+    expect(reads.every((canRead) => !canRead)).toBe(true);
+    expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'other-database', Types.Database);
   });
 });

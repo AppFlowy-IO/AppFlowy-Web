@@ -40,10 +40,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Playwright 1.58.2 cannot install browsers on Ubuntu 26.04, which
+  # ubuntu-latest can select. Keep builds and tests on its supported image.
   callout:
     if: ${{ !inputs.interop_only }}
     name: 'Callout (light and dark)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +72,7 @@ jobs:
   code-block:
     if: ${{ !inputs.interop_only }}
     name: 'Code blocks and Mermaid (light and dark)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +99,7 @@ jobs:
   pdf:
     if: ${{ !inputs.interop_only }}
     name: 'Embedded PDF (light and dark)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Includes Chromium/system dependencies, two theme suites, and artifacts.
     timeout-minutes: 25
     steps:
@@ -125,7 +127,7 @@ jobs:
   connections:
     if: ${{ !inputs.interop_only }}
     name: 'Connections (Chromium, Firefox, WebKit)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -155,7 +157,7 @@ jobs:
 
   # Build once and share artifact with all test jobs
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: 'Build'
     outputs:
       test-groups: ${{ steps.groups.outputs.groups }}
@@ -223,7 +225,7 @@ jobs:
     # Fork PRs cannot access the Docker Hub, private Cloud repository, or AI
     # credentials. Keep the standalone browser jobs above running for forks.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     env:
       # Publish namespaces the SSR server renders (deploy/indexing-policy.ts).

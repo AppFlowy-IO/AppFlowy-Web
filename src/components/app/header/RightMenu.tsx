@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import { useActiveRowPage } from '@/application/row-document/row-page-state';
+import { ViewLayout } from '@/application/types';
 import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { findView } from '@/components/_shared/outline/utils';
@@ -13,6 +14,7 @@ import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
+import PresentEntry from '@/components/presentation/PresentEntry';
 import { openOrDownload } from '@/utils/open_schema';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -41,8 +43,9 @@ function RightMenu() {
   });
   // Prefer the rendered database's selection, including restored views that
   // have not reached the outline yet. Resolve from the route while it mounts.
-  const activeViewId = displayedViewId ?? (
-    routeView && isDatabaseLayout(routeView.layout)
+  const activeViewId =
+    displayedViewId ??
+    (routeView && isDatabaseLayout(routeView.layout)
       ? resolveActiveDatabaseViewId({
           databasePageId: routeViewId,
           tabViewId,
@@ -83,9 +86,24 @@ function RightMenu() {
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
+      {(hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
+        <PresentEntry
+          viewId={rowPage?.documentId || routeViewId!}
+          permissionViewId={actionViewId}
+          title={rowPage?.title}
+          isRow={hasRowPageRoute}
+        />
+      )}
       {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
       {actionViewId ? (
-        <ShareButton viewId={actionViewId} publishViewId={routeViewId} hidePublish={hasRowPageRoute} />
+        <ShareButton
+          viewId={actionViewId}
+          publishViewId={routeViewId}
+          hidePublish={hasRowPageRoute}
+          presentationViewId={hasRowPageRoute ? rowPage?.documentId : undefined}
+          presentationTitle={rowPage?.title}
+          presentationIsRow={hasRowPageRoute}
+        />
       ) : null}
       <InlineCommentToggleButton />
       {favoriteViewId && (
