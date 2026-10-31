@@ -25,11 +25,15 @@ import {
   DatabaseCsvImportMode,
   DocumentFileImportFormat,
   ImportDiagnosticsWarning,
+  BlockType,
+  ImageBlockData,
+  ImageType,
   Types,
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
+import type { ParsedBlock } from '@/components/editor/parsers/types';
 // Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
 // HTTP layer; `getErrorMessage` normalises both.
 import { getAPIErrorCode, getErrorMessage, isAPIErrorCode, isStorageLimitError } from '@/utils/errors';
@@ -69,33 +73,45 @@ export async function populateDocumentWithMarkdown(workspaceId: string, viewId: 
   ]);
   const blocks = parseMarkdown(text);
 
+  await populateDocumentWithBlocks(workspaceId, viewId, collab.data, blocks);
+}
+
+async function populateDocumentWithBlocks(
+  workspaceId: string,
+  viewId: string,
+  docState: Uint8Array,
+  blocks: ParsedBlock[]
+): Promise<void> {
   if (blocks.length === 0) return;
 
-  const docState = collab.data;
   const doc = new Y.Doc();
 
-  Y.applyUpdate(doc, docState);
+  try {
+    Y.applyUpdate(doc, docState);
 
-  const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-  const pageId = getPageId(sharedRoot);
-  const pageBlock = getBlock(pageId, sharedRoot);
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const pageId = getPageId(sharedRoot);
+    const pageBlock = getBlock(pageId, sharedRoot);
 
-  if (!pageBlock) {
-    throw new Error('Imported document has no root page block');
+    if (!pageBlock) {
+      throw new Error('Imported document has no root page block');
+    }
+
+    const childrenArray = getChildrenArray(pageBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const existingChildIds = childrenArray ? childrenArray.toArray() : [];
+    const slateNodes = blocks.map(parsedBlockToSlateElement);
+
+    doc.transact(() => {
+      existingChildIds.forEach((id) => deleteBlock(sharedRoot, id));
+      slateContentInsertToYData(pageId, 0, slateNodes, doc);
+    });
+
+    const update = Y.encodeStateAsUpdate(doc);
+
+    await updateCollab(workspaceId, viewId, Types.Document, update, { version_vector: 0 });
+  } finally {
+    doc.destroy();
   }
-
-  const childrenArray = getChildrenArray(pageBlock.get(YjsEditorKey.block_children), sharedRoot);
-  const existingChildIds = childrenArray ? childrenArray.toArray() : [];
-  const slateNodes = blocks.map(parsedBlockToSlateElement);
-
-  doc.transact(() => {
-    existingChildIds.forEach((id) => deleteBlock(sharedRoot, id));
-    slateContentInsertToYData(pageId, 0, slateNodes, doc);
-  });
-
-  const update = Y.encodeStateAsUpdate(doc);
-
-  await updateCollab(workspaceId, viewId, Types.Document, update, { version_vector: 0 });
 }
 
 export interface ImportCsvInput {
@@ -245,6 +261,94 @@ export interface ImportFileBatchResult {
 }
 
 export type ImportCsvBatchResult = ImportFileBatchResult;
+
+export interface ImportHtmlFilesInput {
+  workspaceId: string;
+  files: File[];
+  createPage: (name: string) => Promise<{ view_id: string }>;
+  onFileStart?: (index: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/** HTML needs no worker conversion: parse locally and persist through the ordinary page APIs. */
+export async function importHtmlFiles(input: ImportHtmlFilesInput): Promise<ImportFileBatchResult> {
+  const { workspaceId, files, createPage, onFileStart, signal } = input;
+
+  return importFilesSequentially(files, signal, onFileStart, async (file) => {
+    const [html, { parseHTML }] = await Promise.all([file.text(), import('@/components/editor/parsers/html-parser')]);
+
+    throwIfAborted(signal);
+    const blocks = parseHTML(html, { preserveBlockStructure: true });
+
+    throwIfAborted(signal);
+    const { view_id: viewId } = await createPage(stripFileExtension(file.name));
+
+    // Once the page exists, finish saving it even if the dialog closes. Cancellation stops
+    // subsequent files without abandoning this page halfway through its content upload.
+    await uploadHtmlImages(workspaceId, viewId, blocks);
+    const collab = await getCollab(workspaceId, viewId, Types.Document);
+
+    await populateDocumentWithBlocks(workspaceId, viewId, collab.data, blocks);
+
+    return { viewId };
+  });
+}
+
+async function uploadHtmlImages(workspaceId: string, viewId: string, blocks: ParsedBlock[]): Promise<void> {
+  const uploaded = new Map<string, string>();
+
+  const visit = async (block: ParsedBlock): Promise<void> => {
+    if (block.type === BlockType.ImageBlock) {
+      const data = block.data as ImageBlockData;
+      const source = data.url;
+
+      if (source?.startsWith('data:image/')) {
+        let url = uploaded.get(source);
+
+        if (!url) {
+          const file = readHtmlImage(source);
+
+          // Some saved pages contain malformed data URLs. Retain their source, just as
+          // for external images, without letting an unreadable image discard the article.
+          if (!file) return;
+          const { uploadFileMultipart } = await import('@/application/services/js-services/http/file-api');
+
+          url = await uploadFileMultipart({
+            workspaceId,
+            viewId,
+            file,
+          });
+          uploaded.set(source, url);
+        }
+
+        data.url = url;
+        data.image_type = ImageType.Internal;
+      }
+    }
+
+    for (const child of block.children) await visit(child);
+  };
+
+  for (const block of blocks) await visit(block);
+}
+
+function readHtmlImage(source: string): File | undefined {
+  const separator = source.indexOf(',');
+
+  if (separator < 0) return;
+  const [type, ...encoding] = source.slice(5, separator).split(';');
+
+  try {
+    const payload = decodeURIComponent(source.slice(separator + 1));
+    const bytes = encoding.includes('base64')
+      ? Uint8Array.from(atob(payload), (character) => character.charCodeAt(0))
+      : new TextEncoder().encode(payload);
+
+    return new File([bytes], 'imported-image', { type });
+  } catch {
+    return;
+  }
+}
 
 /**
  * Import several files one at a time, each into its own page under the same parent.

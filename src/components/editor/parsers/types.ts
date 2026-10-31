@@ -58,6 +58,8 @@ export interface PasteContext {
  * Options for parsing HTML content
  */
 export interface HTMLParseOptions {
+  /** Keep blocks nested in saved web-page containers instead of flattening them to text. */
+  preserveBlockStructure?: boolean;
   /** Whether to preserve colors from styles */
   preserveColors?: boolean;
   /** Whether to preserve font families */
