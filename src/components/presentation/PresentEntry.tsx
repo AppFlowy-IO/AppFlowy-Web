@@ -1,8 +1,11 @@
 import { lazy, Suspense, useRef, useState } from 'react';
 
 import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
+import { useAppView, useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { Button } from '@/components/ui/button';
 
+import { presentationAIAccessReason } from './presentation-policy';
 import { loadPresentationDialog, preloadPresentation } from './presentation-preload';
 import PresentationMenu from './PresentationMenu';
 import { Mode } from './types';
@@ -16,8 +19,21 @@ export default function PresentEntry({
   ...source
 }: PresentationSourceProps & { slidesOnly?: boolean }) {
   const [mode, setMode] = useState<Mode>();
+  const [menuOpen, setMenuOpen] = useState(false);
   const deck = source.deck;
   const trigger = useRef<HTMLButtonElement>(null);
+  const permissionViewId = source.permissionViewId ?? source.viewId;
+  const permissionView = useAppView(permissionViewId);
+  const role = useUserWorkspaceInfoOptional()?.selectedWorkspace.role;
+  // Read only while the menu is open; the current page's permission is usually already cached.
+  const { canWrite, hasLoadedViewActionPermissions } = useViewActionPermissions(
+    permissionView,
+    menuOpen,
+    permissionViewId
+  );
+  const aiUnavailableReason = slidesOnly
+    ? undefined
+    : presentationAIAccessReason({ role, canWrite, permissionsLoaded: menuOpen && hasLoadedViewActionPermissions });
   const open = (next: Mode) => {
     // Fetch the dialog and the chosen mode's chunk together instead of one after the other.
     preloadPresentation(next);
@@ -32,7 +48,12 @@ export default function PresentEntry({
           {deck ? 'Open preview' : 'Generate AI ppt'}
         </Button>
       ) : (
-        <PresentationMenu ref={trigger} onSelect={open} />
+        <PresentationMenu
+          ref={trigger}
+          onSelect={open}
+          aiUnavailableReason={aiUnavailableReason}
+          onOpenChange={setMenuOpen}
+        />
       )}
       {mode && (
         <Suspense fallback={null}>

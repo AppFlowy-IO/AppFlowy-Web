@@ -54,7 +54,7 @@ import {
   useInlineCommentPanelOptional,
 } from '@/components/inline-comment/InlineCommentContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { PRESENTATION_ENTRY_ENABLED } from '@/components/presentation/feature-flags';
+import { usePresentationEntryEnabled } from '@/components/presentation/feature-flags';
 import PresentEntry from '@/components/presentation/PresentEntry';
 import { cn } from '@/lib/utils';
 
@@ -72,6 +72,7 @@ const Transition = React.forwardRef(function Transition(
 });
 
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
+  const presentationEntryEnabled = usePresentationEntryEnabled();
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
   const operations = useAppOperations();
@@ -380,7 +381,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
         <div className={'flex items-center gap-4'}>
           <Users viewId={effectiveViewId} />
-          {PRESENTATION_ENTRY_ENABLED && resolvedView?.layout === ViewLayout.Document && (
+          {presentationEntryEnabled && resolvedView?.layout === ViewLayout.Document && (
             <PresentEntry viewId={effectiveViewId} />
           )}
           <ShareButton viewId={effectiveViewId} />
@@ -403,7 +404,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [effectiveViewId, handleClose, movePageOpen, outline, resolvedView, t, toView]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, presentationEntryEnabled, resolvedView, t, toView]);
 
   // Check if view is in shareWithMe and determine readonly status.
   // `resolvedView` includes the server-fetched fallback, so locked pages opened
