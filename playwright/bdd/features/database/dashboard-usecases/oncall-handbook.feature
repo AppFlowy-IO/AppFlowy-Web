@@ -189,13 +189,13 @@ Feature: On-call handbook with an embedded incident dashboard
     When the visitor reloads the page
     Then the visitor sees the "Open list" widget list "Webhook retries stuck, Invoice PDF timeouts, Search index lag"
 
-  # The Pro gate is off in development builds and on self-hosted servers, so
-  # the step skips this scenario on the Vite dev server; it runs against a
-  # production build (CI). The billing mock answers "no active plan".
+  # Dashboard follows Timeline's Pro gate: on a hosted server a Free owner
+  # sees the Pro crown and an upgrade, like Timeline. The step marks the
+  # server hosted and the billing mock answers "no active plan".
   @billing
-  Scenario: On a Free workspace the dashboard slash options explain that they need Pro
+  Scenario: On a Free workspace the dashboard slash options offer the Pro upgrade
     Given the workspace is on the Free plan
     And I am editing the "On-call handbook" document
     When I open the slash menu
-    Then the slash menu command "dashboard" is disabled with the tooltip "Creating a Dashboard view requires a Pro workspace."
-    And the slash menu command "linkedDashboard" is disabled with the tooltip "Creating a Dashboard view requires a Pro workspace."
+    Then the slash menu command "dashboard" shows the Pro crown with the tooltip "Upgrade this workspace to Pro to create a Dashboard view."
+    And the slash menu command "linkedDashboard" shows the Pro crown with the tooltip "Upgrade this workspace to Pro to create a Dashboard view."

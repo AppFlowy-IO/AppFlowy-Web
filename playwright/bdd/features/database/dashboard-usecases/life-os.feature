@@ -173,14 +173,15 @@ Feature: Personal Life OS "Today" dashboard across four databases
   # billing endpoints with "pro"). The first step undoes both: it makes the
   # workspace's subscriptions inactive and routes the two billing endpoints
   # to answer no active plan, then reloads so the app reads the plan again.
-  # A development build (the Vite dev server) skips the plan check
-  # (isDevelopmentOrTestEnvironment), so the scenario is skipped there; CI
-  # runs a production build.
+  # Like Timeline, the owner of a Free workspace is offered the upgrade: the
+  # Dashboard option shows the Pro crown and opens the plan comparison.
   @billing
   Scenario: On a Free workspace a new dashboard asks for Pro, the existing one keeps working
     Given the workspace is on the Free plan
-    When I try to add a dashboard to "Tasks" from the view tab menu
-    Then I am told that "Creating a Dashboard view requires a Pro workspace."
+    When I open the view tab menu of "Tasks"
+    Then its Dashboard option shows the Pro crown, explaining "Upgrade this workspace to Pro to create a Dashboard view."
+    When I choose the Dashboard option
+    Then the Pro plan comparison opens
     And "Tasks" has no dashboard view
     When I open the "Today" dashboard
     Then the "Points" widget shows the number "21"

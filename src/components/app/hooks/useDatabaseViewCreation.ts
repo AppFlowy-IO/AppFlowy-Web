@@ -18,6 +18,7 @@ import {
   canManageWorkspaceBilling,
   getProAccessPlanFromSubscriptions,
   isLimitedDatabaseViewLayout,
+  isProPlanDatabaseViewLayout,
 } from '@/utils/subscription';
 
 export type DatabaseViewCreationAction = {
@@ -31,6 +32,8 @@ const CREATE: DatabaseViewCreationAction = { type: 'create' };
 const upgradeReasonKey = (layout?: ViewLayout) =>
   layout === ViewLayout.Timeline
     ? 'databaseViewCreation.upgradeTimeline'
+    : layout === ViewLayout.Dashboard
+    ? 'databaseViewCreation.upgradeDashboard'
     : layout === ViewLayout.Form
     ? 'databaseViewCreation.upgradeForm'
     : 'databaseViewCreation.upgradeChart';
@@ -306,7 +309,7 @@ export function useDatabaseViewCreation({
           }
         : { type: 'disabled', requiresPro: false, reason: t('databaseViewCreation.askOwner') };
 
-      if (layout === ViewLayout.Timeline) {
+      if (isProPlanDatabaseViewLayout(layout)) {
         if (cached.plan === undefined) return current?.planState === 'failed' ? unavailable : checking;
         return cached.plan === SubscriptionPlan.Pro ? CREATE : requiresPro;
       }

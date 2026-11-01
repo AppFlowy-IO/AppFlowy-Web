@@ -115,20 +115,34 @@ describe('workspace database view creation', () => {
     jest.useRealTimers();
   });
 
-  it.each([SubscriptionPlan.Free, SubscriptionPlan.Team, SubscriptionPlan.Pro, SubscriptionPlan.AIMax])(
-    'requires Pro or Team for Timeline in all environments (%s)',
-    async (plan) => {
-      subscriptions.mockResolvedValue([subscription(plan)]);
-      const { result } = mount();
+  it.each(
+    [ViewLayout.Timeline, ViewLayout.Dashboard].flatMap((layout) =>
+      [SubscriptionPlan.Free, SubscriptionPlan.Team, SubscriptionPlan.Pro, SubscriptionPlan.AIMax].map(
+        (plan) => [layout, plan] as const
+      )
+    )
+  )('requires Pro or Team for layout %s in all environments (%s)', async (layout, plan) => {
+    subscriptions.mockResolvedValue([subscription(plan)]);
+    const { result } = mount();
 
-      expect(result.current.getAction(ViewLayout.Timeline)).toMatchObject({ type: 'disabled' });
-      await waitFor(() =>
-        expect(result.current.getAction(ViewLayout.Timeline).type).toBe(
-          plan === SubscriptionPlan.Pro || plan === SubscriptionPlan.Team ? 'create' : 'upgrade'
-        )
-      );
-    }
-  );
+    expect(result.current.getAction(layout)).toMatchObject({ type: 'disabled' });
+    await waitFor(() =>
+      expect(result.current.getAction(layout).type).toBe(
+        plan === SubscriptionPlan.Pro || plan === SubscriptionPlan.Team ? 'create' : 'upgrade'
+      )
+    );
+  });
+
+  it.each([
+    [ViewLayout.Timeline, 'databaseViewCreation.upgradeTimeline'],
+    [ViewLayout.Dashboard, 'databaseViewCreation.upgradeDashboard'],
+  ])('gives a Free owner the Pro crown for layout %s with its own upgrade reason', async (layout, reason) => {
+    const { result } = mount();
+
+    await waitFor(() =>
+      expect(result.current.getAction(layout)).toEqual({ type: 'upgrade', requiresPro: true, reason })
+    );
+  });
 
   it('uses independent authoritative quotas even when the cached plan is Pro', async () => {
     subscriptions.mockResolvedValue([subscription(SubscriptionPlan.Pro)]);
@@ -229,7 +243,7 @@ describe('workspace database view creation', () => {
     jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     const { result } = mount();
 
-    for (const layout of [ViewLayout.Form, ViewLayout.Chart, ViewLayout.Timeline]) {
+    for (const layout of [ViewLayout.Form, ViewLayout.Chart, ViewLayout.Timeline, ViewLayout.Dashboard]) {
       expect(result.current.getAction(layout).type).toBe(hosting === 'self-hosted' ? 'create' : 'disabled');
       expect(result.current.getAction(layout).requiresPro).toBeUndefined();
     }
