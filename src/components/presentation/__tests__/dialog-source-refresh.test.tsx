@@ -138,8 +138,11 @@ jest.mock('@/components/app/app.hooks', () => ({
   useUserWorkspaceInfoOptional: () => undefined,
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: 'user' }) }));
+const allowed = { canRead: true, canWrite: true, hasLoadedViewActionPermissions: true };
+let mockPermissions = allowed;
+
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
-  useViewActionPermissions: () => ({ canRead: true, canWrite: true, hasLoadedViewActionPermissions: true }),
+  useViewActionPermissions: () => mockPermissions,
 }));
 jest.mock('../usePresentationAccess', () => ({ usePresentationAccess: (enabled?: boolean) => mockAccess(enabled) }));
 jest.mock('@/application/slate-yjs/utils/convert', () => ({ yDocToSlateContent: () => mockContent }));
@@ -171,6 +174,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPermissions = allowed;
   mockOperations.loadView = mockLoadView;
   mockName = 'Live document';
   mockCover = undefined;
@@ -204,6 +208,60 @@ test('a rename keeps an open AI Slides studio and its running generation', async
   expect(requests('GET', '/status')).toBe(reads.status);
   expectAccessWithoutStatus();
   unmount();
+});
+
+test('a permission re-check keeps the open AI Slides studio and its source analysis', async () => {
+  // Analysis is debounced after source preparation; a busy test runner can need more than a second.
+  const generateEnabled = () =>
+    waitFor(
+      () =>
+        expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false),
+      { timeout: 5000 }
+    );
+  const { rerender } = render(<PresentEntry viewId='document' slidesOnly />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
+  const setup = await screen.findByRole('region', { name: 'Create presentation settings' }, { timeout: 5000 });
+
+  await generateEnabled();
+  const reads = {
+    assess: requests('POST', '/slides/assess'),
+    status: requests('GET', '/status'),
+    session: requests('GET', '/session'),
+  };
+
+  // An access notification drops the page's permission until the server answers again.
+  mockPermissions = { canRead: false, canWrite: false, hasLoadedViewActionPermissions: false };
+  rerender(<PresentEntry viewId='document' slidesOnly />);
+  await flush();
+  expect(screen.getByRole('region', { name: 'Create presentation settings' })).toBe(setup);
+  expect(screen.queryByText('Loading presentation…')).toBeNull();
+
+  mockPermissions = allowed;
+  rerender(<PresentEntry viewId='document' slidesOnly />);
+  await flush();
+
+  expect(screen.getByRole('region', { name: 'Create presentation settings' })).toBe(setup);
+  await generateEnabled();
+  // Restored write access may re-extract the source (linked content can depend on access), but an
+  // unchanged source keeps its analysis, and the studio never reloads as if it were reopened.
+  expect(screen.queryByText('Analyzing your sources…')).toBeNull();
+  expect(requests('POST', '/slides/assess')).toBe(reads.assess);
+  expect(requests('GET', '/status')).toBe(reads.status);
+  expect(requests('GET', '/session')).toBe(reads.session);
+});
+
+test('a settled denial still replaces the open AI Slides studio', async () => {
+  const { rerender } = render(<PresentEntry viewId='document' slidesOnly />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
+  await screen.findByRole('region', { name: 'Create presentation settings' }, { timeout: 5000 });
+
+  mockPermissions = { canRead: false, canWrite: false, hasLoadedViewActionPermissions: true };
+  rerender(<PresentEntry viewId='document' slidesOnly />);
+
+  expect(await screen.findByText('You no longer have access to this source page.')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Create presentation settings' })).toBeNull();
 });
 
 test('background database loader changes do not restart pending mind-map source preparation', async () => {
