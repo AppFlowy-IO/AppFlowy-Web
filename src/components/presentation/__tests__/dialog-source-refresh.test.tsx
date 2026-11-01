@@ -135,6 +135,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceIdOptional: () => 'workspace',
   useEventEmitterOptional: () => undefined,
   useAppOperations: () => mockOperations,
+  useUserWorkspaceInfoOptional: () => undefined,
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: 'user' }) }));
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({

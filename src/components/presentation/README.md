@@ -2,7 +2,7 @@
 
 This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
 
-The **Present** button is temporarily hidden in page and modal headers. Keep `PRESENTATION_ENTRY_ENABLED` in [`feature-flags.ts`](./feature-flags.ts) set to `false` until explicitly asked to enable it.
+The **Present** button in page and modal headers shows only on official AppFlowy Cloud. `usePresentationEntryEnabled` in [`feature-flags.ts`](./feature-flags.ts) reads the server's hosting mode, so self-hosted deployments never see it, and nobody sees it until server info confirms the official cloud.
 
 ## Run locally
 

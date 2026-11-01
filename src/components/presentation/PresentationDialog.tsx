@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import { getActiveRowPage } from '@/application/row-document/row-page-state';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
+import { notify } from '@/components/_shared/notify';
 import { useAppOperations, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { revealDocumentBlock } from '@/components/editor/utils/reveal-document-block';
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/button';
 
 import { loadSourceSnapshot } from './presentation-client';
 import { loadDocumentPresenter, loadPresentationStudio } from './presentation-preload';
-import PresentationLoading, { MindMapLoading } from './PresentationLoading';
+import PresentationLoading, { MindMapLoading, PresentationState } from './PresentationLoading';
 import PresentationShell from './PresentationShell';
 import { forgetSavedDecks } from './saved-deck-cache';
 import { snapshotFromSlate } from './snapshot-adapter';
@@ -173,6 +174,20 @@ export default function PresentationDialog({
     onClose();
   }
 
+  const failure =
+    error || (hasLoadedViewActionPermissions && !canRead ? 'You no longer have access to this source page.' : '');
+  // Mind maps and documents present full screen; a source that cannot open returns to the page
+  // and says why there. The slides window is a dialog, so it shows the error in place.
+  const fullScreenFailure = mode !== 'slides' && !!failure;
+  const closeRef = useRef(onClose);
+
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!fullScreenFailure) return;
+    notify.error(failure);
+    closeRef.current();
+  }, [fullScreenFailure, failure]);
+
   function source(referenceId: string, resolved = snapshot) {
     const location = resolved?.serverSource?.references[referenceId]?.location;
 
@@ -193,9 +208,13 @@ export default function PresentationDialog({
     if (location?.kind === 'database_cell') {
       // Database IDs are not navigable view IDs. Use the authorized prepared view and let
       // the normal database navigation open the row via its row parameter.
-      const database = resolved?.serverSource?.databaseViews.find((candidate) =>
-        candidate.databaseId === location.databaseId && candidate.rows.some((row) =>
-          row.rowId === location.rowId && row.cells[location.fieldId]?.sourceId === referenceId));
+      const database = resolved?.serverSource?.databaseViews.find(
+        (candidate) =>
+          candidate.databaseId === location.databaseId &&
+          candidate.rows.some(
+            (row) => row.rowId === location.rowId && row.cells[location.fieldId]?.sourceId === referenceId
+          )
+      );
 
       if (!database) return;
       close();
@@ -257,11 +276,17 @@ export default function PresentationDialog({
             />
           ) : null}
         </Suspense>
-      ) : error || (hasLoadedViewActionPermissions && !canRead) ? (
-        <div className='flex h-full flex-col items-center justify-center gap-4'>
-          <p role='status'>{error || 'You no longer have access to this source page.'}</p>
-          <Button onClick={close}>Back to page</Button>
-        </div>
+      ) : failure && !fullScreenFailure ? (
+        <PresentationState
+          variant='error'
+          title='Couldn’t open the presentation'
+          message={failure}
+          actions={
+            <Button variant='outline' onClick={close}>
+              Back to page
+            </Button>
+          }
+        />
       ) : mode === 'mindmap' ? (
         <MindMapLoading onClose={close} />
       ) : (

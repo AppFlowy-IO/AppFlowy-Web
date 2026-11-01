@@ -1,4 +1,6 @@
-import { aiMapUpgradeMessage, presentationCapabilities, presentationUpgradeRequired, slideCountLimitMessage } from '../presentation-policy';
+import { Role } from '@/application/types';
+
+import { aiMapUpgradeMessage, presentationAIAccessReason, presentationCapabilities, presentationUpgradeRequired, slideCountLimitMessage } from '../presentation-policy';
 
 import type { PresentationStatus } from '../server-contract';
 
@@ -37,4 +39,12 @@ test('only authoritative exhausted AI usage offers an upgrade', () => {
   expect(aiMapUpgradeMessage(free)).toMatch(/no AI responses left/);
   for (const aiResponses of [{ accountingReady: false, retryable: true }, { metered: false }, { unlimited: true, accountingReady: true, limit: 20, remaining: 0 }, { accountingReady: true, limit: null, remaining: null }, { accountingReady: true, limit: 20, remaining: 1 }])
     expect(aiMapUpgradeMessage({ ...free, aiResponses })).toBeUndefined();
+});
+
+test('AI presentation access needs workspace membership and page edit access, and unknown access does not block', () => {
+  expect(presentationAIAccessReason({ role: Role.Guest, canWrite: true, permissionsLoaded: true })).toMatch(/Guests can’t use AI/);
+  expect(presentationAIAccessReason({ role: Role.Member, canWrite: false, permissionsLoaded: true })).toMatch(/edit access/);
+  expect(presentationAIAccessReason({ role: Role.Member, canWrite: false, permissionsLoaded: false })).toBeUndefined();
+  expect(presentationAIAccessReason({ role: Role.Owner, canWrite: true, permissionsLoaded: true })).toBeUndefined();
+  expect(presentationAIAccessReason({ canWrite: true, permissionsLoaded: true })).toBeUndefined();
 });

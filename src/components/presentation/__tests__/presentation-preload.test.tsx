@@ -24,6 +24,15 @@ jest.mock('../PresentationStudio', () => {
   return { __esModule: true, default: () => null };
 });
 
+// The menu reads page and workspace access to explain unavailable AI options.
+jest.mock('@/components/app/app.hooks', () => ({
+  useAppView: (id: string) => ({ view_id: id }),
+  useUserWorkspaceInfoOptional: () => undefined,
+}));
+jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
+  useViewActionPermissions: () => ({ canRead: true, canWrite: true, hasLoadedViewActionPermissions: true }),
+}));
+
 function openMenu() {
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
 }
