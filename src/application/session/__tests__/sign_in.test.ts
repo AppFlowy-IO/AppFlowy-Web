@@ -1,12 +1,18 @@
 import {
   afterAuth,
   buildLoginUrl,
+  clearRedirectTo,
   getAuthCallbackUrl,
   getPublicFormRedirectTo,
+  getRedirectTo,
   getSafeRedirectUrl,
   isAuthPath,
+  isFlowBoundRedirectUrl,
   isSafeRedirectUrl,
+  MCP_CONSENT_AUTH_CONTINUATION_TTL_MS,
+  PASSWORD_RESET_LOGIN_ACTION,
   PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS,
+  saveMcpConsentRedirectTo,
   savePublicFormRedirectTo,
   saveRedirectTo,
 } from '../sign_in';
@@ -559,5 +565,223 @@ describe('afterAuth', () => {
     localStorage.setItem('redirectTo', '/settings');
     afterAuth();
     expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+});
+
+describe('MCP consent continuation', () => {
+  const consentPath =
+    '/oauth/mcp/authorize?client_id=https%3A%2F%2Fclaude.ai%2Foauth%2Fmcp-oauth-client-metadata' +
+    '&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback&response_type=code' +
+    '&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&state=state-1';
+  const flowId = 'c'.repeat(32);
+  const expiredView =
+    '/oauth/mcp/authorize?expired=1&client_id=https%3A%2F%2Fclaude.ai%2Foauth%2Fmcp-oauth-client-metadata';
+
+  function mcpChannel() {
+    return MockBroadcastChannel.instances.find((channel) => channel.name === 'appflowy-mcp-consent-auth');
+  }
+
+  /** The consent page sends a signed-out user to sign in. */
+  function startSignIn(now = Date.now()) {
+    hrefValue = `http://localhost${consentPath}`;
+    expect(saveMcpConsentRedirectTo(consentPath, now, flowId)).toBe(flowId);
+    return buildLoginUrl({ redirectTo: consentPath });
+  }
+
+  it('keeps the authorization request out of login and callback URLs', () => {
+    const loginUrl = startSignIn();
+    const parsed = new URL(loginUrl, window.location.origin);
+
+    expect(parsed.pathname).toBe('/login');
+    expect(Array.from(parsed.searchParams.keys()).sort()).toEqual(['force', 'mcpAuth']);
+    expect(parsed.searchParams.get('mcpAuth')).toBe(flowId);
+    expect(loginUrl).not.toMatch(/client_id|code_challenge|state-1|claude/);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+
+    hrefValue = `http://localhost${loginUrl}`;
+    const callbackUrl = new URL(getAuthCallbackUrl(consentPath));
+
+    expect(callbackUrl.pathname).toBe('/auth/callback');
+    expect(Array.from(callbackUrl.searchParams.keys())).toEqual(['mcpAuth']);
+    expect(callbackUrl.searchParams.get('mcpAuth')).toBe(flowId);
+    expect(isFlowBoundRedirectUrl(consentPath)).toBe(true);
+  });
+
+  it('returns to the consent request after a sign-in that stays within the request lifetime', () => {
+    const now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const loginUrl = startSignIn(now);
+
+    // Password sign-in on the login page, a few minutes later.
+    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=enterPassword`;
+    nowSpy.mockReturnValue(now + MCP_CONSENT_AUTH_CONTINUATION_TTL_MS - 1000);
+    expect(getRedirectTo()).toBe(consentPath);
+    saveRedirectTo(consentPath);
+    afterAuth();
+
+    expect(window.location.href).toBe(consentPath);
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it('returns there from an SSO callback in the same tab', () => {
+    startSignIn();
+
+    hrefValue = `${getAuthCallbackUrl(consentPath)}#access_token=token`;
+    afterAuth();
+
+    expect(window.location.href).toBe(consentPath);
+  });
+
+  it('shows the expired view instead of returning once the request expired', () => {
+    const now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const loginUrl = startSignIn(now);
+
+    hrefValue = `http://localhost${loginUrl}`;
+    nowSpy.mockReturnValue(now + MCP_CONSENT_AUTH_CONTINUATION_TTL_MS + 1);
+    // The login stays bound to the flow, so sign-in can tell the user what happened.
+    expect(getRedirectTo()).toBe(consentPath);
+    expect(buildLoginUrl({ redirectTo: consentPath })).toBe(loginUrl);
+    saveRedirectTo(consentPath);
+    afterAuth();
+
+    expect(window.location.href).toBe(expiredView);
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+  });
+
+  it('does not resume an abandoned consent request after a later, unrelated login', () => {
+    startSignIn();
+
+    // The user left the login page and signed in from a plain /login later.
+    hrefValue = 'http://localhost/login';
+    expect(getRedirectTo()).toBeNull();
+    afterAuth();
+
+    expect(window.location.href).toBe('/app');
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+  });
+
+  it('does not let a later login with another destination pick the request up', () => {
+    startSignIn();
+    hrefValue = 'http://localhost/login?redirectTo=%2Fsettings';
+    saveRedirectTo('/settings');
+    hrefValue = 'http://localhost/login';
+    afterAuth();
+
+    expect(window.location.href).toBe('/settings');
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+  });
+
+  it('drops a consent request an older build stored without an expiry', () => {
+    localStorage.setItem('redirectTo', consentPath);
+
+    afterAuth();
+
+    expect(window.location.href).toBe('/app');
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it('resumes the originating tab when a magic link completes in another tab', () => {
+    const loginUrl = startSignIn();
+    const callbackUrl = getAuthCallbackUrl(consentPath);
+    const channel = mcpChannel();
+
+    // The magic link opens a new tab, which has its own (empty) session storage.
+    const originTabStorage = sessionStorage.getItem('mcpConsentAuthContinuation');
+
+    sessionStorage.clear();
+    hrefValue = `${callbackUrl}#access_token=token`;
+    afterAuth();
+
+    expect(channel?.postMessage).toHaveBeenCalledWith({ flowId, type: 'authenticated' });
+    expect(window.location.href).toBe('/app');
+
+    // Back in the originating tab, still on the check-email step.
+    sessionStorage.setItem('mcpConsentAuthContinuation', originTabStorage ?? '');
+    hrefValue = `http://localhost${loginUrl}&action=checkEmail`;
+    channel?.dispatch({ flowId, type: 'authenticated' });
+
+    expect(window.location.href).toBe(consentPath);
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+  });
+
+  it('shows the expired view in the originating tab when the magic link came too late', () => {
+    const now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const loginUrl = startSignIn(now);
+
+    hrefValue = `http://localhost${loginUrl}&action=checkEmail`;
+    nowSpy.mockReturnValue(now + MCP_CONSENT_AUTH_CONTINUATION_TTL_MS + 1);
+    mcpChannel()?.dispatch({ flowId, type: 'authenticated' });
+
+    expect(window.location.href).toBe(expiredView);
+  });
+
+  it('continues through the new-password form after a recovery code, then returns to the request', () => {
+    const loginUrl = startSignIn();
+    const checkEmail = `http://localhost${loginUrl}&email=user%40example.com&action=checkEmailResetPassword`;
+    const changePasswordUrl = new URL(
+      buildLoginUrl({ action: PASSWORD_RESET_LOGIN_ACTION, email: 'user@example.com', redirectTo: consentPath }),
+      window.location.origin
+    ).toString();
+
+    expect(new URL(changePasswordUrl).searchParams.get('mcpAuth')).toBe(flowId);
+
+    // The recovery code signs in on the check-email step.
+    hrefValue = checkEmail;
+    saveRedirectTo(changePasswordUrl);
+    afterAuth();
+
+    expect(window.location.href).toBe(changePasswordUrl);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).not.toBeNull();
+
+    // After the reset the user signs in again with the new password.
+    hrefValue = `http://localhost${loginUrl}`;
+    saveRedirectTo(consentPath);
+    afterAuth();
+
+    expect(window.location.href).toBe(consentPath);
+  });
+
+  it('does not let a failed recovery attempt hijack a later sign-in of the same flow', () => {
+    const loginUrl = startSignIn();
+    const changePasswordUrl = new URL(
+      buildLoginUrl({ action: PASSWORD_RESET_LOGIN_ACTION, email: 'user@example.com', redirectTo: consentPath }),
+      window.location.origin
+    ).toString();
+
+    // A wrong recovery code: the new-password step is stored, but nobody signs in.
+    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=checkEmailResetPassword`;
+    saveRedirectTo(changePasswordUrl);
+
+    // The user goes back and signs in with the password after all.
+    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=enterPassword`;
+    saveRedirectTo(consentPath);
+    afterAuth();
+
+    expect(window.location.href).toBe(consentPath);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it('replaces another flow-bound sign-in in the same tab', () => {
+    const formFlowId = 'd'.repeat(32);
+
+    savePublicFormRedirectTo('/form/267699aa-58ef-452f-b822-57271c2c218d', Date.now(), formFlowId);
+    startSignIn();
+
+    expect(sessionStorage.getItem('publicFormAuthContinuation')).toBeNull();
+    clearRedirectTo();
+    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+  });
+
+  it.each([
+    '/oauth/mcp/authorize/elsewhere?client_id=a',
+    '/oauth/mcp/setup',
+    'https://evil.example/oauth/mcp/authorize?client_id=a',
+  ])('does not treat %s as a consent request', (destination) => {
+    expect(saveMcpConsentRedirectTo(destination, Date.now(), flowId)).toBeNull();
+    expect(isFlowBoundRedirectUrl(destination)).toBe(false);
   });
 });

@@ -1,0 +1,573 @@
+# AI apps (MCP)
+
+AI apps such as Claude, ChatGPT, Claude Code, Cursor, VS Code, Codex and Gemini CLI connect to
+AppFlowy through the AppFlowy MCP service (`appflowy_mcp`, a service separate from Cloud, on its own
+origin or, in self-hosted deployments, on AppFlowy's own domain). The Web app owns three surfaces of
+that flow:
+
+| Surface | Route / place | Login |
+| --- | --- | --- |
+| Setup instructions | `/oauth/mcp/setup` (`src/pages/McpSetupPage.tsx`) | no |
+| OAuth consent | `/oauth/mcp/authorize` (`src/pages/McpAuthorizePage.tsx`) | yes (bounces to `/login`) |
+| Self-service and owner governance | Settings → AI apps (`src/components/app/settings/mcp/McpPanel.tsx`, `?setting=AI_APPS`) | yes |
+
+The server contract (endpoints, error reasons, client summary) is documented in AppFlowy Cloud's
+`doc/context/integrations/mcp_context.md`.
+
+At a glance (details in the sections below):
+
+- **One connection per device**: every sign-in from an AI app is its own connection (token
+  family) with the device the app described ("Claude Code 2.1 · macOS"), "Connected …" and
+  "Last used …"; disconnecting ends one device's connection and leaves the others working
+  ([Settings → AI apps](#settings--ai-apps)).
+- **Overview across workspaces**: "You have N apps connected across M workspaces" from
+  `GET /api/mcp/me/connections`.
+- **Verified apps**: the server's catalog names apps it recognizes and marks web apps whose
+  identity it proves (Claude, ChatGPT) as **Verified app** ([App identity](#app-identity)).
+- **Three approval policies per workspace**: Verified and approved apps (the default), Approved
+  apps only and Any app, with app-level approvals ("All Cursor installs").
+- **Enable MCP switch**: an administrator turns AI app connections on or off for the whole server
+  in AppFlowy-Admin; while off the consent page and Settings say so, and Settings keeps Your
+  connections for disconnecting ([Enable MCP switch](#enable-mcp-switch)).
+
+## Flow
+
+1. The user adds the server URL (`<MCP origin>/mcp`, shown by Settings and the setup page; see
+   [MCP service URL](#mcp-service-url)) to an AI app. The app reads the server's OAuth metadata,
+   registers itself (dynamic client registration, DCR) or presents a client ID metadata document
+   URL (CIMD), and opens `GET /api/mcp/authorize` in the browser.
+2. The MCP service validates the request and redirects the browser to the Web consent page,
+   `<APPFLOWY_WEB_URL>/oauth/mcp/authorize?client_id=…&redirect_uri=…&response_type=code&code_challenge=…&code_challenge_method=S256[&state&scope&resource&workspace_id]`.
+   The page shows a spinner until it knows the MCP service's URL (with server-info discovery, after
+   one `/api/server-info` request), then "not configured" if neither source names one. While AI app
+   connections are turned off for the server, the MCP service answers the authorization request
+   itself with 503 `mcp_disabled` instead of redirecting (see [Enable MCP switch](#enable-mcp-switch)).
+3. Signed-out users sign in through a flow-bound continuation (see
+   [Sign-in continuation](#sign-in-continuation)): the login URL carries only an opaque flow ID,
+   and password, magic link, SSO, OIDC, SAML and LDAP sign-in return to the consent request while
+   it is still valid (10 minutes), or land on an "expired" view after that.
+4. The page loads the public client description (`GET /api/mcp/clients?client_id=`), the user's
+   workspaces with their roles (`UserService.getWorkspaceInfo`, as the app shell does), and for the
+   chosen workspace the member status (`GET /api/mcp/me/workspaces/{id}?client_id=`): whether AI app
+   connections are on (`enabled`), role, eligibility, approval requirement and the client's state
+   there.
+5. The user picks a workspace (the requested one, else the current one, else the first; each shows
+   the user's role, Owner or Member, so same-named workspaces can be told apart; guest workspaces are
+   listed but disabled) and the permissions. `read` is always granted and includes the workspace
+   member list with names and emails; `write` and `admin` (destructive tools) start checked when the
+   app requested them and can be turned off. Unknown requested scopes are ignored. When the app asked
+   for neither `write` nor `admin` (apps that send no scope included) and the user has not ticked
+   either, `mcp-consent-read-only-hint` says so ("{app} asked only to view and search. To let it make
+   changes, tick Create and add."; `isReadOnlyConsentRequest`). "Learn more about AppFlowy MCP"
+   (`mcp-consent-learn-more`) opens `/oauth/mcp/setup` in a new tab with `rel="noopener noreferrer"`,
+   so the request stays open and its OAuth parameters stay out of the referrer.
+   An app the server's verified catalog recognizes (`verified_app`, see
+   [App identity](#app-identity)) is named by the catalog's `app_name`. Its publisher row shows
+   **Verified app** only when the catalog also proves the app (`identity_verified`: a web app such
+   as Claude or ChatGPT). A catalog app that runs on the user's computer (Claude Code, Cursor) gets
+   the publisher row of any other client (Verified domain / Not verified), and its loopback redirect
+   gets "Runs on your computer" and the warning.
+   When the user already has a connection with the app in that workspace (`client.connected`),
+   `mcp-consent-already-connected` says that allowing again adds another connection and the existing
+   ones keep working: every authorization is its own connection (one per device, see
+   [Settings → AI apps](#settings--ai-apps)).
+6. The primary button follows the member status, decided by `client.approved` (approved here, or
+   approval not required). `requires_approval` is not consulted: it mirrors the workspace setting,
+   which the decision `/authorize/code` enforces can trail by up to 30 seconds after an owner turns
+   the requirement off, so trusting it could offer an Allow the server still refuses.
+   For a self-registered (DCR) app the catalog does not recognize whose `redirect_uri` is https on a
+   host other than this computer (`consentHostToAcknowledge`), Allow and Approve and allow stay
+   disabled until the user ticks "I recognize {host} and started this connection"
+   (`mcp-consent-acknowledge`): the app's name is self-asserted, so the return host is the one fact
+   that says where the access goes. Owners see it too, since their approval covers the workspace.
+   Request approval needs no tick (it grants nothing); loopback redirects keep their own warning.
+   - **Allow access** posts `POST /api/mcp/authorize/code` with the AppFlowy access token, shows
+     the done view and navigates to the returned `redirect_url` (it carries `code`, `state` and
+     `iss`; codes expire after 60 seconds).
+   - **Approve and allow** (an owner, for an app not approved in the workspace) approves the app
+     (`PUT /api/mcp/admin/workspaces/{id}/approvals?client_id=`), then allows.
+   - **Request approval** (a member in the same situation) sends an access request
+     (`POST /api/mcp/me/workspaces/{id}/access-requests`) that owners see in Settings → AI apps. A
+     pending request disables the button.
+7. **Cancel** posts `POST /api/mcp/authorize/deny`; the server validates the client and redirect URI
+   and returns the `access_denied` redirect (with `state` and `iss`), so a crafted link cannot turn
+   the page into an open redirect. If that call fails, the page shows an error and stays put.
+
+How the consent page reacts to a failure (`McpApiError.reason`):
+
+| Reason | Result |
+| --- | --- |
+| `client_not_approved`, `already_approved` | The member status is reloaded and the matching approval controls appear |
+| `not_workspace_owner` (approving) | The status is reloaded; inline message |
+| `rate_limited`, `temporarily_unavailable`, `server_error`, `request_limit`, no response | Inline message; the consent view and its buttons stay |
+| `invalid_session` | Sign in again when the stored session ended (its refresh was rejected); otherwise an error view, since redirecting a still-signed-in user to `/login` would bounce straight back |
+| `email_not_allowed`, `guest_not_allowed`, `not_workspace_member`, `unknown_client`, `invalid_redirect_uri`, `invalid_target`, `invalid_scope`, `client_blocked`, `invalid_request` | Error view (`data-testid="mcp-consent-error"`, `data-reason`) |
+| `mcp_disabled` (HTTP 503 from the client lookup, the member status or any action, or a member status with `enabled: false`, which wins over every other status blocker) | Error view "AI app connections are turned off on this AppFlowy server. Ask your administrator." without Try again, Cancel or another account (see [Enable MCP switch](#enable-mcp-switch)) |
+
+Messages come from `mcp.consent.errors.<reason>` through `consentErrorMessageKey` in
+`src/components/mcp/consent/consentModel.ts` (`generic` for anything else). A malformed request
+(missing or repeated parameter, `response_type` other than `code`, PKCE other than `S256`, or a
+`redirect_uri` the browser must not open) shows `invalid_request` and never redirects: its
+`redirect_uri` has not been validated by the server. Inside a frame the page renders only the
+`framed` message and loads nothing.
+
+Error views of a request that parsed (for example `email_not_allowed`, `guest_not_allowed`,
+`not_workspace_member`, `no_workspace`, `client_blocked`, `invalid_scope`, `invalid_target`, or a
+load failure) also offer **Cancel and return to {app}** (`mcp-consent-error-cancel`; just "Cancel"
+when the app's name is unknown). It posts the same server-validated deny as the consent view's
+Cancel and follows the returned `access_denied` redirect, so the AI app stops waiting instead of
+timing out. It is not offered for `unknown_client` and `invalid_redirect_uri` (the deny refuses
+both), for `mcp_disabled` (while AI app connections are off the server refuses the deny too),
+without an MCP service, or on the error of a refused Cancel. If the server refuses the deny,
+the button disappears and the message stays (`isCancellableConsentReason`,
+`useMcpConsent.cancelFromError`).
+
+The page is split into `src/pages/McpAuthorizePage.tsx` (framing, request parsing, configuration,
+sign-in, the expired view) and `src/components/mcp/consent/`: `consentModel.ts` (pure rules),
+`useMcpConsent.ts` (loading, one action at a time, the done view before `window.location.assign`)
+and the views.
+
+### Sign-in continuation
+
+A consent request must survive one sign-in but not resurface after a later, unrelated one, so it
+never goes through the generic `redirectTo` persistence (localStorage, no expiry). It reuses the
+public Forms continuation in `src/application/session/sign_in.ts`, generalized to flow-bound
+destinations (`AuthContinuationKind`: public Form links and MCP consent requests):
+
+- `saveMcpConsentRedirectTo(consentUrl)` keeps the whole consent URL in this tab's
+  `sessionStorage` (`mcpConsentAuthContinuation`) behind a random 128-bit flow ID, for
+  `MCP_CONSENT_AUTH_CONTINUATION_TTL_MS` (10 minutes, the MCP service's `AUTH_REQUEST_TTL_SECS`).
+  `buildLoginUrl({ redirectTo: consentUrl })` then yields `/login?force=true&mcpAuth=<flowId>`:
+  the OAuth parameters stay out of login and auth callback URLs (history, access logs, referrers).
+  `force` keeps the login form up for a cached session, as when switching accounts.
+- Only a URL carrying the flow ID resumes it: the login steps, and `/auth/callback?mcpAuth=…` for
+  SSO, OIDC, SAML and magic links (`getAuthCallbackUrl`). A magic link opened in another tab has no
+  session storage; it tells the originating tab over a `BroadcastChannel`
+  (`appflowy-mcp-consent-auth`), which then continues. A recovery code entered during the flow
+  continues through the new-password form, and the sign-in after the reset returns to the request.
+- After sign-in, `afterAuth` returns to the consent URL only while the flow is valid. Past the TTL
+  it lands on the consent page's expired view, `/oauth/mcp/authorize?expired=1&client_id=…`
+  (`mcp-consent-expired`): "This request expired. Return to {app} and start again.", naming the
+  app from the public client description, or "your AI app". The login stays bound to an expired
+  request (`getRedirectTo`) precisely so this view can be shown.
+- A login from a URL without the flow ID (a plain `/login`, another destination) cancels the
+  continuation; a consent URL that an older build left in `localStorage` is discarded. One
+  flow-bound sign-in exists per tab: starting one replaces any other.
+
+## Setup guide
+
+`McpSetupGuide` (`src/components/mcp/McpSetupGuide.tsx`, parts in `src/components/mcp/setup/`)
+is the same on Settings → AI apps and on the public `/oauth/mcp/setup` page. From the top:
+
+- **Server URL** with Copy (`mcp-endpoint-value`, `mcp-copy-endpoint`).
+- **Copy setup prompt** (`mcp-copy-setup-prompt`): `buildMcpSetupPrompt` in
+  `src/application/mcp/setupPrompt.ts` writes a prompt for an AI agent with this deployment's
+  server URL, the exact add command or config for each app (the guide's own builders), what the
+  user does in the browser (sign in, choose a workspace, approve, or Request approval), a check
+  (`get-self`, then report the name and email), the one-workspace rule, and the absolute
+  `/oauth/mcp/setup` URL for apps the agent cannot configure (Claude, ChatGPT). The prompt is
+  English on purpose (a model reads it) and versioned (`MCP_SETUP_PROMPT_VERSION`, bump it when
+  the instructions change).
+- **Connected apps (N)** with one chip per app, only when the caller's connections are passed
+  (Settings; the public page knows no workspace). `summarizeConnectedApps` in
+  `src/application/mcp/setupApps.ts` counts every device and registration of a recognized app
+  once (`app:<app_id>`); other clients group by their own name, else their client ID.
+- **App gallery** (`mcp-setup-gallery`): Claude, ChatGPT, Claude Code, Codex, Cursor, VS Code,
+  Gemini CLI, Windsurf / Antigravity and Other app (`MCP_SETUP_APPS`). Each card has a lettered
+  tile (no third-party logos), a one-line description, one primary action (Open Claude / Open
+  ChatGPT in a new tab, the Cursor and VS Code install deeplinks, or Copy command / config / URL)
+  and a **Connected** badge when one of the connections has the card's verified catalog `app_id`
+  (`claude`, `chatgpt`, `claude-code`, `codex`, `cursor`, `vscode`) with `verified_app: true`
+  (see [App identity](#app-identity)). A self-asserted client name never earns the badge, and
+  Gemini CLI, Windsurf/Antigravity and Other app never show it (their clients are not
+  recognizable). Clicking a card (or its action) expands its steps below the
+  card's row, one card at a time (`mcp-client-tab-<app>` with `aria-expanded`,
+  `mcp-client-panel-<app>`); the grid packs densely so the rest of the row stays in place.
+  The Cursor deeplink names the server `appflowy`, like every snippet, so it does not add a second
+  entry next to a manual one.
+- **Having trouble?** (`mcp-setup-troubleshooting`), collapsed: reconnecting each app, a pending
+  approval, one workspace per connection (add a second entry such as `appflowy-work`), read-only
+  grants, `command not found`, and organizations that turn custom connectors off.
+
+The vendor steps follow each vendor's documentation as of 2026-11 (the Notion parity research
+lists the sources): Claude's Customize → Connectors → + Add → Add custom connector with "Sign in
+now" and "Use Claude's published identity (Recommended)", plus Organization settings → Connectors
+→ Add → Custom → Web for Team and Enterprise owners; ChatGPT's custom app or custom MCP server
+under Settings → Apps (Plugins on some plans), worded loosely because the labels vary by plan,
+plus the admin note for Business, Enterprise and Edu; Claude Code's `--scope user` / `--scope
+project`; Codex's `codex mcp login`, `config.toml` (user and project) and the app/IDE path;
+`serverUrl` for Windsurf and Antigravity. Re-check them with vendor releases. Translated text
+marks commands and paths with backticks, which `RichText` renders as inline code.
+
+## Settings → AI apps
+
+The menu item appears once the MCP service's URL is known (`useMcpConfiguration`, see
+[MCP service URL](#mcp-service-url)). `?setting=AI_APPS` opens it, also through
+`/app?setting=AI_APPS` (`MCP_SETTINGS_PATH`, which `AppWorkspaceRedirect` keeps); while server-info
+is still loading the deep link waits with a spinner, and it falls back to Account on a server
+without MCP (which includes a server that turned AI app connections off, when the Web learns the
+URL from server-info; see [Enable MCP switch](#enable-mcp-switch)). `McpPanel` renders lazily with
+`key={workspaceId}` and loads the member status first:
+
+- Loading shows a spinner. When the MCP service cannot answer (no response, 5xx, or a 404 without a
+  reason, as from a server without these endpoints) the panel shows `mcp-panel-unavailable` with
+  Retry; other failures show `mcp-panel-error` with the reason's message and Retry.
+- **Turned off** (see [Enable MCP switch](#enable-mcp-switch)): when the member status says
+  `enabled: false`, or its request fails with 503 `mcp_disabled`, the panel shows
+  `mcp-panel-disabled` ("AI app connections are turned off": ask your administrator; your
+  connections are kept and work again as soon as AI app connections are back on) and **Your
+  connections** below it, always, with its empty state when there are none, so anyone can still
+  disconnect. Nothing else: no setup guide, approval notice, approved apps or Workspace access, and
+  the owner lists are not loaded.
+  This wins over an ineligible account, a 503 `mcp_disabled` gets no "unavailable" state or Retry,
+  and the panel clears the owner's pending-request menu badge (approving is refused while off).
+- An ineligible account (email gate or guest) sees `mcp-panel-ineligible`. Its own connections stay
+  listed when it has any, so it can still revoke them.
+- **Connect an AI app**: `McpSetupGuide` with `status.endpoint` and the caller's connections in this
+  workspace (for "Connected apps (N)" and the cards' Connected badges); members also see a notice
+  when some apps need an owner's approval. Under `verified_and_approved` (the member status's
+  `approval_mode`) it says that verified web apps like Claude and ChatGPT connect without approval
+  and other apps, including ones on the member's computer, need one (`approvalNoticeVerified`).
+- **Your connections**: one row per connection, that is per device or account (token family): the
+  app, the device label the app sent at sign-in (`mcp-my-connection-device`), "Connected …" and
+  "Last used …" (`last_used_at`, updated at most every 5 minutes), and the scope badge, whose
+  tooltip says "To change access, reconnect the app" (`PanelScopeBadge`). Disconnect asks first and
+  removes that device only (`DELETE /api/mcp/me/workspaces/{id}/connections?client_id=&family_id=`);
+  the confirmation says other connections keep working when there are any. A legacy record without
+  a family disconnects by `client_id` alone (all of that app's connections). Above the list,
+  "You have N apps connected across M workspaces" comes from `GET /api/mcp/me/connections`, with
+  apps grouped exactly like the setup guide's "Connected apps (N)" (`summarizeConnectedApps`: once
+  per recognized app, an unrecognized app once per name), so the two numbers agree; it is left out
+  when that call fails.
+- **Approved for this workspace**, for members while some apps need approval and the server sends
+  `approved_apps` (C5): the approved apps by name only, with "All {app} installs" for app-level
+  approvals. Under `verified_and_approved` an empty list says verified web apps need no approval
+  (`approvedForWorkspaceEmptyVerified`). Owners get the full list under Workspace access instead.
+- **Workspace access**, for eligible owners only: the approval policy (three radios, below; the
+  change can take up to 30 seconds to apply), approval requests (Approve, Dismiss), approved apps
+  with their active connection counts (Revoke asks first and disconnects everyone using what the
+  approval covered), every member's connections grouped by member (a header with name, email and a
+  connection count, then one row per device; Disconnect filters by `client_id`, `user_uuid` and
+  `family_id`; the email line is left out when the member's name is the email), approval by client
+  ID, and **Disconnect all AI apps** (`mcp-disconnect-all`, asks first, then
+  `DELETE .../connections?all=true`; disabled while the loaded list is empty).
+  - The policy (`approval_mode`): **Verified and approved apps** (`verified_and_approved`, the
+    default for a workspace that never chose: the catalog's web apps, `identity_verified`, connect
+    without approval; catalog apps that run on members' computers, like Claude Code and Cursor,
+    need one like any other app), **Approved apps only** (`approved_only`) and **Any app** (`any`).
+  - Loosening asks first: "Allow any AI app?" for `any`, "Allow verified apps without approval?"
+    for `verified_and_approved` from `approved_only`.
+  - Tightening keeps working connections working: the server approves (by the acting owner) every
+    app members are connected to that the new policy would refuse and returns them as
+    `auto_approved_clients` in the `PUT .../settings` response. When the loaded member connections
+    include such apps (`mcpClientsKeptApproved`: not covered by an approval, and for
+    `verified_and_approved` not `identity_verified`), a confirmation names them first ("These apps stay
+    approved so members keep working: …"); otherwise the change applies at once. After the PUT, a
+    toast names the apps the server approved and the approved list reloads.
+  - Approvals: approving a client the catalog recognizes approves its app (`approval_key`
+    `app:<app_id>`), shown as "All {app} installs"; requests for such an app are merged and say
+    "Approving covers all {app} installs." Approve sends the request's `approval_key` when it is an
+    app key (`app:<app_id>`, which the server approves without looking up the registration that
+    asked last, so an unreachable CIMD document cannot block it), else the request's `client_id`;
+    Dismiss and Revoke send the `approval_key` (`mcpApprovalKey`). Revoking an app-level approval
+    disconnects every registration of the app. The Revoke confirmation says when members can still
+    connect the app: through the policy (any app, or an `identity_verified` app under
+    `verified_and_approved`), or, for a per-client approval of a recognized app, through a
+    remaining approval of all its installs (`mcpRemainingAppApproval`: the row whose
+    `approval_key` is `app:<app_id>`), which the server keeps admitting it through.
+- **Menu badge**: for owners (`Role.Owner` in the workspace list) with the MCP service known, the
+  AI apps menu item shows the pending request count (`settings-menu-ai_apps-badge`, from
+  `GET .../access-requests` when Settings opens). The panel publishes every request list it loads
+  or changes (`pendingRequestCount.ts`), so Approve and Dismiss update the badge at once; a failed
+  load shows no badge.
+
+An owner endpoint that answers 403 `not_workspace_owner`, `not_workspace_member` or
+`email_not_allowed` reloads the member status, so the owner section disappears; so does any
+`mcp_disabled` (`isMcpAccessLost`), which turns the panel into the turned-off view. Failed actions show
+a toast: `settings.mcp.actionFailed` with the reason's consent message, except `not_workspace_owner`
+(`settings.mcp.notOwner`) and `unknown_client` (`settings.mcp.unknownClientId`), whose consent
+messages point back to the AI app. Tooltips render inside the panel so they stay above the MUI
+dialog. The hooks (`useMcpMemberStatus`, `useMyMcpConnections`, `useMcpConnectionsOverview`,
+`useMcpGovernance`) share `useMcpRequest.ts`: a new load aborts the previous one, an action's result
+wins over a load still in flight, and one action runs at a time.
+
+### App identity
+
+The server's verified app catalog (AppFlowy Cloud `mcp_context.md`) adds `app_id`, `app_name`,
+`verified_app` and `identity_verified` to every client summary. A client is a catalog app only when
+its CIMD client ID is one the catalog lists, or every redirect it registered is https on one
+entry's hosts (an app that runs on the user's computer, like Cursor, may add loopback ones; next to
+a web app's callback a loopback redirect means some local program, which is never recognized);
+loopback-only registrations never are. The Web trusts `app_name` and `app_id` only with
+`verified_app: true`, everywhere: the display name (`getMcpClientDisplayName`, `McpClientIdentity`),
+the approval key (`mcpApprovalKey`) and the setup guide's Connected badges and app grouping
+(`summarizeConnectedApps`). Approvals and access requests of a recognized app use the key
+`app:<app_id>` (`mcpApprovalKey`, `isMcpAppApprovalKey`); every other client keeps its client ID as
+the key.
+
+Recognition alone does not prove who is asking. Claude Code, Codex, Cursor, VS Code and Raycast run
+on the user's computer and receive their sign-in there (loopback or custom-scheme redirects), so any
+program on that computer can use their identity (RFC 8252 §8.6). Only a web app whose sign-ins
+return to its publisher's own website (Claude, ChatGPT, Perplexity) has `identity_verified: true`.
+`McpClientIdentity` shows **Verified app** (with a tooltip) only for those. A recognized app that
+runs on the computer keeps its catalog name but shows **Runs on your computer** with a tooltip
+(`mcp-client-native-app-badge`, `settings.mcp.nativeAppTooltip`) instead, and policy previews
+(`mcpModeAdmitsWithoutApproval`) treat it like any other app needing approval. Summaries without
+these fields (older servers) read as unrecognized, and a missing `identity_verified` as unproven.
+
+## Configuration
+
+### MCP service URL
+
+The Web finds the MCP service's public origin (without `/mcp`) in this order
+(`getMcpConfiguration` in `mcp-api.ts`, `useMcpConfiguration` in React):
+
+1. **`APPFLOWY_MCP_BASE_URL`** in the Web's own runtime config: an explicit override, used at once
+   without asking the server. It is a runtime config key like `APPFLOWY_BASE_URL`: `dev.env`
+   (`http://localhost:8002`; copy it to `.env` for `pnpm dev`), `deploy.env` (empty),
+   `docker/entrypoint*.sh` (injected into `window.__APP_CONFIG__`), `src/utils/runtime-config.ts`,
+   and the CI check in `.github/workflows/web_ci.yaml`. A value that is not an absolute http(s) URL
+   is ignored with a console warning. AppFlowy Cloud's bundled Docker Compose (`appflowy_web`) and
+   Helm (`appflowy-web`) deployments set it to the MCP origin, because server-info has no `mcp_url`
+   while AI app connections are turned off and Settings → AI apps must still show that and let
+   members disconnect. Set it in any other deployment that runs the MCP service for the same reason.
+2. **`mcp_url` from AppFlowy Cloud's `/api/server-info`** (web projection), set from Cloud's
+   `APPFLOWY_MCP_BASE_URL`, the same variable the MCP service reads, so one compose `.env` serves
+   both; when it is unset, Cloud advertises its own `APPFLOWY_BASE_URL` (the same-domain default).
+   Cloud advertises it only while AI app connections are turned on
+   ([Enable MCP switch](#enable-mcp-switch)). This is auto-discovery like `web_url`: a deployment
+   only configures the MCP URL once, on the server. The value is read through the shared
+   server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's refresh loop
+   provides it, and the public consent and setup pages run the loop themselves
+   (`useMcpConfiguration({ loadServerInfo: true })`).
+3. Otherwise **not configured**: Settings hides AI apps, both `/oauth/mcp/*` pages say AI app
+   connections are not configured. A Web that relies on server-info lands here while AI app
+   connections are turned off.
+
+The answer is `loading` until server-info responds (a failed request keeps it loading while the
+loop retries), and the consent and setup pages show a spinner meanwhile. `unsupported` (a server
+without `/api/server-info`) means not configured. Once server-info has answered, a later refresh
+that fails or is pending keeps that answer, so an open page does not lose the service on a
+transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`; only Cloud falls
+back as described above. `isMcpConfigured()` stays as a synchronous "known now" check (false while
+loading).
+
+**MCP service** — for the browser flow to work:
+
+- `APPFLOWY_MCP_BASE_URL` is the service's own public origin: the OAuth issuer (`iss`) and the
+  canonical resource `<origin>/mcp`. AppFlowy Cloud reads the same variable to advertise
+  `mcp_url`; a Web override, if any, must name the same origin.
+- `APPFLOWY_WEB_URL` must be the Web origin. Unset, it defaults to the MCP origin, consent redirects
+  land on the MCP service itself and the service logs a startup warning. It also builds the
+  `resource_documentation` link (`/oauth/mcp/setup`) and the server icon.
+- `APPFLOWY_CORS_ALLOWED_ORIGINS` must include the Web origin when it is set (empty or `*` mirrors
+  any origin and logs a warning). The service exposes `Retry-After` to the browser.
+- Self-hosted compose and Helm deployments serve the MCP service on AppFlowy's own domain (the
+  bundled nginx sends `/mcp`, `/api/mcp` and the OAuth discovery documents to `appflowy_mcp`;
+  `/oauth/*` stays on the Web), so `deploy.env` sets `APPFLOWY_MCP_BASE_URL=${APPFLOWY_BASE_URL}`
+  and users paste `https://<domain>/mcp`. See AppFlowy Cloud's deployment docs.
+- Who can use AI apps (the email gate) is set in AppFlowy-Admin → AI apps (MCP): **Everyone** or
+  **Only these domains and people** (allowed email domains and exact emails). Until an admin saves
+  it there, `APPFLOWY_MCP_ALLOWED_EMAIL_DOMAINS` and `APPFLOWY_MCP_ALLOWED_EMAILS` bootstrap it; with
+  both empty (the default) every account may connect AI apps. Accounts outside the lists see "AI
+  apps aren't available for your account" in Settings and `email_not_allowed` on the consent page.
+  The gate fails closed: a server that cannot load its MCP policy answers 503 (reason
+  `policy_unavailable`, which the Web reads as temporarily unavailable) instead of admitting
+  everyone. (Servers before 2026-11 defaulted to the `appflowy.io` domain.)
+- `MCP_ALLOWED_CLIENT_IDS`, when set, blocks every other client (`client_blocked`).
+- A workspace that never chose an approval policy admits verified and approved apps
+  (`verified_and_approved`: the catalog's web apps without approval, every other app once approved);
+  one that turned "require approval" on before policies existed reads as approved apps only, and one
+  that turned it off as any app.
+
+### Enable MCP switch
+
+AI app connections have one server-wide switch, **Enable MCP** in AppFlowy-Admin → AI apps (MCP),
+next to the email gate and the MCP rate limits. It is off by default. Cloud keeps it as `mcp_enabled`
+in its system config (section `mcp`, written only through `PUT /api/admin/mcp/policy`, with a change
+history), and the MCP service picks a change up within seconds. `APPFLOWY_MCP_ENABLED` on the server
+is a bootstrap value that a saved Admin setting overrides: `true` turns MCP on until an admin decides
+otherwise (Cloud's `dev.env` and CI do this), unset leaves it to the Admin page (self-host
+`deploy.env`: off until an admin turns it on), and an explicit `false` locks it off whatever the
+Admin page says ("Managed by deployment").
+
+While it is off:
+
+- The MCP service answers HTTP 503
+  `{ "error": "mcp_disabled", "error_description": "AI app connections are turned off on this AppFlowy server.", "reason": "mcp_disabled" }`
+  on the MCP transport, discovery documents, client registration, authorization (including
+  `/authorize/code` and `/authorize/deny`), tokens, the public client lookup, access-request
+  creation and approvals. Calls that only take access away keep working: the member status (with
+  `enabled: false`), listing and disconnecting your own connections, owners listing and
+  disconnecting member connections and revoking approvals, and token revocation.
+- Connections are kept, not revoked: AI apps stop working at once and resume when MCP is turned back
+  on (a token refresh while off is a temporary 503 that does not use up the refresh token).
+- Cloud's server-info stops advertising `mcp_url`. A Web that finds the MCP service through
+  server-info treats it as not configured after its next server-info refresh (every 5 minutes, and
+  when the tab regains focus or comes back online, at most every 30 seconds): Settings → AI apps
+  disappears, and the `/oauth/mcp/*` pages say AI app connections are not configured. With the Web's
+  own `APPFLOWY_MCP_BASE_URL`, or until that refresh, the Web still reaches the service and shows the
+  turned-off states: the consent page's `mcp_disabled` error view (see the reasons table above) and
+  the Settings notice with Your connections (see [Settings → AI apps](#settings--ai-apps)).
+
+The Web reads the state from the member status's `enabled` (absent from servers that predate the
+switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reason
+(`isMcpDisabledError`), never from the description text.
+
+## HTTP client
+
+`src/application/services/js-services/http/mcp-api.ts` (re-exported from
+`src/application/services/domains/mcp.ts` and as `McpService` from `src/application/services/domains`):
+
+- Uses `fetch`, not the shared axios instance, whose interceptor treats any 401 as an expired
+  AppFlowy session and rotates the refresh token. The MCP service answers 401 only for a bad token
+  (`reason: "invalid_session"`) and 403 for every refusal.
+- Sends `Authorization: Bearer <GoTrue access token>`, refreshing the session first when the token
+  expires within 30 seconds, and refreshes once more and retries once on 401 `invalid_session`.
+  A confirmed refresh-token rejection ends the session like the axios interceptor does.
+- Never sends the GoTrue refresh token. (Earlier prototypes forwarded it; MCP refreshing the same
+  rotating token triggers GoTrue reuse detection and logs the user out of the Web app.)
+- Client IDs travel in the query string (`?client_id=`), never in a path segment: CIMD client IDs are
+  URLs, and some proxies decode `%2F`.
+- Errors are `McpApiError { status, error, reason, description, retryAfter }`. `status` 0 means no
+  response (`error`: `network_error`, `timeout`, `not_configured`, `session_refresh_failed`) or a call
+  refused before sending (`invalid_request`). Show localized text for `reason`, never `description`.
+  Reasons this Web does not know are dropped; a body without a known one gets its reason from its
+  `error` (`mcp_disabled`) or its status (429 `rate_limited`, 502/503/504 `temporarily_unavailable`,
+  other 5xx `server_error`), so a 503 `policy_unavailable` reads as temporarily unavailable.
+  Helpers: `isMcpServiceUnavailable` (false for `mcp_disabled`: the service answered),
+  `isMcpDisabledError`, `isRetryableMcpError` (also false for `mcp_disabled`: only an administrator
+  can change it), `isMcpAbortError`. Every call takes an optional `{ signal }`; aborting rejects with
+  the fetch `AbortError`.
+- `redirect_url` responses are rejected unless `isSafeMcpRedirectUrl` accepts them (no
+  `javascript:`, `data:` and similar), because CIMD documents may register any redirect URI.
+
+| Function | Request |
+| --- | --- |
+| `getMcpClientInfo` | `GET /api/mcp/clients?client_id=` (public) |
+| `createMcpAuthorizationCode` | `POST /api/mcp/authorize/code` |
+| `denyMcpAuthorization` | `POST /api/mcp/authorize/deny` (public) |
+| `getMcpMemberStatus` | `GET /api/mcp/me/workspaces/{id}[?client_id=]` (`enabled` reads `true` unless the server sends `false`; `approved_apps` stays undefined when the server sends none) |
+| `listMyMcpConnections`, `disconnectMyMcpConnection` | `GET`, `DELETE /api/mcp/me/workspaces/{id}/connections[?client_id=&family_id=]` (`{ familyId }` disconnects one device) |
+| `listMyMcpConnectionsAcrossWorkspaces` | `GET /api/mcp/me/connections` → `{ connections (+ workspace_id), workspace_count, connection_count }` (missing counts derived from the list) |
+| `createMcpAccessRequest` | `POST /api/mcp/me/workspaces/{id}/access-requests` |
+| `getMcpWorkspaceSettings`, `updateMcpWorkspaceSettings` | `GET`, `PUT /api/mcp/admin/workspaces/{id}/settings`. The PUT sends `{ approval_mode, allow_unapproved_clients: mode === 'any' }` and also returns `auto_approved_clients` (`[]` when absent); a missing `approval_mode` reads `any` or `approved_only` from the flag, a missing `approval_key` as the client ID |
+| `approveMcpClient`, `revokeMcpClientApproval` | `PUT`, `DELETE /api/mcp/admin/workspaces/{id}/approvals?client_id=` (approve takes a real client ID; revoke takes the entry's `approval_key`, e.g. `app:cursor`) |
+| `listMcpWorkspaceConnections`, `disconnectMcpWorkspaceConnections` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/connections[?client_id=&user_uuid=&family_id=]` (refuses to send without `client_id` or `user_uuid`) |
+| `disconnectAllMcpWorkspaceConnections` | `DELETE /api/mcp/admin/workspaces/{id}/connections?all=true` |
+| `listMcpAccessRequests`, `dismissMcpAccessRequest` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/access-requests[?client_id=]` (dismiss takes the request's `mcpApprovalKey`) |
+
+Pure helpers live in `src/application/mcp/setup.ts`: install links, commands and configs per client,
+scope parsing (`parseScopes`, `scopeLevel`), `safeHttpUrl`, `describeRedirectUri`,
+`getMcpClientDisplayName`, and the Web paths `MCP_SETUP_PAGE_PATH` (`/oauth/mcp/setup`, used by the
+setup prompt and the consent page's Learn more link) and `MCP_SETTINGS_PATH`; the setup gallery's
+cards and connected-app summary in `setupApps.ts`; the setup prompt in `setupPrompt.ts`. Shared UI
+lives in `src/components/mcp/`: `McpClientAvatar`, `McpClientIdentity` (name, host, Verified app /
+Verified domain / Not verified, Runs on your computer), `McpScopeBadge` and `McpSetupGuide` (see
+[Setup guide](#setup-guide)).
+
+## Security notes
+
+- `/oauth/*` HTML is served with `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'` by the Bun server (`deploy/routes.ts`,
+  `FRAME_DENY_PATHS` in `deploy/app-paths.ts`), by the nginx-only image (`location ^~ /oauth/` in
+  `docker/nginx.conf`) and by `vercel.json`. The SSR image's nginx proxies `/oauth/*` to Bun. The
+  consent page also refuses to render inside a frame. Any other hosting must add the same headers.
+- `/oauth` is an app path: SSR serves the SPA shell instead of looking up a publish namespace, and
+  the indexing policy refuses to server-render a namespace named `oauth`. Cloud should reserve that
+  publish namespace: a workspace that already claimed it loses its default page (`/oauth`) and
+  server rendering; its `/oauth/<page>` pages still render client-side.
+- The consent page only navigates to URLs the server returned: the code redirect, or the validated
+  `access_denied` redirect. It never falls back to the request's raw `redirect_uri`.
+- A consent request waiting for sign-in lives only in that tab's session storage, for 10 minutes,
+  behind an opaque flow ID; login and callback URLs never carry its OAuth parameters, and a login
+  outside that flow cancels it (see [Sign-in continuation](#sign-in-continuation)).
+- The GoTrue refresh token never leaves the browser's session (see HTTP client).
+- Client logos are third-party URLs: only http(s) is loaded, with `referrerPolicy="no-referrer"`
+  (the consent URL carries OAuth parameters).
+- A DCR client's name is self-asserted; the UI shows the host and "Not verified" for it. CIMD
+  clients show "Verified domain" because their metadata comes from the client ID's own https host.
+  Only the server's catalog lets an app's `app_name` replace the registered name, and only a
+  catalog app whose identity the server proves (`identity_verified`) reads "Verified app"; one
+  that runs on the user's computer reads "Runs on your computer". A redirect to this computer
+  (loopback) shows "Runs on your computer" and a
+  warning to continue only when the user started the connection; an unrecognized DCR app returning
+  to another https host needs the "I recognize {host}" tick before Allow or Approve and allow.
+- App and member names are server data: React renders them as text, and the i18next calls that
+  interpolate them disable i18next's own escaping instead of rendering HTML.
+
+## Testing
+
+Unit tests (Jest, colocated `__tests__`):
+
+```bash
+pnpm exec jest --runInBand --no-coverage \
+  src/application/mcp \
+  src/application/session \
+  src/application/services/js-services/http/__tests__/mcp-api.test.ts \
+  src/components/mcp \
+  src/components/app/settings/mcp \
+  src/components/app/settings/__tests__/Settings.mcp.test.tsx \
+  src/components/app/__tests__/AppWorkspaceRedirect.test.tsx \
+  src/components/main/__tests__/MainAppRoutes.mcp.test.tsx \
+  src/pages/__tests__/McpAuthorizePage.test.tsx \
+  src/pages/__tests__/McpSetupPage.test.tsx \
+  src/pages/__tests__/LoginPage.mcp-consent.test.tsx \
+  src/pages/__tests__/LoginPage.form-redirect.test.tsx \
+  deploy/routes.test.ts deploy/publish-ssr.test.ts
+```
+
+| Suite | Covers |
+| --- | --- |
+| `src/application/mcp/__tests__/setup.test.ts` | Install links, commands and configs (exact strings, TOML escaping, Cursor's `appflowy` name), scopes, URL helpers |
+| `setupApps.test.ts`, `setupPrompt.test.ts` | Card order and catalog mapping; connected apps counted per app, never matched by a self-asserted name; the setup prompt's version, commands, browser steps, `get-self` check and setup page link |
+| `mcp-api.test.ts` | Bearer header, no refresh token in any body, query-form client IDs, error mapping, refresh and retry once on 401, owner disconnect refusing an empty filter, URL resolution order (override, server-info `mcp_url`, not configured), loading, keeping the answer through failed refreshes, `auto_approved_clients`, approval policy body and fallbacks, `approval_key` defaults, per-device (`family_id`) and `all=true` disconnects, app-level keys, connections across workspaces, `approved_apps`, `mcpApprovalKey`, `mcp_disabled` (from the reason or the error code) kept apart from outages, `enabled` read as on when absent |
+| `src/application/session/__tests__/sign_in.test.ts` | Form and MCP consent continuations: OAuth parameters kept out of login and callback URLs, return within the TTL, expired view after it, unrelated later login, cross-tab magic link, password recovery, legacy cleanup |
+| `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges and "Connected apps (N)", setup prompt, Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
+| `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
+| `src/components/app/settings/mcp/**` | Panel states, member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted like "Connected apps (N)"), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared) |
+| `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge, deep links that wait for server-info, routes |
+| `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
+| `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers |
+
+`jest.config.cjs` ignores test paths containing `/.claude/`; when running from a checkout under such
+a directory (an agent worktree), add `--testPathIgnorePatterns '/node_modules/'` after the test
+paths. Placed before them, the option swallows the paths and Jest runs the whole suite.
+
+End to end, `playwright/e2e/mcp/oauth-consent.spec.ts` signs up an owner, registers a DCR client
+with a loopback callback, consents through the Web page (narrowing the scope to read, approve and
+allow), exchanges the code with `resource`, lists tools, finds the connection in Settings → AI apps,
+disconnects it and checks that the old token is refused. A second test cancels and expects
+`access_denied` with `state` and `iss`. It needs:
+
+- A running Cloud stack (Cloud API, GoTrue) plus the MCP service, with AI app connections turned
+  on (`APPFLOWY_MCP_ENABLED=true`, as Cloud's `dev.env` and CI set it, or Enable MCP in
+  AppFlowy-Admin). The MCP service's `APPFLOWY_WEB_URL` must be the Web origin under test, its CORS
+  must allow that origin, and its email gate must admit the test users (`<uuid>@appflowy.io`): leave
+  both allowlists empty (the default) or include `appflowy.io`.
+- The Web app at `BASE_URL` (default `http://localhost:3000`) that knows the MCP URL: from Cloud
+  server-info (`mcp_url`), or from `APPFLOWY_MCP_BASE_URL`, either in `.env` (`pnpm dev`) or at
+  runtime: when `APPFLOWY_BASE_URL`, `APPFLOWY_GOTRUE_BASE_URL` and `APPFLOWY_WS_BASE_URL` are set
+  for the test run, the sign-in helper injects them, and `APPFLOWY_MCP_BASE_URL` too, into
+  `window.__APP_CONFIG__`.
+- For the runner (`playwright.config.ts` also reads `.env`): the usual `APPFLOWY_BASE_URL`,
+  `APPFLOWY_GOTRUE_BASE_URL`, `GOTRUE_ADMIN_EMAIL` and `GOTRUE_ADMIN_PASSWORD` for creating test
+  users, plus `APPFLOWY_MCP_BASE_URL` (default `http://localhost:8002`).
+
+```bash
+APPFLOWY_MCP_BASE_URL=http://localhost:8002 \
+  pnpm exec playwright test playwright/e2e/mcp/oauth-consent.spec.ts --workers=1
+```
+
+CI does not run it: `playwright/e2e/mcp` is in none of the groups in
+`.github/playwright-groups.json`, and the CI backend has no MCP service.
+
+## Not in v1
+
+Desktop and mobile UI; inbox or email notifications for approval requests (owners get the Settings
+menu badge); audit events for consent and workspace governance (changes to the server-wide MCP
+policy are recorded by Cloud and shown in AppFlowy-Admin); approvals by publisher domain for apps
+outside the verified catalog; renaming apps; sorting member connections by last use; owners'
+member connections and approvals in Settings while AI app connections are turned off (the server
+still lets owners list and disconnect member connections and revoke approvals then, but the panel
+shows only the caller's own connections).

@@ -503,6 +503,7 @@ describe('published page SSR', () => {
       '/app',
       '/accept-invitation',
       '/import',
+      '/oauth',
     ])('%s and its sub-paths serve the bare app shell', async (appPath) => {
       // Worst case: every app namespace allowlisted and upstream claiming opt-in.
       process.env.APPFLOWY_INDEXABLE_NAMESPACES = appNamespaces().join(',');
@@ -527,6 +528,7 @@ describe('published page SSR', () => {
         '/app',
         '/accept-invitation',
         '/import',
+        '/oauth',
       ]);
     });
   });

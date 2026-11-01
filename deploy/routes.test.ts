@@ -424,6 +424,38 @@ describe('routes - static file handling', () => {
 
       expect(response).toBeDefined();
       expect(response!.headers.get('Cache-Control')).toBe('no-cache');
+      expect(response!.headers.get('X-Frame-Options')).toBeNull();
+    });
+
+    it.each(['/oauth/mcp/authorize', '/oauth/mcp/setup'])(
+      'serves the MCP page %s as the app shell that no site may frame',
+      async (pathname) => {
+        const response = await runRoutes(pathname);
+
+        expect(response).toBeDefined();
+        expect(response!.status).toBe(200);
+        expect(await response!.text()).toBe('<html>marketing</html>');
+        expect(response!.headers.get('X-Frame-Options')).toBe('DENY');
+        expect(response!.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+        expect(mockFetchPublishMetadata).not.toHaveBeenCalled();
+      }
+    );
+
+    it('keeps other app shells frameable as before', async () => {
+      const response = await runRoutes('/app/workspace-id');
+
+      expect(response!.headers.get('X-Frame-Options')).toBeNull();
+      expect(response!.headers.get('Content-Security-Policy')).toBeNull();
+    });
+
+    it('does not treat a publish namespace sharing the /oauth prefix as an app path', async () => {
+      mockFetchPublishMetadata.mockResolvedValue({ code: 0, data: { view: {} } });
+
+      const response = await runRoutes('/oauthors/my-page');
+
+      expect(await response!.text()).toBe('<html>publish</html>');
+      expect(response!.headers.get('X-Frame-Options')).toBeNull();
+      expect(mockFetchPublishMetadata).toHaveBeenCalledWith('oauthors', 'my-page');
     });
   });
 });

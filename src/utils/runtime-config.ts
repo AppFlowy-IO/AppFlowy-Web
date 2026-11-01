@@ -2,6 +2,11 @@ interface RuntimeConfig {
   APPFLOWY_BASE_URL?: string;
   APPFLOWY_GOTRUE_BASE_URL?: string;
   APPFLOWY_WS_BASE_URL?: string;
+  /**
+   * Public origin of the AppFlowy MCP service, without `/mcp`: an explicit override. Unset, the
+   * Web uses the `mcp_url` AppFlowy Cloud advertises in server-info.
+   */
+  APPFLOWY_MCP_BASE_URL?: string;
 }
 
 declare global {

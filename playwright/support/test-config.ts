@@ -58,9 +58,15 @@ export async function installRuntimeTestConfig(
     if (!value) throw new Error(`${key} must be explicit for runtime test configuration`);
   }
 
-  await context.addInitScript((runtime) => {
-    window.__APP_CONFIG__ = runtime;
-  }, config);
+  // Optional override: without it the build's own value, else Cloud server-info's mcp_url, applies.
+  const mcpBaseUrl = process.env.APPFLOWY_MCP_BASE_URL;
+
+  await context.addInitScript(
+    (runtime) => {
+      window.__APP_CONFIG__ = runtime;
+    },
+    mcpBaseUrl ? { ...config, APPFLOWY_MCP_BASE_URL: mcpBaseUrl } : config
+  );
 }
 
 /**

@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { AuthService } from '@/application/services/domains';
-import { isPublicFormRedirectUrl } from '@/application/session/sign_in';
+import { isFlowBoundRedirectUrl } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { getPasswordErrors } from '@/components/login/password-validation';
@@ -37,7 +37,8 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
 
           next.delete('email');
           next.delete('action');
-          if (redirectTo && !isPublicFormRedirectUrl(redirectTo)) {
+          // A flow-bound destination stays behind the flow ID still in the URL.
+          if (redirectTo && !isFlowBoundRedirectUrl(redirectTo)) {
             next.set('redirectTo', redirectTo);
           } else {
             next.delete('redirectTo');

@@ -7,9 +7,9 @@ import {
   getPublicFormRedirectTo,
   getRedirectTo,
   getSafeRedirectUrl,
+  isFlowBoundRedirectUrl,
   isPublicFormRedirectUrl,
-  PUBLIC_FORM_AUTH_FLOW_PARAM,
-  savePublicFormRedirectTo,
+  saveFlowBoundRedirectTo,
   saveRedirectTo,
 } from '@/application/session/sign_in';
 import { Login } from '@/components/login';
@@ -36,22 +36,23 @@ function LoginPage() {
   const safeStoredRedirectTo = useMemo(() => getSafeRedirectUrl(storedRedirectTo) || '', [storedRedirectTo]);
   const safeRedirectTo = redirectToParam !== null ? safeQueryRedirectTo : safeStoredRedirectTo;
 
-  // Legacy Form login links may still carry the bearer as `redirectTo`.
-  // Move it into guarded storage and replace the URL. Unsafe explicit values
-  // also take precedence over (and clear) stale stored continuations.
+  // Legacy login links may still carry a flow-bound destination (a Form
+  // bearer, an MCP consent request) as `redirectTo`. Move it into guarded
+  // storage and replace the URL. Unsafe explicit values also take precedence
+  // over (and clear) stale stored continuations.
   useEffect(() => {
     if (redirectToParam === null) return;
 
-    if (safeQueryRedirectTo && !isPublicFormRedirectUrl(safeQueryRedirectTo)) {
-      // An explicit non-Form destination starts a separate login flow and
-      // cancels any abandoned Form continuation in this tab.
+    if (safeQueryRedirectTo && !isFlowBoundRedirectUrl(safeQueryRedirectTo)) {
+      // An explicit ordinary destination starts a separate login flow and
+      // cancels any abandoned flow-bound continuation in this tab.
       saveRedirectTo(safeQueryRedirectTo);
       return;
     }
 
-    const publicFormFlowId = safeQueryRedirectTo ? savePublicFormRedirectTo(safeQueryRedirectTo) : null;
+    const flow = safeQueryRedirectTo ? saveFlowBoundRedirectTo(safeQueryRedirectTo) : null;
 
-    if (safeQueryRedirectTo && publicFormFlowId) {
+    if (safeQueryRedirectTo && flow) {
       setStoredRedirectTo(safeQueryRedirectTo);
     } else {
       clearRedirectTo();
@@ -63,9 +64,9 @@ function LoginPage() {
         const next = new URLSearchParams(prev);
 
         next.delete('redirectTo');
-        if (publicFormFlowId) {
+        if (flow) {
           next.set('force', 'true');
-          next.set(PUBLIC_FORM_AUTH_FLOW_PARAM, publicFormFlowId);
+          next.set(flow.flowParam, flow.flowId);
         }
 
         return next;

@@ -55,6 +55,12 @@ export interface ServerInfo {
    * Older servers omit this field, which keeps the slow lane disabled.
    */
   max_slow_sync_update_bytes?: number;
+  /**
+   * Public origin of the AppFlowy MCP service (no `/mcp`), from the server's
+   * `APPFLOWY_MCP_BASE_URL`. Absent when the server has no MCP service and on
+   * older servers; the Web's own `APPFLOWY_MCP_BASE_URL` overrides it.
+   */
+  mcp_url?: string | null;
 }
 
 const SERVER_INFO_REQUEST_TIMEOUT_MS = 10_000;
