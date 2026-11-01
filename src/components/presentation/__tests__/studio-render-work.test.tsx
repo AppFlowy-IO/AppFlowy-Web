@@ -202,7 +202,7 @@ test('job polls that repeat the shown state do not render the studio again', asy
 
 test('setup uses its footer progress and can cancel without a duplicate banner', async () => {
   run.mockImplementation(() => new Promise(() => undefined));
-  open();
+  await act(async () => { open(); });
   await waitFor(() => expect(generateButton().disabled).toBe(false));
   fireEvent.click(generateButton());
   await waitFor(() => expect(run).toHaveBeenCalled());
