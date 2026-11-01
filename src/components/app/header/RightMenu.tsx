@@ -14,6 +14,7 @@ import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
+import { PRESENTATION_ENTRY_ENABLED } from '@/components/presentation/feature-flags';
 import PresentEntry from '@/components/presentation/PresentEntry';
 import { openOrDownload } from '@/utils/open_schema';
 
@@ -86,14 +87,15 @@ function RightMenu() {
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
-      {(hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
-        <PresentEntry
-          viewId={rowPage?.documentId || routeViewId!}
-          permissionViewId={actionViewId}
-          title={rowPage?.title}
-          isRow={hasRowPageRoute}
-        />
-      )}
+      {PRESENTATION_ENTRY_ENABLED &&
+        (hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
+          <PresentEntry
+            viewId={rowPage?.documentId || routeViewId!}
+            permissionViewId={actionViewId}
+            title={rowPage?.title}
+            isRow={hasRowPageRoute}
+          />
+        )}
       {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
       {actionViewId ? (
         <ShareButton
