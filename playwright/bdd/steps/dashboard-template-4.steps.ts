@@ -29,18 +29,21 @@ import {
   addTemplateSelectGlobalFilter,
   addTemplateViews,
   addWidgetWithRowButton,
+  chooseDashboardOption,
   closeWidgetPicker,
   expectChartCountsAllRows,
   expectChartShowsNoData,
   expectColdOpenSourceCap,
-  expectDashboardRefusedWith,
+  expectDashboardOffersUpgrade,
   expectFeedPosts,
   expectGridRowsStartingWith,
   expectNewWidgetViewHiddenFromTabs,
   expectNoDashboardView,
   expectNoFeedPosts,
+  expectPlanComparisonOpened,
   expectPrintedChartValues,
   openTemplateDashboardCold,
+  openViewTabMenu,
   parseFilterMapping,
   provideEmployeesFixtureDatabase,
   putWorkspaceOnFreePlan,
@@ -48,7 +51,6 @@ import {
   seedSavedDateGlobalFilter,
   switchGlobalFilterCondition,
   tickRecordCheckbox,
-  tryAddingDashboard,
 } from '../../support/dashboard-template-4-helpers';
 import { splitList, widgetLocator } from '../../support/dashboard-test-helpers';
 import { clickChartSegment, expectStackedWidgets, openUseCaseDashboard } from '../../support/dashboard-usecase-helpers';
@@ -70,16 +72,24 @@ Given('{string} has these views:', SET, async ({ page, request }, database: stri
 // The Free plan
 // ---------------------------------------------------------------------------
 
-Given('the workspace is on the Free plan', SET, async ({ page, $testInfo }) => {
-  await putWorkspaceOnFreePlan(page, $testInfo);
+Given('the workspace is on the Free plan', SET, async ({ page }) => {
+  await putWorkspaceOnFreePlan(page);
 });
 
-When('I try to add a dashboard to {string} from the view tab menu', SET, async ({ page }, database: string) => {
-  await tryAddingDashboard(page, database);
+When('I open the view tab menu of {string}', SET, async ({ page }, database: string) => {
+  await openViewTabMenu(page, database);
 });
 
-Then('I am told that {string}', SET, async ({ page }, message: string) => {
-  await expectDashboardRefusedWith(page, message);
+Then('its Dashboard option shows the Pro crown, explaining {string}', SET, async ({ page }, message: string) => {
+  await expectDashboardOffersUpgrade(page, message);
+});
+
+When('I choose the Dashboard option', SET, async ({ page }) => {
+  await chooseDashboardOption(page);
+});
+
+Then('the Pro plan comparison opens', SET, async ({ page }) => {
+  await expectPlanComparisonOpened(page);
 });
 
 Then('{string} has no dashboard view', SET, async ({ page }, database: string) => {

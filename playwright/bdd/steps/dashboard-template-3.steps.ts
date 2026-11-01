@@ -30,7 +30,7 @@ import {
   expectNoWidgetTitles,
   expectReadOnlyDashboard,
   expectSecondBlockRows,
-  expectSlashOptionDisabled,
+  expectSlashOptionOffersUpgrade,
   expectValuesPerYear,
   expectViewStillExists,
   expectWidgetMenuItemDisabled,
@@ -211,10 +211,10 @@ Given('the workspace is on the Free plan', SET, async ({ page }) => {
 });
 
 Then(
-  'the slash menu command {string} is disabled with the tooltip {string}',
+  'the slash menu command {string} shows the Pro crown with the tooltip {string}',
   SET,
   async ({ page }, command: string, tooltip: string) => {
-    await expectSlashOptionDisabled(page, command, tooltip);
+    await expectSlashOptionOffersUpgrade(page, command, tooltip);
   }
 );
 

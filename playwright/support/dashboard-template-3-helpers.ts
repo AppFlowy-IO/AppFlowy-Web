@@ -952,9 +952,6 @@ export async function typeSlashInMeetingNotes(page: Page) {
  * the scenario is skipped; it runs against a production build.
  */
 export async function useFreePlan(page: Page) {
-  const developmentBuild = await page.evaluate(() => Boolean(document.querySelector('script[src*="/@vite/client"]')));
-
-  test.skip(developmentBuild, 'Development builds turn the Pro gate off (isDevelopmentOrTestEnvironment)');
   await mockServerInfoPreservingCapabilities(page, { self_hosted: false });
   const noPlan = JSON.stringify({ code: 0, data: [], message: '' });
 
@@ -967,13 +964,19 @@ export async function useFreePlan(page: Page) {
   );
 }
 
-/** A disabled slash option keeps its place; its wrapper shows why on hover. */
-export async function expectSlashOptionDisabled(page: Page, command: string, reason: string) {
+/**
+ * Like Timeline, a slash option the Free owner must upgrade for stays
+ * selectable, shows the Pro crown, and its wrapper shows why on hover.
+ */
+export async function expectSlashOptionOffersUpgrade(page: Page, command: string, reason: string) {
   const option = page.getByTestId(`slash-menu-${command}`);
   const tooltip = page.getByRole('tooltip').filter({ hasText: reason });
 
   await expect(option).toBeVisible(TEMPLATE_WAIT);
-  await expect(option).toBeDisabled();
+  // The crown appears once the plan check settles.
+  await expect(option.getByLabel('Pro')).toHaveCount(1, TEMPLATE_WAIT);
+  await expect(option).toBeEnabled();
+  await expect(option).toHaveAttribute('aria-disabled', 'false');
   const trigger = option.locator('xpath=..');
 
   await trigger.hover();

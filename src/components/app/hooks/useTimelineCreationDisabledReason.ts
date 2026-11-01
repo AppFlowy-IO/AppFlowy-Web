@@ -8,17 +8,11 @@ import { useSubscriptionPlan } from './useSubscriptionPlan';
 
 /**
  * Keeps Timeline creation aligned with the server's workspace-specific Pro
- * policy. Dashboard creation follows the same policy; pass its own
- * `requiresProMessage` to reuse the check (the plan lookup is cached per
- * workspace, so both callers share one request).
+ * policy.
  */
 export function useTimelineCreationDisabledReason(
   getSubscriptions: (() => Promise<Subscription[] | undefined>) | undefined,
-  {
-    workspaceId,
-    enabled = true,
-    requiresProMessage,
-  }: { workspaceId?: string; enabled?: boolean; requiresProMessage?: string }
+  { workspaceId, enabled = true }: { workspaceId?: string; enabled?: boolean }
 ): string | undefined {
   const { t } = useTranslation();
   const isDevelopment = isDevelopmentOrTestEnvironment();
@@ -46,10 +40,7 @@ export function useTimelineCreationDisabledReason(
     return t('timeline.creationCheckingPlan', { defaultValue: 'Checking workspace plan…' });
   }
 
-  return (
-    requiresProMessage ??
-    t('timeline.creationRequiresPro', {
-      defaultValue: 'Creating a Timeline view requires a Pro workspace.',
-    })
-  );
+  return t('timeline.creationRequiresPro', {
+    defaultValue: 'Creating a Timeline view requires a Pro workspace.',
+  });
 }

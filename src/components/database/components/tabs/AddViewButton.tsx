@@ -11,7 +11,7 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreationItem';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
-import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -32,8 +32,6 @@ export interface AddViewLayoutOption {
   /** The menu label, also the new view's name. */
   label: string;
   testId?: string;
-  /** Shown disabled with this reason (the workspace plan, or its check still running). */
-  disabledReason?: string;
 }
 
 /**
@@ -59,18 +57,9 @@ export function useAddDatabaseViewMenu({
     workspaceId,
     enabled: menuOpen,
   });
-  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
-    getSubscriptions,
-    { workspaceId, enabled: menuOpen }
-  );
+  const { available: canCreateDashboard } = useDashboardCreationGate();
   // Keep an upgrade's item busy while checkout opens, on desktop and mobile.
   const [checkoutLayout, setCheckoutLayout] = useState<ViewLayout | null>(null);
-  const getLayoutAction = (layout: ViewLayout): DatabaseViewCreationAction =>
-    layout === ViewLayout.Dashboard
-      ? !canCreateDashboard || dashboardDisabledReason
-        ? { type: 'disabled', reason: dashboardDisabledReason }
-        : { type: 'create' }
-      : getAction(layout);
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
@@ -106,7 +95,7 @@ export function useAddDatabaseViewMenu({
   }, [databasePageId]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
-    if (layout === DatabaseViewLayout.Dashboard && (!canCreateDashboard || dashboardDisabledReason)) return;
+    if (layout === DatabaseViewLayout.Dashboard && !canCreateDashboard) return;
     if (!checkCreation(DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[layout], () => setMenuOpen(false))) return;
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
@@ -178,7 +167,6 @@ export function useAddDatabaseViewMenu({
             viewLayout: ViewLayout.Dashboard,
             label: t('dashboard.menuName', { defaultValue: 'Dashboard' }),
             testId: 'add-dashboard-view-button',
-            disabledReason: dashboardDisabledReason,
           },
         ]
       : []),
@@ -215,7 +203,7 @@ export function useAddDatabaseViewMenu({
     setMenuOpen,
     options,
     addView: handleAddView,
-    getAction: getLayoutAction,
+    getAction,
     checkoutLayout,
     upgradeView: handleUpgrade,
   };

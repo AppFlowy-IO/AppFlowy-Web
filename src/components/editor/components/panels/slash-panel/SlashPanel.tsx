@@ -96,7 +96,7 @@ import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
-import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
@@ -280,7 +280,6 @@ export function SlashPanel({
     getMoreAIContext,
     createDatabaseView,
     deletePage,
-    getSubscriptions,
   } = useEditorContext();
   const editorContext = useEditorContext();
   const outline = useContext(AppOutlineContext);
@@ -323,10 +322,7 @@ export function SlashPanel({
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
 
-  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
-    getSubscriptions,
-    { workspaceId, enabled: open || linkedPicker?.layout === ViewLayout.Dashboard }
-  );
+  const { available: canCreateDashboard } = useDashboardCreationGate();
   const checkCreationRef = useRef<ReturnType<typeof useDatabaseViewCreation>['checkCreation']>(() => false);
 
   const getIsInsideAIMeeting = useCallback(() => {
@@ -1899,29 +1895,12 @@ export function SlashPanel({
     getSubscriptions: editorContext.getSubscriptions,
     enabled: showsLimitedOption || creationCheckLatched || isLimitedDatabaseViewLayout(linkedPicker?.layout),
   });
-  const getCreationAction = (layout?: ViewLayout): DatabaseViewCreationAction =>
-    layout === ViewLayout.Dashboard
-      ? !canCreateDashboard || dashboardDisabledReason
-        ? { type: 'disabled', reason: dashboardDisabledReason }
-        : { type: 'create' }
-      : getAction(layout);
-  const linkedAction = linkedPicker ? getCreationAction(linkedPicker.layout) : undefined;
+  const linkedAction = linkedPicker ? getAction(linkedPicker.layout) : undefined;
 
   // Updating availability must not reattach the editor's keyboard listener.
   useLayoutEffect(() => {
-    checkCreationRef.current = (layout, closeMenu) => {
-      if (layout === ViewLayout.Dashboard) {
-        if (!canCreateDashboard || dashboardDisabledReason) {
-          if (dashboardDisabledReason) notify.error(dashboardDisabledReason);
-          return false;
-        }
-
-        return true;
-      }
-
-      return checkCreation(layout, closeMenu);
-    };
-  }, [checkCreation, canCreateDashboard, dashboardDisabledReason]);
+    checkCreationRef.current = checkCreation;
+  }, [checkCreation]);
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
@@ -2071,12 +2050,12 @@ export function SlashPanel({
               <div key={group} className={'flex flex-col gap-1'}>
                 <div className={'px-2 py-1 text-xs font-medium text-text-secondary'}>{groupLabels[group]}</div>
                 {groupOptions.map((option) => {
-                  const action = getCreationAction(option.creationLayout);
+                  const action = getAction(option.creationLayout);
 
                   return (
                     <DatabaseViewCreationHint
                       key={option.key}
-                      enabled={isLimitedDatabaseViewLayout(option.creationLayout) || option.creationLayout === ViewLayout.Dashboard}
+                      enabled={isLimitedDatabaseViewLayout(option.creationLayout)}
                       reason={action.reason}
                     >
                       <Button
@@ -2086,7 +2065,6 @@ export function SlashPanel({
                         data-testid={`slash-menu-${option.key}`}
                         data-option-key={option.key}
                         aria-disabled={action.type === 'disabled'}
-                        disabled={option.creationLayout === ViewLayout.Dashboard && action.type === 'disabled'}
                         onClick={() => executeOption(option)}
                         className={`w-full scroll-m-2 justify-start hover:bg-fill-content-hover ${
                           selectedOption === option.key ? 'bg-fill-content-hover' : ''
