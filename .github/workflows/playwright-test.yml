@@ -184,6 +184,9 @@ jobs:
       - name: Test hosted Gateway startup ordering
         run: python3 .github/scripts/test_web_ci_gateway_network.py
 
+      - name: Test Web Gateway CORS
+        run: python3 .github/scripts/test_web_ci_gateway_routes.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -407,6 +410,12 @@ jobs:
       - name: Select Web backend fixture
         run: |
           override=$(bash .github/scripts/select_web_ci_compose.sh AppFlowy-Cloud-Premium)
+          if [[ "$override" == */docker-compose-web-ci.gateway.override.yml ]]; then
+            export WEB_CI_GATEWAY_ROUTES="$RUNNER_TEMP/web-ci-gateway-routes.conf"
+            python3 .github/scripts/web_ci_gateway_routes.py \
+              AppFlowy-Cloud-Premium/nginx/api-limits-ci.conf "$WEB_CI_GATEWAY_ROUTES"
+            echo "WEB_CI_GATEWAY_ROUTES=$WEB_CI_GATEWAY_ROUTES" >> "$GITHUB_ENV"
+          fi
           # Validate extensions and dependencies before pulling or starting anything.
           (cd AppFlowy-Cloud-Premium && docker compose \
             -f docker-compose-web-ci.yml -f "$override" config --quiet)
@@ -807,6 +816,12 @@ jobs:
       - name: Select Web backend fixture
         run: |
           override=$(bash .github/scripts/select_web_ci_compose.sh AppFlowy-Cloud-Premium)
+          if [[ "$override" == */docker-compose-web-ci.gateway.override.yml ]]; then
+            export WEB_CI_GATEWAY_ROUTES="$RUNNER_TEMP/web-ci-gateway-routes.conf"
+            python3 .github/scripts/web_ci_gateway_routes.py \
+              AppFlowy-Cloud-Premium/nginx/api-limits-ci.conf "$WEB_CI_GATEWAY_ROUTES"
+            echo "WEB_CI_GATEWAY_ROUTES=$WEB_CI_GATEWAY_ROUTES" >> "$GITHUB_ENV"
+          fi
           # Validate extensions and dependencies before pulling or starting anything.
           (cd AppFlowy-Cloud-Premium && docker compose \
             -f docker-compose-web-ci.yml -f "$override" config --quiet)

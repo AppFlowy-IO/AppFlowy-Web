@@ -72,7 +72,8 @@ class GatewayNetworkTest(unittest.TestCase):
                 "-f", str(root / ".github/docker-compose-web-ci.gateway.override.yml"),
                 "-f", str(health),
             ]
-            env = {**os.environ, "APPFLOWY_BASE_URL": "http://localhost"}
+            env = {**os.environ, "APPFLOWY_BASE_URL": "http://localhost",
+                   "WEB_CI_GATEWAY_ROUTES": str(cloud / "nginx/api-limits-ci.conf")}
             try:
                 for args in (["pull", "--quiet"], ["up", "-d", "--no-build", "--pull", "never"],
                              ["exec", "-T", "nginx", "ping", "-c", "1", "-W", "3", "appflowy_cloud_proxy"]):

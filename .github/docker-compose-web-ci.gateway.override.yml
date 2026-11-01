@@ -31,7 +31,7 @@ services:
 
   nginx:
     volumes:
-      - ./nginx/api-limits-ci.conf:/etc/nginx/api-limits/creation.conf:ro
+      - ${WEB_CI_GATEWAY_ROUTES:?Prepare Web Gateway routes}:/etc/nginx/api-limits/creation.conf:ro
     depends_on:
       appflowy_gateway:
         condition: service_healthy
