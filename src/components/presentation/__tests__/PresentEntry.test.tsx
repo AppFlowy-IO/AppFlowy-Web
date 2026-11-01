@@ -5,6 +5,11 @@ import { setActiveRowPage } from '@/application/row-document/row-page-state';
 import { CoverType, type ViewCover } from '@/application/types';
 import AppShareButton from '@/components/app/share/ShareButton';
 
+// Compile the real lazy chunks before timed interactions; cold coverage transforms
+// otherwise consume the first test's UI deadline on CI.
+import '../DocumentPresenter';
+import '../PresentationDialog';
+import '../PresentationStudio';
 import PresentEntry from '../PresentEntry';
 import { serverOptions } from '../server-adapter';
 import { APPFLOWY_SLIDE_THEMES } from '../slide-themes';

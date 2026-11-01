@@ -178,6 +178,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Test Web backend fixture selection
+        run: python3 .github/scripts/test_web_ci_compose.py
+
+      - name: Test hosted Gateway startup ordering
+        run: python3 .github/scripts/test_web_ci_gateway_network.py
+
+      - name: Test Web Gateway CORS
+        run: python3 .github/scripts/test_web_ci_gateway_routes.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -398,6 +407,20 @@ jobs:
             openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
           echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
 
+      - name: Select Web backend fixture
+        run: |
+          override=$(bash .github/scripts/select_web_ci_compose.sh AppFlowy-Cloud-Premium)
+          if [[ "$override" == */docker-compose-web-ci.gateway.override.yml ]]; then
+            export WEB_CI_GATEWAY_ROUTES="$RUNNER_TEMP/web-ci-gateway-routes.conf"
+            python3 .github/scripts/web_ci_gateway_routes.py \
+              AppFlowy-Cloud-Premium/nginx/api-limits-ci.conf "$WEB_CI_GATEWAY_ROUTES"
+            echo "WEB_CI_GATEWAY_ROUTES=$WEB_CI_GATEWAY_ROUTES" >> "$GITHUB_ENV"
+          fi
+          # Validate extensions and dependencies before pulling or starting anything.
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$override" config --quiet)
+          echo "WEB_CI_COMPOSE_OVERRIDE=$override" >> "$GITHUB_ENV"
+
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
@@ -412,7 +435,8 @@ jobs:
             exit 0
           fi
           # Start Docker pull in background
-          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker appflowy_search) &
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" pull) &
           DOCKER_PID=$!
 
           # Get pnpm store path and install deps concurrently
@@ -433,7 +457,7 @@ jobs:
           cloud-path: AppFlowy-Cloud-Premium
           ci-tools-ref: ${{ env.CI_TOOLS_REF }}
           runtime-profile: web
-          compose-override: ${{ github.workspace }}/.github/docker-compose-web-ci.override.yml
+          compose-override: ${{ env.WEB_CI_COMPOSE_OVERRIDE }}
           github-token: ${{ secrets.CI_TOKEN }}
 
       - name: Verify Cloud revision and report backend image versions
@@ -490,8 +514,8 @@ jobs:
           if [[ "${{ steps.cloud-selection.outputs.enabled }}" != true ]]; then
             docker compose \
               -f docker-compose-web-ci.yml \
-              -f ../.github/docker-compose-web-ci.override.yml \
-              up -d
+              -f "$WEB_CI_COMPOSE_OVERRIDE" \
+              up -d --no-build --pull never
           fi
 
           echo "Waiting for backend services..."
@@ -501,14 +525,17 @@ jobs:
           done' && echo "Backend is ready" || (
             echo "Backend failed to start after 3 minutes"
             echo "Docker container status:"
-            docker compose -f docker-compose-web-ci.yml ps
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps
             echo "Docker logs:"
-            docker compose -f docker-compose-web-ci.yml logs --tail=50
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" logs --tail=50
             exit 1
           )
 
+          # Record Gateway and infrastructure image identities alongside Cloud.
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
+
           # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
-          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml ps -q postgres)
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps -q postgres)
           test -n "$test_postgres_container"
           echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
 
@@ -589,6 +616,7 @@ jobs:
 
           if [ "$TEST_GROUP" = "template-interop" ]; then
             pnpm exec tsc --noEmit --project playwright/tsconfig.interop.json
+            pnpm test:interop:bootstrap
             BASE_URL=http://127.0.0.1:3089 pnpm test:interop:desktop
           elif [ "$TEST_BDD" = "true" ]; then
             pnpm exec playwright test -c playwright.bdd.config.ts "${test_args[@]}" $TEST_SPEC
@@ -621,12 +649,13 @@ jobs:
         working-directory: AppFlowy-Cloud-Premium
         run: |
           mkdir -p ../test-results
-          compose="docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml"
-          $compose logs --no-color --timestamps appflowy_cloud appflowy_worker postgres > ../test-results/backend-services.log 2>&1
+          compose=(docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE")
+          # Include Gateway/ClickHouse when selected, without naming absent legacy services.
+          "${compose[@]}" logs --no-color --timestamps > ../test-results/backend-services.log 2>&1
           # Cloud reports only "AI service is temporarily unavailable"; keep the
           # AI container's own exit reason, which the job tears down with the stack.
-          $compose ps -a
-          $compose logs --no-color --timestamps ai > ../test-results/ai-service.log 2>&1
+          "${compose[@]}" ps -a
+          "${compose[@]}" logs --no-color --timestamps ai > ../test-results/ai-service.log 2>&1
           tail -n 80 ../test-results/ai-service.log
 
       - name: Report failed backend duplication tasks
@@ -634,11 +663,11 @@ jobs:
         continue-on-error: true
         working-directory: AppFlowy-Cloud-Premium
         run: |
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml images
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
 
           # The synchronous duplicate-document API returns only a generic 1017
           # error. Preserve the Worker failure reason before CI deletes its DB.
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml exec -T postgres \
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" exec -T postgres \
             sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1' <<'SQL'
           SELECT task_id, workspace_id, status, left(error, 2000) AS error, created_at
           FROM af_duplicate_task
@@ -715,7 +744,10 @@ jobs:
           fi
           pkill -f "bun deploy/server.ts" 2>/dev/null || true
 
-          cd AppFlowy-Cloud-Premium && docker compose down || true
+          if [[ -n "${WEB_CI_COMPOSE_OVERRIDE:-}" ]]; then
+            cd AppFlowy-Cloud-Premium && docker compose \
+              -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" down || true
+          fi
 
   # The @large-database dashboard scenarios (dashboard-loading, dashboard-large-source):
   # seeding the employees database takes minutes, so they run nightly and on demand.
@@ -781,6 +813,20 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
+      - name: Select Web backend fixture
+        run: |
+          override=$(bash .github/scripts/select_web_ci_compose.sh AppFlowy-Cloud-Premium)
+          if [[ "$override" == */docker-compose-web-ci.gateway.override.yml ]]; then
+            export WEB_CI_GATEWAY_ROUTES="$RUNNER_TEMP/web-ci-gateway-routes.conf"
+            python3 .github/scripts/web_ci_gateway_routes.py \
+              AppFlowy-Cloud-Premium/nginx/api-limits-ci.conf "$WEB_CI_GATEWAY_ROUTES"
+            echo "WEB_CI_GATEWAY_ROUTES=$WEB_CI_GATEWAY_ROUTES" >> "$GITHUB_ENV"
+          fi
+          # Validate extensions and dependencies before pulling or starting anything.
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$override" config --quiet)
+          echo "WEB_CI_COMPOSE_OVERRIDE=$override" >> "$GITHUB_ENV"
+
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
@@ -790,7 +836,8 @@ jobs:
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
         run: |
           # Start Docker pull in background
-          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker appflowy_search) &
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" pull) &
           DOCKER_PID=$!
 
           # Get pnpm store path and install deps concurrently
@@ -845,8 +892,8 @@ jobs:
         run: |
           docker compose \
             -f docker-compose-web-ci.yml \
-            -f ../.github/docker-compose-web-ci.override.yml \
-            up -d
+            -f "$WEB_CI_COMPOSE_OVERRIDE" \
+            up -d --no-build --pull never
 
           echo "Waiting for backend services..."
           timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
@@ -855,14 +902,17 @@ jobs:
           done' && echo "Backend is ready" || (
             echo "Backend failed to start after 3 minutes"
             echo "Docker container status:"
-            docker compose -f docker-compose-web-ci.yml ps
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps
             echo "Docker logs:"
-            docker compose -f docker-compose-web-ci.yml logs --tail=50
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" logs --tail=50
             exit 1
           )
 
+          # Record Gateway and infrastructure image identities alongside Cloud.
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
+
           # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
-          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml ps -q postgres)
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps -q postgres)
           test -n "$test_postgres_container"
           echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
 
@@ -912,11 +962,11 @@ jobs:
         continue-on-error: true
         working-directory: AppFlowy-Cloud-Premium
         run: |
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml images
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
 
           # The synchronous duplicate-document API returns only a generic 1017
           # error. Preserve the Worker failure reason before CI deletes its DB.
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml exec -T postgres \
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" exec -T postgres \
             sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1' <<'SQL'
           SELECT task_id, workspace_id, status, left(error, 2000) AS error, created_at
           FROM af_duplicate_task
@@ -993,4 +1043,7 @@ jobs:
           fi
           pkill -f "bun deploy/server.ts" 2>/dev/null || true
 
-          cd AppFlowy-Cloud-Premium && docker compose down || true
+          if [[ -n "${WEB_CI_COMPOSE_OVERRIDE:-}" ]]; then
+            cd AppFlowy-Cloud-Premium && docker compose \
+              -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" down || true
+          fi

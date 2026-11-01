@@ -344,4 +344,4 @@ test('5000 live rows keep UI observers within the real viewport and late rows re
   }
 
   expect(remainingSubscriptions).toBe(0);
-});
+}, 15000); // Includes building and tearing down 5,000 real row documents under coverage.
