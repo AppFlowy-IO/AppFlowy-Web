@@ -7,6 +7,13 @@ services:
       service: appflowy_cloud
     environment:
       APPFLOWY_GATEWAY_INTERNAL_URL: http://appflowy_gateway:8100
+    # Cloud starts before nginx's Gateway health gate. Keep its dynamic address
+    # from claiming the proxy's fixed 172.31.255.2 identity on this /29 network.
+    networks:
+      cloud_proxy:
+        ipv4_address: 172.31.255.3
+        aliases:
+          - appflowy_cloud_proxy
     # Gateway initializes its schema after Cloud's migrations have completed.
     healthcheck:
       test: [CMD, curl, --fail, --silent, http://127.0.0.1:8000/api/ready]

@@ -181,6 +181,9 @@ jobs:
       - name: Test Web backend fixture selection
         run: python3 .github/scripts/test_web_ci_compose.py
 
+      - name: Test hosted Gateway startup ordering
+        run: python3 .github/scripts/test_web_ci_gateway_network.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
