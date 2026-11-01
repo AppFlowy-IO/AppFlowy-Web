@@ -1,12 +1,14 @@
 /** @jest-environment node */
 import { createServer } from 'node:http';
-import type { Socket } from 'node:net';
 
 import { afterEach, expect, jest, test } from '@jest/globals';
 import { chromium, type Browser, type LaunchOptions } from '@playwright/test';
 
 import { installRuntimeTestConfig } from '../support/test-config';
+
 import { waitForInteropFrontend } from './global-setup';
+
+import type { Socket } from 'node:net';
 
 jest.setTimeout(15000);
 
