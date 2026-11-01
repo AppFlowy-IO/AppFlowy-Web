@@ -50,7 +50,7 @@ export function SetupText({ text, muted, testId }: { text: string; muted?: boole
 
 export function SetupSteps({ items }: { items: string[] }) {
   return (
-    <ol className='list-decimal space-y-1.5 pl-5 text-sm text-text-primary'>
+    <ol className='list-decimal space-y-2 pl-5 text-sm text-text-primary'>
       {items.map((item) => (
         <li key={item}>
           <RichText text={item} />
