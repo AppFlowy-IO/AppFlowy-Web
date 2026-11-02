@@ -419,3 +419,40 @@ describe('databaseBlobDiff', () => {
     expect(Array.from(response.page?.nextCursor ?? [])).toEqual([7, 8, 9]);
   });
 });
+
+describe('database request cancellation', () => {
+  it('aborts a binary database read without falling back to the JSON endpoint', async () => {
+    const { getCollab } = await import('../collab-api');
+    const { executeAPIRequest } = await import('../core');
+    const { Types } = await import('@/application/types');
+    const controller = new AbortController();
+    const post = jest.fn((_url, _body, config) => new Promise((_resolve, reject) => {
+      config.signal.addEventListener('abort', () => reject(config.signal.reason), { once: true });
+    }));
+
+    jest.mocked(executeAPIRequest).mockClear();
+    mockGetAxios.mockReturnValue({ post });
+    const request = getCollab('workspace', 'database', Types.Database, undefined, controller.signal);
+    const cancelled = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+
+    controller.abort();
+    await cancelled;
+    expect(post.mock.calls[0][2].signal).toBe(controller.signal);
+    expect(executeAPIRequest).not.toHaveBeenCalled();
+  });
+
+  it('forwards cancellation to the blob page transport', async () => {
+    const controller = new AbortController();
+    const post = jest.fn((_url, _body, config) => new Promise((_resolve, reject) => {
+      config.signal.addEventListener('abort', () => reject(config.signal.reason), { once: true });
+    }));
+
+    mockGetAxios.mockReturnValue({ post });
+    const request = databaseBlobDiff('workspace', 'database', { version: 3 }, controller.signal);
+    const cancelled = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+
+    controller.abort();
+    await cancelled;
+    expect(post.mock.calls[0][2].signal).toBe(controller.signal);
+  });
+});

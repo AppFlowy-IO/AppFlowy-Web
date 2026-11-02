@@ -1,0 +1,31 @@
+@use 'sass:meta';
+
+// Same Prism palettes as the native editor, scoped and bundled so switching
+// themes works immediately without replacing a global CDN stylesheet.
+:root:not([data-dark-mode='true']) .ps-document-code {
+  @include meta.load-css('prismjs/themes/prism');
+}
+[data-dark-mode='true'] .ps-document-code {
+  @include meta.load-css('prismjs/themes/prism-dark');
+}
+
+.ps-document-code .ps-code-content {
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 4;
+}
+.ps-code-content > code {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+  font: inherit;
+}
+.ps-code-copy {
+  visibility: hidden;
+}
+.ps-document-code:hover .ps-code-copy,
+.ps-document-code:focus-within .ps-code-copy {
+  visibility: visible;
+}

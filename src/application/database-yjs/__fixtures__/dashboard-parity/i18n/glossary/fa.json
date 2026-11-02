@@ -1,0 +1,40 @@
+{
+  "locale": "fa",
+  "terms": {
+    "dashboard": "داشبورد",
+    "widget": "ویجت",
+    "chart": "نمودار",
+    "view": "نما",
+    "row": "سطر",
+    "dashboard_row": "ردیف",
+    "property": "ویژگی",
+    "field": "فیلد",
+    "database": "پایگاه داده",
+    "source": "منبع",
+    "page": "صفحه",
+    "workspace": "فضای کار",
+    "done": "انجام شد",
+    "edit": "ویرایش",
+    "delete": "حذف",
+    "duplicate": "تکثیر",
+    "save": "ذخیره",
+    "cancel": "لغو",
+    "close": "بستن",
+    "back": "بازگشت",
+    "settings": "تنظیمات",
+    "filter": "فیلتر",
+    "sort": "مرتب‌سازی",
+    "search": "جستجو",
+    "undo": "واگرد",
+    "redo": "ازنو",
+    "reset": "بازنشانی",
+    "untitled": "بدون عنوان",
+    "day": "روز",
+    "week": "هفته",
+    "month": "ماه",
+    "year": "سال"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

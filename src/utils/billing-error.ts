@@ -12,6 +12,25 @@ const PRO_WORKSPACE_ERROR_CODES = new Set<number>([
   ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED,
 ]);
 
+function getWorkspaceLimitError(error: unknown): { code: number; message?: unknown } | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+
+  const candidate = error as { code?: unknown; message?: unknown; response?: { data?: unknown } };
+  const payload = candidate.response?.data ?? candidate;
+
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const { code, message } = payload as { code?: unknown; message?: unknown };
+
+  if (typeof code !== 'number' || !PRO_WORKSPACE_ERROR_CODES.has(code)) return undefined;
+
+  return { code, message };
+}
+
+/** Only an explicit plan denial can make a default Chart fall back to a Table. */
+export function isInvalidSubscriptionPlanError(error: unknown): boolean {
+  return getWorkspaceLimitError(error)?.code === ERROR_CODE.INVALID_SUBSCRIPTION_PLAN;
+}
+
 /** A rejected limit cannot be resolved by retrying, including on self-hosted servers. */
 export function isWorkspaceLimitError(error: unknown): boolean {
   const identity = readErrorIdentity(error);

@@ -1,0 +1,68 @@
+{
+  "fixture": "tab-visibility",
+  "version": 1,
+  "encoding": {
+    "owners": "The dashboard_owner marker of a view: folder is the folder view extra (authoritative), collab is the database collab mirror views[view_id].dashboard_owner. A view missing from owners has neither.",
+    "readDashboardOwner": "readDashboardOwner(folder, collab): folder when it is a non-empty string, else collab when it is a non-empty string, else null.",
+    "filterOwnedTabViewIds": "filterOwnedTabViewIds(ids, openedViewId, isOwned) with isOwned(id) = readDashboardOwner(owners[id].folder, owners[id].collab) != null: [openedViewId] when the opened view is owned (even when ids lacks it), else ids without the owned views, in order. It applies only to tab lists derived from folder children, never to an explicit host list."
+  },
+  "ownerCases": [
+    { "name": "the folder marker wins", "folder": "v:dash-a", "collab": "v:dash-b", "expected": "v:dash-a" },
+    { "name": "the collab mirror is read when the folder has none", "collab": "v:dash-b", "expected": "v:dash-b" },
+    { "name": "an empty folder marker is ignored", "folder": "", "collab": "v:dash-b", "expected": "v:dash-b" },
+    { "name": "a folder marker that is not a string is ignored", "folder": 7, "collab": "v:dash-b", "expected": "v:dash-b" },
+    { "name": "empty markers mean not owned", "folder": "", "collab": "", "expected": null },
+    { "name": "no marker means not owned", "expected": null }
+  ],
+  "cases": [
+    {
+      "name": "no view is owned",
+      "ids": ["v:grid", "v:board", "v:dash"],
+      "openedViewId": "v:grid",
+      "owners": {},
+      "expected": ["v:grid", "v:board", "v:dash"]
+    },
+    {
+      "name": "owned views are hidden and the order is kept",
+      "ids": ["v:grid", "v:owned-board", "v:dash", "v:owned-chart", "v:calendar"],
+      "openedViewId": "v:dash",
+      "owners": { "v:owned-board": { "folder": "v:dash" }, "v:owned-chart": { "folder": "v:other-dash" } },
+      "expected": ["v:grid", "v:dash", "v:calendar"]
+    },
+    {
+      "name": "opening an owned view shows it as the only tab",
+      "ids": ["v:grid", "v:owned-board", "v:dash"],
+      "openedViewId": "v:owned-board",
+      "owners": { "v:owned-board": { "folder": "v:dash" } },
+      "expected": ["v:owned-board"]
+    },
+    {
+      "name": "an opened owned view missing from the children is still its only tab",
+      "ids": ["v:grid", "v:dash"],
+      "openedViewId": "v:owned-board",
+      "owners": { "v:owned-board": { "folder": "v:dash" } },
+      "expected": ["v:owned-board"]
+    },
+    {
+      "name": "a view owned only through the collab mirror is hidden",
+      "ids": ["v:grid", "v:owned-board", "v:dash"],
+      "openedViewId": "v:grid",
+      "owners": { "v:owned-board": { "collab": "v:dash" } },
+      "expected": ["v:grid", "v:dash"]
+    },
+    {
+      "name": "empty markers do not hide a view",
+      "ids": ["v:grid", "v:board"],
+      "openedViewId": "v:grid",
+      "owners": { "v:board": { "folder": "", "collab": "" } },
+      "expected": ["v:grid", "v:board"]
+    },
+    {
+      "name": "an opened view that is not owned is not added",
+      "ids": ["v:grid", "v:owned-board"],
+      "openedViewId": "v:elsewhere",
+      "owners": { "v:owned-board": { "folder": "v:dash" } },
+      "expected": ["v:grid"]
+    }
+  ]
+}

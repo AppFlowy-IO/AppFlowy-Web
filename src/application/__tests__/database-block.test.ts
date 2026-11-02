@@ -17,6 +17,7 @@ describe('database block types', () => {
     [BlockType.DatabaseGalleryBlock, ViewLayout.Gallery],
     [BlockType.FeedBlock, ViewLayout.Feed],
     [BlockType.TimelineBlock, ViewLayout.Timeline],
+    [BlockType.DashboardBlock, ViewLayout.Dashboard],
   ])('maps the native %s block to database layout %s', (blockType, layout) => {
     expect(getDatabaseLayoutFromBlockType(blockType)).toBe(layout);
   });

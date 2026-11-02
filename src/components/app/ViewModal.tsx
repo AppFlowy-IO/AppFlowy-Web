@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import {
   MentionSearchRequest,
   UIVariant,
@@ -36,14 +38,14 @@ import {
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
 import {
+  INITIAL_VIEW_OBJECT_CAPABILITIES,
+  useViewObjectPermission,
+} from '@/components/app/hooks/useViewObjectPermission';
+import {
   getViewCanCommentStatus,
   getViewCanWriteStatus,
   useViewOperations,
 } from '@/components/app/hooks/useViewOperations';
-import {
-  INITIAL_VIEW_OBJECT_CAPABILITIES,
-  useViewObjectPermission,
-} from '@/components/app/hooks/useViewObjectPermission';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -52,9 +54,9 @@ import {
   useInlineCommentPanelOptional,
 } from '@/components/inline-comment/InlineCommentContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { usePresentationEntryEnabled } from '@/components/presentation/feature-flags';
+import PresentEntry from '@/components/presentation/PresentEntry';
 import { cn } from '@/lib/utils';
-import { ViewService, WorkspaceService } from '@/application/services/domains';
-import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
 
@@ -70,6 +72,7 @@ const Transition = React.forwardRef(function Transition(
 });
 
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
+  const presentationEntryEnabled = usePresentationEntryEnabled();
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
   const operations = useAppOperations();
@@ -334,9 +337,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     const space = findAncestors(outline || [], effectiveViewId)?.find((item) => item.extra?.is_space);
 
     return (
-      <div
-        className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-surface-primary px-4 py-4'}
-      >
+      <div className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-surface-primary px-4 py-4'}>
         <div className={'flex items-center gap-4'}>
           <Tooltip title={t('tooltip.openAsPage')}>
             <IconButton
@@ -380,6 +381,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
         <div className={'flex items-center gap-4'}>
           <Users viewId={effectiveViewId} />
+          {presentationEntryEnabled && resolvedView?.layout === ViewLayout.Document && (
+            <PresentEntry viewId={effectiveViewId} />
+          )}
           <ShareButton viewId={effectiveViewId} />
           {ref.current && (
             <MoreActions
@@ -400,7 +404,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [effectiveViewId, handleClose, movePageOpen, outline, resolvedView, t, toView]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, presentationEntryEnabled, resolvedView, t, toView]);
 
   // Check if view is in shareWithMe and determine readonly status.
   // `resolvedView` includes the server-fetched fallback, so locked pages opened
@@ -436,6 +440,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Feed:
       case ViewLayout.Form:
       case ViewLayout.Timeline:
+      case ViewLayout.Dashboard:
         return DatabaseView;
       default:
         return null;
@@ -481,6 +486,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
         loadDatabasePrompts={operations.loadDatabasePrompts}
         testDatabasePromptConfig={operations.testDatabasePromptConfig}
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}

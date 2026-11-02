@@ -1,0 +1,1873 @@
+{
+  "fixture": "group-keys",
+  "version": 1,
+  "encoding": {
+    "cells": "chartGroupRefs(value, field, ctx) for one X cell (WP11 1.4). `value` by field type: an option id or a list of ids (selects), true/false (Checkbox), a local date-time string without a zone (dates, read in local time like `now`), a list of person ids (Person), one user id (CreatedBy, LastEditedBy), a list of related row ids (Relation), text (RichText, URL) or a number (Number); null is no value. `field.persons` are the Person type option's people, `field.members` the workspace members, `field.relationTitles` the related rows' titles. `dateCondition` is a DateConditionPB name (Month when absent), `textGrouping` exact or first_letter (exact when absent), `buckets` the resolved number ranges. `expect` lists the groups in the order the cell yields them (distinct ids, first occurrence first).",
+    "hint": "{\"rank\": n} or {\"rank\": n, \"tie\": key} for ranked groups, {\"label\": true} for label-ordered groups (the empty group too, which every sort puts last anyway). \"Infinity\" and \"-Infinity\" stand for the infinite ranks.",
+    "labels": "The English labels below; Number labels use R-FORMAT axis mode (en-US) with the X field's numberFormat, an en dash between the bounds, and canonicalNumber bounds.",
+    "canonicalNumber": "[input, expected key text]; -0.0 is negative zero.",
+    "niceStep": "[x, the smallest of {1, 2, 5} x 10^k that is at least x]; 1 for x <= 0.",
+    "numberBuckets": "resolveNumberBuckets(values, settings), then the groups with rows in ascending order with their row counts; expect null means no ranges (no numbers).",
+    "sort": "sortChartGroups(groups, xSort, manualOrder) -> keys. Equal labels in the default order fall back to the keys by code unit.",
+    "labelCompare": "[a, b, sign of compareChartLabels(a, b)]: normalizeDashboardText, then code units, then the raw strings by code unit."
+  },
+  "labels": {
+    "checked": "Checked",
+    "unchecked": "Unchecked",
+    "noFieldValue": "No {field}",
+    "emptyFieldName": "Empty",
+    "weekOf": "Week of {start} - {end}",
+    "relative": {
+      "last_30_days": "Last 30 days",
+      "last_7_days": "Last 7 days",
+      "yesterday": "Yesterday",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "next_7_days": "Next 7 days",
+      "next_30_days": "Next 30 days"
+    },
+    "unknownPerson": "Unknown person",
+    "unknownUser": "Unknown user",
+    "untitled": "Untitled"
+  },
+  "cells": [
+    {
+      "name": "a select option groups by id with its name",
+      "field": {
+        "type": "SingleSelect",
+        "name": "Status",
+        "options": [
+          {
+            "id": "o-todo",
+            "name": "Todo"
+          },
+          {
+            "id": "o-doing",
+            "name": "Doing"
+          },
+          {
+            "id": "o-done",
+            "name": "Done"
+          },
+          {
+            "id": "o-doing-2",
+            "name": "Doing"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": "o-doing",
+      "expect": [
+        {
+          "key": "o-doing",
+          "label": "Doing",
+          "hint": {
+            "rank": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "a second option named like the first stays its own group (desktop #23)",
+      "field": {
+        "type": "SingleSelect",
+        "name": "Status",
+        "options": [
+          {
+            "id": "o-todo",
+            "name": "Todo"
+          },
+          {
+            "id": "o-doing",
+            "name": "Doing"
+          },
+          {
+            "id": "o-done",
+            "name": "Done"
+          },
+          {
+            "id": "o-doing-2",
+            "name": "Doing"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": "o-doing-2",
+      "expect": [
+        {
+          "key": "o-doing-2",
+          "label": "Doing",
+          "hint": {
+            "rank": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "an option that no longer exists keeps its id as label and sorts last",
+      "field": {
+        "type": "SingleSelect",
+        "name": "Status",
+        "options": [
+          {
+            "id": "o-todo",
+            "name": "Todo"
+          },
+          {
+            "id": "o-doing",
+            "name": "Doing"
+          },
+          {
+            "id": "o-done",
+            "name": "Done"
+          },
+          {
+            "id": "o-doing-2",
+            "name": "Doing"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": "o-gone",
+      "expect": [
+        {
+          "key": "o-gone",
+          "label": "o-gone",
+          "hint": {
+            "rank": "Infinity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty select is the No {field} group",
+      "field": {
+        "type": "SingleSelect",
+        "name": "Status",
+        "options": [
+          {
+            "id": "o-todo",
+            "name": "Todo"
+          },
+          {
+            "id": "o-doing",
+            "name": "Doing"
+          },
+          {
+            "id": "o-done",
+            "name": "Done"
+          },
+          {
+            "id": "o-doing-2",
+            "name": "Doing"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": null,
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "No Status",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a multi-select row counts once in each distinct option",
+      "field": {
+        "type": "MultiSelect",
+        "name": "Tags",
+        "options": [
+          {
+            "id": "o-a",
+            "name": "Alpha"
+          },
+          {
+            "id": "o-b",
+            "name": "Beta"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": [
+        "o-b",
+        "o-a",
+        "o-b"
+      ],
+      "expect": [
+        {
+          "key": "o-b",
+          "label": "Beta",
+          "hint": {
+            "rank": 1
+          }
+        },
+        {
+          "key": "o-a",
+          "label": "Alpha",
+          "hint": {
+            "rank": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "a multi-select without options is empty",
+      "field": {
+        "type": "MultiSelect",
+        "name": "Tags",
+        "options": [
+          {
+            "id": "o-a",
+            "name": "Alpha"
+          },
+          {
+            "id": "o-b",
+            "name": "Beta"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": [],
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "No Tags",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a checked box",
+      "field": {
+        "type": "Checkbox",
+        "name": "Urgent"
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": true,
+      "expect": [
+        {
+          "key": "checked",
+          "label": "Checked",
+          "hint": {
+            "rank": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "an unchecked box is Unchecked, never empty",
+      "field": {
+        "type": "Checkbox",
+        "name": "Urgent"
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": false,
+      "expect": [
+        {
+          "key": "unchecked",
+          "label": "Unchecked",
+          "hint": {
+            "rank": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "date by day",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Day",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-15T09:00:00",
+      "expect": [
+        {
+          "key": "2026-03-15",
+          "label": "March 15, 2026",
+          "hint": {
+            "rank": 0,
+            "tie": "2026-03-15"
+          }
+        }
+      ]
+    },
+    {
+      "name": "date by week (Sunday belongs to the week of the Monday before)",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Week",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-15T09:00:00",
+      "expect": [
+        {
+          "key": "2026-03-09",
+          "label": "Week of Mar 9 - Mar 15, 2026",
+          "hint": {
+            "rank": 0,
+            "tie": "2026-03-09"
+          }
+        }
+      ]
+    },
+    {
+      "name": "date by week across a month",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Week",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-31T09:00:00",
+      "expect": [
+        {
+          "key": "2026-03-30",
+          "label": "Week of Mar 30 - Apr 5, 2026",
+          "hint": {
+            "rank": 0,
+            "tie": "2026-03-30"
+          }
+        }
+      ]
+    },
+    {
+      "name": "date by month",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Month",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-15T09:00:00",
+      "expect": [
+        {
+          "key": "2026-03",
+          "label": "Mar 2026",
+          "hint": {
+            "rank": 0,
+            "tie": "2026-03"
+          }
+        }
+      ]
+    },
+    {
+      "name": "date by year",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Year",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-15T09:00:00",
+      "expect": [
+        {
+          "key": "2026",
+          "label": "2026",
+          "hint": {
+            "rank": 0,
+            "tie": "2026"
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: today",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-15T08:00:00",
+      "expect": [
+        {
+          "key": "rel:today",
+          "label": "Today",
+          "hint": {
+            "rank": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: yesterday",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-14T23:00:00",
+      "expect": [
+        {
+          "key": "rel:yesterday",
+          "label": "Yesterday",
+          "hint": {
+            "rank": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: tomorrow",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-16T01:00:00",
+      "expect": [
+        {
+          "key": "rel:tomorrow",
+          "label": "Tomorrow",
+          "hint": {
+            "rank": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: last 7 days",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-10T12:00:00",
+      "expect": [
+        {
+          "key": "rel:last_7_days",
+          "label": "Last 7 days",
+          "hint": {
+            "rank": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: last 30 days",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-02-20T12:00:00",
+      "expect": [
+        {
+          "key": "rel:last_30_days",
+          "label": "Last 30 days",
+          "hint": {
+            "rank": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: next 7 days",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-03-22T12:00:00",
+      "expect": [
+        {
+          "key": "rel:next_7_days",
+          "label": "Next 7 days",
+          "hint": {
+            "rank": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: next 30 days",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-04-01T12:00:00",
+      "expect": [
+        {
+          "key": "rel:next_30_days",
+          "label": "Next 30 days",
+          "hint": {
+            "rank": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "relative: 45 days out falls back to its month",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Relative",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-04-29T12:00:00",
+      "expect": [
+        {
+          "key": "2026-04",
+          "label": "Apr 2026",
+          "hint": {
+            "rank": 7,
+            "tie": "2026-04"
+          }
+        }
+      ]
+    },
+    {
+      "name": "created time groups like a date",
+      "field": {
+        "type": "CreatedTime",
+        "name": "Created"
+      },
+      "dateCondition": "Month",
+      "now": "2026-03-15T12:00:00",
+      "value": "2026-01-05T10:00:00",
+      "expect": [
+        {
+          "key": "2026-01",
+          "label": "Jan 2026",
+          "hint": {
+            "rank": 0,
+            "tie": "2026-01"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty date",
+      "field": {
+        "type": "DateTime",
+        "name": "Due"
+      },
+      "dateCondition": "Month",
+      "now": "2026-03-15T12:00:00",
+      "value": null,
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "No Due",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "people: member name, then the type option's name, then Unknown person",
+      "field": {
+        "type": "Person",
+        "name": "Owner",
+        "persons": [
+          {
+            "id": "u-2",
+            "name": "Bob"
+          }
+        ],
+        "members": [
+          {
+            "id": "u-1",
+            "name": "Ann",
+            "email": "ann@example.com"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": [
+        "u-1",
+        "u-2",
+        "u-9"
+      ],
+      "expect": [
+        {
+          "key": "u-1",
+          "label": "Ann",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "u-2",
+          "label": "Bob",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "u-9",
+          "label": "Unknown person",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "no people is empty",
+      "field": {
+        "type": "Person",
+        "name": "Owner"
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": [],
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "No Owner",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "created by: the member's name",
+      "field": {
+        "type": "CreatedBy",
+        "name": "Created by",
+        "members": [
+          {
+            "id": "1001",
+            "name": "Cleo",
+            "email": "cleo@example.com"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": "1001",
+      "expect": [
+        {
+          "key": "1001",
+          "label": "Cleo",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "created by: the member's email when the name is blank",
+      "field": {
+        "type": "CreatedBy",
+        "name": "Created by",
+        "members": [
+          {
+            "id": "1002",
+            "name": "",
+            "email": "dan@example.com"
+          }
+        ]
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": "1002",
+      "expect": [
+        {
+          "key": "1002",
+          "label": "dan@example.com",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "last edited by an unknown user",
+      "field": {
+        "type": "LastEditedBy",
+        "name": "Edited by",
+        "members": []
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": "1003",
+      "expect": [
+        {
+          "key": "1003",
+          "label": "Unknown user",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "relation: the related row's title, Untitled when it is unresolved",
+      "field": {
+        "type": "Relation",
+        "name": "Project",
+        "relationTitles": {
+          "r-1": "Roadmap"
+        }
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": [
+        "r-1",
+        "r-2"
+      ],
+      "expect": [
+        {
+          "key": "r-1",
+          "label": "Roadmap",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "r-2",
+          "label": "Untitled",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "text exact: trimmed",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "exact",
+      "now": "2026-03-15T12:00:00",
+      "value": "  Apple pie  ",
+      "expect": [
+        {
+          "key": "t:apple pie",
+          "label": "Apple pie",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "text exact keys are case-folded like TextIs, labels keep the cell's spelling",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "exact",
+      "now": "2026-03-15T12:00:00",
+      "value": "APPLE Pie",
+      "expect": [
+        {
+          "key": "t:apple pie",
+          "label": "APPLE Pie",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "whitespace-only text is empty",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "exact",
+      "now": "2026-03-15T12:00:00",
+      "value": "   ",
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "No Notes",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "first letter of an accented word",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "first_letter",
+      "now": "2026-03-15T12:00:00",
+      "value": "éclair",
+      "expect": [
+        {
+          "key": "l:É",
+          "label": "É",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "first letter of NFD input (e + combining acute)",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "first_letter",
+      "now": "2026-03-15T12:00:00",
+      "value": "éclair",
+      "expect": [
+        {
+          "key": "l:É",
+          "label": "É",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a text starting with a digit is #",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "first_letter",
+      "now": "2026-03-15T12:00:00",
+      "value": "42 things",
+      "expect": [
+        {
+          "key": "l:#",
+          "label": "#",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "first letter after trimming, uppercased",
+      "field": {
+        "type": "RichText",
+        "name": "Notes"
+      },
+      "textGrouping": "first_letter",
+      "now": "2026-03-15T12:00:00",
+      "value": "  zebra",
+      "expect": [
+        {
+          "key": "l:Z",
+          "label": "Z",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a URL groups by its exact text",
+      "field": {
+        "type": "URL",
+        "name": "Link"
+      },
+      "textGrouping": "exact",
+      "now": "2026-03-15T12:00:00",
+      "value": "https://appflowy.io",
+      "expect": [
+        {
+          "key": "t:https://appflowy.io",
+          "label": "https://appflowy.io",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a URL by first letter",
+      "field": {
+        "type": "URL",
+        "name": "Link"
+      },
+      "textGrouping": "first_letter",
+      "now": "2026-03-15T12:00:00",
+      "value": "https://appflowy.io",
+      "expect": [
+        {
+          "key": "l:H",
+          "label": "H",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a number in a range",
+      "field": {
+        "type": "Number",
+        "name": "Estimate",
+        "numberFormat": 0
+      },
+      "buckets": {
+        "size": 10,
+        "start": 0
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": 12,
+      "expect": [
+        {
+          "key": "n:10",
+          "label": "10–20",
+          "hint": {
+            "rank": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "a number below the start",
+      "field": {
+        "type": "Number",
+        "name": "Estimate",
+        "numberFormat": 0
+      },
+      "buckets": {
+        "size": 10,
+        "start": 0,
+        "min": 0,
+        "max": 30
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": -4,
+      "expect": [
+        {
+          "key": "n:lt:0",
+          "label": "< 0",
+          "hint": {
+            "rank": "-Infinity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a number at the end goes to the last open range",
+      "field": {
+        "type": "Number",
+        "name": "Estimate",
+        "numberFormat": 0
+      },
+      "buckets": {
+        "size": 10,
+        "start": 0,
+        "min": 0,
+        "max": 30
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": 30,
+      "expect": [
+        {
+          "key": "n:ge:30",
+          "label": "≥ 30",
+          "hint": {
+            "rank": "Infinity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty number",
+      "field": {
+        "type": "Number",
+        "name": "Estimate",
+        "numberFormat": 0
+      },
+      "buckets": {
+        "size": 10,
+        "start": 0
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": null,
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "No Estimate",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty value of a field without a name",
+      "field": {
+        "type": "SingleSelect",
+        "name": "",
+        "options": []
+      },
+      "now": "2026-03-15T12:00:00",
+      "value": null,
+      "expect": [
+        {
+          "key": "__empty__",
+          "label": "Empty",
+          "hint": {
+            "label": true
+          }
+        }
+      ]
+    }
+  ],
+  "canonicalNumber": [
+    [
+      0,
+      "0"
+    ],
+    [
+      -0.0,
+      "0"
+    ],
+    [
+      5,
+      "5"
+    ],
+    [
+      1.5,
+      "1.5"
+    ],
+    [
+      0.30000000000000004,
+      "0.3"
+    ],
+    [
+      1e+21,
+      "1e+21"
+    ],
+    [
+      -2.5,
+      "-2.5"
+    ],
+    [
+      4.9999999999,
+      "5"
+    ],
+    [
+      0.1,
+      "0.1"
+    ],
+    [
+      1e-07,
+      "1e-7"
+    ]
+  ],
+  "niceStep": [
+    [
+      0.5,
+      0.5
+    ],
+    [
+      0.51,
+      1
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      -3,
+      1
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      7,
+      10
+    ],
+    [
+      12,
+      20
+    ],
+    [
+      0.03,
+      0.05
+    ],
+    [
+      5025.125628140703,
+      10000
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      2,
+      2
+    ]
+  ],
+  "numberBuckets": [
+    {
+      "name": "auto size over 3, 5 and 8",
+      "values": [
+        3,
+        5,
+        8
+      ],
+      "settings": {},
+      "expect": {
+        "size": 0.5,
+        "start": 3,
+        "groups": [
+          {
+            "key": "n:3",
+            "label": "3–3.5",
+            "count": 1
+          },
+          {
+            "key": "n:5",
+            "label": "5–5.5",
+            "count": 1
+          },
+          {
+            "key": "n:8",
+            "label": "8–8.5",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "size 5",
+      "values": [
+        3,
+        5,
+        8
+      ],
+      "settings": {
+        "size": 5
+      },
+      "expect": {
+        "size": 5,
+        "start": 0,
+        "groups": [
+          {
+            "key": "n:0",
+            "label": "0–5",
+            "count": 1
+          },
+          {
+            "key": "n:5",
+            "label": "5–10",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "size 10 from 0 to 30 with values outside",
+      "values": [
+        -4,
+        3,
+        12,
+        40
+      ],
+      "settings": {
+        "size": 10,
+        "min": 0,
+        "max": 30
+      },
+      "expect": {
+        "size": 10,
+        "start": 0,
+        "min": 0,
+        "max": 30,
+        "groups": [
+          {
+            "key": "n:lt:0",
+            "label": "< 0",
+            "count": 1
+          },
+          {
+            "key": "n:0",
+            "label": "0–10",
+            "count": 1
+          },
+          {
+            "key": "n:10",
+            "label": "10–20",
+            "count": 1
+          },
+          {
+            "key": "n:ge:30",
+            "label": "≥ 30",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "one repeated value",
+      "values": [
+        7,
+        7
+      ],
+      "settings": {},
+      "expect": {
+        "size": 1,
+        "start": 7,
+        "groups": [
+          {
+            "key": "n:7",
+            "label": "7–8",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "more than 200 ranges widen the size",
+      "values": [
+        0,
+        1000000
+      ],
+      "settings": {
+        "size": 1
+      },
+      "expect": {
+        "size": 10000,
+        "start": 0,
+        "groups": [
+          {
+            "key": "n:0",
+            "label": "0–10K",
+            "count": 1
+          },
+          {
+            "key": "n:1000000",
+            "label": "1M–1M",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "float noise: 0.1 x 3 lands in the 0.3 range",
+      "values": [
+        0.1,
+        0.2,
+        0.30000000000000004
+      ],
+      "settings": {
+        "size": 0.1
+      },
+      "expect": {
+        "size": 0.1,
+        "start": 0.1,
+        "groups": [
+          {
+            "key": "n:0.1",
+            "label": "0.1–0.2",
+            "count": 1
+          },
+          {
+            "key": "n:0.2",
+            "label": "0.2–0.3",
+            "count": 1
+          },
+          {
+            "key": "n:0.3",
+            "label": "0.3–0.4",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "a max not above the min is ignored",
+      "values": [
+        2,
+        9
+      ],
+      "settings": {
+        "size": 5,
+        "min": 5,
+        "max": 5
+      },
+      "expect": {
+        "size": 5,
+        "start": 5,
+        "min": 5,
+        "groups": [
+          {
+            "key": "n:lt:5",
+            "label": "< 5",
+            "count": 1
+          },
+          {
+            "key": "n:5",
+            "label": "5–10",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "a size of zero or below is auto",
+      "values": [
+        10,
+        30
+      ],
+      "settings": {
+        "size": 0
+      },
+      "expect": {
+        "size": 2,
+        "start": 10,
+        "groups": [
+          {
+            "key": "n:10",
+            "label": "10–12",
+            "count": 1
+          },
+          {
+            "key": "n:30",
+            "label": "30–32",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "no numbers, no ranges",
+      "values": [],
+      "settings": {
+        "size": 5
+      },
+      "expect": null
+    }
+  ],
+  "sort": [
+    {
+      "name": "auto: options in option order, the empty group last",
+      "xSort": "auto",
+      "groups": [
+        {
+          "key": "o-done",
+          "label": "Done",
+          "hint": {
+            "rank": 2
+          }
+        },
+        {
+          "key": "__empty__",
+          "label": "No Status",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "o-todo",
+          "label": "Todo",
+          "hint": {
+            "rank": 0
+          }
+        },
+        {
+          "key": "o-doing",
+          "label": "Doing",
+          "hint": {
+            "rank": 1
+          }
+        }
+      ],
+      "expect": [
+        "o-todo",
+        "o-doing",
+        "o-done",
+        "__empty__"
+      ]
+    },
+    {
+      "name": "auto: checked before unchecked",
+      "xSort": "auto",
+      "groups": [
+        {
+          "key": "unchecked",
+          "label": "Unchecked",
+          "hint": {
+            "rank": 1
+          }
+        },
+        {
+          "key": "checked",
+          "label": "Checked",
+          "hint": {
+            "rank": 0
+          }
+        }
+      ],
+      "expect": [
+        "checked",
+        "unchecked"
+      ]
+    },
+    {
+      "name": "auto: relative buckets in order, then months by key",
+      "xSort": "auto",
+      "groups": [
+        {
+          "key": "2026-05",
+          "label": "May 2026",
+          "hint": {
+            "rank": 7,
+            "tie": "2026-05"
+          }
+        },
+        {
+          "key": "rel:today",
+          "label": "Today",
+          "hint": {
+            "rank": 3
+          }
+        },
+        {
+          "key": "2026-01",
+          "label": "Jan 2026",
+          "hint": {
+            "rank": 7,
+            "tie": "2026-01"
+          }
+        },
+        {
+          "key": "rel:last_7_days",
+          "label": "Last 7 days",
+          "hint": {
+            "rank": 1
+          }
+        }
+      ],
+      "expect": [
+        "rel:last_7_days",
+        "rel:today",
+        "2026-01",
+        "2026-05"
+      ]
+    },
+    {
+      "name": "auto: number ranges ascending with the open ranges at the ends",
+      "xSort": "auto",
+      "groups": [
+        {
+          "key": "n:ge:30",
+          "label": "≥ 30",
+          "hint": {
+            "rank": "Infinity"
+          }
+        },
+        {
+          "key": "n:10",
+          "label": "10–20",
+          "hint": {
+            "rank": 10
+          }
+        },
+        {
+          "key": "n:lt:0",
+          "label": "< 0",
+          "hint": {
+            "rank": "-Infinity"
+          }
+        },
+        {
+          "key": "n:0",
+          "label": "0–10",
+          "hint": {
+            "rank": 0
+          }
+        }
+      ],
+      "expect": [
+        "n:lt:0",
+        "n:0",
+        "n:10",
+        "n:ge:30"
+      ]
+    },
+    {
+      "name": "auto: labels A to Z, ranked groups first",
+      "xSort": "auto",
+      "groups": [
+        {
+          "key": "t:pear",
+          "label": "pear",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "o-x",
+          "label": "X",
+          "hint": {
+            "rank": 0
+          }
+        },
+        {
+          "key": "t:apple",
+          "label": "Apple",
+          "hint": {
+            "label": true
+          }
+        }
+      ],
+      "expect": [
+        "o-x",
+        "t:apple",
+        "t:pear"
+      ]
+    },
+    {
+      "name": "auto: equal labels fall back to the key",
+      "xSort": "auto",
+      "groups": [
+        {
+          "key": "u-9",
+          "label": "Unknown person",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "u-3",
+          "label": "Unknown person",
+          "hint": {
+            "label": true
+          }
+        }
+      ],
+      "expect": [
+        "u-3",
+        "u-9"
+      ]
+    },
+    {
+      "name": "value high to low, ties in default order, empty last",
+      "xSort": "value_desc",
+      "groups": [
+        {
+          "key": "__empty__",
+          "label": "No Status",
+          "hint": {
+            "label": true
+          },
+          "value": 9
+        },
+        {
+          "key": "o-c",
+          "label": "C",
+          "hint": {
+            "rank": 2
+          },
+          "value": 5
+        },
+        {
+          "key": "o-b",
+          "label": "B",
+          "hint": {
+            "rank": 1
+          },
+          "value": 3
+        },
+        {
+          "key": "o-a",
+          "label": "A",
+          "hint": {
+            "rank": 0
+          },
+          "value": 5
+        }
+      ],
+      "expect": [
+        "o-a",
+        "o-c",
+        "o-b",
+        "__empty__"
+      ]
+    },
+    {
+      "name": "value low to high",
+      "xSort": "value_asc",
+      "groups": [
+        {
+          "key": "o-c",
+          "label": "C",
+          "hint": {
+            "rank": 2
+          },
+          "value": 5
+        },
+        {
+          "key": "o-b",
+          "label": "B",
+          "hint": {
+            "rank": 1
+          },
+          "value": 3
+        },
+        {
+          "key": "o-a",
+          "label": "A",
+          "hint": {
+            "rank": 0
+          },
+          "value": 5
+        }
+      ],
+      "expect": [
+        "o-b",
+        "o-a",
+        "o-c"
+      ]
+    },
+    {
+      "name": "A to Z ignores case and accents, then compares the raw text",
+      "xSort": "label_asc",
+      "groups": [
+        {
+          "key": "t:b",
+          "label": "b",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "t:á",
+          "label": "Á",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "t:a",
+          "label": "a",
+          "hint": {
+            "label": true
+          }
+        }
+      ],
+      "expect": [
+        "t:a",
+        "t:á",
+        "t:b"
+      ]
+    },
+    {
+      "name": "Z to A",
+      "xSort": "label_desc",
+      "groups": [
+        {
+          "key": "t:b",
+          "label": "b",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "t:á",
+          "label": "Á",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "t:a",
+          "label": "a",
+          "hint": {
+            "label": true
+          }
+        }
+      ],
+      "expect": [
+        "t:b",
+        "t:á",
+        "t:a"
+      ]
+    },
+    {
+      "name": "A to Z on options ignores the option order",
+      "xSort": "label_asc",
+      "groups": [
+        {
+          "key": "o-todo",
+          "label": "Todo",
+          "hint": {
+            "rank": 0
+          }
+        },
+        {
+          "key": "o-doing",
+          "label": "Doing",
+          "hint": {
+            "rank": 1
+          }
+        },
+        {
+          "key": "o-done",
+          "label": "Done",
+          "hint": {
+            "rank": 2
+          }
+        }
+      ],
+      "expect": [
+        "o-doing",
+        "o-done",
+        "o-todo"
+      ]
+    },
+    {
+      "name": "manual: listed keys first (a stale key is skipped), the rest in default order",
+      "xSort": "manual",
+      "manualOrder": [
+        "o-done",
+        "o-gone",
+        "o-todo"
+      ],
+      "groups": [
+        {
+          "key": "o-todo",
+          "label": "Todo",
+          "hint": {
+            "rank": 0
+          }
+        },
+        {
+          "key": "o-doing",
+          "label": "Doing",
+          "hint": {
+            "rank": 1
+          }
+        },
+        {
+          "key": "o-done",
+          "label": "Done",
+          "hint": {
+            "rank": 2
+          }
+        },
+        {
+          "key": "__empty__",
+          "label": "No Status",
+          "hint": {
+            "label": true
+          }
+        }
+      ],
+      "expect": [
+        "o-done",
+        "o-todo",
+        "o-doing",
+        "__empty__"
+      ]
+    },
+    {
+      "name": "manual with an empty list is the default order",
+      "xSort": "manual",
+      "manualOrder": [],
+      "groups": [
+        {
+          "key": "o-done",
+          "label": "Done",
+          "hint": {
+            "rank": 2
+          }
+        },
+        {
+          "key": "o-todo",
+          "label": "Todo",
+          "hint": {
+            "rank": 0
+          }
+        }
+      ],
+      "expect": [
+        "o-todo",
+        "o-done"
+      ]
+    },
+    {
+      "name": "manual lists the empty group last even when the order names it first",
+      "xSort": "manual",
+      "manualOrder": [
+        "__empty__",
+        "o-done"
+      ],
+      "groups": [
+        {
+          "key": "o-todo",
+          "label": "Todo",
+          "hint": {
+            "rank": 0
+          }
+        },
+        {
+          "key": "__empty__",
+          "label": "No Status",
+          "hint": {
+            "label": true
+          }
+        },
+        {
+          "key": "o-done",
+          "label": "Done",
+          "hint": {
+            "rank": 2
+          }
+        }
+      ],
+      "expect": [
+        "o-done",
+        "o-todo",
+        "__empty__"
+      ]
+    }
+  ],
+  "labelCompare": [
+    [
+      "apple",
+      "Banana",
+      -1
+    ],
+    [
+      "é",
+      "e",
+      1
+    ],
+    [
+      "Zebra",
+      "zebra",
+      -1
+    ],
+    [
+      "Doing",
+      "Doing",
+      0
+    ],
+    [
+      "l:#",
+      "l:A",
+      -1
+    ],
+    [
+      "Straße",
+      "strasse",
+      1
+    ]
+  ]
+}

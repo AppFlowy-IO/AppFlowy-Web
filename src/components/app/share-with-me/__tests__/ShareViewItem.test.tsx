@@ -322,9 +322,16 @@ function configureCanonicalPermissions(accessLevel = AccessLevel.FullAccess) {
   }));
 }
 
+function clearCanonicalPermissions() {
+  jest.requireActual<typeof import('@/components/app/view-actions/useViewActionPermissions')>(
+    '@/components/app/view-actions/useViewActionPermissions'
+  ).clearObjectPermissionCache();
+}
+
 describe('shared page sidebar actions', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    clearCanonicalPermissions();
     mockRole = Role.Member;
     mockViewId = 'root-page';
     mockAddPage.mockResolvedValue({ view_id: 'created-child' });
@@ -394,7 +401,7 @@ describe('shared page sidebar actions', () => {
     }
   );
 
-  it('revalidates on the next hover and removes Add when write access has been revoked', async () => {
+  it('revalidates after permission invalidation and removes Add when write access has been revoked', async () => {
     configureCanonicalPermissions();
     renderShared();
     const row = screen.getByTestId('row-root-page');
@@ -407,6 +414,7 @@ describe('shared page sidebar actions', () => {
     fireEvent.click(addButton);
     fireEvent.mouseLeave(row);
     configureCanonicalPermissions(AccessLevel.ReadOnly);
+    act(clearCanonicalPermissions);
     fireEvent.mouseEnter(row);
 
     await waitFor(() =>

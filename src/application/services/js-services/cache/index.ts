@@ -1,5 +1,10 @@
 import * as Y from 'yjs';
 
+import {
+  areDatabaseRowDocsReleased,
+  hasRowDocSyncBinding,
+  subscribeRowDocRelease,
+} from '@/application/database-blob/row-doc-retention';
 import { type DatabaseRowDocSeed, isDatabaseRowDocSeedCurrent } from '@/application/database-blob/row-seed-fence';
 import { installLegacyCellFieldTypeNormalizer } from '@/application/database-yjs/cell.field-type';
 import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -494,6 +499,40 @@ export function invalidateDatabaseRowCache(databaseId: string): void {
     rowDocs.delete(rowId);
   }
 }
+
+/** Drops a row doc from memory. Its IndexedDB copy stays: the provider finishes the writes it has queued. */
+function evictRowDocEntry(rowObjectId: string, entry: RowDocEntry, options?: { docDestroyed?: boolean }) {
+  if (rowDocs.get(rowObjectId) === entry) rowDocs.delete(rowObjectId);
+  if (!options?.docDestroyed) entry.doc.destroy();
+  evictProviderCache(rowObjectId);
+}
+
+// Row docs used to stay in memory for the life of the tab. One is kept only
+// while a row map or a sync context references it (see row-doc-retention).
+subscribeRowDocRelease({
+  onDatabaseReleased: (databaseId) => {
+    let evicted = 0;
+
+    for (const [rowId, rowDatabaseId] of rowDatabaseIds) {
+      if (rowDatabaseId !== databaseId || hasRowDocSyncBinding(rowId)) continue;
+      const entry = rowDocs.get(rowId);
+
+      if (!entry) continue;
+      evictRowDocEntry(rowId, entry);
+      evicted += 1;
+    }
+
+    Log.debug('[Database] evicted the row docs of a released database', { databaseId, evicted });
+  },
+  onRowUnbound: (rowId, doc, options) => {
+    const databaseId = rowDatabaseIds.get(rowId);
+    const entry = rowDocs.get(rowId);
+
+    // A replacement doc cached for the same row belongs to whoever opened it.
+    if (!databaseId || !areDatabaseRowDocsReleased(databaseId) || entry?.doc !== doc) return;
+    evictRowDocEntry(rowId, entry, options);
+  },
+});
 
 const appliedSeedBytesByDoc = new WeakMap<YDoc, WeakSet<Uint8Array>>();
 const ROW_KEY_SEPARATOR = '_rows_';

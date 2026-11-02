@@ -5,7 +5,7 @@ import { loginAndCreateGrid } from '../../support/filter-test-helpers';
 import { closeRowDetail, getVisibleDataRowIds, openRowDetailByRowId } from '../../support/row-detail-helpers';
 import { dragPeekResizer, readPeekWidth } from '../../support/side-peek-helpers';
 import { generateRandomEmail } from '../../support/test-config';
-import { waitForDatabaseDocReady } from '../../support/yjs-inject-helpers';
+import { setViewOpenPagesIn, waitForDatabaseDocReady } from '../../support/yjs-inject-helpers';
 
 async function chooseMode(page: Page, mode: 'side' | 'center') {
   await page.getByTestId('row-peek-mode-menu').click();
@@ -54,6 +54,7 @@ async function storedWidth(page: Page) {
 
 test('remembers the resized width across rows and reloads without saving viewport clamping', async ({ page, request }) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
+  await setViewOpenPagesIn(page, 'side_peek');
   await waitForDatabaseDocReady(page);
   const [first, second] = await getVisibleDataRowIds(page);
 
@@ -95,6 +96,7 @@ test('remembers the resized width across rows and reloads without saving viewpor
 
 test('peek choices are temporary across close, reopen, and reload while row edits persist', async ({ page, request }) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
+  await setViewOpenPagesIn(page, 'side_peek');
   await waitForDatabaseDocReady(page);
   const [first] = await getVisibleDataRowIds(page);
 
@@ -121,6 +123,7 @@ test('peek choices are temporary across close, reopen, and reload while row edit
 
 test('adjacent-row shortcuts keep the current peek mode until the peek closes', async ({ page, request }) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
+  await setViewOpenPagesIn(page, 'side_peek');
   await waitForDatabaseDocReady(page);
   const [first, second] = await getVisibleDataRowIds(page);
 
@@ -164,6 +167,7 @@ test('adjacent-row shortcuts keep the current peek mode until the peek closes', 
 
 test('legacy saved modes are ignored and left untouched', async ({ page, request }) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
+  await setViewOpenPagesIn(page, 'side_peek');
   await waitForDatabaseDocReady(page);
   const [first] = await getVisibleDataRowIds(page);
   const gridUrl = page.url();

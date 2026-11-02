@@ -33,6 +33,12 @@ export type BoardDragContextValue = {
   }) => CleanupFn;
 
   instanceId: symbol;
+
+  /**
+   * The effective view has a sort (WP09 §1.4): cards keep their sorted place,
+   * so no card is a drop target and a column refuses its own cards.
+   */
+  sorted: boolean;
 };
 
 export const BoardDragContext = createContext<BoardDragContextValue | null>(null);

@@ -1,15 +1,16 @@
 import { execFileSync } from 'node:child_process';
 
+import { mockServerInfoPreservingCapabilities } from './server-info-helpers';
+
 import type { Page } from '@playwright/test';
 
-import { mockServerInfo } from './server-info-helpers';
 
 /**
  * Pro feature fixtures explicitly model an official cloud server, independent
  * of CI's localhost URL, and provide its active plans and subscription details.
  */
 export async function mockProSubscription(page: Page): Promise<void> {
-  await mockServerInfo(page, { self_hosted: false });
+  await mockServerInfoPreservingCapabilities(page, { self_hosted: false });
   await mockProBillingResponses(page);
 }
 
@@ -65,6 +66,18 @@ export function grantTestWorkspaceProSubscription(workspaceId: string): void {
 
   if (!workspaceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
     throw new Error('Open a test workspace before granting its Pro subscription');
+  }
+
+  grantWorkspaceProSubscription(workspaceId);
+}
+
+/** `grantTestProSubscription` for a workspace the fixture already knows by id. */
+export function grantWorkspaceProSubscription(workspaceId: string): void {
+  const container = process.env.APPFLOWY_TEST_POSTGRES_CONTAINER;
+
+  if (!container) {
+    if (process.env.CI) throw new Error('CI must provide APPFLOWY_TEST_POSTGRES_CONTAINER for Pro fixtures');
+    return;
   }
 
   execFileSync(

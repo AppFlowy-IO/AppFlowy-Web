@@ -4,7 +4,7 @@
  * nothing but the chart's own row observers can notice an in-place edit.
  */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { type ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import * as Y from 'yjs';
 
 // Real English strings, so labels read like the UI ("No Status", "Jan 2026").
@@ -22,8 +22,8 @@ jest.mock('react-i18next', () => {
 });
 
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
-import { DEFAULT_CHART_LAYOUT_SETTINGS } from '@/application/database-yjs/chart-layout-setting';
-import { ChartAggregationType, ChartDataItem, ChartLayoutSettings } from '@/application/database-yjs/chart.type';
+import { DEFAULT_CHART_EXTENDED_SETTINGS } from '@/application/database-yjs/chart-extended-settings';
+import { ChartAggregationType, ChartDataItem, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { SelectOption, SelectOptionColor } from '@/application/database-yjs/fields';
@@ -40,6 +40,7 @@ import {
 } from '@/application/types';
 
 import { useChartData } from './useChartData';
+import { toCategoryItems } from './chartSeries';
 
 const DATABASE_ID = 'chart-database';
 const VIEW_ID = 'chart-view';
@@ -154,9 +155,18 @@ const settleFrames = () =>
   );
 
 function renderLiveChart(wrapper: ReturnType<typeof createFixture>['wrapper'], patch: Partial<ChartLayoutSettings>) {
-  const settings: ChartLayoutSettings = { ...DEFAULT_CHART_LAYOUT_SETTINGS, ...patch };
+  const settings: ChartLayoutSettings = {
+    chartType: ChartType.Bar, xFieldId: '', aggregationType: ChartAggregationType.Count,
+    showEmptyValues: true, cumulative: false, dateCondition: DateGroupCondition.Month,
+    extended: { ...DEFAULT_CHART_EXTENDED_SETTINGS, xSort: 'label_asc' }, ...patch,
+  };
 
-  return renderHook(() => useChartData({ settings }), { wrapper });
+  return renderHook(() => {
+    const data = useChartData({ settings });
+    const chartData = useMemo(() => toCategoryItems(data.seriesData), [data.seriesData]);
+
+    return { ...data, chartData };
+  }, { wrapper });
 }
 
 describe('useChartData live row updates', () => {
@@ -168,7 +178,6 @@ describe('useChartData live row updates', () => {
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 1],
         ['Todo', 1],
-        ['No Status', 0],
       ])
     );
 
@@ -180,7 +189,6 @@ describe('useChartData live row updates', () => {
     await waitFor(() =>
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 2],
-        ['No Status', 0],
       ])
     );
     expect(result.current.chartData[0].rowIds).toEqual(['r1', 'r2']);
@@ -198,7 +206,6 @@ describe('useChartData live row updates', () => {
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 5],
         ['Todo', 10],
-        ['No Status', 0],
       ])
     );
 
@@ -210,7 +217,6 @@ describe('useChartData live row updates', () => {
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 5],
         ['Todo', 100],
-        ['No Status', 0],
       ])
     );
   });
@@ -239,7 +245,6 @@ describe('useChartData live row updates', () => {
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 1],
         ['Todo', 2],
-        ['No Status', 0],
       ])
     );
   });
@@ -252,7 +257,7 @@ describe('useChartData live row updates', () => {
       r2: createRowDoc('r2', DATABASE_ID, {}, '0', feb),
     };
     const { wrapper } = createFixture({ fields: [EDITED_FIELD], rows });
-    const { result } = renderLiveChart(wrapper, { xFieldId: 'edited', dateCondition: DateGroupCondition.Month });
+    const { result } = renderLiveChart(wrapper, { xFieldId: 'edited', dateCondition: DateGroupCondition.Month, extended: DEFAULT_CHART_EXTENDED_SETTINGS });
 
     await waitFor(() =>
       expect(summarize(result.current.chartData)).toEqual([
@@ -276,7 +281,6 @@ describe('useChartData live row updates', () => {
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 1],
         ['Todo', 1],
-        ['No Status', 0],
       ])
     );
     const before = result.current.chartData;
@@ -304,7 +308,6 @@ describe('useChartData live row updates', () => {
       expect(summarize(result.current.chartData)).toEqual([
         ['Done', 1],
         ['Todo', 1],
-        ['No Status', 0],
       ])
     );
     const before = result.current.chartData;

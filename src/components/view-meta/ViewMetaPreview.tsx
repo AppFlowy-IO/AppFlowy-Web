@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CoverType, ViewIconType, ViewLayout, ViewMetaCover, ViewMetaIcon, ViewMetaProps } from '@/application/types';
@@ -8,7 +8,7 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import TitleEditable from '@/components/view-meta/TitleEditable';
 import ViewCover from '@/components/view-meta/ViewCover';
 import { ColorEnum } from '@/utils/color';
-import { clampCoverOffset } from '@/utils/cover';
+import { clampCoverOffset, resolveViewCover } from '@/utils/cover';
 
 const AddIconCover = lazy(() => import('@/components/view-meta/AddIconCover'));
 
@@ -54,34 +54,7 @@ export function ViewMetaPreview({
     setIcon(iconProp || null);
   }, [iconProp]);
 
-  const coverType = useMemo(() => {
-    if (cover && [CoverType.NormalColor, CoverType.GradientColor].includes(cover.type)) {
-      return 'color';
-    }
-
-    if (CoverType.BuildInImage === cover?.type) {
-      return 'built_in';
-    }
-
-    if (cover && [CoverType.CustomImage, CoverType.UpsplashImage].includes(cover.type)) {
-      return 'custom';
-    }
-  }, [cover]);
-
-  const coverValue = useMemo(() => {
-    if (coverType === CoverType.BuildInImage) {
-      return {
-        1: '/covers/m_cover_image_1.png',
-        2: '/covers/m_cover_image_2.png',
-        3: '/covers/m_cover_image_3.png',
-        4: '/covers/m_cover_image_4.png',
-        5: '/covers/m_cover_image_5.png',
-        6: '/covers/m_cover_image_6.png',
-      }[cover?.value as string];
-    }
-
-    return cover?.value;
-  }, [coverType, cover?.value]);
+  const resolvedCover = resolveViewCover(cover);
   const { t } = useTranslation();
 
   const [isHover, setIsHover] = React.useState(false);
@@ -179,8 +152,8 @@ export function ViewMetaPreview({
       {cover && (
         <ViewCover
           onUpdateCover={handleUpdateCover}
-          coverType={coverType}
-          coverValue={coverValue}
+          coverType={resolvedCover?.coverType}
+          coverValue={resolvedCover?.coverValue}
           onRemoveCover={handleUpdateCover}
           readOnly={readOnly}
           layout={layout}
@@ -256,8 +229,9 @@ export function ViewMetaPreview({
                 onUploadFile={onUploadFile}
               >
                 <div
-                  className={`view-icon flex h-[1.25em] w-[1.25em] items-center justify-center px-1.5 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-content-hover '
-                    }`}
+                  className={`view-icon flex h-[1.25em] w-[1.25em] items-center justify-center px-1.5 ${
+                    readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-content-hover '
+                  }`}
                 >
                   <PageIcon
                     view={{

@@ -248,6 +248,30 @@ describe('CalendarEventDraft defaults and properties', () => {
     expect(Y.encodeStateAsUpdate(source.databaseDoc)).toEqual(before);
   });
 
+  it('uses the given prefill filters instead of the real view\'s', () => {
+    const { source, database } = fixture();
+
+    database
+      .get(YjsDatabaseKey.views)
+      .get('calendar-view')
+      .set(
+        YjsDatabaseKey.filters,
+        Y.Array.from([{ id: 'saved', field_id: 'notes', filter_type: 2, condition: 0, ty: 0, content: 'Saved view' }])
+      );
+    // A dashboard widget's private filter and a global filter (WP07 P0-5).
+    const effective = new Y.Doc().getArray('filters');
+
+    effective.push([
+      { id: 'private', field_id: 'notes', filter_type: 2, condition: 0, ty: 0, content: 'Private' },
+      { id: 'global', field_id: 'check', filter_type: 2, condition: 0, ty: FieldType.Checkbox, content: '' },
+    ]);
+    const draft = new CalendarEventDraft(source, 'date', selection, effective as never);
+
+    drafts.push(draft);
+    expect(draft.cells.get('notes')?.get(YjsDatabaseKey.data)).toBe('Private');
+    expect(draft.cells.get('check')?.get(YjsDatabaseKey.data)).toBe('Yes');
+  });
+
   it('normalizes exclusive all-day ranges and expands a short timed click to one hour', () => {
     const { source } = fixture();
     const oneDay = createDraft(source);

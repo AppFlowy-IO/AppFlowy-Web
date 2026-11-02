@@ -11,6 +11,13 @@ import { useSyncExternalStore } from 'react';
 
 import { RowDocumentSourcePayload } from '@/application/types';
 
+export interface RowPageProperty {
+  id: string;
+  name: string;
+  type: string;
+  value: string | number | boolean | null;
+}
+
 export interface ActiveRowPageInfo {
   rowId: string;
   documentId: string;
@@ -18,6 +25,8 @@ export interface ActiveRowPageInfo {
   source: RowDocumentSourcePayload | null;
   /** True when the row's document has content (meta is_document_empty === false). */
   hasDocument: boolean;
+  /** Read the currently visible row properties without loading related records or mutating the row. */
+  getProperties?: () => RowPageProperty[];
 }
 
 let activeRowPage: ActiveRowPageInfo | null = null;

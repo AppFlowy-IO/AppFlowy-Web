@@ -12,6 +12,11 @@ export interface WorkspaceDatabaseViewItem {
   name: string;
   icon: import('@/application/types').ViewIcon | null;
   parent_view_id: string | null;
+  /**
+   * The dashboard view that owns this view (WP05 §1.1), when the server
+   * projects the folder's `extra.dashboard_owner` into the catalog.
+   */
+  dashboard_owner?: string | null;
 }
 
 export interface WorkspaceDatabaseWithViews {

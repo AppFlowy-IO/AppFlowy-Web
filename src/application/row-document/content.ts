@@ -59,4 +59,3 @@ export function hasYjsBlockContent(block: Y.Map<unknown>) {
 
   return true;
 }
-

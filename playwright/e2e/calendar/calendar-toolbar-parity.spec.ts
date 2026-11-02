@@ -2,16 +2,21 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { calendarDraftTitle, switchPlaceholderCalendarView } from '../../support/calendar-placeholder-helpers';
-import { loginAndCreateCalendar, switchCalendarView } from '../../support/calendar-test-helpers';
+import {
+  closeCalendarViewMenu,
+  loginAndCreateCalendar,
+  openCalendarViewMenu,
+  switchCalendarView,
+} from '../../support/calendar-test-helpers';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
-import { mockServerInfo } from '../../support/server-info-helpers';
 import {
   BlockSelectors,
   CalendarSelectors,
   DatabaseViewSelectors,
   SlashCommandSelectors,
 } from '../../support/selectors';
+import { mockServerInfo } from '../../support/server-info-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 async function today(page: Page) {
@@ -77,6 +82,22 @@ async function box(locator: Locator) {
   return result!;
 }
 
+test('opening an expanded calendar range menu preserves its selected range', async ({ page, request }) => {
+  setupPageErrorHandling(page);
+  await loginAndCreateCalendar(page, request, generateRandomEmail());
+  await openCalendarViewMenu(page);
+  await openCalendarViewMenu(page);
+  await CalendarSelectors.numberOfDaysMenu(page).click();
+  await expect(CalendarSelectors.customDayOption(page, 2)).toBeVisible();
+  await openCalendarViewMenu(page);
+  await expect(CalendarSelectors.monthViewOption(page)).toHaveAttribute('aria-checked', 'true');
+  await closeCalendarViewMenu(page);
+  await closeCalendarViewMenu(page);
+  await CalendarSelectors.nextButton(page).click();
+  await CalendarSelectors.prevButton(page).click();
+  await expect(CalendarSelectors.viewSelect(page)).toHaveText('Month');
+});
+
 test('calendar custom ranges navigate by their exact day count and standard views preserve the focused date', async ({
   page,
   request,
@@ -92,7 +113,7 @@ test('calendar custom ranges navigate by their exact day count and standard view
   await expectRadius(CalendarSelectors.viewSelect(page), 8);
   await expectRadius(CalendarSelectors.todayButton(page), 8);
   await CalendarSelectors.toolbar(page).screenshot({ path: testInfo.outputPath('calendar-toolbar-desktop.png') });
-  await CalendarSelectors.viewSelect(page).click();
+  await openCalendarViewMenu(page);
   await expectRadius(page.getByRole('menu'), 12);
   await expect(CalendarSelectors.monthViewOption(page)).toHaveAttribute('aria-checked', 'true');
   await expect(CalendarSelectors.weekViewOption(page)).toHaveAttribute('aria-checked', 'false');
@@ -102,6 +123,7 @@ test('calendar custom ranges navigate by their exact day count and standard view
   for (const count of [2, 3, 4, 5, 6, 8]) {
     await expect(CalendarSelectors.customDayOption(page, count)).toBeVisible();
   }
+
   await expectRadius(page.getByRole('menu').last(), 12);
   await expectRadius(CalendarSelectors.customDayOption(page, 2), 6);
   await expect(CalendarSelectors.customDayOption(page, 7)).toHaveCount(0);
@@ -109,8 +131,7 @@ test('calendar custom ranges navigate by their exact day count and standard view
     .getByRole('menu')
     .last()
     .screenshot({ path: testInfo.outputPath('calendar-day-count-menu.png') });
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await closeCalendarViewMenu(page);
 
   // Standard navigation retains the focused day, even when its visible range starts earlier.
   await clickNavigation(page, 'next');
@@ -130,11 +151,10 @@ test('calendar custom ranges navigate by their exact day count and standard view
     await expect.poll(() => displayedDates(page)).toEqual(range(addDays(currentDate, days), days));
     await clickNavigation(page, 'prev');
     await expect.poll(() => displayedDates(page)).toEqual(range(currentDate, days));
-    await CalendarSelectors.viewSelect(page).filter({ visible: true }).last().click();
+    await openCalendarViewMenu(page);
     await CalendarSelectors.numberOfDaysMenu(page).click();
     await expect(CalendarSelectors.customDayOption(page, days)).toHaveAttribute('aria-checked', 'true');
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
+    await closeCalendarViewMenu(page);
   }
 
   // Four eight-day steps must cross a month boundary without snapping to a week.
@@ -142,6 +162,7 @@ test('calendar custom ranges navigate by their exact day count and standard view
     await clickNavigation(page, 'next');
     await expect.poll(() => displayedDates(page)).toEqual(range(addDays(currentDate, offset), 8));
   }
+
   expect(addDays(currentDate, 32).slice(0, 7)).not.toBe(currentDate.slice(0, 7));
   await clickNavigation(page, 'today');
   await expect.poll(() => displayedDates(page)).toEqual(range(currentDate, 8));
@@ -185,6 +206,7 @@ test('calendar shortcuts navigate once with a sticky toolbar and leave focused e
     ) {
       scroller = scroller.parentElement;
     }
+
     if (!scroller) throw new Error('The calendar has no scrollable viewport');
     scroller.scrollTop = 450;
     (document.querySelector('.calendar-wrapper') as HTMLElement).focus({ preventScroll: true });
@@ -318,6 +340,7 @@ test('calendar tabs retain their own range and wheel navigation preserves the fo
     while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
       scroller = scroller.parentElement;
     }
+
     if (!scroller) throw new Error('The calendar has no scrollable viewport');
     scroller.scrollTop = scroller.scrollHeight;
   });

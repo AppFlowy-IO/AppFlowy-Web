@@ -1,4 +1,5 @@
 const newColors = require('./new-colors.cjs');
+const dashboardColors = require('./dashboard.cjs');
 
 module.exports = {
   // Existing AppFlowy colors
@@ -72,6 +73,8 @@ module.exports = {
     'placeholder': 'var(--writer-placeholder)',
   },
   ...newColors,
+  // Dashboard and chart tokens (`bg-dash-*`, `text-chart-*`).
+  ...dashboardColors,
   'fill': {
     'toolbar': 'var(--fill-toolbar)',
     'default': 'var(--fill-default)',

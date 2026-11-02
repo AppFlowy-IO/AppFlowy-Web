@@ -12,7 +12,7 @@ import {
 } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { getTokenParsed } from '@/application/session/token';
-import { View, ViewLayout } from '@/application/types';
+import { UIVariant, View, ViewLayout } from '@/application/types';
 
 import { clearRelationViewsCache, useRelationData } from './useRelationData';
 
@@ -152,6 +152,45 @@ describe('useRelationData', () => {
       }),
     ]);
     expect(result.current.selectedView?.name).toBe('Projects');
+  });
+
+  it.each([false, true])('keeps published relations on public metadata with signed-in=%s', async (signedIn) => {
+    if (!signedIn) jest.mocked(getTokenParsed).mockReturnValue(null as never);
+
+    const getViewIdFromDatabaseId = jest.fn().mockResolvedValue('published-grid');
+    const publishedView = {
+      view_id: 'published-grid',
+      name: 'Published projects',
+      layout: ViewLayout.Grid,
+      parent_view_id: null,
+    } as View;
+    const loadViewMeta = jest.fn().mockResolvedValue(publishedView);
+
+    jest.mocked(useDatabaseContext).mockReturnValue({
+      workspaceId: 'publish',
+      variant: UIVariant.Publish,
+      getViewIdFromDatabaseId,
+      loadViewMeta,
+    } as never);
+
+    const { result, rerender } = renderHook(() => useRelationData('field-1'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.selectedView?.name).toBe('Published projects'));
+    expect(getViewIdFromDatabaseId).toHaveBeenCalledWith('database-1');
+    expect(loadViewMeta).toHaveBeenCalledWith('published-grid', undefined, { metadataOnly: true });
+    expect(result.current.databaseCandidates).toEqual([]);
+
+    // Session invalidation updates the private catalog. Public relation headers
+    // must neither refetch it nor lose their independently published metadata.
+    act(() => publishMockWorkspaceCatalog(undefined));
+    rerender();
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.selectedView?.name).toBe('Published projects');
+    expect(getWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
   });
 
   it('waits for the catalog before skipping fallback metadata for a catalogued target', async () => {

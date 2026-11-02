@@ -1,0 +1,39 @@
+{
+  "locale": "he",
+  "terms": {
+    "dashboard": "לוח בקרה",
+    "widget": "וידג'ט",
+    "chart": "תרשים",
+    "view": "תצוגה",
+    "row": "שורה",
+    "property": "מאפיין",
+    "field": "שדה",
+    "database": "מסד נתונים",
+    "source": "מקור",
+    "page": "עמוד",
+    "workspace": "מרחב עבודה",
+    "done": "בוצע",
+    "edit": "עריכה",
+    "delete": "מחיקה",
+    "duplicate": "שכפול",
+    "save": "שמירה",
+    "cancel": "ביטול",
+    "close": "סגירה",
+    "back": "חזרה",
+    "settings": "הגדרות",
+    "filter": "מסנן",
+    "sort": "מיון",
+    "search": "חיפוש",
+    "undo": "הסגה",
+    "redo": "ביצוע מחדש",
+    "reset": "איפוס",
+    "untitled": "ללא שם",
+    "day": "יום",
+    "week": "שבוע",
+    "month": "חודש",
+    "year": "שנה"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

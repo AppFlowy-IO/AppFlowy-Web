@@ -33,6 +33,7 @@ jest.mock('@/application/database-yjs/context', () => ({
   useDatabaseFields: () => mockFields,
   useSharedRoot: () => mockSharedRoot,
   useReadOnly: () => false,
+  useConditionsReadOnly: () => false,
 }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

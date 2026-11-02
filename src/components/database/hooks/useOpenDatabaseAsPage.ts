@@ -8,22 +8,29 @@ import { YjsDatabaseKey } from '@/application/types';
 interface UseOpenDatabaseAsPageOptions {
   databaseId?: string;
   fallbackViewId?: string;
+  /**
+   * Open exactly this view instead of the database's primary page (a linked
+   * dashboard opens the dashboard view itself, not its host database).
+   */
+  viewId?: string;
 }
 
 /**
- * Opens the primary page for the mounted database.
+ * Opens the primary page for the mounted database, or `viewId` when given.
  *
  * Linked database blocks have their own embedded view ID. Resolving through
  * the shared database ID first prevents their header and toolbar actions from
  * navigating to that embedded view instead of the source database page.
  */
-export function useOpenDatabaseAsPage({ databaseId, fallbackViewId }: UseOpenDatabaseAsPageOptions = {}) {
+export function useOpenDatabaseAsPage({ databaseId, fallbackViewId, viewId }: UseOpenDatabaseAsPageOptions = {}) {
   const { t } = useTranslation();
   const database = useDatabase();
   const { getViewIdFromDatabaseId, navigateToView } = useDatabaseContext();
   const [isOpening, setIsOpening] = useState(false);
   const mountedDatabaseId = databaseId ?? database?.get(YjsDatabaseKey.id);
-  const canOpen = Boolean(navigateToView && ((mountedDatabaseId && getViewIdFromDatabaseId) || fallbackViewId));
+  const canOpen = Boolean(
+    navigateToView && (viewId || (mountedDatabaseId && getViewIdFromDatabaseId) || fallbackViewId)
+  );
 
   const openDatabaseAsPage = useCallback(async () => {
     if (isOpening || !navigateToView) return;
@@ -31,9 +38,9 @@ export function useOpenDatabaseAsPage({ databaseId, fallbackViewId }: UseOpenDat
     setIsOpening(true);
 
     try {
-      let targetViewId: string | null | undefined;
+      let targetViewId: string | null | undefined = viewId;
 
-      if (mountedDatabaseId && getViewIdFromDatabaseId) {
+      if (!targetViewId && mountedDatabaseId && getViewIdFromDatabaseId) {
         targetViewId = await getViewIdFromDatabaseId(mountedDatabaseId);
       }
 
@@ -50,7 +57,7 @@ export function useOpenDatabaseAsPage({ databaseId, fallbackViewId }: UseOpenDat
     } finally {
       setIsOpening(false);
     }
-  }, [fallbackViewId, getViewIdFromDatabaseId, isOpening, mountedDatabaseId, navigateToView, t]);
+  }, [fallbackViewId, getViewIdFromDatabaseId, isOpening, mountedDatabaseId, navigateToView, t, viewId]);
 
   return { canOpen, isOpening, openDatabaseAsPage };
 }

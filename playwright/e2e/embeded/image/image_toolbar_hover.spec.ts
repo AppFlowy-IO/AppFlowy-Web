@@ -10,10 +10,11 @@
  * Migrated from: cypress/e2e/embeded/image/image_toolbar_hover.cy.ts
  */
 import { test, expect, Page } from '@playwright/test';
-import { EditorSelectors } from '../../../support/selectors';
-import { generateRandomEmail } from '../../../support/test-config';
+
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createPageAndInsertImage } from '../../../support/page-utils';
+import { EditorSelectors } from '../../../support/selectors';
+import { generateRandomEmail } from '../../../support/test-config';
 
 // Minimal valid 1x1 PNG buffer
 const PNG_BUFFER = Buffer.from(
@@ -33,7 +34,7 @@ async function createUploadedImageWithPointerOutside(page: Page) {
   // The upload menu can leave the pointer inside this block before it has a
   // remote URL. Start outside so hovering tests a real mouse-enter event.
   await EditorSelectors.firstEditor(page).hover({ position: { x: 5, y: 5 } });
-  await expect(page.getByTestId('copy-image-button')).toBeHidden();
+  await expect(imageBlock.locator('.image-toolbar')).toHaveCSS('opacity', '0');
 
   return imageBlock;
 }
@@ -64,6 +65,7 @@ test.describe('Image Toolbar Hover Actions', () => {
     request,
   }) => {
     const testEmail = generateRandomEmail();
+
     await signInAndWaitForApp(page, request, testEmail);
     await page.waitForTimeout(1000);
     const imageBlock = await createUploadedImageWithPointerOutside(page);
@@ -72,33 +74,38 @@ test.describe('Image Toolbar Hover Actions', () => {
     await imageBlock.hover();
 
     // Verify toolbar actions are visible without errors
-    await expect(page.getByTestId('copy-image-button')).toBeVisible();
-    await expect(page.getByTestId('download-image-button')).toBeVisible();
+    await expect(imageBlock.locator('.image-toolbar')).toHaveCSS('opacity', '1');
+    await expect(imageBlock.getByRole('button', { name: 'Copy image', exact: true })).toBeVisible();
+    await expect(imageBlock.getByRole('button', { name: 'Image options', exact: true })).toBeVisible();
 
-    // The Align button should be rendered without crashing
-    await expect(
-      page.locator('[data-block-type="image"]').first().locator('.absolute.right-0.top-0')
-    ).toBeAttached();
+    // The Align menu must work outside SelectionToolbarContext.
+    await imageBlock.getByRole('button', { name: 'Align', exact: true }).click();
+    for (const name of ['Left', 'Center', 'Right']) {
+      await expect(page.getByTestId('image-align-menu').getByRole('button', { name, exact: true })).toBeVisible();
+    }
   });
 
   test('should show toolbar on hover and hide on mouse leave', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
+
     await signInAndWaitForApp(page, request, testEmail);
     await page.waitForTimeout(1000);
     const imageBlock = await createUploadedImageWithPointerOutside(page);
 
     // Hover to show toolbar
     await imageBlock.hover();
-    await expect(page.getByTestId('copy-image-button')).toBeVisible();
+    await expect(imageBlock.locator('.image-toolbar')).toHaveCSS('opacity', '1');
+    await expect(imageBlock.getByRole('button', { name: 'Copy image', exact: true })).toBeVisible();
 
     // Move mouse away to hide toolbar
     await EditorSelectors.firstEditor(page).hover({ position: { x: 5, y: 5 } });
     // Toolbar should be hidden
-    await expect(page.getByTestId('copy-image-button')).not.toBeVisible();
+    await expect(imageBlock.locator('.image-toolbar')).toHaveCSS('opacity', '0');
   });
 
   test('should allow repeated hover/unhover cycles without errors', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
+
     await signInAndWaitForApp(page, request, testEmail);
     await page.waitForTimeout(1000);
     const imageBlock = await createUploadedImageWithPointerOutside(page);
@@ -106,10 +113,11 @@ test.describe('Image Toolbar Hover Actions', () => {
     // Hover and unhover multiple times to ensure no stale state or context errors
     for (let i = 0; i < 3; i++) {
       await imageBlock.hover();
-      await expect(page.getByTestId('copy-image-button')).toBeVisible();
+      await expect(imageBlock.locator('.image-toolbar')).toHaveCSS('opacity', '1');
+      await expect(imageBlock.getByRole('button', { name: 'Copy image', exact: true })).toBeVisible();
 
       await EditorSelectors.firstEditor(page).hover({ position: { x: 5, y: 5 } });
-      await expect(page.getByTestId('copy-image-button')).toBeHidden();
+      await expect(imageBlock.locator('.image-toolbar')).toHaveCSS('opacity', '0');
     }
   });
 });

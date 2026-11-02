@@ -82,7 +82,7 @@ function PropertiesMenu({
   }, [open, setSelectedId]);
 
   return (
-    <Popover modal open={open} onOpenChange={onOpenChange}>
+    <Popover modal='backdrop' open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
         asChild={asChild}
         className={cn(filteredProperties.length === 0 && filteredOut ? 'invisible' : 'visible', 'h-7')}

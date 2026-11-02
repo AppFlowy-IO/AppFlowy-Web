@@ -29,89 +29,7 @@ import {
   RowDetailSelectors,
 } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
-
-const TEMPLATE_MENU = 'database-template-menu';
-const TEMPLATE_EDITOR = 'database-template-editor';
-
-async function openTemplateMenu(page: Page): Promise<Locator> {
-  await page.getByTestId('database-template-menu-trigger').click();
-  const menu = page.getByTestId(TEMPLATE_MENU);
-
-  await expect(menu).toBeVisible();
-  return menu;
-}
-
-async function closeTemplateEditor(page: Page): Promise<void> {
-  const editor = page.getByTestId(TEMPLATE_EDITOR);
-
-  if (!(await editor.isVisible().catch(() => false))) return;
-  const dialogRoot = page.locator('.MuiDialog-root').filter({ has: editor });
-  const dialogContainer = dialogRoot.locator('.MuiDialog-container');
-
-  await expect(dialogContainer).toBeVisible();
-  await dialogContainer.click({ force: true, position: { x: 5, y: 5 } });
-  await expect(editor).toBeHidden({ timeout: 15000 });
-}
-
-async function createTemplate(page: Page, name: string): Promise<Locator> {
-  const menu = await openTemplateMenu(page);
-
-  await menu.getByTestId('database-template-create').click();
-  const editor = page.getByTestId(TEMPLATE_EDITOR);
-
-  await expect(editor).toBeVisible({ timeout: 30000 });
-  await editor.getByTestId('row-title-input').fill(name);
-  await expect(editor.getByTestId('row-title-input')).toHaveText(name);
-  return editor;
-}
-
-async function openTemplateActions(page: Page, name: string): Promise<void> {
-  await openTemplateMenu(page);
-  await page.getByLabel(`Actions for ${name}`, { exact: true }).click();
-}
-
-async function editTemplate(page: Page, name: string): Promise<Locator> {
-  await openTemplateActions(page, name);
-  await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-  const editor = page.getByTestId(TEMPLATE_EDITOR);
-
-  await expect(editor).toBeVisible({ timeout: 30000 });
-  return editor;
-}
-
-async function selectTemplate(page: Page, name: string): Promise<void> {
-  const menu = await openTemplateMenu(page);
-
-  await menu.getByText(name, { exact: true }).click();
-  await expect(menu).toBeHidden();
-}
-
-async function createRowAndGetId(page: Page, create: () => Promise<void>): Promise<string> {
-  const before = await getVisibleDataRowIds(page);
-
-  await create();
-  let createdId = '';
-
-  await expect
-    .poll(
-      async () => {
-        const after = await getVisibleDataRowIds(page);
-
-        createdId = after.find((rowId) => !before.includes(rowId)) ?? '';
-        return createdId;
-      },
-      { timeout: 30000, message: 'Expected one newly visible database row' }
-    )
-    .not.toBe('');
-
-  // Template-backed creation opens the new row after its document has been
-  // materialized. Wait for the peek before closing it so the next template
-  // action starts after row detail has finished opening.
-  await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 30000 });
-  await closeRowDetailWithEscape(page);
-
-  return createdId;
-}
+import { openTemplateMenu, closeTemplateEditor, createTemplate, openTemplateActions, editTemplate, selectTemplate, createRowAndGetId, addDatabaseView, expectDatabaseBlockViews, setDefaultTemplate } from '../../support/row-template-helpers';
 
 async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ editor: Locator; block: Locator }> {
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -153,39 +71,6 @@ async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ ed
   }
 
   throw new Error(`Template-created row ${rowId} never loaded its embedded database`);
-}
-
-async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Calendar' | 'Chart' = 'Board') {
-  const tabs = block.locator('[data-testid^="view-tab-"]');
-
-  // The embedded block appears before its database finishes loading. Count the
-  // existing tabs only after the initial view has rendered.
-  await expect(tabs.first()).toBeVisible({ timeout: 30000 });
-  const initialCount = await tabs.count();
-  const addViewButton = block.getByTestId('add-view-button');
-  const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
-
-  await expect(addViewButton).toBeVisible({ timeout: 30000 });
-  await addViewButton.scrollIntoViewIfNeeded();
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await addViewButton.click();
-    if (
-      await menu.waitFor({ state: 'visible', timeout: 3000 }).then(
-        () => true,
-        () => false
-      )
-    )
-      break;
-  }
-
-  await expect(menu).toBeVisible({ timeout: 10000 });
-  await menu
-    .getByRole('menuitem')
-    .filter({ hasText: new RegExp(`^\\s*${layout}\\s*$`) })
-    .click({ force: true });
-  await expect(tabs).toHaveCount(initialCount + 1, { timeout: 30000 });
-  await tabs.first().click({ force: true });
-  await expect(block.locator('[data-testid^="grid-cell-"]').first()).toBeVisible({ timeout: 30000 });
 }
 
 async function addRootDatabaseView(
@@ -331,10 +216,6 @@ async function createDefaultTemplateRowFromView(
   return createdId;
 }
 
-async function expectDatabaseBlockViews(block: Locator, expectedCount: number): Promise<void> {
-  await expect(block.locator('[data-testid^="view-tab-"]')).toHaveCount(expectedCount, { timeout: 30000 });
-}
-
 async function addTemplateEmoji(page: Page, editor: Locator): Promise<string> {
   await editor.getByTestId('row-title-input').hover();
   const addIcon = editor.getByTestId('add-icon-button');
@@ -362,10 +243,6 @@ async function addTemplateCover(editor: Locator): Promise<void> {
   await expect(editor.locator('.row-header-cover img')).toBeVisible({ timeout: 15000 });
 }
 
-async function setDefaultTemplate(page: Page, name: string): Promise<void> {
-  await openTemplateActions(page, name);
-  await page.getByRole('menuitem', { name: 'Set as default', exact: true }).click();
-}
 
 async function expectRowCover(page: Page, rowId: string): Promise<void> {
   await openRowDetailByRowId(page, rowId);
@@ -539,9 +416,8 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(duplicateMenu.getByText(`${renamed} (Copy)`, { exact: true })).toBeVisible();
     await duplicateMenu.getByRole('button', { name: `Reorder ${renamed} (Copy)` }).press('ArrowUp');
-    const reorderedMenu = page.getByTestId(TEMPLATE_MENU);
-    const originalBox = await reorderedMenu.getByText(renamed, { exact: true }).boundingBox();
-    const copyBox = await reorderedMenu.getByText(`${renamed} (Copy)`, { exact: true }).boundingBox();
+    const originalBox = await duplicateMenu.getByText(renamed, { exact: true }).boundingBox();
+    const copyBox = await duplicateMenu.getByText(`${renamed} (Copy)`, { exact: true }).boundingBox();
 
     expect(copyBox?.y).toBeLessThan(originalBox?.y ?? Number.POSITIVE_INFINITY);
     await page.keyboard.press('Escape');

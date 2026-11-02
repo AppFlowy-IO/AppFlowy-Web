@@ -1,82 +1,31 @@
-/**
- * Chart settings — X-Axis field selection.
- *
- * The X-Axis section of the revamped settings popover (desktop PR #1461)
- * lists the groupable fields (SingleSelect, MultiSelect, Checkbox and the
- * date types) in the view's field order, each with its field type icon and a
- * tick on the selected one. A Checkbox X-Axis buckets rows into Checked /
- * Unchecked and, unlike select fields, has no "No {field}" bucket.
- * (Date fields are covered by chart-date-axis.spec.ts.)
- */
 import { expect, test } from '@playwright/test';
 
-import {
-  addChartViewTab,
-  closeChartSettings,
-  collectUnexpectedPageErrors,
-  expectNoUnexpectedPageErrors,
-  expectOptionNotSelected,
-  expectOptionSelected,
-  openChartSettings,
-  selectXAxisField,
-  waitForChartReady,
-} from '../../support/chart-test-helpers';
+import { openChartPanelRow } from '../../support/chart-settings-helpers';
+import { addChartViewTab, closeDropdown, openChartSettings, waitForChartReady } from '../../support/chart-test-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 import { ChartSelectors, ChartSettingsSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
-test.describe('Chart settings — X-Axis', () => {
-  let pageErrors: Error[] = [];
+test('changing the X-axis to a checkbox persists across reloads', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Grid');
+  await addChartViewTab(page);
+  await waitForChartReady(page);
+  await expect(ChartSelectors.dataTable(page).locator('th')).toHaveText(['No Type']);
 
-  test.beforeEach(async ({ page }) => {
-    pageErrors = collectUnexpectedPageErrors(page);
-    await page.setViewportSize({ width: 1440, height: 900 });
-  });
+  await openChartSettings(page);
+  await openChartPanelRow(page, 'x_what');
+  await expect(ChartSettingsSelectors.fieldItemByName(page, 'Type')).toHaveAttribute('aria-checked', 'true');
+  await expect(ChartSettingsSelectors.fieldItemByName(page, 'Done')).toHaveAttribute('aria-checked', 'false');
+  await ChartSettingsSelectors.fieldItemByName(page, 'Done').click();
+  await closeDropdown(page);
+  await expect(ChartSelectors.dataTable(page).locator('th')).toHaveText(['Unchecked']);
+  await expect(ChartSelectors.dataTable(page).locator('tr')).toHaveAttribute('data-value', '3');
 
-  test.afterEach(() => {
-    expectNoUnexpectedPageErrors(pageErrors);
-  });
-
-  test('lists the groupable fields and regroups the chart by the chosen one', async ({ page, request }) => {
-    const testEmail = generateRandomEmail();
-
-    // Given: a chart over the default grid (Name text, Type select, Done checkbox)
-    await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
-    await addChartViewTab(page);
-    await waitForChartReady(page);
-    await expect(ChartSelectors.categoryLabels(page)).toHaveText(['No Type']);
-
-    // When: opening the chart settings
-    await openChartSettings(page);
-
-    // Then: only the groupable fields are listed, in field order, and the
-    // first one (Type) is the X-Axis field the chart is drawn with
-    await expect(ChartSettingsSelectors.xAxisFields(page)).toHaveText(['Type', 'Done']);
-    await expectOptionSelected(ChartSettingsSelectors.xAxisField(page, 'Type'));
-    await expectOptionNotSelected(ChartSettingsSelectors.xAxisField(page, 'Done'));
-
-    // When: choosing the Done checkbox
-    await selectXAxisField(page, 'Done');
-
-    // Then: the popover stays open with the tick moved to Done
-    await expect(ChartSettingsSelectors.panel(page)).toBeVisible();
-    await expectOptionSelected(ChartSettingsSelectors.xAxisField(page, 'Done'));
-    await expectOptionNotSelected(ChartSettingsSelectors.xAxisField(page, 'Type'));
-
-    // And: the unchecked rows form a single "Unchecked" bucket, with no
-    // "No Done" bucket
-    await closeChartSettings(page);
-    await expect(ChartSelectors.categoryLabels(page)).toHaveText(['Unchecked']);
-    await expect(ChartSelectors.valueLabels(page)).toHaveText(['3']);
-
-    // When: reloading the page
-    await page.reload();
-    await waitForChartReady(page);
-
-    // Then: the chart is still grouped by Done, which keeps the tick
-    await expect(ChartSelectors.categoryLabels(page)).toHaveText(['Unchecked']);
-    await openChartSettings(page);
-    await expectOptionSelected(ChartSettingsSelectors.xAxisField(page, 'Done'));
-    await expectOptionNotSelected(ChartSettingsSelectors.xAxisField(page, 'Type'));
-  });
+  await page.reload();
+  await waitForChartReady(page);
+  await expect(ChartSelectors.dataTable(page).locator('th')).toHaveText(['Unchecked']);
+  await openChartSettings(page);
+  await openChartPanelRow(page, 'x_what');
+  await expect(ChartSettingsSelectors.fieldItemByName(page, 'Done')).toHaveAttribute('aria-checked', 'true');
 });

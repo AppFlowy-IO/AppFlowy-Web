@@ -4,12 +4,11 @@ import { Element } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { BlockType } from '@/application/types';
-import { ReactComponent as MathSvg } from '@/assets/icons/math-equation/formula.svg';
-import { KatexMath } from '@/components/_shared/katex-math';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { EditorElementProps, MathEquationNode } from '@/components/editor/editor.type';
 import { useBlockSelected } from '@/components/editor/EditorContext';
 
+import { MathEquationContent } from './MathEquationContent';
 import MathEquationToolbar from './MathEquationToolbar';
 import './math-equation.scss';
 
@@ -45,9 +44,9 @@ export const MathEquation = memo(
                   ? 'document.plugins.mathEquation.editMathEquation'
                   : 'document.plugins.mathEquation.addMathEquation'
               )}
-              className={`min-h-[44px] rounded-lg pl-3 pr-11 outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick ${formula.trim() ? '' : 'py-2'} ${
-                readOnly ? '' : 'cursor-pointer'
-              }`}
+              className={`min-h-[44px] rounded-lg pl-3 pr-11 outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick ${
+                formula.trim() ? '' : 'py-2'
+              } ${readOnly ? '' : 'cursor-pointer'}`}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -61,18 +60,7 @@ export const MathEquation = memo(
                 }
               }}
             >
-              {formula.trim() ? (
-                <div className='math-equation-render flex min-h-[44px] w-full items-center justify-center overflow-x-auto'>
-                  <Suspense fallback={formula}>
-                    <KatexMath latex={formula} />
-                  </Suspense>
-                </div>
-              ) : (
-                <div className='flex min-h-[28px] items-center gap-2 text-sm text-text-tertiary'>
-                  <MathSvg width={20} height={20} />
-                  {t('document.plugins.mathEquation.addMathEquation')}
-                </div>
-              )}
+              <MathEquationContent formula={formula} />
             </div>
             <div className='math-equation-toolbar'>
               <MathEquationToolbar node={node} readOnly={readOnly} />

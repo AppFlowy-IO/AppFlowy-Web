@@ -1,7 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { getServerInfo } from '@/application/services/js-services/http/auth-api';
-import { getTokenParsed } from '@/application/session/token';
+import { refreshToken } from '@/application/services/js-services/http/gotrue';
+import { getTokenParsed, invalidToken } from '@/application/session/token';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 
@@ -10,6 +11,7 @@ import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 const stableSendMessage = jest.fn();
 const stableGetWebSocket = jest.fn(() => null);
 let mockReadyState = 1;
+let mockSessionGeneration = 0;
 const mockUseWebSocket = jest.fn(() => ({
   lastMessage: null,
   sendMessage: stableSendMessage,
@@ -27,8 +29,10 @@ jest.mock('@/application/services/js-services/http/auth-api', () => ({
 }));
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: () => ({ generation: mockSessionGeneration }),
   getTokenParsed: jest.fn(),
   invalidToken: jest.fn(),
+  isTokenSessionCurrent: (session: { generation: number }) => session.generation === mockSessionGeneration,
 }));
 
 jest.mock('@/application/services/js-services/http/gotrue', () => ({
@@ -83,6 +87,7 @@ describe('useAppflowyWebSocket', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadyState = 1;
+    mockSessionGeneration = 0;
     setStoredToken('token-A');
   });
 
@@ -127,6 +132,41 @@ describe('useAppflowyWebSocket', () => {
     });
 
     expect(await resolveLastSocketUrl()).toContain('token=token-B');
+  });
+
+  it('preserves the session on an OAuth-shaped temporary refresh failure', async () => {
+    mockReadyState = 3;
+    mockGetTokenParsed.mockReturnValue({ access_token: 'token-A', refresh_token: 'refresh-a', expires_at: 1 });
+    jest.mocked(refreshToken).mockRejectedValueOnce({
+      response: { status: 503, data: { error_code: 'session_not_found' } },
+    });
+    const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+
+    await act(async () => { result.current.reconnect(); });
+
+    expect(refreshToken).toHaveBeenCalledTimes(1);
+    expect(invalidToken).not.toHaveBeenCalled();
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
+  });
+
+  it('ignores an old login rejection after another account signs in', async () => {
+    mockReadyState = 3;
+    mockGetTokenParsed.mockReturnValue({ access_token: 'token-A', refresh_token: 'refresh-a', expires_at: 1 });
+    let rejectRefresh!: (reason: unknown) => void;
+
+    jest.mocked(refreshToken).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRefresh = reject; }));
+    const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+
+    act(() => { result.current.reconnect(); });
+    expect(refreshToken).toHaveBeenCalledTimes(1);
+    mockSessionGeneration += 1;
+    setStoredToken('token-B');
+    await act(async () => {
+      rejectRefresh({ response: { status: 400, data: { error_code: 'session_not_found' } } });
+    });
+
+    expect(invalidToken).not.toHaveBeenCalled();
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
   });
 
   it('uses the freshest stored token when react-use-websocket schedules an automatic retry', async () => {

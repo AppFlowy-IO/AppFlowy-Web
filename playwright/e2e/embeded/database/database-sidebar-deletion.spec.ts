@@ -225,12 +225,14 @@ test.describe('Embedded Database Sidebar Deletion', () => {
     const containers = page.locator('.container-bg');
     const texts = await containers.allTextContents();
     const placeholderCount = texts.filter((t) => /in Trash|permanently deleted|Something went wrong/i.test(t)).length;
-    const gridCount = texts.filter((t) => t.includes('Name') && t.includes('New row')).length;
 
     expect(placeholderCount).toBeGreaterThanOrEqual(1);
 
     // And the other embedded Grid continues to render correctly
-    expect(gridCount).toBeGreaterThanOrEqual(1);
+    const survivingGrid = page.getByTestId('database-grid');
+    await expect(survivingGrid).toHaveCount(1);
+    await expect(survivingGrid).toContainText('Name');
+    await expect(survivingGrid.getByTestId('grid-new-row')).toBeVisible();
   });
 
   test('Scenario 3: should reconnect database after restoring from trash', async ({

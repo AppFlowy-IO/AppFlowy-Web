@@ -4,6 +4,7 @@
     "../src/**/*.d.ts",
     "../playwright.integrations.config.ts",
     "e2e/integrations/**/*.ts",
+    "e2e/embeded/image/**/*.ts",
     "support/connections.ts",
     "support/connections.fixture.tsx",
     "support/integrations-server.ts",
@@ -14,7 +15,10 @@
     "../playwright.pdf.config.ts",
     "support/pdf.fixture.tsx",
     "support/image.fixture.tsx",
-    "../playwright.image.config.ts"
+    "../playwright.image.config.ts",
+    "support/dashboard-owned-clone.fixture.tsx",
+    "support/dashboard-view-startup.fixture.tsx",
+    "support/chart-settings.fixture.tsx"
   ],
   "references": []
 }

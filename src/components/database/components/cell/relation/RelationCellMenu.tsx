@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useDatabaseContext } from '@/application/database-yjs/context';
 import { RelationCell as RelationCellType, RelationCellData } from '@/application/database-yjs/cell.type';
+import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useUpdateRelationCell } from '@/application/database-yjs/dispatch/relation';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import NoDatabaseSelectedContent from '@/components/database/components/cell/relation/NoDatabaseSelectedContent';
@@ -80,7 +80,9 @@ function RelationCellMenu ({
         onOpenAutoFocus={(e) => e.preventDefault()}
         onMouseDown={(e) => e.preventDefault()}
       >
-        {!hookEnabled || loading ? (
+        {/* Catalog refreshes keep the target's query and row bindings mounted.
+            The content shows loading and blocks creation until they settle. */}
+        {!hookEnabled || (loading && !relatedDatabaseId) ? (
           <div className="flex items-center justify-center min-h-[100px]">
             <LoadingDots />
           </div>

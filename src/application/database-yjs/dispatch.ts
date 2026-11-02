@@ -11,24 +11,37 @@ import {
   insertBoardInitializationValue,
   setBoardInitializationValue,
 } from '@/application/database-yjs/board-initialization';
-import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { writeChartLayoutSetting } from '@/application/database-yjs/chart-layout-setting';
-import { CHART_LAYOUT_SETTINGS_KEY, ChartLayoutSettings } from '@/application/database-yjs/chart.type';
+import type { ChartExtendedSettingsUpdate } from '@/application/database-yjs/chart-extended-settings';
+import { applyChartLayoutUpdate, CHART_LAYOUT_SETTINGS_KEY, type ChartLayoutSetting } from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
   useDatabaseContext,
   useDatabaseFields,
+  useDatabaseSelectedView,
   useDatabaseView,
   useDatabaseViewId,
-  useRowMap,
   useReadOnly,
+  useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { initializeDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import {
+  convertViewToDashboard,
+  duplicateDatabaseViewWithOwnedWidgets,
+} from '@/application/database-yjs/dashboard-owned-view-ops';
+import { markDashboardCreatedThisSession } from '@/application/database-yjs/dashboard-session';
+import { DashboardLayoutUpdate } from '@/application/database-yjs/dashboard.type';
+import {
+  AddDatabaseViewOptions,
+  createDatabaseViewInDoc,
+  DatabaseViewDocDeps,
+  deleteDatabaseViewInDoc,
+} from '@/application/database-yjs/database-view-doc-ops';
 import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
 import {
   AITranslateLanguage,
@@ -93,7 +106,7 @@ import {
   registerDatabaseHistoryRowDoc,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
-import type { DatabaseHistoryAction } from '@/application/database-yjs/history';
+import type { DatabaseHistoryAction, DatabaseHistoryPolicy } from '@/application/database-yjs/history';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import {
   initializeListLayoutSetting,
@@ -111,7 +124,7 @@ import {
   rollupResultType,
 } from '@/application/database-yjs/rollup/filter';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
-import { useCalculationFieldType, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
+import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import {
   initializeTimelineLayoutSetting,
   TimelineLayoutUpdate,
@@ -130,8 +143,6 @@ import {
   View,
   YDatabase,
   YDatabaseBoardLayoutSetting,
-  YDatabaseCalculation,
-  YDatabaseCalculations,
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
   YDatabaseCells,
@@ -326,6 +337,9 @@ function generateGroupByField(field: YDatabaseField, groupId = `g:${nanoid(6)}`)
 
 export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveFilters?: boolean } = {}) {
   const view = useDatabaseView();
+  // Grouping writes the shared view; in a View-mode dashboard widget `view`
+  // is the viewer's overlay for filters, so the filter cleanup reads the real one.
+  const sharedView = useDatabaseSelectedView(useDatabaseViewId());
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
@@ -368,7 +382,7 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
             if (!supportsOptionalGrouping && !preserveFilters) {
               // Board keeps its existing behavior: a field cannot simultaneously
               // act as the grouping source and as a filter.
-              const filters = view.get(YjsDatabaseKey.filters);
+              const filters = (sharedView ?? view).get(YjsDatabaseKey.filters);
               const filterIndex = filters
                 ?.toArray()
                 .findIndex((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
@@ -405,7 +419,7 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
         'groupByField'
       );
     },
-    [database, sharedRoot, view, preserveFilters]
+    [database, sharedRoot, sharedView, view, preserveFilters]
   );
 }
 
@@ -1670,118 +1684,10 @@ export function useBulkDeleteRowDispatch() {
   );
 }
 
-export function useCalculateFieldDispatch(fieldId: string) {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-  const fieldType = useCalculationFieldType(fieldId);
-
-  return useCallback(
-    (cells: Map<string, unknown>) => {
-      const calculations = view?.get(YjsDatabaseKey.calculations);
-      const index = (calculations?.toArray() || []).findIndex((calculation) => {
-        return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-      });
-
-      if (index === -1 || !calculations) {
-        return;
-      }
-
-      const cellValues = Array.from(cells.values());
-
-      const item = calculations.get(index);
-      const type = Number(item.get(YjsDatabaseKey.type)) as CalculationType;
-      const oldValue = item.get(YjsDatabaseKey.calculation_value) as string | number;
-
-      const newValue = calculateFieldValue({
-        fieldType,
-        calculationType: type,
-        cellValues,
-      });
-
-      if (newValue !== null && newValue !== oldValue) {
-        executeOperations(
-          sharedRoot,
-          [
-            () => {
-              item.set(YjsDatabaseKey.calculation_value, newValue);
-            },
-          ],
-          'calculateFieldDispatch',
-          { type: 'database.calculate-field-value', policy: 'skip' }
-        );
-      }
-    },
-    [view, fieldId, fieldType, sharedRoot]
-  );
-}
-
-export function useUpdateCalculate(fieldId: string) {
-  const sharedRoot = useSharedRoot();
-  const view = useDatabaseView();
-
-  return useCallback(
-    (type: CalculationType) => {
-      if (!view) return;
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            let calculations = view?.get(YjsDatabaseKey.calculations);
-
-            if (!calculations) {
-              calculations = new Y.Array() as YDatabaseCalculations;
-              view.set(YjsDatabaseKey.calculations, calculations);
-            }
-
-            let item = calculations.toArray().find((calculation) => {
-              return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-            });
-
-            if (!item) {
-              item = new Y.Map() as YDatabaseCalculation;
-              item.set(YjsDatabaseKey.id, nanoid(6));
-              item.set(YjsDatabaseKey.field_id, fieldId);
-              calculations.push([item]);
-            }
-
-            item.set(YjsDatabaseKey.type, type);
-          },
-        ],
-        'updateCalculate'
-      );
-    },
-    [fieldId, sharedRoot, view]
-  );
-}
-
-export function useClearCalculate(fieldId: string) {
-  const sharedRoot = useSharedRoot();
-  const view = useDatabaseView();
-
-  return useCallback(() => {
-    executeOperations(
-      sharedRoot,
-      [
-        () => {
-          const calculations = view?.get(YjsDatabaseKey.calculations);
-
-          if (!calculations) {
-            throw new Error(`Calculations not found`);
-          }
-
-          const index = calculations.toArray().findIndex((calculation) => {
-            return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-          });
-
-          if (index !== -1) {
-            calculations.delete(index);
-          }
-        },
-      ],
-      'clearCalculate'
-    );
-  }, [fieldId, sharedRoot, view]);
-}
+// One implementation of the footer calculation hooks: this module shadows
+// `dispatch/index.ts` in Vite, so the dashboard-widget guard (WP07 P0-5) must
+// live in the one copy both bundler paths reach.
+export { useCalculateFieldDispatch, useUpdateCalculate, useClearCalculate } from './dispatch/calculation';
 
 export function useUpdatePropertyNameDispatch(fieldId: string) {
   const database = useDatabase();
@@ -2930,20 +2836,71 @@ function useEnhanceCalendarLayoutByFieldExists() {
   );
 }
 
-/**
- * Hook to add a new database view (Grid, Board, or Calendar tab).
- * Creates a new view tab as a child of the main database page.
- */
-interface AddDatabaseViewOptions {
-  insertBeforeViewId?: string;
-  /** Duplicate current server settings, rather than requesting fresh layout defaults. */
-  sourceViewId?: string;
+// The view operations that need no hook live in `database-view-doc-ops.ts`
+// (create, duplicate, delete, the owner marker). The layout table and the
+// types of the hooks below stay importable from here.
+export { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
+export type { AddDatabaseViewOptions, DatabaseViewDocDeps } from '@/application/database-yjs/database-view-doc-ops';
+
+function useDatabaseViewDocDeps(): DatabaseViewDocDeps {
+  const {
+    workspaceId,
+    databasePageId,
+    activeViewId,
+    createDatabaseView,
+    databaseDoc,
+    deletePage,
+    loadViewMeta,
+    updatePage,
+    loadView,
+    bindViewSync,
+    scheduleDeferredCleanup,
+    isDocumentBlock,
+    readOnly,
+    canWrite,
+  } = useDatabaseContext();
+
+  return useMemo(
+    () => ({
+      workspaceId,
+      databasePageId,
+      activeViewId,
+      createDatabaseView,
+      databaseDoc,
+      deletePage,
+      loadViewMeta,
+      updatePage,
+      loadView,
+      bindViewSync,
+      scheduleDeferredCleanup,
+      isDocumentBlock,
+      readOnly,
+      canWrite,
+    }),
+    [
+      workspaceId,
+      databasePageId,
+      activeViewId,
+      createDatabaseView,
+      databaseDoc,
+      deletePage,
+      loadViewMeta,
+      updatePage,
+      loadView,
+      bindViewSync,
+      scheduleDeferredCleanup,
+      isDocumentBlock,
+      readOnly,
+      canWrite,
+    ]
+  );
 }
 
 export const FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION =
   'Edit access is required to create or duplicate a Form view.';
 
 export function useAddDatabaseView() {
+  const docDeps = useDatabaseViewDocDeps();
   const { databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, readOnly, canWrite } = useDatabaseContext();
   const outline = useContext(AppOutlineContext);
   const outlineRef = useRef(outline);
@@ -2964,6 +2921,13 @@ export function useAddDatabaseView() {
 
   return useCallback(async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
     if (!canCreateRef.current) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
+    if (layout === DatabaseViewLayout.Dashboard || options?.dashboardOwner) {
+      const id = await createDatabaseViewInDoc(docDeps, layout, nameOverride, options);
+
+      if (layout === DatabaseViewLayout.Dashboard) markDashboardCreatedThisSession(id);
+      return id;
+    }
+
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
     const databaseId = database?.get(YjsDatabaseKey.id);
 
@@ -3010,11 +2974,12 @@ export function useAddDatabaseView() {
         if (ancestors.length === 0) throw new Error('Created view is missing from the sidebar');
       },
     });
-  }, [databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, lifetime]);
+  }, [databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, lifetime, docDeps]);
 }
 
 /** Clone current authoritative view settings in the same graph transaction as its Folder child. */
 export function useDuplicateDatabaseView() {
+  const deps = useDatabaseViewDocDeps();
   const database = useDatabase();
   const addDatabaseView = useAddDatabaseView();
 
@@ -3022,19 +2987,47 @@ export function useDuplicateDatabaseView() {
     const source = database.get(YjsDatabaseKey.views)?.get(sourceViewId);
 
     if (!source) throw new Error('Database view not found');
+    if (Number(source.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Dashboard) {
+      return duplicateDatabaseViewWithOwnedWidgets(deps, sourceViewId, duplicatedName);
+    }
+
     return addDatabaseView(Number(source.get(YjsDatabaseKey.layout)) as DatabaseViewLayout,
       duplicatedName?.trim() || `${source.get(YjsDatabaseKey.name) || 'View'} (Copy)`,
       { insertBeforeViewId: sourceViewId, sourceViewId });
-  }, [addDatabaseView, database]);
+  }, [addDatabaseView, database, deps]);
+}
+
+/**
+ * The latest layout choice per database view, across every menu that makes
+ * one. A pending Dashboard conversion applies only while no later choice was
+ * made, and keeps running after the menu that started it closes.
+ */
+const layoutChoiceRevisions = new WeakMap<YDoc, Map<string, number>>();
+
+function claimLayoutChoice(databaseDoc: YDoc, viewId: string): () => boolean {
+  const revisions = layoutChoiceRevisions.get(databaseDoc) ?? new Map<string, number>();
+  const revision = (revisions.get(viewId) ?? 0) + 1;
+
+  revisions.set(viewId, revision);
+  layoutChoiceRevisions.set(databaseDoc, revisions);
+  return () => layoutChoiceRevisions.get(databaseDoc)?.get(viewId) === revision;
 }
 
 export function useUpdateDatabaseLayout(viewId: string) {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
+  const viewDocDeps = useDatabaseViewDocDeps();
+
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
 
   return useCallback(
-    (layout: DatabaseViewLayout) => {
+    /**
+     * `history: 'skip'` keeps the switch out of the undo history: the add
+     * flow's "New view" type pick is part of creating the widget's view
+     * (WP06 §1.5). Default `'capture'`.
+     */
+    (layout: DatabaseViewLayout, options?: { history?: DatabaseHistoryPolicy }) => {
+      const isLatestChoice = claimLayoutChoice(viewDocDeps.databaseDoc, viewId);
       const applyLayout = () => executeOperations(
         sharedRoot,
         [
@@ -3104,6 +3097,10 @@ export function useUpdateDatabaseLayout(viewId: string) {
               initializeGalleryLayoutSetting(view);
             }
 
+            if (layout === DatabaseViewLayout.Dashboard) {
+              initializeDashboardLayoutSetting(view);
+            }
+
             if (
               currentLayout === DatabaseViewLayout.Board &&
               (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.Feed)
@@ -3126,7 +3123,8 @@ export function useUpdateDatabaseLayout(viewId: string) {
             view.set(YjsDatabaseKey.layout, layout);
           },
         ],
-        'updateDatabaseLayout'
+        'updateDatabaseLayout',
+        { type: 'database.updateDatabaseLayout', policy: options?.history ?? 'capture' }
       );
 
       if (Number(database.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.layout)) === layout) return;
@@ -3145,9 +3143,20 @@ export function useUpdateDatabaseLayout(viewId: string) {
         return Promise.reject(new Error(t('databaseViewCreation.useAddView', { defaultValue: message }) || message));
       }
 
+      if (layout === DatabaseViewLayout.Dashboard) {
+        // Converting keeps the view: an owned copy of it becomes the dashboard's
+        // first widget (WP05 §1.6). A view converted before keeps its rows.
+        return convertViewToDashboard(viewDocDeps, { viewId, applyLayout, isCurrent: isLatestChoice }).then(
+          (converted) => {
+            // R-MODE: a dashboard made here opens in Edit mode on its first load.
+            if (converted) markDashboardCreatedThisSession(viewId);
+          }
+        );
+      }
+
       applyLayout();
     },
-    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewId]
+    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewDocDeps, viewId]
   );
 }
 
@@ -3216,42 +3225,11 @@ export function useUpdateDatabaseView() {
 }
 
 export function useDeleteView() {
-  const database = useDatabase();
-  const sharedRoot = useSharedRoot();
-  const { deletePage } = useDatabaseContext();
+  const { databaseDoc, deletePage } = useDatabaseContext();
 
   return useCallback(
-    async (viewId: string) => {
-      // Attempt to remove the view from the folder (move to trash).
-      // This is a secondary cleanup — the primary operation is the Yjs deletion below.
-      // Database views may not exist in the folder (created via collab sync without a
-      // corresponding folder entry), or the folder's space ancestry may be broken.
-      // In either case we log the failure and proceed with the Yjs deletion so the
-      // user is never stuck with an undeletable view tab.
-      try {
-        await deletePage?.(viewId);
-      } catch (e) {
-        Log.warn('[useDeleteView] Failed to move view to trash, proceeding with Yjs deletion:', e);
-      }
-
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-
-            if (!view) {
-              throw new Error(`View not found`);
-            }
-
-            database.get(YjsDatabaseKey.views)?.delete(viewId);
-          },
-        ],
-        'deleteView',
-        { type: 'view.delete', policy: 'skip' }
-      );
-    },
-    [database, deletePage, sharedRoot]
+    (viewId: string) => deleteDatabaseViewInDoc({ databaseDoc, deletePage }, viewId),
+    [databaseDoc, deletePage]
   );
 }
 
@@ -5028,6 +5006,27 @@ export function useUpdateTimelineSetting() {
   );
 }
 
+/**
+ * Patch the dashboard view's layout setting (rows, global filters, widget
+ * titles). Rows are normalized before they are written.
+ */
+export function useUpdateDashboardSetting() {
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (update: DashboardLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateDashboardLayoutSetting(view, update)], 'updateDashboardSetting');
+    },
+    [sharedRoot, viewId, readOnly]
+  );
+}
+
 // Re-export advanced filter hooks from modular dispatch
 export {
   useEnterAdvancedMode,
@@ -5043,17 +5042,20 @@ export {
   useUpdateAdvancedFilterAndRebuild,
 } from './dispatch/sort-filter';
 
+export type { ChartLayoutSetting } from '@/application/database-yjs/chart.type';
+
 /**
- * Merge a partial chart setting into `view.layout_settings['3']`, written in
- * desktop's format (see `writeChartLayoutSetting`). Pass `yFieldId: undefined`
- * to clear the Y axis; other `undefined` fields keep their stored value.
+ * Write chart settings: the base fields in `settings` and the
+ * `chart-extended-settings.ts` fields in `extended` (`null` resets one), in one
+ * undoable operation. Only the fields passed in are written, and unchanged
+ * values are skipped (see `applyChartLayoutUpdate`).
  */
 export function useUpdateChartSetting() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (settings: Partial<ChartLayoutSettings>) => {
+    (settings: Partial<ChartLayoutSetting>, extended?: ChartExtendedSettingsUpdate) => {
       executeOperations(
         sharedRoot,
         [
@@ -5077,7 +5079,7 @@ export function useUpdateChartSetting() {
               layoutSettings.set(CHART_LAYOUT_SETTINGS_KEY, layoutSetting);
             }
 
-            writeChartLayoutSetting(layoutSetting, settings);
+            applyChartLayoutUpdate(layoutSetting, settings, extended);
           },
         ],
         'updateChartSetting'

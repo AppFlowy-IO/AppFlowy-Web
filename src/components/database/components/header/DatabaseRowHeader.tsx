@@ -9,11 +9,14 @@ import {
   usePrimaryFieldId,
   useReadOnly,
   useRowMetaSelector,
+  usePropertiesSelector,
+  isAIFieldType,
 } from '@/application/database-yjs';
 import type { TextCell } from '@/application/database-yjs/cell.type';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { viewCoverToTemplateCover } from '@/application/database-yjs/template';
 import { rowDocumentIdFromRowId, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
+import { snapshotRowProperties } from '@/application/row-document/presentation-properties';
 import { setActiveRowPage } from '@/application/row-document/row-page-state';
 import {
   AppendBreadcrumb,
@@ -22,14 +25,17 @@ import {
   ViewLayout,
   ViewMetaCover,
   YjsDatabaseKey,
+  YjsEditorKey,
 } from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import {
   normalizeRowDocumentViewName,
   shouldSyncRowDocumentViewName,
 } from '@/components/database/components/header/rowDocumentViewName';
 import Title from '@/components/database/components/header/Title';
 import { getScrollParent } from '@/components/global-comment/utils';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import ViewCoverActions from '@/components/view-meta/ViewCoverActions';
 import { renderColor } from '@/utils/color';
 import { coverOffsetToObjectPosition } from '@/utils/cover';
@@ -56,6 +62,24 @@ function DatabaseRowHeader({
   const isDatabaseRowPage = context?.isDatabaseRowPage;
   const workspaceId = context?.workspaceId;
   const database = useDatabase();
+  const { properties } = usePropertiesSelector(true);
+  const currentUser = useCurrentUserOptional();
+  const aiEnabled = useAIEnabled();
+  const readProperties = useCallback(
+    () =>
+      snapshotRowProperties(
+        context?.rowMap?.[rowId]?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row),
+        properties.filter((property) => property.id !== fieldId && (aiEnabled || !isAIFieldType(property.type))),
+        (id) => database?.get(YjsDatabaseKey.fields)?.get(id),
+        currentUser ?? undefined
+      ),
+    [context?.rowMap, rowId, properties, fieldId, aiEnabled, database, currentUser]
+  );
+  // The app shell needs row identity changes, not a publication for every loaded cell.
+  const latestProperties = useRef(readProperties);
+
+  latestProperties.current = readProperties;
+  const getProperties = useCallback(() => latestProperties.current(), []);
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const databaseViewId = context?.activeViewId || context?.databasePageId;
 
@@ -170,12 +194,13 @@ function DatabaseRowHeader({
           ? { database_id: databaseId, database_view_id: databaseViewId, row_id: rowId }
           : null,
       hasDocument,
+      getProperties,
     });
 
     return () => {
       setActiveRowPage(null);
     };
-  }, [isDatabaseRowPage, rowId, documentId, title, hasDocument, databaseId, databaseViewId]);
+  }, [isDatabaseRowPage, rowId, documentId, title, hasDocument, databaseId, databaseViewId, getProperties]);
 
   // Keep the row-document view name in sync with the primary cell so
   // favorites/trash entries show the row title. Sync only from title edits

@@ -196,11 +196,17 @@ export function getCurrentOutboxSessionGeneration(): number {
   return lifecycleGeneration;
 }
 
+type PendingOutboxRecord = Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId' | 'source'>;
+
 /** Resolves true only after the update has been written to IndexedDB. */
-export function enqueueOutboxUpdate(
-  record: Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId' | 'source'>,
-  options?: EnqueueOutboxOptions
-): Promise<boolean> {
+export function enqueueOutboxUpdate(record: PendingOutboxRecord, options?: EnqueueOutboxOptions): Promise<boolean> {
+  // Fenced row activation notifies Yjs observers inside a collab_custom-only
+  // transaction. The outbox write and its async continuations need their own
+  // storage scope, including manifest coalescing and immediate-send cleanup.
+  return BaseDexie.ignoreTransaction(() => enqueueUpdate(record, options));
+}
+
+function enqueueUpdate(record: PendingOutboxRecord, options?: EnqueueOutboxOptions): Promise<boolean> {
   if (isPurging) {
     // Logout / session-change in progress — drop. A new session will
     // re-enqueue any genuinely-pending edits through its own lifecycle.
@@ -246,7 +252,12 @@ export function enqueueOutboxUpdate(
   // the durable outbox row remains the fallback when it is not.
   const broadcast = drainConfig?.broadcast;
 
-  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId && !isRestoreGated(drainConfig, record.collabType)) {
+  if (
+    options?.broadcast !== false &&
+    broadcast &&
+    drainConfig?.workspaceId === workspaceId &&
+    !isRestoreGated(drainConfig, record.collabType)
+  ) {
     try {
       broadcast(buildUpdateMessage(record, drainConfig));
     } catch (error) {

@@ -4,37 +4,18 @@ import { View, ViewLayout } from '@/application/types';
 
 import { buildRelationDatabaseCandidates, loadRelationDatabaseCandidates } from './relationDatabaseCandidates';
 
-jest.mock('@/application/services/domains/view', () => ({
-  databaseCatalogViewToView: (databaseId: string, view: WorkspaceDatabaseWithViews['views'][number]) => ({
-    view_id: view.view_id,
-    name: view.name,
-    icon: view.icon,
-    layout: view.layout,
-    extra: {
-      database_id: databaseId,
-      embedded: view.embedded,
-      is_database_container: view.is_container,
-      is_space: false,
-    },
-    children: [],
-    is_published: false,
-    is_private: false,
-    parent_view_id: view.parent_view_id ?? undefined,
-  }),
-  getDatabaseContainerEntries: (databases: WorkspaceDatabaseWithViews[]) =>
-    databases.flatMap((database) => {
-      const container = database.views.find((view) => view.is_container);
-      const primaryView =
-        database.views.find((view) => !view.is_container && !view.embedded) ??
-        database.views.find((view) => !view.is_container);
+// Use the real catalog projections so relation targets follow the same
+// primary-view policy (e.g. skipping dashboards) as the rest of the app.
+jest.mock('@/application/services/domains/view', () => {
+  const catalog = jest.requireActual('@/application/services/js-services/workspace-database-catalog');
 
-      return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
-    }),
-  getDatabasePrimaryView: (database: WorkspaceDatabaseWithViews) =>
-    database.views.find((view) => !view.is_container && !view.embedded) ??
-    database.views.find((view) => !view.is_container),
-  getWorkspaceDatabaseCatalog: jest.fn(),
-}));
+  return {
+    databaseCatalogViewToView: catalog.databaseCatalogViewToView,
+    getDatabaseContainerEntries: catalog.getDatabaseContainerEntries,
+    getDatabasePrimaryView: catalog.getDatabasePrimaryView,
+    getWorkspaceDatabaseCatalog: jest.fn(),
+  };
+});
 
 function makeView({
   viewId,
@@ -198,6 +179,23 @@ describe('loadRelationDatabaseCandidates', () => {
     const result = await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1' });
 
     expect(result.candidates).toEqual([]);
+    expect(result.relations).toEqual({ 'database-1': 'database-1-grid' });
+  });
+
+  it('targets a regular view instead of a dashboard that is the first tab, as desktop does', () => {
+    const database = remoteDatabase('database-1', 'Projects');
+    const [container, grid] = database.views;
+    const dashboard = { ...grid, view_id: 'database-1-dashboard', layout: ViewLayout.Dashboard, name: 'Dashboard' };
+    const dashboardOnly = remoteDatabase('database-2', 'Overview');
+
+    database.views = [container, dashboard, grid];
+    dashboardOnly.views = [dashboardOnly.views[0], { ...dashboard, view_id: 'database-2-dashboard' }];
+
+    const result = buildRelationDatabaseCandidates([database, dashboardOnly], []);
+
+    expect(result.candidates).toEqual([
+      expect.objectContaining({ databaseId: 'database-1', viewId: 'database-1-grid' }),
+    ]);
     expect(result.relations).toEqual({ 'database-1': 'database-1-grid' });
   });
 

@@ -7,6 +7,7 @@ import {
   canBeMoved,
   canReorderWithinParent,
   getFirstChildView,
+  isDashboardOwnedView,
   isDatabaseContainer,
   isDatabaseLayout,
   isReferencedDatabaseView as isRefDbView,
@@ -88,10 +89,14 @@ function ViewItem({
 
   const isExpanded = expandIds.includes(viewId);
   const [hovered, setHovered] = React.useState<boolean>(false);
+  const isContainer = isDatabaseContainer(view);
   const visibleChildren = useMemo(() => {
-    if (aiEnabled) return view.children;
-    return view.children?.filter((child) => child.layout !== ViewLayout.AIChat);
-  }, [aiEnabled, view.children]);
+    // A database container's dashboard-owned views are widget data, not sidebar rows (WP05 §1.2).
+    const children = isContainer ? view.children?.filter((child) => !isDashboardOwnedView(child)) : view.children;
+
+    if (aiEnabled) return children;
+    return children?.filter((child) => child.layout !== ViewLayout.AIChat);
+  }, [aiEnabled, isContainer, view.children]);
 
   const rowRef = useRef<HTMLDivElement>(null);
   const workspaceId = useCurrentWorkspaceIdOptional();

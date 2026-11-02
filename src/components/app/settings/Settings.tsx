@@ -14,6 +14,8 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
 import { canManageWorkspaceBilling } from '@/utils/subscription';
 
+const PresentationSettingsPanel = lazy(() => import('@/components/presentation/PresentationSettingsPanel'));
+
 const ConnectionsPanel = lazy(() =>
   import('@/components/app/settings/ConnectionsPanel').then((module) => ({ default: module.ConnectionsPanel }))
 );
@@ -88,6 +90,11 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     >
       <SettingMenu onSelectItem={setSelectedItem} selectedItem={selectedItem} showBilling={showBilling} />
       <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
+        {open && selectedItem === SettingMenuItem.AI_PRESENTATION && (
+          <Suspense fallback={<PanelFallback label='Presentation styles' />}>
+            <PresentationSettingsPanel key={workspaceId} />
+          </Suspense>
+        )}
         {selectedItem === SettingMenuItem.ACCOUNT && <AccountAppPanel />}
         {selectedItem === SettingMenuItem.PROFILE && <ProfilePanel />}
         {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel />}

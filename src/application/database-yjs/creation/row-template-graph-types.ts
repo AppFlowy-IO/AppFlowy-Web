@@ -65,6 +65,7 @@ export interface ClaimCompoundCreationRequest {
     source_view_id: string;
     position: CreationRowPosition;
     position_view_ids: string[];
+    omit_row_membership?: true;
   };
   objects: Array<{
     object_id: string;
@@ -94,6 +95,7 @@ export interface TemplateRowGraphInput {
   position: CreationRowPosition;
   positionViewIds: string[];
   rowDoc: Y.Doc;
+  isTemplateSource?: boolean;
   template: DatabaseRowTemplate;
   documentState: Uint8Array;
   signal: AbortSignal;

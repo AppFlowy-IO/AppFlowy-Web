@@ -235,4 +235,3 @@ field with attachment/mention/send on one line, a 240px Copy link / Duplicate / 
 | Reply summary | Opens the row; avatar is the current user | Opens the Figma comment card popover (480px) in place; avatar is the latest commenter |
 | Side peek button in the action bar | Shown when the card tap opens a full page | Not shown; the card tap already opens the peek |
 | Mobile footer (reaction/comment sheets) | `FeedCardMobileFooter` | Not ported; narrow widths only tighten the card insets |
-

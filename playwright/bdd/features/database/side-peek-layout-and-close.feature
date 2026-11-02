@@ -26,6 +26,7 @@ Feature: Database side peek layout and close
     And I have created a grid named "Peek Tab Switch" with rows "Amber, Birch, Cedar"
     When I open a new List view of the database
     And I open the row "Amber" in the peek from the list view
+    And I switch the open row to "Side peek"
     Then the peek is open in side mode showing "Amber"
     When I set the peek title to "Amber via tab switch"
     And I switch to the database view at index 0

@@ -35,6 +35,7 @@ import {
 } from '../../support/selectors';
 import { dragPeekResizer } from '../../support/side-peek-helpers';
 import { generateRandomEmail } from '../../support/test-config';
+import { setViewOpenPagesIn } from '../../support/yjs-inject-helpers';
 
 async function chooseMode(page: Page, mode: 'side' | 'center') {
   await page.getByTestId('row-peek-mode-menu').click();
@@ -59,6 +60,7 @@ test.describe('Database side peek', () => {
     request,
   }, testInfo) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     const fieldId = await getPrimaryFieldId(page);
 
     await typeTextIntoCell(page, fieldId, 0, 'First task');
@@ -138,6 +140,7 @@ test.describe('Database side peek', () => {
     request,
   }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     await openRowDetail(page);
     const detail = RowDetailSelectors.modal(page);
     const title = detail.getByTestId('row-title-input');
@@ -159,6 +162,7 @@ test.describe('Database side peek', () => {
 
   test('saves title and document before opening the row in a new tab and as a full page', async ({ page, request }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     await openRowDetail(page);
     const detail = RowDetailSelectors.modal(page);
 
@@ -189,6 +193,7 @@ test.describe('Database side peek', () => {
 
   test('saves a focused text property on next, previous shortcut, and close', async ({ page, request }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     const [amber, birch, cedar] = await seedPrimaryTitlesDirect(page, ['Amber', 'Birch', 'Cedar']);
     const notes = await createFieldDirect(page, { name: 'Notes', fieldType: FieldType.RichText });
 
@@ -227,6 +232,7 @@ test.describe('Database side peek', () => {
     request,
   }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     const [amber, birch, cedar] = await seedPrimaryTitlesDirect(page, ['Amber', 'Birch', 'Cedar']);
     const primary = await getPrimaryFieldId(page);
     const notes = await createFieldDirect(page, { name: 'Notes', fieldType: FieldType.RichText });
@@ -277,6 +283,7 @@ test.describe('Database side peek', () => {
 
   test('retains the document editor and its undo history across side and center peek', async ({ page, request }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     await openRowDetail(page);
     await typeInRowDocument(page, 'Original document');
     const editor = RowDetailSelectors.modal(page).getByTestId('editor-content');
@@ -302,6 +309,7 @@ test.describe('Database side peek', () => {
 
   test('keeps two browser tabs in independent row editing and undo sessions', async ({ page, request, context }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     const [amber, birch] = await seedPrimaryTitlesDirect(page, ['Amber', 'Birch', 'Cedar']);
     const databaseUrl = page.url();
 
@@ -348,6 +356,7 @@ test.describe('Database side peek', () => {
 
   test('inherits a locked document’s readonly state in side and center peek', async ({ page, request }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
+    await setViewOpenPagesIn(page, 'side_peek');
     const [amber] = await seedPrimaryTitlesDirect(page, ['Amber', 'Birch', 'Cedar']);
     const notes = await createFieldDirect(page, { name: 'Notes', fieldType: FieldType.RichText });
 
@@ -394,6 +403,7 @@ test.describe('Database side peek', () => {
       request,
     }) => {
       await loginAndCreateGrid(page, request, generateRandomEmail());
+      await setViewOpenPagesIn(page, 'side_peek');
       const [amber, birch] = await seedPrimaryTitlesDirect(page, ['Amber', 'Birch', 'Cedar']);
 
       if (layout === 'Gallery') await addGalleryView(page);
@@ -404,6 +414,7 @@ test.describe('Database side peek', () => {
         await expect(DatabaseListSelectors.list(page)).toBeVisible();
       }
 
+      await setViewOpenPagesIn(page, 'side_peek');
       const row = (rowId: string) =>
         layout === 'Gallery'
           ? page.getByTestId(`gallery-card-open-${rowId}`)

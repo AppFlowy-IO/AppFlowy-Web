@@ -1,0 +1,39 @@
+{
+  "locale": "tr-TR",
+  "terms": {
+    "dashboard": "gösterge paneli",
+    "widget": "bileşen",
+    "chart": "grafik",
+    "view": "görünüm",
+    "row": "satır",
+    "property": "özellik",
+    "database": "veritabanı",
+    "source": "kaynak",
+    "page": "sayfa",
+    "done": "Bitti",
+    "edit": "Düzenle",
+    "delete": "Sil",
+    "duplicate": "Çoğalt",
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "close": "Kapat",
+    "back": "Geri",
+    "settings": "Ayarlar",
+    "filter": "Filtre",
+    "sort": "Sırala",
+    "search": "Ara",
+    "undo": "Geri al",
+    "redo": "Yinele",
+    "reset": "Sıfırla",
+    "untitled": "Başlıksız",
+    "day": "Gün",
+    "week": "Hafta",
+    "month": "Ay",
+    "year": "Yıl"
+  },
+  "untranslated_ok": [
+    "chart.legend.page",
+    "chart.sort.labelAsc",
+    "chart.sort.labelDesc"
+  ]
+}

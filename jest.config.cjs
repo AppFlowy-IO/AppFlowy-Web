@@ -37,7 +37,9 @@ module.exports = {
   modulePathIgnorePatterns: ['<rootDir>/\\.claude/'],
   coverageDirectory: '<rootDir>/coverage/jest',
   collectCoverage: true,
-  coverageProvider: 'v8',
+  // Merge coverage after each suite instead of retaining every suite's V8 source maps.
+  coverageProvider: 'babel',
+  workerIdleMemoryLimit: '1GB',
   coveragePathIgnorePatterns: [
     '/cypress/',
     '/coverage/',

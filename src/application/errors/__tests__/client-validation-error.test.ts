@@ -3,7 +3,7 @@ import i18next from 'i18next';
 import { ClientValidationError, clientValidationMessages } from '../client-validation-error';
 import { userFriendlyErrorMessage } from '../error-message';
 
-it.each(['ATOMIC_CREATION_OFFLINE', 'ATOMIC_CREATION_SERVER_UPGRADE', 'ATOMIC_CREATION_OWNER_CHANGED', 'ATOMIC_CREATION_PENDING', 'ROW_TEMPLATE_CONTENT_UNAVAILABLE'] as const)(
+it.each(['ATOMIC_CREATION_OFFLINE', 'DASHBOARD_VIEW_CREATION_OFFLINE', 'ATOMIC_CREATION_SERVER_UPGRADE', 'ATOMIC_CREATION_OWNER_CHANGED', 'ATOMIC_CREATION_PENDING', 'ROW_TEMPLATE_CONTENT_UNAVAILABLE'] as const)(
   'preserves reviewed %s guidance through a generic UI boundary',
   (reason) => {
     const error = new ClientValidationError(reason);

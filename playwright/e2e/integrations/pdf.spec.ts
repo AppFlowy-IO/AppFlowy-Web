@@ -21,7 +21,14 @@ async function embed(page: Page, url: string) {
 async function more(page: Page) {
   await block(page).first().hover();
   await block(page).first().getByRole('button', { name: 'More', exact: true }).click();
-  return page.getByTestId('pdf-menu');
+  const menu = page.getByTestId('pdf-menu');
+  const paper = menu.locator('..');
+
+  // Grow can briefly look stable before its enter transform advances. Finish
+  // opening before a pointer press and release can land on different rows.
+  await expect(paper).toHaveCSS('opacity', '1');
+  await expect(paper).toHaveCSS('transform', 'none');
+  return menu;
 }
 
 test.beforeEach(async ({ page, integrationsURL }) => {
@@ -57,6 +64,59 @@ test('slash insertion embeds and renders all pages; fullscreen zoom, close, and 
   await page.reload();
   await expect(block(page).locator('canvas').first()).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test('PDF menu caption clicks stay on their target while its opening animation is delayed', async ({ page }, info) => {
+  await embed(page, new URL('/fixtures/sample.pdf', page.url()).href);
+  await expect(block(page).locator('canvas').first()).toBeVisible();
+  // Reproduce the CI window in which a menu row looks stable before its enter
+  // animation advances between pointer press and release.
+  await page.addStyleTag({ content: '.MuiPopover-paper { transition-delay: 80ms !important; }' });
+  await page.evaluate(() => {
+    const probe = {
+      down: undefined as { label: string; opacity: string; transform: string } | undefined,
+      up: undefined as string | undefined,
+    };
+
+    Object.assign(window, { __pdfMenuPointerProbe: probe });
+    document.addEventListener('mousedown', (event) => {
+      const button = event.target instanceof Element ? event.target.closest('button') : null;
+      const menu = button?.closest('[data-testid="pdf-menu"]');
+
+      if (!menu || button?.textContent?.trim() !== 'Add caption' || probe.down) return;
+      const paper = menu.parentElement!;
+      const style = getComputedStyle(paper);
+
+      probe.down = { label: button.textContent.trim(), opacity: style.opacity, transform: style.transform };
+    }, true);
+    document.addEventListener('mouseup', (event) => {
+      if (!probe.down || probe.up) return;
+      probe.up = event.target instanceof Element
+        ? event.target.closest('button')?.textContent?.trim() || event.target.tagName : 'No element';
+    }, true);
+  });
+  const popups: string[] = [];
+
+  page.on('popup', (popup) => popups.push(popup.url()));
+  // The captured press/release spanned 71 ms. Use a comparable native pointer
+  // delay while allowing the browser to advance its real enter animation.
+  await (await more(page)).getByRole('button', { name: 'Add caption', exact: true }).click({ delay: 90 });
+  const pointerTargets = await page.evaluate(() =>
+    (window as Window & { __pdfMenuPointerProbe?: unknown }).__pdfMenuPointerProbe
+  );
+
+  await info.attach('caption-pointer-targets', {
+    contentType: 'application/json',
+    body: JSON.stringify(pointerTargets),
+  });
+  const caption = block(page).getByRole('textbox', { name: 'PDF caption', exact: true });
+
+  await expect(caption).toBeFocused();
+  await caption.fill('Research notes');
+  await expect(caption).toHaveValue('Research notes');
+  await expect(page.getByTestId('pdf-menu')).toHaveCount(0);
+  expect(pointerTargets).toMatchObject({ down: { label: 'Add caption' }, up: 'Add caption' });
+  expect(popups).toEqual([]);
 });
 
 test('file selection automatically uploads and replaces PDF; captions, alignment, resize, duplicate and delete', async ({ page }, info) => {

@@ -1,0 +1,1251 @@
+{
+  "fixture": "layouts/over-limit",
+  "version": 1,
+  "encoding": {
+    "bigint": "{\"$bigint\": \"<decimal>\"} is an integer written by a native client (yrs Any::BigInt). A plain JSON number is a JS number (Any::Number). Readers accept both, and every comparison is by numeric value.",
+    "rows": "A layout another client saved beyond this client's limits (12 widgets, 4 per row, row heights 240 to 1200). Readers show the first 12 widgets in stored order, split a row of more than 4 into rows of at most 4 (spill ids \"<row id>:<n>\") and clamp heights. Writers never drop a stored widget: the widgets beyond the first 12 stay stored after the written rows, each in its stored row object with only its hidden widgets; a row whose first widgets are shown keeps its hidden rest under \"<row id>:rest\".",
+    "stored": "The layout-settings map as another client left it.",
+    "parsed": "Optional. What every client reads from stored, in the persisted snake_case shape.",
+    "write": "The typed value this client submits for the named top-level keys, in the persisted shape (the rows it shows, after an edit). Each client parses it into its own typed model before writing.",
+    "writtenKeys": "Exactly the top-level keys the write may touch.",
+    "expected": "The stored map after the write. Key order is irrelevant."
+  },
+  "dashboardCases": [
+    {
+      "name": "all fourteen widgets are read and moving a row preserves every widget and unknown key",
+      "stored": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ]
+      },
+      "write": {
+        "rows": [
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          },
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3}
+            ]
+          }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          },
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3}
+            ]
+          }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "deleting one widget from fourteen preserves the other thirteen",
+      "stored": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "write": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "all thirteen widgets are read and writing the same layout is a no-op",
+      "stored": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ],
+        "global_filters": []
+      },
+      "parsed": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ]
+      },
+      "write": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ]
+      },
+      "writtenKeys": [],
+      "expected": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6}
+            ]
+          }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "moving a row beyond the former cap keeps its identity and all widgets",
+      "stored": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 4},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 4},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 4}
+            ]
+          }
+        ],
+        "global_filters": []
+      },
+      "parsed": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 4},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 4},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 4}
+            ]
+          }
+        ]
+      },
+      "write": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 4},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 4},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:2",
+            "height": 360,
+            "widgets": [
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3}
+            ]
+          },
+          {
+            "id": "r:4",
+            "height": 360,
+            "widgets": [
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 4},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 4},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 4}
+            ]
+          },
+          {
+            "id": "r:3",
+            "height": 360,
+            "widgets": [
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4}
+            ]
+          }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "a six-widget logical row stays intact when its height changes",
+      "stored": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 2},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 2},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 2},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 2},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 2},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 2}
+            ]
+          }
+        ]
+      },
+      "parsed": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 360,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 2},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 2},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 2},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 2},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 2},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 2}
+            ]
+          }
+        ]
+      },
+      "write": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 480,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 2},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 2},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 2},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 2},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 2},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 2}
+            ]
+          }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          {
+            "id": "r:1",
+            "height": 480,
+            "widgets": [
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 2},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 2},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 2},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 2},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 2},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 2}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "heights outside 240 to 1200 are read clamped and stay stored as they are while other keys are written",
+      "stored": {
+        "rows": [
+          {"id": "r:1", "height": {"$bigint": "10"}, "widgets": [{"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12}]},
+          {"id": "r:2", "height": {"$bigint": "99999"}, "widgets": [{"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12}]},
+          {"id": "r:3", "height": 365, "widgets": [{"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 12}]}
+        ],
+        "show_widget_titles": false
+      },
+      "parsed": {
+        "rows": [
+          {"id": "r:1", "height": 240, "widgets": [{"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12}]},
+          {"id": "r:2", "height": 1200, "widgets": [{"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12}]},
+          {"id": "r:3", "height": 365, "widgets": [{"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 12}]}
+        ]
+      },
+      "write": {"show_widget_titles": true},
+      "writtenKeys": ["show_widget_titles"],
+      "expected": {
+        "rows": [
+          {"id": "r:1", "height": {"$bigint": "10"}, "widgets": [{"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12}]},
+          {"id": "r:2", "height": {"$bigint": "99999"}, "widgets": [{"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12}]},
+          {"id": "r:3", "height": 365, "widgets": [{"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 12}]}
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "one hundred widgets stay in one logical row and survive a geometry edit",
+      "stored": {
+        "rows": [
+          {
+            "id": "long",
+            "height": 360,
+            "future_row": "keep",
+            "widgets": [
+              {"id": "w:0", "view_id": "v:0", "database_id": "db:1", "width": 1, "future_widget": 0},
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 1, "future_widget": 1},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 1, "future_widget": 2},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 1, "future_widget": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 1, "future_widget": 4},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 1, "future_widget": 5},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 1, "future_widget": 6},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 1, "future_widget": 7},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 1, "future_widget": 8},
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 1, "future_widget": 9},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 1, "future_widget": 10},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 1, "future_widget": 11},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 1, "future_widget": 12},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 1, "future_widget": 13},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 1, "future_widget": 14},
+              {"id": "w:15", "view_id": "v:15", "database_id": "db:1", "width": 1, "future_widget": 15},
+              {"id": "w:16", "view_id": "v:16", "database_id": "db:1", "width": 1, "future_widget": 16},
+              {"id": "w:17", "view_id": "v:17", "database_id": "db:1", "width": 1, "future_widget": 17},
+              {"id": "w:18", "view_id": "v:18", "database_id": "db:1", "width": 1, "future_widget": 18},
+              {"id": "w:19", "view_id": "v:19", "database_id": "db:1", "width": 1, "future_widget": 19},
+              {"id": "w:20", "view_id": "v:20", "database_id": "db:1", "width": 1, "future_widget": 20},
+              {"id": "w:21", "view_id": "v:21", "database_id": "db:1", "width": 1, "future_widget": 21},
+              {"id": "w:22", "view_id": "v:22", "database_id": "db:1", "width": 1, "future_widget": 22},
+              {"id": "w:23", "view_id": "v:23", "database_id": "db:1", "width": 1, "future_widget": 23},
+              {"id": "w:24", "view_id": "v:24", "database_id": "db:1", "width": 1, "future_widget": 24},
+              {"id": "w:25", "view_id": "v:25", "database_id": "db:1", "width": 1, "future_widget": 25},
+              {"id": "w:26", "view_id": "v:26", "database_id": "db:1", "width": 1, "future_widget": 26},
+              {"id": "w:27", "view_id": "v:27", "database_id": "db:1", "width": 1, "future_widget": 27},
+              {"id": "w:28", "view_id": "v:28", "database_id": "db:1", "width": 1, "future_widget": 28},
+              {"id": "w:29", "view_id": "v:29", "database_id": "db:1", "width": 1, "future_widget": 29},
+              {"id": "w:30", "view_id": "v:30", "database_id": "db:1", "width": 1, "future_widget": 30},
+              {"id": "w:31", "view_id": "v:31", "database_id": "db:1", "width": 1, "future_widget": 31},
+              {"id": "w:32", "view_id": "v:32", "database_id": "db:1", "width": 1, "future_widget": 32},
+              {"id": "w:33", "view_id": "v:33", "database_id": "db:1", "width": 1, "future_widget": 33},
+              {"id": "w:34", "view_id": "v:34", "database_id": "db:1", "width": 1, "future_widget": 34},
+              {"id": "w:35", "view_id": "v:35", "database_id": "db:1", "width": 1, "future_widget": 35},
+              {"id": "w:36", "view_id": "v:36", "database_id": "db:1", "width": 1, "future_widget": 36},
+              {"id": "w:37", "view_id": "v:37", "database_id": "db:1", "width": 1, "future_widget": 37},
+              {"id": "w:38", "view_id": "v:38", "database_id": "db:1", "width": 1, "future_widget": 38},
+              {"id": "w:39", "view_id": "v:39", "database_id": "db:1", "width": 1, "future_widget": 39},
+              {"id": "w:40", "view_id": "v:40", "database_id": "db:1", "width": 1, "future_widget": 40},
+              {"id": "w:41", "view_id": "v:41", "database_id": "db:1", "width": 1, "future_widget": 41},
+              {"id": "w:42", "view_id": "v:42", "database_id": "db:1", "width": 1, "future_widget": 42},
+              {"id": "w:43", "view_id": "v:43", "database_id": "db:1", "width": 1, "future_widget": 43},
+              {"id": "w:44", "view_id": "v:44", "database_id": "db:1", "width": 1, "future_widget": 44},
+              {"id": "w:45", "view_id": "v:45", "database_id": "db:1", "width": 1, "future_widget": 45},
+              {"id": "w:46", "view_id": "v:46", "database_id": "db:1", "width": 1, "future_widget": 46},
+              {"id": "w:47", "view_id": "v:47", "database_id": "db:1", "width": 1, "future_widget": 47},
+              {"id": "w:48", "view_id": "v:48", "database_id": "db:1", "width": 1, "future_widget": 48},
+              {"id": "w:49", "view_id": "v:49", "database_id": "db:1", "width": 1, "future_widget": 49},
+              {"id": "w:50", "view_id": "v:50", "database_id": "db:1", "width": 1, "future_widget": 50},
+              {"id": "w:51", "view_id": "v:51", "database_id": "db:1", "width": 1, "future_widget": 51},
+              {"id": "w:52", "view_id": "v:52", "database_id": "db:1", "width": 1, "future_widget": 52},
+              {"id": "w:53", "view_id": "v:53", "database_id": "db:1", "width": 1, "future_widget": 53},
+              {"id": "w:54", "view_id": "v:54", "database_id": "db:1", "width": 1, "future_widget": 54},
+              {"id": "w:55", "view_id": "v:55", "database_id": "db:1", "width": 1, "future_widget": 55},
+              {"id": "w:56", "view_id": "v:56", "database_id": "db:1", "width": 1, "future_widget": 56},
+              {"id": "w:57", "view_id": "v:57", "database_id": "db:1", "width": 1, "future_widget": 57},
+              {"id": "w:58", "view_id": "v:58", "database_id": "db:1", "width": 1, "future_widget": 58},
+              {"id": "w:59", "view_id": "v:59", "database_id": "db:1", "width": 1, "future_widget": 59},
+              {"id": "w:60", "view_id": "v:60", "database_id": "db:1", "width": 1, "future_widget": 60},
+              {"id": "w:61", "view_id": "v:61", "database_id": "db:1", "width": 1, "future_widget": 61},
+              {"id": "w:62", "view_id": "v:62", "database_id": "db:1", "width": 1, "future_widget": 62},
+              {"id": "w:63", "view_id": "v:63", "database_id": "db:1", "width": 1, "future_widget": 63},
+              {"id": "w:64", "view_id": "v:64", "database_id": "db:1", "width": 1, "future_widget": 64},
+              {"id": "w:65", "view_id": "v:65", "database_id": "db:1", "width": 1, "future_widget": 65},
+              {"id": "w:66", "view_id": "v:66", "database_id": "db:1", "width": 1, "future_widget": 66},
+              {"id": "w:67", "view_id": "v:67", "database_id": "db:1", "width": 1, "future_widget": 67},
+              {"id": "w:68", "view_id": "v:68", "database_id": "db:1", "width": 1, "future_widget": 68},
+              {"id": "w:69", "view_id": "v:69", "database_id": "db:1", "width": 1, "future_widget": 69},
+              {"id": "w:70", "view_id": "v:70", "database_id": "db:1", "width": 1, "future_widget": 70},
+              {"id": "w:71", "view_id": "v:71", "database_id": "db:1", "width": 1, "future_widget": 71},
+              {"id": "w:72", "view_id": "v:72", "database_id": "db:1", "width": 1, "future_widget": 72},
+              {"id": "w:73", "view_id": "v:73", "database_id": "db:1", "width": 1, "future_widget": 73},
+              {"id": "w:74", "view_id": "v:74", "database_id": "db:1", "width": 1, "future_widget": 74},
+              {"id": "w:75", "view_id": "v:75", "database_id": "db:1", "width": 1, "future_widget": 75},
+              {"id": "w:76", "view_id": "v:76", "database_id": "db:1", "width": 1, "future_widget": 76},
+              {"id": "w:77", "view_id": "v:77", "database_id": "db:1", "width": 1, "future_widget": 77},
+              {"id": "w:78", "view_id": "v:78", "database_id": "db:1", "width": 1, "future_widget": 78},
+              {"id": "w:79", "view_id": "v:79", "database_id": "db:1", "width": 1, "future_widget": 79},
+              {"id": "w:80", "view_id": "v:80", "database_id": "db:1", "width": 1, "future_widget": 80},
+              {"id": "w:81", "view_id": "v:81", "database_id": "db:1", "width": 1, "future_widget": 81},
+              {"id": "w:82", "view_id": "v:82", "database_id": "db:1", "width": 1, "future_widget": 82},
+              {"id": "w:83", "view_id": "v:83", "database_id": "db:1", "width": 1, "future_widget": 83},
+              {"id": "w:84", "view_id": "v:84", "database_id": "db:1", "width": 1, "future_widget": 84},
+              {"id": "w:85", "view_id": "v:85", "database_id": "db:1", "width": 1, "future_widget": 85},
+              {"id": "w:86", "view_id": "v:86", "database_id": "db:1", "width": 1, "future_widget": 86},
+              {"id": "w:87", "view_id": "v:87", "database_id": "db:1", "width": 1, "future_widget": 87},
+              {"id": "w:88", "view_id": "v:88", "database_id": "db:1", "width": 1, "future_widget": 88},
+              {"id": "w:89", "view_id": "v:89", "database_id": "db:1", "width": 1, "future_widget": 89},
+              {"id": "w:90", "view_id": "v:90", "database_id": "db:1", "width": 1, "future_widget": 90},
+              {"id": "w:91", "view_id": "v:91", "database_id": "db:1", "width": 1, "future_widget": 91},
+              {"id": "w:92", "view_id": "v:92", "database_id": "db:1", "width": 1, "future_widget": 92},
+              {"id": "w:93", "view_id": "v:93", "database_id": "db:1", "width": 1, "future_widget": 93},
+              {"id": "w:94", "view_id": "v:94", "database_id": "db:1", "width": 1, "future_widget": 94},
+              {"id": "w:95", "view_id": "v:95", "database_id": "db:1", "width": 1, "future_widget": 95},
+              {"id": "w:96", "view_id": "v:96", "database_id": "db:1", "width": 1, "future_widget": 96},
+              {"id": "w:97", "view_id": "v:97", "database_id": "db:1", "width": 1, "future_widget": 97},
+              {"id": "w:98", "view_id": "v:98", "database_id": "db:1", "width": 1, "future_widget": 98},
+              {"id": "w:99", "view_id": "v:99", "database_id": "db:1", "width": 1, "future_widget": 99}
+            ]
+          }
+        ]
+      },
+      "parsed": {
+        "rows": [
+          {
+            "id": "long",
+            "height": 360,
+            "widgets": [
+              {"id": "w:0", "view_id": "v:0", "database_id": "db:1", "width": 1},
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 1},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 1},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 1},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 1},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 1},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 1},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 1},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 1},
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 1},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 1},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 1},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 1},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 1},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 1},
+              {"id": "w:15", "view_id": "v:15", "database_id": "db:1", "width": 1},
+              {"id": "w:16", "view_id": "v:16", "database_id": "db:1", "width": 1},
+              {"id": "w:17", "view_id": "v:17", "database_id": "db:1", "width": 1},
+              {"id": "w:18", "view_id": "v:18", "database_id": "db:1", "width": 1},
+              {"id": "w:19", "view_id": "v:19", "database_id": "db:1", "width": 1},
+              {"id": "w:20", "view_id": "v:20", "database_id": "db:1", "width": 1},
+              {"id": "w:21", "view_id": "v:21", "database_id": "db:1", "width": 1},
+              {"id": "w:22", "view_id": "v:22", "database_id": "db:1", "width": 1},
+              {"id": "w:23", "view_id": "v:23", "database_id": "db:1", "width": 1},
+              {"id": "w:24", "view_id": "v:24", "database_id": "db:1", "width": 1},
+              {"id": "w:25", "view_id": "v:25", "database_id": "db:1", "width": 1},
+              {"id": "w:26", "view_id": "v:26", "database_id": "db:1", "width": 1},
+              {"id": "w:27", "view_id": "v:27", "database_id": "db:1", "width": 1},
+              {"id": "w:28", "view_id": "v:28", "database_id": "db:1", "width": 1},
+              {"id": "w:29", "view_id": "v:29", "database_id": "db:1", "width": 1},
+              {"id": "w:30", "view_id": "v:30", "database_id": "db:1", "width": 1},
+              {"id": "w:31", "view_id": "v:31", "database_id": "db:1", "width": 1},
+              {"id": "w:32", "view_id": "v:32", "database_id": "db:1", "width": 1},
+              {"id": "w:33", "view_id": "v:33", "database_id": "db:1", "width": 1},
+              {"id": "w:34", "view_id": "v:34", "database_id": "db:1", "width": 1},
+              {"id": "w:35", "view_id": "v:35", "database_id": "db:1", "width": 1},
+              {"id": "w:36", "view_id": "v:36", "database_id": "db:1", "width": 1},
+              {"id": "w:37", "view_id": "v:37", "database_id": "db:1", "width": 1},
+              {"id": "w:38", "view_id": "v:38", "database_id": "db:1", "width": 1},
+              {"id": "w:39", "view_id": "v:39", "database_id": "db:1", "width": 1},
+              {"id": "w:40", "view_id": "v:40", "database_id": "db:1", "width": 1},
+              {"id": "w:41", "view_id": "v:41", "database_id": "db:1", "width": 1},
+              {"id": "w:42", "view_id": "v:42", "database_id": "db:1", "width": 1},
+              {"id": "w:43", "view_id": "v:43", "database_id": "db:1", "width": 1},
+              {"id": "w:44", "view_id": "v:44", "database_id": "db:1", "width": 1},
+              {"id": "w:45", "view_id": "v:45", "database_id": "db:1", "width": 1},
+              {"id": "w:46", "view_id": "v:46", "database_id": "db:1", "width": 1},
+              {"id": "w:47", "view_id": "v:47", "database_id": "db:1", "width": 1},
+              {"id": "w:48", "view_id": "v:48", "database_id": "db:1", "width": 1},
+              {"id": "w:49", "view_id": "v:49", "database_id": "db:1", "width": 1},
+              {"id": "w:50", "view_id": "v:50", "database_id": "db:1", "width": 1},
+              {"id": "w:51", "view_id": "v:51", "database_id": "db:1", "width": 1},
+              {"id": "w:52", "view_id": "v:52", "database_id": "db:1", "width": 1},
+              {"id": "w:53", "view_id": "v:53", "database_id": "db:1", "width": 1},
+              {"id": "w:54", "view_id": "v:54", "database_id": "db:1", "width": 1},
+              {"id": "w:55", "view_id": "v:55", "database_id": "db:1", "width": 1},
+              {"id": "w:56", "view_id": "v:56", "database_id": "db:1", "width": 1},
+              {"id": "w:57", "view_id": "v:57", "database_id": "db:1", "width": 1},
+              {"id": "w:58", "view_id": "v:58", "database_id": "db:1", "width": 1},
+              {"id": "w:59", "view_id": "v:59", "database_id": "db:1", "width": 1},
+              {"id": "w:60", "view_id": "v:60", "database_id": "db:1", "width": 1},
+              {"id": "w:61", "view_id": "v:61", "database_id": "db:1", "width": 1},
+              {"id": "w:62", "view_id": "v:62", "database_id": "db:1", "width": 1},
+              {"id": "w:63", "view_id": "v:63", "database_id": "db:1", "width": 1},
+              {"id": "w:64", "view_id": "v:64", "database_id": "db:1", "width": 1},
+              {"id": "w:65", "view_id": "v:65", "database_id": "db:1", "width": 1},
+              {"id": "w:66", "view_id": "v:66", "database_id": "db:1", "width": 1},
+              {"id": "w:67", "view_id": "v:67", "database_id": "db:1", "width": 1},
+              {"id": "w:68", "view_id": "v:68", "database_id": "db:1", "width": 1},
+              {"id": "w:69", "view_id": "v:69", "database_id": "db:1", "width": 1},
+              {"id": "w:70", "view_id": "v:70", "database_id": "db:1", "width": 1},
+              {"id": "w:71", "view_id": "v:71", "database_id": "db:1", "width": 1},
+              {"id": "w:72", "view_id": "v:72", "database_id": "db:1", "width": 1},
+              {"id": "w:73", "view_id": "v:73", "database_id": "db:1", "width": 1},
+              {"id": "w:74", "view_id": "v:74", "database_id": "db:1", "width": 1},
+              {"id": "w:75", "view_id": "v:75", "database_id": "db:1", "width": 1},
+              {"id": "w:76", "view_id": "v:76", "database_id": "db:1", "width": 1},
+              {"id": "w:77", "view_id": "v:77", "database_id": "db:1", "width": 1},
+              {"id": "w:78", "view_id": "v:78", "database_id": "db:1", "width": 1},
+              {"id": "w:79", "view_id": "v:79", "database_id": "db:1", "width": 1},
+              {"id": "w:80", "view_id": "v:80", "database_id": "db:1", "width": 1},
+              {"id": "w:81", "view_id": "v:81", "database_id": "db:1", "width": 1},
+              {"id": "w:82", "view_id": "v:82", "database_id": "db:1", "width": 1},
+              {"id": "w:83", "view_id": "v:83", "database_id": "db:1", "width": 1},
+              {"id": "w:84", "view_id": "v:84", "database_id": "db:1", "width": 1},
+              {"id": "w:85", "view_id": "v:85", "database_id": "db:1", "width": 1},
+              {"id": "w:86", "view_id": "v:86", "database_id": "db:1", "width": 1},
+              {"id": "w:87", "view_id": "v:87", "database_id": "db:1", "width": 1},
+              {"id": "w:88", "view_id": "v:88", "database_id": "db:1", "width": 1},
+              {"id": "w:89", "view_id": "v:89", "database_id": "db:1", "width": 1},
+              {"id": "w:90", "view_id": "v:90", "database_id": "db:1", "width": 1},
+              {"id": "w:91", "view_id": "v:91", "database_id": "db:1", "width": 1},
+              {"id": "w:92", "view_id": "v:92", "database_id": "db:1", "width": 1},
+              {"id": "w:93", "view_id": "v:93", "database_id": "db:1", "width": 1},
+              {"id": "w:94", "view_id": "v:94", "database_id": "db:1", "width": 1},
+              {"id": "w:95", "view_id": "v:95", "database_id": "db:1", "width": 1},
+              {"id": "w:96", "view_id": "v:96", "database_id": "db:1", "width": 1},
+              {"id": "w:97", "view_id": "v:97", "database_id": "db:1", "width": 1},
+              {"id": "w:98", "view_id": "v:98", "database_id": "db:1", "width": 1},
+              {"id": "w:99", "view_id": "v:99", "database_id": "db:1", "width": 1}
+            ]
+          }
+        ]
+      },
+      "write": {
+        "rows": [
+          {
+            "id": "long",
+            "height": 480,
+            "widgets": [
+              {"id": "w:0", "view_id": "v:0", "database_id": "db:1", "width": 1},
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 1},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 1},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 1},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 1},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 1},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 1},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 1},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 1},
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 1},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 1},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 1},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 1},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 1},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 1},
+              {"id": "w:15", "view_id": "v:15", "database_id": "db:1", "width": 1},
+              {"id": "w:16", "view_id": "v:16", "database_id": "db:1", "width": 1},
+              {"id": "w:17", "view_id": "v:17", "database_id": "db:1", "width": 1},
+              {"id": "w:18", "view_id": "v:18", "database_id": "db:1", "width": 1},
+              {"id": "w:19", "view_id": "v:19", "database_id": "db:1", "width": 1},
+              {"id": "w:20", "view_id": "v:20", "database_id": "db:1", "width": 1},
+              {"id": "w:21", "view_id": "v:21", "database_id": "db:1", "width": 1},
+              {"id": "w:22", "view_id": "v:22", "database_id": "db:1", "width": 1},
+              {"id": "w:23", "view_id": "v:23", "database_id": "db:1", "width": 1},
+              {"id": "w:24", "view_id": "v:24", "database_id": "db:1", "width": 1},
+              {"id": "w:25", "view_id": "v:25", "database_id": "db:1", "width": 1},
+              {"id": "w:26", "view_id": "v:26", "database_id": "db:1", "width": 1},
+              {"id": "w:27", "view_id": "v:27", "database_id": "db:1", "width": 1},
+              {"id": "w:28", "view_id": "v:28", "database_id": "db:1", "width": 1},
+              {"id": "w:29", "view_id": "v:29", "database_id": "db:1", "width": 1},
+              {"id": "w:30", "view_id": "v:30", "database_id": "db:1", "width": 1},
+              {"id": "w:31", "view_id": "v:31", "database_id": "db:1", "width": 1},
+              {"id": "w:32", "view_id": "v:32", "database_id": "db:1", "width": 1},
+              {"id": "w:33", "view_id": "v:33", "database_id": "db:1", "width": 1},
+              {"id": "w:34", "view_id": "v:34", "database_id": "db:1", "width": 1},
+              {"id": "w:35", "view_id": "v:35", "database_id": "db:1", "width": 1},
+              {"id": "w:36", "view_id": "v:36", "database_id": "db:1", "width": 1},
+              {"id": "w:37", "view_id": "v:37", "database_id": "db:1", "width": 1},
+              {"id": "w:38", "view_id": "v:38", "database_id": "db:1", "width": 1},
+              {"id": "w:39", "view_id": "v:39", "database_id": "db:1", "width": 1},
+              {"id": "w:40", "view_id": "v:40", "database_id": "db:1", "width": 1},
+              {"id": "w:41", "view_id": "v:41", "database_id": "db:1", "width": 1},
+              {"id": "w:42", "view_id": "v:42", "database_id": "db:1", "width": 1},
+              {"id": "w:43", "view_id": "v:43", "database_id": "db:1", "width": 1},
+              {"id": "w:44", "view_id": "v:44", "database_id": "db:1", "width": 1},
+              {"id": "w:45", "view_id": "v:45", "database_id": "db:1", "width": 1},
+              {"id": "w:46", "view_id": "v:46", "database_id": "db:1", "width": 1},
+              {"id": "w:47", "view_id": "v:47", "database_id": "db:1", "width": 1},
+              {"id": "w:48", "view_id": "v:48", "database_id": "db:1", "width": 1},
+              {"id": "w:49", "view_id": "v:49", "database_id": "db:1", "width": 1},
+              {"id": "w:50", "view_id": "v:50", "database_id": "db:1", "width": 1},
+              {"id": "w:51", "view_id": "v:51", "database_id": "db:1", "width": 1},
+              {"id": "w:52", "view_id": "v:52", "database_id": "db:1", "width": 1},
+              {"id": "w:53", "view_id": "v:53", "database_id": "db:1", "width": 1},
+              {"id": "w:54", "view_id": "v:54", "database_id": "db:1", "width": 1},
+              {"id": "w:55", "view_id": "v:55", "database_id": "db:1", "width": 1},
+              {"id": "w:56", "view_id": "v:56", "database_id": "db:1", "width": 1},
+              {"id": "w:57", "view_id": "v:57", "database_id": "db:1", "width": 1},
+              {"id": "w:58", "view_id": "v:58", "database_id": "db:1", "width": 1},
+              {"id": "w:59", "view_id": "v:59", "database_id": "db:1", "width": 1},
+              {"id": "w:60", "view_id": "v:60", "database_id": "db:1", "width": 1},
+              {"id": "w:61", "view_id": "v:61", "database_id": "db:1", "width": 1},
+              {"id": "w:62", "view_id": "v:62", "database_id": "db:1", "width": 1},
+              {"id": "w:63", "view_id": "v:63", "database_id": "db:1", "width": 1},
+              {"id": "w:64", "view_id": "v:64", "database_id": "db:1", "width": 1},
+              {"id": "w:65", "view_id": "v:65", "database_id": "db:1", "width": 1},
+              {"id": "w:66", "view_id": "v:66", "database_id": "db:1", "width": 1},
+              {"id": "w:67", "view_id": "v:67", "database_id": "db:1", "width": 1},
+              {"id": "w:68", "view_id": "v:68", "database_id": "db:1", "width": 1},
+              {"id": "w:69", "view_id": "v:69", "database_id": "db:1", "width": 1},
+              {"id": "w:70", "view_id": "v:70", "database_id": "db:1", "width": 1},
+              {"id": "w:71", "view_id": "v:71", "database_id": "db:1", "width": 1},
+              {"id": "w:72", "view_id": "v:72", "database_id": "db:1", "width": 1},
+              {"id": "w:73", "view_id": "v:73", "database_id": "db:1", "width": 1},
+              {"id": "w:74", "view_id": "v:74", "database_id": "db:1", "width": 1},
+              {"id": "w:75", "view_id": "v:75", "database_id": "db:1", "width": 1},
+              {"id": "w:76", "view_id": "v:76", "database_id": "db:1", "width": 1},
+              {"id": "w:77", "view_id": "v:77", "database_id": "db:1", "width": 1},
+              {"id": "w:78", "view_id": "v:78", "database_id": "db:1", "width": 1},
+              {"id": "w:79", "view_id": "v:79", "database_id": "db:1", "width": 1},
+              {"id": "w:80", "view_id": "v:80", "database_id": "db:1", "width": 1},
+              {"id": "w:81", "view_id": "v:81", "database_id": "db:1", "width": 1},
+              {"id": "w:82", "view_id": "v:82", "database_id": "db:1", "width": 1},
+              {"id": "w:83", "view_id": "v:83", "database_id": "db:1", "width": 1},
+              {"id": "w:84", "view_id": "v:84", "database_id": "db:1", "width": 1},
+              {"id": "w:85", "view_id": "v:85", "database_id": "db:1", "width": 1},
+              {"id": "w:86", "view_id": "v:86", "database_id": "db:1", "width": 1},
+              {"id": "w:87", "view_id": "v:87", "database_id": "db:1", "width": 1},
+              {"id": "w:88", "view_id": "v:88", "database_id": "db:1", "width": 1},
+              {"id": "w:89", "view_id": "v:89", "database_id": "db:1", "width": 1},
+              {"id": "w:90", "view_id": "v:90", "database_id": "db:1", "width": 1},
+              {"id": "w:91", "view_id": "v:91", "database_id": "db:1", "width": 1},
+              {"id": "w:92", "view_id": "v:92", "database_id": "db:1", "width": 1},
+              {"id": "w:93", "view_id": "v:93", "database_id": "db:1", "width": 1},
+              {"id": "w:94", "view_id": "v:94", "database_id": "db:1", "width": 1},
+              {"id": "w:95", "view_id": "v:95", "database_id": "db:1", "width": 1},
+              {"id": "w:96", "view_id": "v:96", "database_id": "db:1", "width": 1},
+              {"id": "w:97", "view_id": "v:97", "database_id": "db:1", "width": 1},
+              {"id": "w:98", "view_id": "v:98", "database_id": "db:1", "width": 1},
+              {"id": "w:99", "view_id": "v:99", "database_id": "db:1", "width": 1}
+            ]
+          }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          {
+            "id": "long",
+            "height": 480,
+            "future_row": "keep",
+            "widgets": [
+              {"id": "w:0", "view_id": "v:0", "database_id": "db:1", "width": 1, "future_widget": 0},
+              {"id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 1, "future_widget": 1},
+              {"id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 1, "future_widget": 2},
+              {"id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 1, "future_widget": 3},
+              {"id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 1, "future_widget": 4},
+              {"id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 1, "future_widget": 5},
+              {"id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 1, "future_widget": 6},
+              {"id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 1, "future_widget": 7},
+              {"id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 1, "future_widget": 8},
+              {"id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 1, "future_widget": 9},
+              {"id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 1, "future_widget": 10},
+              {"id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 1, "future_widget": 11},
+              {"id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 1, "future_widget": 12},
+              {"id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 1, "future_widget": 13},
+              {"id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 1, "future_widget": 14},
+              {"id": "w:15", "view_id": "v:15", "database_id": "db:1", "width": 1, "future_widget": 15},
+              {"id": "w:16", "view_id": "v:16", "database_id": "db:1", "width": 1, "future_widget": 16},
+              {"id": "w:17", "view_id": "v:17", "database_id": "db:1", "width": 1, "future_widget": 17},
+              {"id": "w:18", "view_id": "v:18", "database_id": "db:1", "width": 1, "future_widget": 18},
+              {"id": "w:19", "view_id": "v:19", "database_id": "db:1", "width": 1, "future_widget": 19},
+              {"id": "w:20", "view_id": "v:20", "database_id": "db:1", "width": 1, "future_widget": 20},
+              {"id": "w:21", "view_id": "v:21", "database_id": "db:1", "width": 1, "future_widget": 21},
+              {"id": "w:22", "view_id": "v:22", "database_id": "db:1", "width": 1, "future_widget": 22},
+              {"id": "w:23", "view_id": "v:23", "database_id": "db:1", "width": 1, "future_widget": 23},
+              {"id": "w:24", "view_id": "v:24", "database_id": "db:1", "width": 1, "future_widget": 24},
+              {"id": "w:25", "view_id": "v:25", "database_id": "db:1", "width": 1, "future_widget": 25},
+              {"id": "w:26", "view_id": "v:26", "database_id": "db:1", "width": 1, "future_widget": 26},
+              {"id": "w:27", "view_id": "v:27", "database_id": "db:1", "width": 1, "future_widget": 27},
+              {"id": "w:28", "view_id": "v:28", "database_id": "db:1", "width": 1, "future_widget": 28},
+              {"id": "w:29", "view_id": "v:29", "database_id": "db:1", "width": 1, "future_widget": 29},
+              {"id": "w:30", "view_id": "v:30", "database_id": "db:1", "width": 1, "future_widget": 30},
+              {"id": "w:31", "view_id": "v:31", "database_id": "db:1", "width": 1, "future_widget": 31},
+              {"id": "w:32", "view_id": "v:32", "database_id": "db:1", "width": 1, "future_widget": 32},
+              {"id": "w:33", "view_id": "v:33", "database_id": "db:1", "width": 1, "future_widget": 33},
+              {"id": "w:34", "view_id": "v:34", "database_id": "db:1", "width": 1, "future_widget": 34},
+              {"id": "w:35", "view_id": "v:35", "database_id": "db:1", "width": 1, "future_widget": 35},
+              {"id": "w:36", "view_id": "v:36", "database_id": "db:1", "width": 1, "future_widget": 36},
+              {"id": "w:37", "view_id": "v:37", "database_id": "db:1", "width": 1, "future_widget": 37},
+              {"id": "w:38", "view_id": "v:38", "database_id": "db:1", "width": 1, "future_widget": 38},
+              {"id": "w:39", "view_id": "v:39", "database_id": "db:1", "width": 1, "future_widget": 39},
+              {"id": "w:40", "view_id": "v:40", "database_id": "db:1", "width": 1, "future_widget": 40},
+              {"id": "w:41", "view_id": "v:41", "database_id": "db:1", "width": 1, "future_widget": 41},
+              {"id": "w:42", "view_id": "v:42", "database_id": "db:1", "width": 1, "future_widget": 42},
+              {"id": "w:43", "view_id": "v:43", "database_id": "db:1", "width": 1, "future_widget": 43},
+              {"id": "w:44", "view_id": "v:44", "database_id": "db:1", "width": 1, "future_widget": 44},
+              {"id": "w:45", "view_id": "v:45", "database_id": "db:1", "width": 1, "future_widget": 45},
+              {"id": "w:46", "view_id": "v:46", "database_id": "db:1", "width": 1, "future_widget": 46},
+              {"id": "w:47", "view_id": "v:47", "database_id": "db:1", "width": 1, "future_widget": 47},
+              {"id": "w:48", "view_id": "v:48", "database_id": "db:1", "width": 1, "future_widget": 48},
+              {"id": "w:49", "view_id": "v:49", "database_id": "db:1", "width": 1, "future_widget": 49},
+              {"id": "w:50", "view_id": "v:50", "database_id": "db:1", "width": 1, "future_widget": 50},
+              {"id": "w:51", "view_id": "v:51", "database_id": "db:1", "width": 1, "future_widget": 51},
+              {"id": "w:52", "view_id": "v:52", "database_id": "db:1", "width": 1, "future_widget": 52},
+              {"id": "w:53", "view_id": "v:53", "database_id": "db:1", "width": 1, "future_widget": 53},
+              {"id": "w:54", "view_id": "v:54", "database_id": "db:1", "width": 1, "future_widget": 54},
+              {"id": "w:55", "view_id": "v:55", "database_id": "db:1", "width": 1, "future_widget": 55},
+              {"id": "w:56", "view_id": "v:56", "database_id": "db:1", "width": 1, "future_widget": 56},
+              {"id": "w:57", "view_id": "v:57", "database_id": "db:1", "width": 1, "future_widget": 57},
+              {"id": "w:58", "view_id": "v:58", "database_id": "db:1", "width": 1, "future_widget": 58},
+              {"id": "w:59", "view_id": "v:59", "database_id": "db:1", "width": 1, "future_widget": 59},
+              {"id": "w:60", "view_id": "v:60", "database_id": "db:1", "width": 1, "future_widget": 60},
+              {"id": "w:61", "view_id": "v:61", "database_id": "db:1", "width": 1, "future_widget": 61},
+              {"id": "w:62", "view_id": "v:62", "database_id": "db:1", "width": 1, "future_widget": 62},
+              {"id": "w:63", "view_id": "v:63", "database_id": "db:1", "width": 1, "future_widget": 63},
+              {"id": "w:64", "view_id": "v:64", "database_id": "db:1", "width": 1, "future_widget": 64},
+              {"id": "w:65", "view_id": "v:65", "database_id": "db:1", "width": 1, "future_widget": 65},
+              {"id": "w:66", "view_id": "v:66", "database_id": "db:1", "width": 1, "future_widget": 66},
+              {"id": "w:67", "view_id": "v:67", "database_id": "db:1", "width": 1, "future_widget": 67},
+              {"id": "w:68", "view_id": "v:68", "database_id": "db:1", "width": 1, "future_widget": 68},
+              {"id": "w:69", "view_id": "v:69", "database_id": "db:1", "width": 1, "future_widget": 69},
+              {"id": "w:70", "view_id": "v:70", "database_id": "db:1", "width": 1, "future_widget": 70},
+              {"id": "w:71", "view_id": "v:71", "database_id": "db:1", "width": 1, "future_widget": 71},
+              {"id": "w:72", "view_id": "v:72", "database_id": "db:1", "width": 1, "future_widget": 72},
+              {"id": "w:73", "view_id": "v:73", "database_id": "db:1", "width": 1, "future_widget": 73},
+              {"id": "w:74", "view_id": "v:74", "database_id": "db:1", "width": 1, "future_widget": 74},
+              {"id": "w:75", "view_id": "v:75", "database_id": "db:1", "width": 1, "future_widget": 75},
+              {"id": "w:76", "view_id": "v:76", "database_id": "db:1", "width": 1, "future_widget": 76},
+              {"id": "w:77", "view_id": "v:77", "database_id": "db:1", "width": 1, "future_widget": 77},
+              {"id": "w:78", "view_id": "v:78", "database_id": "db:1", "width": 1, "future_widget": 78},
+              {"id": "w:79", "view_id": "v:79", "database_id": "db:1", "width": 1, "future_widget": 79},
+              {"id": "w:80", "view_id": "v:80", "database_id": "db:1", "width": 1, "future_widget": 80},
+              {"id": "w:81", "view_id": "v:81", "database_id": "db:1", "width": 1, "future_widget": 81},
+              {"id": "w:82", "view_id": "v:82", "database_id": "db:1", "width": 1, "future_widget": 82},
+              {"id": "w:83", "view_id": "v:83", "database_id": "db:1", "width": 1, "future_widget": 83},
+              {"id": "w:84", "view_id": "v:84", "database_id": "db:1", "width": 1, "future_widget": 84},
+              {"id": "w:85", "view_id": "v:85", "database_id": "db:1", "width": 1, "future_widget": 85},
+              {"id": "w:86", "view_id": "v:86", "database_id": "db:1", "width": 1, "future_widget": 86},
+              {"id": "w:87", "view_id": "v:87", "database_id": "db:1", "width": 1, "future_widget": 87},
+              {"id": "w:88", "view_id": "v:88", "database_id": "db:1", "width": 1, "future_widget": 88},
+              {"id": "w:89", "view_id": "v:89", "database_id": "db:1", "width": 1, "future_widget": 89},
+              {"id": "w:90", "view_id": "v:90", "database_id": "db:1", "width": 1, "future_widget": 90},
+              {"id": "w:91", "view_id": "v:91", "database_id": "db:1", "width": 1, "future_widget": 91},
+              {"id": "w:92", "view_id": "v:92", "database_id": "db:1", "width": 1, "future_widget": 92},
+              {"id": "w:93", "view_id": "v:93", "database_id": "db:1", "width": 1, "future_widget": 93},
+              {"id": "w:94", "view_id": "v:94", "database_id": "db:1", "width": 1, "future_widget": 94},
+              {"id": "w:95", "view_id": "v:95", "database_id": "db:1", "width": 1, "future_widget": 95},
+              {"id": "w:96", "view_id": "v:96", "database_id": "db:1", "width": 1, "future_widget": 96},
+              {"id": "w:97", "view_id": "v:97", "database_id": "db:1", "width": 1, "future_widget": 97},
+              {"id": "w:98", "view_id": "v:98", "database_id": "db:1", "width": 1, "future_widget": 98},
+              {"id": "w:99", "view_id": "v:99", "database_id": "db:1", "width": 1, "future_widget": 99}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

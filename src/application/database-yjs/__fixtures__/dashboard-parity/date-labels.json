@@ -1,0 +1,274 @@
+{
+  "fixture": "date-labels",
+  "version": 1,
+  "encoding": {
+    "locale_map": "toIntlLocale(app language) -> the locale every chart formatter uses (WP14 §1.6.4): underscores become hyphens; the aliases en -> en-US, hin -> hi, zh -> zh-CN and pt -> pt-BR apply; any other tag stays as it is; a tag the platform has no date data for (web: Intl.DateTimeFormat.supportedLocalesOf(tag) is empty or throws; desktop: !DateFormat.localeExists(tag) after initializeDateFormatting()) and the empty tag fall back to en-US. Rows are [{app, intl}].",
+    "cases": "formatChartDateLabel(key, condition, locale, week_of_template) -> the label of a canonical chart date key (WP14 §1.6.5). condition is a DateConditionPB name. Day YYYY-MM-DD -> skeleton yMMMMd; Month YYYY-MM -> yMMM; Year YYYY -> y; Week (the Monday key YYYY-MM-DD) -> week_of_template with its two {} filled in order by the Monday as MMMd (yMMMd when the Sunday six days later is in another year) and the Sunday as yMMMd; Relative with a YYYY-MM key (a date beyond the relative buckets) -> as Month. rel:* keys are not formatted here: their labels are the translated board.dateCondition.* texts. Keys are read as calendar dates (no time zone), never parsed back from labels.",
+    "skeletons": "web Intl.DateTimeFormat options: yMMMMd {year: numeric, month: long, day: numeric}, yMMM {year: numeric, month: short}, y {year: numeric}, MMMd {month: short, day: numeric}, yMMMd {year: numeric, month: short, day: numeric}; desktop DateFormat.yMMMMd, .yMMM, .y, .MMMd, .yMMMd with the locale.",
+    "overrides": "{locale: {skeleton: CLDR pattern}}: when Chrome ICU and Dart intl disagree for a pinned locale, both clients format that skeleton with the pattern instead (pattern letters y, M, MMM, MMMM, d, quoted literals). Empty: when this file was generated, Chrome 145 (V8 ICU), Node 23 (ICU 76.1, CLDR 46) and Dart intl 0.20.2 produced the same text for every case."
+  },
+  "locale_map": [
+    {
+      "app": "en",
+      "intl": "en-US"
+    },
+    {
+      "app": "en-US",
+      "intl": "en-US"
+    },
+    {
+      "app": "hin",
+      "intl": "hi"
+    },
+    {
+      "app": "zh",
+      "intl": "zh-CN"
+    },
+    {
+      "app": "pt",
+      "intl": "pt-BR"
+    },
+    {
+      "app": "zh-CN",
+      "intl": "zh-CN"
+    },
+    {
+      "app": "zh_CN",
+      "intl": "zh-CN"
+    },
+    {
+      "app": "ja-JP",
+      "intl": "ja-JP"
+    },
+    {
+      "app": "de-DE",
+      "intl": "de-DE"
+    },
+    {
+      "app": "fr-FR",
+      "intl": "fr-FR"
+    },
+    {
+      "app": "xx",
+      "intl": "en-US"
+    },
+    {
+      "app": "",
+      "intl": "en-US"
+    }
+  ],
+  "week_of_template": "Week of {} - {}",
+  "cases": [
+    {
+      "locale": "en-US",
+      "condition": "Week",
+      "key": "2026-03-09",
+      "expected": "Week of Mar 9 - Mar 15, 2026"
+    },
+    {
+      "locale": "en-US",
+      "condition": "Week",
+      "key": "2026-03-30",
+      "expected": "Week of Mar 30 - Apr 5, 2026"
+    },
+    {
+      "locale": "en-US",
+      "condition": "Week",
+      "key": "2025-12-29",
+      "expected": "Week of Dec 29, 2025 - Jan 4, 2026"
+    },
+    {
+      "locale": "en-US",
+      "condition": "Day",
+      "key": "2026-01-15",
+      "expected": "January 15, 2026"
+    },
+    {
+      "locale": "en-US",
+      "condition": "Month",
+      "key": "2026-01",
+      "expected": "Jan 2026"
+    },
+    {
+      "locale": "en-US",
+      "condition": "Year",
+      "key": "2026",
+      "expected": "2026"
+    },
+    {
+      "locale": "en-US",
+      "condition": "Relative",
+      "key": "2026-04",
+      "expected": "Apr 2026"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Week",
+      "key": "2026-03-09",
+      "expected": "Week of 3月9日 - 2026年3月15日"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Week",
+      "key": "2026-03-30",
+      "expected": "Week of 3月30日 - 2026年4月5日"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Week",
+      "key": "2025-12-29",
+      "expected": "Week of 2025年12月29日 - 2026年1月4日"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Day",
+      "key": "2026-01-15",
+      "expected": "2026年1月15日"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Month",
+      "key": "2026-01",
+      "expected": "2026年1月"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Year",
+      "key": "2026",
+      "expected": "2026年"
+    },
+    {
+      "locale": "zh-CN",
+      "condition": "Relative",
+      "key": "2026-04",
+      "expected": "2026年4月"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Week",
+      "key": "2026-03-09",
+      "expected": "Week of 3月9日 - 2026年3月15日"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Week",
+      "key": "2026-03-30",
+      "expected": "Week of 3月30日 - 2026年4月5日"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Week",
+      "key": "2025-12-29",
+      "expected": "Week of 2025年12月29日 - 2026年1月4日"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Day",
+      "key": "2026-01-15",
+      "expected": "2026年1月15日"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Month",
+      "key": "2026-01",
+      "expected": "2026年1月"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Year",
+      "key": "2026",
+      "expected": "2026年"
+    },
+    {
+      "locale": "ja-JP",
+      "condition": "Relative",
+      "key": "2026-04",
+      "expected": "2026年4月"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Week",
+      "key": "2026-03-09",
+      "expected": "Week of 9. März - 15. März 2026"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Week",
+      "key": "2026-03-30",
+      "expected": "Week of 30. März - 5. Apr. 2026"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Week",
+      "key": "2025-12-29",
+      "expected": "Week of 29. Dez. 2025 - 4. Jan. 2026"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Day",
+      "key": "2026-01-15",
+      "expected": "15. Januar 2026"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Month",
+      "key": "2026-01",
+      "expected": "Jan. 2026"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Year",
+      "key": "2026",
+      "expected": "2026"
+    },
+    {
+      "locale": "de-DE",
+      "condition": "Relative",
+      "key": "2026-04",
+      "expected": "Apr. 2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Week",
+      "key": "2026-03-09",
+      "expected": "Week of 9 mars - 15 mars 2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Week",
+      "key": "2026-03-30",
+      "expected": "Week of 30 mars - 5 avr. 2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Week",
+      "key": "2025-12-29",
+      "expected": "Week of 29 déc. 2025 - 4 janv. 2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Day",
+      "key": "2026-01-15",
+      "expected": "15 janvier 2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Month",
+      "key": "2026-01",
+      "expected": "janv. 2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Year",
+      "key": "2026",
+      "expected": "2026"
+    },
+    {
+      "locale": "fr-FR",
+      "condition": "Relative",
+      "key": "2026-04",
+      "expected": "avr. 2026"
+    }
+  ],
+  "overrides": {}
+}

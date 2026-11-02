@@ -136,6 +136,7 @@ it('offers no editing actions for an empty read-only image', () => {
 });
 
 describe('ImageBlock upload status', () => {
+  // CSS hover after upload completion is exercised in image-hover.spec.ts with the real renderer.
   it('keeps the rendered local preview when the pending upload succeeds', async () => {
     const retryLocalUrl = 'stored-file-id';
     const { rerender } = render(

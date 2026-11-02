@@ -151,6 +151,14 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     expect(within(timeline).queryByLabelText('Pro')).toBeNull();
     expect(timeline.getAttribute('aria-disabled')).toBe('true');
     expect(timeline.className).toContain('data-[disabled]:text-text-tertiary');
+    if (surface === 'view') {
+      // Dashboard follows Timeline's Pro policy: a member gets no crown.
+      const dashboard = screen.getByTestId('add-dashboard-view-button');
+
+      expect(within(dashboard).queryByLabelText('Pro')).toBeNull();
+      expect(dashboard.getAttribute('aria-disabled')).toBe('true');
+    }
+
     fireEvent.click(timeline);
     expect(mockAddPage).not.toHaveBeenCalled();
     expect(mockAddView).not.toHaveBeenCalled();
@@ -169,10 +177,15 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     await waitFor(() =>
       expect(screen.getByTestId(`add-timeline-${surface}-button`).hasAttribute('data-disabled')).toBe(false)
     );
+    if (surface === 'view') {
+      expect(screen.getByTestId('add-dashboard-view-button').hasAttribute('data-disabled')).toBe(false);
+    }
+
     fireEvent.click(screen.getByTestId(`add-timeline-${surface}-button`));
     await waitFor(() => expect(surface === 'page' ? mockAddPage : mockAddView).toHaveBeenCalledTimes(1));
   });
-  it.each(['timeline', 'chart', 'form'] as const)(
+  // Dashboard is a database view only, so the sidebar's page menu has none.
+  it.each(surface === 'view' ? (['timeline', 'dashboard', 'chart', 'form'] as const) : (['timeline', 'chart', 'form'] as const))(
     'offers the owner a %s crown and opens plan comparison before checkout, without creating a view',
     async (layout) => {
       mockWorkspaceId = `${surface}-${layout}-owner`;
@@ -279,8 +292,9 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     expect(screen.getByTestId('current-location').textContent).toBe(initialLocation);
   });
 
-  function item(layout: 'form' | 'chart' | 'timeline') {
+  function item(layout: 'form' | 'chart' | 'timeline' | 'dashboard') {
     if (layout === 'timeline') return screen.getByTestId(`add-timeline-${surface}-button`);
+    if (layout === 'dashboard') return screen.getByTestId('add-dashboard-view-button');
     if (layout === 'form') return screen.getByTestId(surface === 'view' ? 'add-form-view-option' : 'add-form-button');
     return surface === 'page' ? screen.getByTestId('add-chart-button') : screen.getByText('chart.menuName');
   }
@@ -332,6 +346,11 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     expect(item('form')).toBe(form);
     expect(within(form).getByLabelText('Pro')).toBeTruthy();
     expect(within(chart).queryByLabelText('Pro')).toBeNull();
+    // Timeline and Dashboard share one plan lookup with Form/Chart. Inventory
+    // refresh must not refetch it.
+    const initialSubscriptionReads = mockGetSubscriptions.mock.calls.length;
+
+    expect(initialSubscriptionReads).toBe(1);
     mockQuota.mockResolvedValue({ can_create_form: true, can_create_chart: false });
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED);
@@ -341,7 +360,7 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     expect(chart.hasAttribute('data-disabled')).toBe(false);
     await waitFor(() => expect(within(chart).getByLabelText('Pro')).toBeTruthy());
     expect(within(form).queryByLabelText('Pro')).toBeNull();
-    expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);
+    expect(mockGetSubscriptions).toHaveBeenCalledTimes(initialSubscriptionReads);
     expect(mockAddPage).not.toHaveBeenCalled();
     expect(mockAddView).not.toHaveBeenCalled();
   });

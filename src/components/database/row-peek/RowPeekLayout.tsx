@@ -1,3 +1,4 @@
+import { Portal } from '@mui/material';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -32,6 +33,7 @@ interface RowPeekLayoutState {
   claim: (owner: PeekOwner, isCurrent: () => boolean) => Promise<boolean>;
   release: (owner: symbol) => void;
   showSide: (owner: symbol, visible: boolean) => void;
+  mountOverlayContainer: (container: HTMLElement) => () => void;
 }
 
 const RowPeekLayoutContext = createContext<RowPeekLayoutState | null>(null);
@@ -66,6 +68,7 @@ export function RowPeekLayout({
   const available = Math.max(0, viewport - leftOffset - rightOffset);
   const canShow = !disabled && viewport >= 1024 && available >= MIN_SIDE_PEEK_WIDTH + MIN_PAGE_WIDTH;
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [overlayContainer, setOverlayContainer] = useState<HTMLElement | null>(null);
   const [owner, setOwner] = useState<symbol | null>(null);
   const [sideOwner, setSideOwner] = useState<symbol | null>(null);
   const active = useRef<PeekOwner | null>(null);
@@ -112,9 +115,14 @@ export function RowPeekLayout({
     setSideOwner(visible ? id : null);
   }, []);
 
+  const mountOverlayContainer = useCallback((next: HTMLElement) => {
+    setOverlayContainer(next);
+    return () => setOverlayContainer((current) => (current === next ? null : current));
+  }, []);
+
   const value = useMemo(
-    () => ({ container, canShow, owner, claim, release, showSide }),
-    [container, canShow, owner, claim, release, showSide]
+    () => ({ container, canShow, owner, claim, release, showSide, mountOverlayContainer }),
+    [container, canShow, owner, claim, release, showSide, mountOverlayContainer]
   );
 
   return (
@@ -122,77 +130,79 @@ export function RowPeekLayout({
       <RowPeekCanShowContext.Provider value={canShow}>
         <div className='h-screen w-screen'>
           {children}
-          <aside
-            data-testid='database-side-peek'
-            aria-label={t('grid.rowPage.sidePeek')}
-            hidden={!visible}
-            // Covers the page and its header, below body-level overlays (MUI modals and Radix
-            // menus are z-50), so editor panels and the peek's own menus stay on top.
-            className='database-side-peek fixed inset-y-0 z-40 bg-surface-primary'
-            style={{ right: rightOffset, width }}
-          >
-            <div
-              role='separator'
-              tabIndex={0}
-              aria-label={t('grid.rowPage.resizeSidePeek')}
-              aria-orientation='vertical'
-              aria-valuemin={MIN_SIDE_PEEK_WIDTH}
-              aria-valuemax={Math.round(clampSidePeekWidth(Number.MAX_VALUE, available))}
-              aria-valuenow={Math.round(width)}
-              data-testid='row-peek-resizer'
-              className='row-peek-resizer absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none select-none focus-visible:outline-none'
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.preventDefault();
-                widthTouched.current = true;
-                drag.current = { x: event.clientX, width };
-                event.currentTarget.setAttribute('data-dragging', 'true');
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerMove={(event) => {
-                if (!drag.current) return;
-                const next = clampSidePeekWidth(drag.current.width + drag.current.x - event.clientX, available);
+          <Portal container={overlayContainer} disablePortal={!overlayContainer}>
+            <aside
+              data-testid='database-side-peek'
+              aria-label={t('grid.rowPage.sidePeek')}
+              hidden={!visible}
+              // Covers the page and its header, below body-level overlays (MUI modals and Radix
+              // menus are z-50), so editor panels and the peek's own menus stay on top.
+              className='database-side-peek fixed inset-y-0 z-40 bg-surface-primary'
+              style={{ right: rightOffset, width }}
+            >
+              <div
+                role='separator'
+                tabIndex={0}
+                aria-label={t('grid.rowPage.resizeSidePeek')}
+                aria-orientation='vertical'
+                aria-valuemin={MIN_SIDE_PEEK_WIDTH}
+                aria-valuemax={Math.round(clampSidePeekWidth(Number.MAX_VALUE, available))}
+                aria-valuenow={Math.round(width)}
+                data-testid='row-peek-resizer'
+                className='row-peek-resizer absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none select-none focus-visible:outline-none'
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  widthTouched.current = true;
+                  drag.current = { x: event.clientX, width };
+                  event.currentTarget.setAttribute('data-dragging', 'true');
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  if (!drag.current) return;
+                  const next = clampSidePeekWidth(drag.current.width + drag.current.x - event.clientX, available);
 
-                drag.current.nextWidth = next;
-                setPreferredWidth(next);
-              }}
-              onPointerUp={(event) => {
-                const next = drag.current?.nextWidth;
+                  drag.current.nextWidth = next;
+                  setPreferredWidth(next);
+                }}
+                onPointerUp={(event) => {
+                  const next = drag.current?.nextWidth;
 
-                drag.current = null;
-                event.currentTarget.removeAttribute('data-dragging');
-                if (event.currentTarget.hasPointerCapture(event.pointerId))
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-                // Persist explicit resizes, not previews or automatic viewport clamping.
-                if (next !== undefined) void saveSidePeekWidth(next);
-              }}
-              onLostPointerCapture={(event) => {
-                drag.current = null;
-                event.currentTarget.removeAttribute('data-dragging');
-              }}
-              onKeyDown={(event) => {
-                const next =
-                  event.key === 'ArrowLeft'
-                    ? width + 32
-                    : event.key === 'ArrowRight'
-                    ? width - 32
-                    : event.key === 'Home'
-                    ? MIN_SIDE_PEEK_WIDTH
-                    : event.key === 'End'
-                    ? available
-                    : undefined;
+                  drag.current = null;
+                  event.currentTarget.removeAttribute('data-dragging');
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  // Persist explicit resizes, not previews or automatic viewport clamping.
+                  if (next !== undefined) void saveSidePeekWidth(next);
+                }}
+                onLostPointerCapture={(event) => {
+                  drag.current = null;
+                  event.currentTarget.removeAttribute('data-dragging');
+                }}
+                onKeyDown={(event) => {
+                  const next =
+                    event.key === 'ArrowLeft'
+                      ? width + 32
+                      : event.key === 'ArrowRight'
+                      ? width - 32
+                      : event.key === 'Home'
+                      ? MIN_SIDE_PEEK_WIDTH
+                      : event.key === 'End'
+                      ? available
+                      : undefined;
 
-                if (next === undefined) return;
-                event.preventDefault();
-                widthTouched.current = true;
-                const resized = clampSidePeekWidth(next, available);
+                  if (next === undefined) return;
+                  event.preventDefault();
+                  widthTouched.current = true;
+                  const resized = clampSidePeekWidth(next, available);
 
-                setPreferredWidth(resized);
-                void saveSidePeekWidth(resized);
-              }}
-            />
-            <div ref={setContainer} className='flex h-full min-h-0 flex-col' />
-          </aside>
+                  setPreferredWidth(resized);
+                  void saveSidePeekWidth(resized);
+                }}
+              />
+              <div ref={setContainer} className='flex h-full min-h-0 flex-col' />
+            </aside>
+          </Portal>
         </div>
       </RowPeekCanShowContext.Provider>
     </RowPeekLayoutContext.Provider>

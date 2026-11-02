@@ -26,6 +26,7 @@ import {
   viewIdFromPageTestId,
 } from '../../support/selectors';
 import { expectPeekOpen, setSelectCellDirect } from '../../support/side-peek-helpers';
+import { setViewOpenPagesIn } from '../../support/yjs-inject-helpers';
 
 type FieldInfo = {
   id: string;
@@ -952,6 +953,7 @@ test.describe('List revamp (desktop PR #1475)', () => {
     page,
   }) => {
     await addListView(page);
+    await setViewOpenPagesIn(page, 'side_peek');
     const rowId = await listRowIdByTitle(page, 'Revamp Birch');
     const row = DatabaseListSelectors.rowById(page, rowId);
     const peekButton = ListRevampLocators.peekButton(page, rowId);

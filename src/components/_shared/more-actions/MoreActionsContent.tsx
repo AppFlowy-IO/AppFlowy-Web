@@ -2,8 +2,7 @@ import React, { useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import { clearRedirectTo } from '@/application/session/sign_in';
-import { invalidToken } from '@/application/session/token';
+import { signOutCurrentUser } from '@/application/session/sign-out';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as ReportIcon } from '@/assets/icons/feedback.svg';
 import { ReactComponent as LoginIcon } from '@/assets/icons/logout.svg';
@@ -11,7 +10,7 @@ import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
 import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
 import CacheClearingDialog from '@/components/_shared/modal/CacheClearingDialog';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
-import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
+import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { openUrl } from '@/utils/url';
 
@@ -22,16 +21,16 @@ function MoreActionsContent({
 }) {
   const { isDark, setDark } = useContext(ThemeModeContext) || {};
   const isAuthenticated = useIsAuthenticatedOptional();
+  const currentUserId = useCurrentUserOptional()?.uid;
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleLogout = useCallback(() => {
-    clearRedirectTo(); // Clear stored redirect URL from previous user
-    invalidToken();
+    signOutCurrentUser(currentUserId);
     // Clean up old global key for backward compatibility
     localStorage.removeItem('last_view_id');
     navigate('/login?redirectTo=' + encodeURIComponent(window.location.href));
-  }, [navigate]);
+  }, [currentUserId, navigate]);
 
   const handleLogin = useCallback(() => {
     if (isAuthenticated) {

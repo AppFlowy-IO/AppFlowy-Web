@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ViewLayout } from '@/application/types';
@@ -9,11 +9,17 @@ import ShareTabs from '@/components/app/share/ShareTabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import type { SavedDeck, DeckAction } from '@/components/presentation/types';
+
+const PresentationDialog = lazy(() => import('@/components/presentation/PresentationDialog'));
 
 export function ShareButton({
   viewId,
   publishViewId = viewId,
   hidePublish = false,
+  presentationViewId,
+  presentationTitle,
+  presentationIsRow,
   hideExport = false,
   shareUrl,
   className,
@@ -21,6 +27,9 @@ export function ShareButton({
   viewId: string;
   publishViewId?: string;
   hidePublish?: boolean;
+  presentationViewId?: string;
+  presentationTitle?: string;
+  presentationIsRow?: boolean;
   hideExport?: boolean;
   shareUrl?: string;
   className?: string;
@@ -31,13 +40,14 @@ export function ShareButton({
   const layout = view?.layout;
   const [opened, setOpened] = React.useState(false);
   const [publishManageOpen, setPublishManageOpen] = React.useState(false);
+  const [presentation, setPresentation] = React.useState<{ deck?: SavedDeck; action?: DeckAction }>();
   const publishManageVisible = publishManageOpen && !hidePublish;
 
   if (layout === ViewLayout.AIChat) return null;
 
   return (
     <>
-      <Popover modal open={opened} onOpenChange={setOpened}>
+      <Popover modal={!presentation} open={opened} onOpenChange={setOpened}>
         <PopoverTrigger asChild>
           <Button className={cn('mx-2', className)} data-testid={'share-button'} size={'sm'} variant={'default'}>
             {t('shareAction.buttonText')}
@@ -56,9 +66,16 @@ export function ShareButton({
             viewId={viewId}
             publishViewId={publishViewId}
             hidePublish={hidePublish}
+            presentationViewId={presentationViewId}
+            presentationTitle={presentationTitle}
+            presentationIsRow={presentationIsRow}
             hideExport={hideExport}
             shareUrl={shareUrl}
             onClose={() => setOpened(false)}
+            onPresentationRequest={(deck, action) => {
+              setOpened(false);
+              setPresentation({ deck, action });
+            }}
             onOpenPublishManage={() => {
               setOpened(false);
               setPublishManageOpen(true);
@@ -66,6 +83,20 @@ export function ShareButton({
           />
         </PopoverContent>
       </Popover>
+      {presentation && (
+        <Suspense fallback={null}>
+          <PresentationDialog
+            mode='slides'
+            viewId={presentationViewId || viewId}
+            permissionViewId={viewId}
+            title={presentationTitle}
+            isRow={presentationIsRow}
+            deck={presentation.deck}
+            action={presentation.action}
+            onClose={() => setPresentation(undefined)}
+          />
+        </Suspense>
+      )}
       <NormalModal
         data-testid='publish-manage-modal'
         open={publishManageVisible}

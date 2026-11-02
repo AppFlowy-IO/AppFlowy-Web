@@ -10,6 +10,7 @@ let mockActiveRowPage: ActiveRowPageInfo | null = null;
 let mockRouteViewId = 'database-container';
 let mockRouteView: Partial<View> = { view_id: mockRouteViewId };
 let mockOutline: Array<Record<string, unknown>> = [];
+let mockOfficialHosted = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -60,6 +61,16 @@ jest.mock('@/components/app/header/MoreActions', () => ({
   __esModule: true,
   default: ({ viewId, activeViewId, rowId }: { viewId: string; activeViewId: string; rowId?: string | null }) =>
     <div data-testid='more-actions' data-view-id={viewId} data-active-view-id={activeViewId} data-row-id={rowId} />,
+}));
+
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  ...jest.requireActual('@/components/app/hooks/useServerInfo'),
+  useIsOfficialHosted: () => mockOfficialHosted,
+}));
+
+jest.mock('@/components/presentation/PresentEntry', () => ({
+  __esModule: true,
+  default: ({ viewId }: { viewId: string }) => <div data-testid='present-entry' data-view-id={viewId} />,
 }));
 
 jest.mock('@/components/app/header/Users', () => ({
@@ -181,6 +192,29 @@ describe('RightMenu row-page actions', () => {
 
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('database-container');
     expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('false');
+  });
+
+  it('publishes the dashboard selected on a database container route', () => {
+    const container = createDatabaseContainer();
+    const dashboard: View = {
+      ...container.children[0],
+      view_id: 'dashboard-view',
+      name: 'Dashboard',
+      layout: ViewLayout.Dashboard,
+    };
+
+    container.children.push(dashboard);
+    mockRouteView = container;
+    mockOutline = [container];
+
+    render(
+      <MemoryRouter initialEntries={['/app/workspace-1/database-container?v=dashboard-view']}>
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('share-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(screen.getByTestId('share-button').getAttribute('data-publish-view-id')).toBe('dashboard-view');
   });
 
   it('keeps database sharing on the container while publishing the active child', () => {
@@ -353,5 +387,41 @@ describe('RightMenu database history tab', () => {
     );
 
     expect(screen.getByTestId('more-actions').getAttribute('data-active-view-id')).toBe('document');
+  });
+});
+
+describe('RightMenu Present entry', () => {
+  beforeEach(() => {
+    mockActiveRowPage = null;
+    mockRouteViewId = 'document';
+    mockRouteView = { view_id: mockRouteViewId, layout: ViewLayout.Document };
+    mockOutline = [mockRouteView];
+    mockOfficialHosted = false;
+  });
+
+  function renderDocumentRoute() {
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/document']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+  }
+
+  it('shows Present on official AppFlowy Cloud', () => {
+    mockOfficialHosted = true;
+    renderDocumentRoute();
+
+    expect(screen.getByTestId('present-entry').getAttribute('data-view-id')).toBe('document');
+  });
+
+  it('hides Present on self-hosted servers and while hosting is unknown', () => {
+    // Self-hosted, loading and unavailable server info all report "not official".
+    renderDocumentRoute();
+
+    expect(screen.queryByTestId('present-entry')).toBeNull();
+    expect(screen.getByTestId('share-button')).toBeTruthy();
   });
 });

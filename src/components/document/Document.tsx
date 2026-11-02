@@ -123,22 +123,17 @@ export const Document = (props: DocumentProps) => {
       // Set up cursor synchronization when editor is connected
       if (currentUser && awareness) {
         const deviceId = CollabService.getDeviceId();
-        const colors = generateUserColors(currentUser.name || '');
 
-        const userParams = {
+        const userIdentity = {
           uid: Number(currentUser.uid),
           user_uuid: currentUser.uuid,
           device_id: deviceId,
-          user_name: currentUser.name || 'Anonymous',
-          cursor_color: colors.cursor_color,
-          selection_color: colors.selection_color,
-          user_avatar: userAvatar,
         };
 
-        dispatchCursorAwareness(userParams, editor);
+        dispatchCursorAwareness(userIdentity, editor);
       }
     },
-    [dispatchCursorAwareness, currentUser, awareness, userAvatar]
+    [dispatchCursorAwareness, currentUser, awareness]
   );
 
   const handleEditorConnected = useCallback(

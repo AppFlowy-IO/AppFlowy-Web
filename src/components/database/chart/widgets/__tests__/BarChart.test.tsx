@@ -1,134 +1,42 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { ComponentProps } from 'react';
+import { act, fireEvent, screen } from '@testing-library/react';
 
-import {
-  CHART_COLORS,
-  CHART_EMPTY_VALUE_COLOR,
-  ChartAggregationType,
-  ChartDataItem,
-} from '@/application/database-yjs/chart.type';
-import { BarChartWidget } from '@/components/database/chart/widgets/BarChart';
-import { barCategoryAxisLayout } from '@/components/database/chart/widgets/chartAxis';
-import { getChartTooltipPosition } from '@/components/database/chart/widgets/ChartTooltip';
+import { ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
+import { NumberFormat } from '@/application/database-yjs/fields';
+import BarChartWidget from '@/components/database/chart/widgets/BarChart';
 
-// Real en.json strings, so the assertions cover the translation keys too.
-jest.mock('react-i18next', () => {
-  const i18n = jest.requireActual('i18next').createInstance();
+import { firePointer, hoverCategory, installChartEnvironment, renderChart, texts, seriesDataOf } from './chartTestUtils';
 
-  i18n.init({
-    lng: 'en',
-    initImmediate: false,
-    resources: { en: { translation: jest.requireActual('@/@types/translations/en.json') } },
-  });
-  return { useTranslation: () => ({ t: i18n.t.bind(i18n) }) };
-});
-
-// jsdom has no canvas: 6px per character stands in for the caption font.
-jest.mock('@/components/database/chart/widgets/chartTextMeasure', () => ({
-  measureCategoryLabelWidth: (text: string) => text.length * 6,
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
+  }),
 }));
 
-class ResizeObserverMock implements ResizeObserver {
-  constructor(private readonly callback: ResizeObserverCallback) {}
-
-  disconnect() {
-    // The test has no persistent observation lifecycle to clean up.
-  }
-
-  observe(target: Element) {
-    this.callback(
-      [
-        {
-          borderBoxSize: [],
-          contentBoxSize: [],
-          contentRect: {
-            bottom: 400,
-            height: 400,
-            left: 0,
-            right: 800,
-            top: 0,
-            width: 800,
-            x: 0,
-            y: 0,
-            toJSON: () => ({}),
-          },
-          devicePixelContentBoxSize: [],
-          target,
-        },
-      ],
-      this
-    );
-  }
-
-  unobserve() {
-    // Recharts only needs the initial measurement in this test.
-  }
-}
-
-// The mocked container is 800 x 400. With the 18px title the chart area is
-// 782px wide: a 40px value axis, then a 742px plot; the plot is 360px tall
-// above the 40px category band.
-const WIDTH = 800;
-const HEIGHT = 400;
-const TITLE_WIDTH = 18;
-const AXIS_WIDTH = 40;
-const PLOT_WIDTH = WIDTH - TITLE_WIDTH - AXIS_WIDTH;
-const PLOT_HEIGHT = HEIGHT - 40;
-
-const OPTION_COLOR = 'var(--tag-fill-03-light)';
-const ITEMS: ChartDataItem[] = [
-  { label: 'Plan A', value: 3, rowIds: ['row-1', 'row-2', 'row-3'] },
-  { label: 'Plan B', value: 2.5, rowIds: ['row-4'], color: OPTION_COLOR },
-  { label: 'No Type', value: 0, rowIds: [], isEmptyCategory: true },
+const OWNERS: ChartDataItem[] = [
+  { key: 'alice', label: 'Alice', value: 48500, rowIds: ['r1'], color: '#BF8EDA' },
+  { key: 'bob', label: 'Bob', value: 1300000, rowIds: ['r2', 'r3'], color: '#DE9255' },
+  { key: 'carol', label: 'Carol', value: 690000, rowIds: ['r4'], color: '#4FB9C9' },
 ];
-// Tallest bar 3 -> axis max 3.9 (30% headroom), ticks every 1.
-const AXIS_MAX = 3.9;
-const SEGMENT_WIDTH = PLOT_WIDTH / ITEMS.length;
 
-function renderBarChart(props: Partial<ComponentProps<typeof BarChartWidget>> = {}) {
-  return render(<BarChartWidget data={ITEMS} aggregationType={ChartAggregationType.Count} {...props} />);
-}
+const MARGINS: ChartDataItem[] = [
+  { key: 'lead', label: 'Lead', value: 800, rowIds: ['r1'], color: '#5E9FE8' },
+  { key: 'lost', label: 'Lost', value: -1500, rowIds: ['r2'], color: '#DF84A8' },
+  { key: 'proposal', label: 'Proposal', value: 1200, rowIds: ['r3'], color: '#EAC26B' },
+  { key: 'won', label: 'Won', value: 6.5, rowIds: ['r4'], color: '#72BC8F' },
+];
 
-function segmentCenter(index: number) {
-  return AXIS_WIDTH + SEGMENT_WIDTH * (index + 0.5);
-}
-
-function barTop(value: number) {
-  return PLOT_HEIGHT * (1 - value / AXIS_MAX);
-}
-
-function texts(container: HTMLElement, selector: string) {
-  return Array.from(container.querySelectorAll(selector)).map((node) => node.textContent);
-}
+const NUMBER_FIELD = { type: 'number' as const, numberFormat: NumberFormat.Num };
 
 describe('BarChartWidget', () => {
-  const originalResizeObserver = globalThis.ResizeObserver;
-
-  beforeAll(() => {
-    globalThis.ResizeObserver = ResizeObserverMock;
-  });
-
-  afterAll(() => {
-    globalThis.ResizeObserver = originalResizeObserver;
-  });
+  installChartEnvironment();
 
   it('renders the real Recharts component without an invalid hook call', () => {
     let container: HTMLElement | undefined;
 
-    expect(
-      () =>
-        ({ container } = render(
-          <BarChartWidget
-            data={[
-              {
-                color: '#5B8FF9',
-                label: 'In Progress',
-                rowIds: ['row-1'],
-                value: 1,
-              },
-            ]}
-          />
-        ))
+    expect(() =>
+      ({ container } = renderChart(
+        <BarChartWidget data={seriesDataOf([{ color: '#5E9FE8', label: 'In Progress', rowIds: ['row-1'], value: 1 }])} />
+      ))
     ).not.toThrow();
 
     expect(screen.getByTestId('bar-chart-widget')).toBeTruthy();
@@ -136,243 +44,144 @@ describe('BarChartWidget', () => {
     expect(container?.querySelector('.recharts-bar-rectangle')).not.toBeNull();
   });
 
-  it('titles the value axis with the aggregation like desktop', () => {
-    const { rerender } = renderBarChart();
+  it('draws a measured value axis with nice compact ticks and no axis line', () => {
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
 
-    expect(screen.getByTestId('chart-title').textContent).toBe('Count(Type)');
+    expect(container.querySelector('.recharts-yAxis .recharts-cartesian-axis-line')).toBeNull();
+    expect(texts(container, '[data-testid="chart-value-tick"]')).toEqual(['$0', '$500K', '$1M', '$1.5M']);
+    // 6px per character: "$1.5M" is 30px, plus the 8px gap.
+    const tick = container.querySelector('[data-testid="chart-value-tick"]') as SVGTextElement;
 
-    rerender(<BarChartWidget data={ITEMS} aggregationType={ChartAggregationType.Sum} />);
-    expect(screen.getByTestId('chart-title').textContent).toBe('Sum(Type)');
-
-    rerender(<BarChartWidget data={ITEMS} />);
-    expect(screen.queryByTestId('chart-title')).toBeNull();
+    expect(Number(tick.getAttribute('x'))).toBe(30);
+    expect(tick.getAttribute('data-parity-id')).toBe('dash-chart-tick-label');
   });
 
-  it('centers one bar per category in equal segments with value labels in the bar color', () => {
-    const { container } = renderBarChart();
+  it('labels each bar with its compact value and keeps the bars thin', () => {
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
+    const labels = Array.from(container.querySelectorAll('[data-testid="chart-data-label"]'));
 
-    expect(container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3);
-    expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual([
-      'Plan A',
-      'Plan B',
-      'No Type',
+    expect(labels.map((label) => [label.getAttribute('data-label'), label.textContent])).toEqual([
+      ['Alice', '$48.5K'],
+      ['Bob', '$1.3M'],
+      ['Carol', '$690K'],
     ]);
-
-    const fills = Array.from(container.querySelectorAll('.recharts-bar-rectangle path')).map((path) =>
-      path.getAttribute('fill')
-    );
-
-    // The zero-height bar renders no path.
-    expect(fills).toEqual([CHART_COLORS[0], OPTION_COLOR]);
-
-    const valueLabels = Array.from(container.querySelectorAll('.recharts-label-list text'));
-
-    expect(valueLabels.map((label) => label.textContent)).toEqual(['3', '2.5', '0']);
-    // The "No {field}" category is grey on every chart.
-    expect(valueLabels.map((label) => label.getAttribute('fill'))).toEqual([
-      CHART_COLORS[0],
-      OPTION_COLOR,
-      CHART_EMPTY_VALUE_COLOR,
-    ]);
-    valueLabels.forEach((label, index) => {
-      // Recharts floors the bar offset inside its band, so allow a pixel.
-      expect(Math.abs(Number(label.getAttribute('x')) - segmentCenter(index))).toBeLessThanOrEqual(1);
-      expect(Number(label.getAttribute('y'))).toBeCloseTo(barTop(ITEMS[index].value) - 4);
+    container.querySelectorAll('.recharts-bar-rectangle path').forEach((path) => {
+      expect(Number(path.getAttribute('width'))).toBeLessThanOrEqual(16);
     });
+    expect(container.querySelector('[data-parity-id="dash-chart-bar"]')).not.toBeNull();
   });
 
-  it('labels whole ticks between the axis min and max and dashes the grid on every tick', () => {
-    const { container } = renderBarChart();
+  it('draws a negative bar below the zero line', () => {
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(MARGINS)} />, { yField: NUMBER_FIELD });
 
-    const valueLabels = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick text'));
+    expect(texts(container, '[data-testid="chart-value-tick"]')).toEqual(['-2K', '-1K', '0', '1K', '2K']);
+    const zero = container.querySelector('.recharts-reference-line line') as SVGLineElement;
+    const zeroY = Number(zero.getAttribute('y1'));
+    const paths = Array.from(container.querySelectorAll('.recharts-bar-rectangle path'));
+    const lost = paths[1];
+    const lead = paths[0];
 
-    expect(valueLabels.map((label) => label.textContent)).toEqual(['1', '2', '3']);
-    valueLabels.forEach((label, index) => {
-      expect(Number(label.getAttribute('x'))).toBe(AXIS_WIDTH);
-      expect(Number(label.getAttribute('y'))).toBeCloseTo(barTop(index + 1));
-    });
-
-    const gridLines = Array.from(container.querySelectorAll('.recharts-cartesian-grid-horizontal line'));
-
-    expect(gridLines.map((line) => Number(line.getAttribute('y1')))).toEqual(
-      [1, 2, 3].map((value) => expect.closeTo(barTop(value)))
-    );
-    expect(gridLines[0].getAttribute('stroke-dasharray')).toBe('5 5');
-    expect(container.querySelectorAll('.recharts-cartesian-grid-vertical line')).toHaveLength(0);
+    expect(Number(lost.getAttribute('y'))).toBeGreaterThanOrEqual(zeroY - 0.5);
+    expect(Number(lead.getAttribute('y')) + Number(lead.getAttribute('height'))).toBeLessThanOrEqual(zeroY + 0.5);
+    expect(texts(container, '[data-testid="chart-data-label"]')).toEqual(['800', '-1.5K', '1.2K', '6.5']);
   });
 
-  it('skips fractional ticks and both axis ends', () => {
-    // Tallest bar 1 -> axis max 1.3 with ticks every 0.2: only 1 is labeled.
-    const { container } = renderBarChart({ data: [{ label: 'Only', value: 1, rowIds: ['row-1'] }] });
+  it('hides the data labels when they are turned off', () => {
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />, { style: { showDataLabels: false } });
 
-    expect(texts(container, '.recharts-yAxis .recharts-cartesian-axis-tick text')).toEqual(['1']);
-    expect(container.querySelectorAll('.recharts-cartesian-grid-horizontal line')).toHaveLength(6);
+    expect(container.querySelector('[data-testid="chart-data-label"]')).toBeNull();
   });
 
-  it('labels nothing on an all-zero chart instead of Recharts fractional ticks', () => {
-    // Tallest bar 0 -> axis max 1 with ticks every 1: desktop skips both axis
-    // ends, so no value label is drawn at all.
-    const { container } = renderBarChart({ data: [{ label: 'Empty', value: 0, rowIds: [] }] });
+  it('highlights the hovered category and shows the tooltip until the pointer leaves', () => {
+    const onItemClick = jest.fn();
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} onItemClick={onItemClick} />);
 
-    expect(texts(container, '.recharts-yAxis .recharts-cartesian-axis-tick text')).toEqual([]);
-    expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual(['Empty']);
-  });
+    act(() => hoverCategory(container, 1));
 
-  it('draws square bars, 20px wide up to 20 bars and 15px past that', () => {
-    const items = (count: number) =>
-      Array.from({ length: count }, (_, index) => ({ label: `C${index}`, value: index + 1, rowIds: [] }));
-    const { container, rerender } = renderBarChart({ data: items(20) });
-    const paths = () => Array.from(container.querySelectorAll('.recharts-bar-rectangle path'));
+    const cursor = container.querySelector('.recharts-tooltip-cursor');
 
-    expect(paths().every((path) => path.getAttribute('width') === '20')).toBe(true);
-    // A rounded corner would add arcs to the outline.
-    expect(paths().some((path) => /A/.test(path.getAttribute('d') ?? ''))).toBe(false);
-
-    rerender(<BarChartWidget data={items(21)} aggregationType={ChartAggregationType.Count} />);
-    expect(paths().every((path) => path.getAttribute('width') === '15')).toBe(true);
-  });
-
-  it('tilts the category labels once a slot is narrower than 80px, inside a band measured to hold them', () => {
-    const items = (count: number) =>
-      Array.from({ length: count }, (_, index) => ({ label: `A long category ${index}`, value: index, rowIds: [] }));
-    const ticks = () => Array.from(container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick text'));
-    // 742 / 9 = 82.4px per slot: upright, 8px under the axis in the 40px band.
-    const { container, rerender } = renderBarChart({ data: items(9) });
-
-    expect(ticks().every((tick) => tick.getAttribute('transform') === null)).toBe(true);
-    expect(Number(ticks()[0].getAttribute('y'))).toBe(PLOT_HEIGHT + 17);
-
-    // 742 / 10 = 74.2px per slot: tilted about each label's center.
-    rerender(<BarChartWidget data={items(10)} aggregationType={ChartAggregationType.Count} />);
-    const layout = barCategoryAxisLayout(
-      items(10).map((item) => item.label),
-      PLOT_WIDTH / 10,
-      (text) => text.length * 6
-    );
-    const plotHeight = HEIGHT - layout.height;
-
-    expect(layout.tilted).toBe(true);
-    ticks().forEach((tick) => {
-      const x = tick.getAttribute('x');
-      const y = Number(tick.getAttribute('y'));
-
-      expect(y).toBeCloseTo(plotHeight + layout.labelCenter);
-      expect(tick.getAttribute('transform')).toBe(`rotate(${(-0.5 * 180) / Math.PI} ${x} ${y})`);
-    });
-
-    // The plot gives up the band's height, so the hover column and grid end where the band starts.
-    fireEvent.mouseMove(screen.getByTestId('bar-chart-plot'), { clientX: AXIS_WIDTH + 10, clientY: 100 });
-    expect(parseFloat(screen.getByTestId('bar-chart-hover-background').style.height)).toBeCloseTo(plotHeight);
-  });
-
-  it('lets the labels paint past the chart surface like desktop', () => {
-    renderBarChart();
-
-    // jsdom does no layout: the class is what undoes the SVG's default `overflow: hidden`.
-    expect(screen.getByTestId('bar-chart-plot').className).toContain('[&_.recharts-surface]:overflow-visible');
-  });
-
-  it('truncates long category labels after 15 characters', () => {
-    const { container } = renderBarChart({
-      data: [{ label: 'A very long category name', value: 1, rowIds: [] }],
-    });
-
-    expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual(['A very long cat...']);
-  });
-
-  it('hovers the whole segment column: background, hidden value label and tooltip above the bar', () => {
-    const { container } = renderBarChart();
-    const plot = screen.getByTestId('bar-chart-plot');
-
-    // Inside the second segment but down in the category label band.
-    fireEvent.mouseMove(plot, { clientX: segmentCenter(1) + 50, clientY: HEIGHT - 10 });
-
-    const background = screen.getByTestId('bar-chart-hover-background');
-
-    expect(parseFloat(background.style.left)).toBeCloseTo(AXIS_WIDTH + SEGMENT_WIDTH);
-    expect(parseFloat(background.style.width)).toBeCloseTo(SEGMENT_WIDTH);
-    expect(parseFloat(background.style.height)).toBe(PLOT_HEIGHT);
-    expect(plot.className).toContain('cursor-pointer');
-    expect(texts(container, '.recharts-label-list text')).toEqual(['3', '0']);
-
+    expect(cursor).not.toBeNull();
+    expect(cursor?.getAttribute('fill')).toBe('var(--chart-hover-band)');
     const tooltip = screen.getByTestId('chart-tooltip');
-    const expected = getChartTooltipPosition(
-      { x: TITLE_WIDTH + segmentCenter(1), y: barTop(2.5) },
-      { width: WIDTH, height: HEIGHT }
-    );
 
-    expect(tooltip.textContent).toContain('Plan B');
-    // Desktop truncates the tooltip value.
-    expect(tooltip.textContent).toContain('2');
-    expect(tooltip.textContent).not.toContain('2.5');
-    expect(parseFloat(tooltip.parentElement?.style.left ?? '')).toBeCloseTo(expected.left);
-    expect(parseFloat(tooltip.parentElement?.style.top ?? '')).toBeCloseTo(expected.top);
+    expect(document.body.contains(tooltip)).toBe(true);
+    expect(container.contains(tooltip)).toBe(false);
+    expect(screen.getByTestId('chart-tooltip-name').textContent).toBe('Bob');
+    expect(screen.getByTestId('chart-tooltip-value').textContent).toBe('$1,300,000');
+    expect(screen.getByText('Click to view data')).toBeTruthy();
 
-    // The tooltip swatch takes the palette color resolved for the hovered index.
-    fireEvent.mouseMove(plot, { clientX: segmentCenter(0), clientY: 200 });
-    expect(screen.getByTestId('chart-tooltip').textContent).toContain('Plan A');
-    expect(screen.getByTestId('chart-indicator-dot').querySelector('[style]')?.getAttribute('style')).toMatch(
-      /#5b8ff9|rgb\(91, 143, 249\)/i
-    );
-
-    fireEvent.mouseLeave(plot);
-    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
-    expect(screen.queryByTestId('bar-chart-hover-background')).toBeNull();
-    expect(plot.className).not.toContain('cursor-pointer');
-    expect(texts(container, '.recharts-label-list text')).toEqual(['3', '2.5', '0']);
-  });
-
-  it('ignores the pointer over the value axis', () => {
-    renderBarChart();
-    fireEvent.mouseMove(screen.getByTestId('bar-chart-plot'), { clientX: AXIS_WIDTH - 5, clientY: 100 });
-
-    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
-  });
-
-  it('opens the clicked segment with its resolved color', () => {
-    const onBarClick = jest.fn();
-
-    renderBarChart({ onBarClick });
-    const plot = screen.getByTestId('bar-chart-plot');
-
-    fireEvent.click(plot, { clientX: segmentCenter(0) - 80, clientY: 20 });
-    expect(onBarClick).toHaveBeenLastCalledWith({ ...ITEMS[0], color: CHART_COLORS[0] });
-
-    fireEvent.click(plot, { clientX: segmentCenter(1), clientY: 300 });
-    expect(onBarClick).toHaveBeenLastCalledWith({ ...ITEMS[1], color: OPTION_COLOR });
-
-    fireEvent.click(plot, { clientX: segmentCenter(2), clientY: 300 });
-    expect(onBarClick).toHaveBeenLastCalledWith({ ...ITEMS[2], color: CHART_EMPTY_VALUE_COLOR });
-
-    fireEvent.click(plot, { clientX: 10, clientY: 300 });
-    expect(onBarClick).toHaveBeenCalledTimes(3);
-  });
-
-  it('drops negative and non-finite values and colors by the rendered index', () => {
-    const onBarClick = jest.fn();
-    const { container } = renderBarChart({
-      onBarClick,
-      data: [
-        { label: 'Kept', value: 2, rowIds: ['row-1'] },
-        { label: 'Negative', value: -1, rowIds: ['row-2'] },
-        { label: 'NaN', value: Number.NaN, rowIds: ['row-3'] },
-        { label: 'Infinite', value: Number.POSITIVE_INFINITY, rowIds: ['row-4'] },
-        { label: 'Also kept', value: 1, rowIds: ['row-5'] },
-      ],
+    act(() => {
+      fireEvent.mouseLeave(screen.getByTestId('bar-chart-widget'));
     });
-
-    expect(container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(2);
-    expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual(['Kept', 'Also kept']);
-
-    fireEvent.click(screen.getByTestId('bar-chart-plot'), { clientX: AXIS_WIDTH + PLOT_WIDTH * 0.75, clientY: 100 });
-    expect(onBarClick).toHaveBeenCalledWith({ label: 'Also kept', value: 1, rowIds: ['row-5'], color: CHART_COLORS[1] });
+    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
+    expect(container.querySelector('.recharts-tooltip-cursor')).toBeNull();
   });
 
-  it('shows the no-valid-data note when nothing can be plotted', () => {
-    const { container } = renderBarChart({ data: [{ label: 'Negative', value: -3, rowIds: ['row-1'] }] });
+  it('drops the tooltip when the charted data changes', () => {
+    const { container, rerenderChart } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
 
-    expect(screen.getByTestId('bar-chart-widget').textContent).toBe('No valid data to display');
-    expect(screen.getByTestId('chart-no-valid-data')).toBeTruthy();
-    expect(container.querySelector('.recharts-wrapper')).toBeNull();
+    act(() => hoverCategory(container, 1));
+    expect(screen.getByTestId('chart-tooltip')).toBeTruthy();
+
+    rerenderChart(<BarChartWidget data={seriesDataOf(OWNERS.map((item) => (item.key === 'bob' ? { ...item, value: 2300000 } : item)))} />);
+    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
+  });
+
+  it('opens the drill-down of the clicked category', () => {
+    const onItemClick = jest.fn();
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} onItemClick={onItemClick} />);
+
+    act(() => hoverCategory(container, 2));
+    const anchor = container.querySelectorAll('[data-testid="chart-category-anchor"]')[2] as SVGRectElement;
+
+    act(() => {
+      firePointer(
+        container.querySelector('.recharts-wrapper') as HTMLElement,
+        'click',
+        Number(anchor.getAttribute('x')) + 5,
+        200
+      );
+    });
+    // A band click opens the whole category: no series in the payload (WP12 §2.10).
+    expect(onItemClick).toHaveBeenCalledWith({ ...OWNERS[2], categoryKey: 'carol', isEmptyCategory: false });
+    // The click hides the tooltip before the drill-down opens.
+    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
+  });
+
+  it('lists every category in the accessibility table with its raw value and color', () => {
+    const { container } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
+    const rows = Array.from(container.querySelectorAll('[data-testid="chart-data-table"] tr'));
+
+    expect(rows.map((row) => [row.getAttribute('data-label'), row.getAttribute('data-value'), row.getAttribute('data-color')])).toEqual([
+      ['Alice', '48500', '#BF8EDA'],
+      ['Bob', '1300000', '#DE9255'],
+      ['Carol', '690000', '#4FB9C9'],
+    ]);
+  });
+
+  it('shows no legend for a single series under auto, and the categories when Bottom is picked', () => {
+    const { rerenderChart } = renderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />);
+
+    expect(screen.queryByTestId('chart-legend')).toBeNull();
+    rerenderChart(<BarChartWidget data={seriesDataOf(OWNERS)} />, { style: { legendPosition: 'bottom' } });
+    expect(screen.getAllByTestId('chart-legend-item').map((item) => item.getAttribute('data-label'))).toEqual([
+      'Alice',
+      'Bob',
+      'Carol',
+    ]);
+  });
+
+  it('counts with whole-number ticks', () => {
+    const { container } = renderChart(
+      <BarChartWidget
+        data={seriesDataOf([
+          { key: 'a', label: 'A', value: 2, rowIds: [] },
+          { key: 'b', label: 'B', value: 5, rowIds: [] },
+        ])}
+      />,
+      { aggregation: ChartAggregationType.Count, yField: null }
+    );
+
+    expect(texts(container, '[data-testid="chart-value-tick"]')).toEqual(['0', '2', '4', '6']);
   });
 });

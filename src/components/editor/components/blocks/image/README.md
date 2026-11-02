@@ -42,10 +42,12 @@ The browser configuration uses a dedicated Chrome for Testing executable and Pla
 
 ## Local verification — 2026-11-02
 
-- 130 image Playwright cases passed: `image.spec.ts` (70) and `image-flutter.spec.ts` (60), both light and dark themes. The combined-spec fixture was also checked with both files sharing a worker.
+- 134 image Playwright cases passed after merging current main: `image.spec.ts` (70), `image-flutter.spec.ts` (60), and upload-hover regression cases (4), all across light and dark themes. The combined-spec fixture was also checked with both files sharing a worker.
 - 10 PDF Playwright cases passed across both themes: captions, Ask AI, hosted/self-hosted pasted-file quota handling, and multi-PDF drops/read-only behavior.
-- 184 focused Jest tests passed in 24 suites, including image lifecycle/clipboard, shared fullscreen/authenticated loading, mentions/duplication, and clipboard regressions for callouts, code, math, subpages, PDF and database text.
+- 218 focused Jest tests passed in 29 suites, including image lifecycle/clipboard, shared fullscreen/authenticated loading, mentions/duplication, and clipboard regressions for callouts, code, math, subpages, PDF and database text.
 - App TypeScript, integration-test TypeScript, scoped ESLint and `git diff --check` passed.
+- Existing server-backed image copy/download/hover tests were updated for the redesigned toolbar; their live server run remains for CI. Live beta sign-in rejected the configured test credentials, so live upload/persistence is not claimed.
+- The browser harness loads the shared CJS PostCSS configuration natively, preserving the production plugins without Playwright ESM transformation of Tailwind's `require.cache`. Dedicated image tests are excluded from the general connections job to avoid duplicate execution.
 
 ## Issues reproduced while porting
 

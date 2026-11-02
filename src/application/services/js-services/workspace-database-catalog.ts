@@ -1,9 +1,10 @@
+import { parseDashboardOwner } from '@/application/database-yjs/dashboard-owned-views';
 import { db } from '@/application/db';
 import { WorkspaceDatabaseCatalogRecord } from '@/application/db/tables/workspace_database_catalog';
 import { WorkspaceDatabaseViewItem, WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { EventType, on } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
-import { View } from '@/application/types';
+import { View, ViewLayout } from '@/application/types';
 import { Log } from '@/utils/log';
 
 import { listWorkspaceDatabases } from './http/view-api';
@@ -164,15 +165,63 @@ async function cachedDatabaseRecords(
   }
 }
 
+function parseCatalogExtra(extra: unknown): Record<string, unknown> | undefined {
+  if (typeof extra === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(extra);
+
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  return extra && typeof extra === 'object' ? (extra as Record<string, unknown>) : undefined;
+}
+
+/**
+ * Read a view's dashboard owner (WP05 §1.1) from the catalog item itself or
+ * from a projected folder `extra` (an object or its JSON string). The server
+ * does not send it yet; parsing it now lets owned views be told apart as soon
+ * as it does. Items without an owner are returned unchanged.
+ */
+export function parseWorkspaceDatabaseViewItem(
+  view: WorkspaceDatabaseViewItem & { extra?: unknown }
+): WorkspaceDatabaseViewItem {
+  const owner =
+    parseDashboardOwner(view.dashboard_owner) ?? parseDashboardOwner(parseCatalogExtra(view.extra)?.dashboard_owner);
+
+  return owner === null || owner === view.dashboard_owner ? view : { ...view, dashboard_owner: owner };
+}
+
+function parseWorkspaceDatabases(databases: WorkspaceDatabaseWithViews[]): WorkspaceDatabaseWithViews[] {
+  return databases.map((database) => {
+    const views = database.views.map(parseWorkspaceDatabaseViewItem);
+
+    return views.every((view, index) => view === database.views[index]) ? database : { ...database, views };
+  });
+}
+
 export function getDatabaseContainerView(database: WorkspaceDatabaseWithViews): WorkspaceDatabaseViewItem | undefined {
   return database.views.find((view) => view.is_container);
 }
 
+// A dashboard shows other views and has no rows of its own, so, as on desktop,
+// it never becomes the view that relations or linked databases target.
+function isQueryableDatabaseView(view: WorkspaceDatabaseViewItem): boolean {
+  return !view.is_container && Number(view.layout) !== ViewLayout.Dashboard;
+}
+
 export function getDatabasePrimaryView(database: WorkspaceDatabaseWithViews): WorkspaceDatabaseViewItem | undefined {
   return (
-    database.views.find((view) => !view.is_container && !view.embedded) ??
-    database.views.find((view) => !view.is_container)
+    database.views.find((view) => isQueryableDatabaseView(view) && !view.embedded) ??
+    database.views.find(isQueryableDatabaseView)
   );
+}
+
+/** Like desktop's `default_view_id`: a dashboard-only database still resolves to a view. */
+function getDatabaseDefaultView(database: WorkspaceDatabaseWithViews): WorkspaceDatabaseViewItem | undefined {
+  return getDatabasePrimaryView(database) ?? database.views.find((view) => !view.is_container);
 }
 
 export interface DatabaseContainerCatalogEntry {
@@ -207,6 +256,7 @@ export function databaseCatalogViewToView(databaseId: string, view: WorkspaceDat
       embedded: view.embedded,
       is_database_container: view.is_container,
       is_space: false,
+      ...(view.dashboard_owner ? { dashboard_owner: view.dashboard_owner } : {}),
     },
     children: [],
     is_published: false,
@@ -244,7 +294,7 @@ export async function refreshWorkspaceDatabaseCatalog(workspaceId: string): Prom
     let databases: WorkspaceDatabaseWithViews[];
 
     try {
-      databases = await listWorkspaceDatabases(workspaceId);
+      databases = parseWorkspaceDatabases(await listWorkspaceDatabases(workspaceId));
     } catch (error) {
       if (!isCurrent()) return useReplacementCatalog();
       throw error;
@@ -346,7 +396,7 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
   if (catalogSnapshot) {
     const database = catalogSnapshot.find((entry) => entry.database_id === databaseId);
 
-    return database ? getDatabasePrimaryView(database)?.view_id ?? null : null;
+    return database ? getDatabaseDefaultView(database)?.view_id ?? null : null;
   }
 
   const cached = invalidatedCatalogs.has(key) ? [] : await cachedDatabaseRecords(userId, workspaceId, databaseId);
@@ -361,7 +411,7 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
       database_id: databaseId,
       views: cached.sort((left, right) => left.view_order - right.view_order).map((record) => record.view),
     };
-    const cachedView = getDatabasePrimaryView(cachedDatabase);
+    const cachedView = getDatabaseDefaultView(cachedDatabase);
 
     if (cachedView) return cachedView.view_id;
   }
@@ -371,5 +421,5 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
   if (!isSameSession(requestSessionGeneration, userId)) throw sessionChangedError();
   const database = databases.find((entry) => entry.database_id === databaseId);
 
-  return database ? getDatabasePrimaryView(database)?.view_id ?? null : null;
+  return database ? getDatabaseDefaultView(database)?.view_id ?? null : null;
 }

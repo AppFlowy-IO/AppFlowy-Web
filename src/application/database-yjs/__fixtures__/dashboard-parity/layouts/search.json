@@ -1,0 +1,72 @@
+{
+  "fixture": "layouts/search",
+  "version": 1,
+  "encoding": {
+    "rule": "Web (rowMatchesSearch, WP09 §1.2 and WAVES §4.1 item 10): q = query.trim(); an empty q is no search and every row shows. A row matches when q, compared case-insensitively (toLocaleLowerCase of both sides, no diacritic folding), is a substring of the displayed text of one field of the row. Every field whose per-view visibility is not AlwaysHidden (2) is searched, the primary field always; fields are never concatenated. Displayed text: select ids resolve to option names, numbers print as stored (no number format here), URLs as written.",
+    "desktop": "Desktop keeps its Tantivy search over every visible field (a superset with token-prefix and fuzzy matching, row page text and person emails). It is not changed; parity holds on queries[].",
+    "fields": "visibility is the per-view field visibility (0 AlwaysShown, 1 HideWhenEmpty, 2 AlwaysHidden); absent means AlwaysShown. options are [id, name] pairs.",
+    "rows": "One object per row in creation order; a key is a field id, its value the cell: text, a number, an option id or a list of option ids. An absent key is an empty cell.",
+    "row_documents": "Text on the row's page (its document), by row id. Web does not search it.",
+    "queries": "Every query gives the same ids on both clients, in row order (no sorts).",
+    "known_divergences": "The only queries where the engines differ: web and desktop ids in row order and why."
+  },
+  "fields": [
+    {"id": "f_name", "name": "Name", "type": 0, "primary": true},
+    {"id": "f_stage", "name": "Stage", "type": 3, "options": [["o_lead", "Lead"], ["o_won", "Won"], ["o_lost", "Lost"]]},
+    {"id": "f_tags", "name": "Tags", "type": 4, "options": [["o_urgent", "Urgent"], ["o_q3", "Q3"]]},
+    {"id": "f_site", "name": "Website", "type": 6},
+    {"id": "f_notes", "name": "Notes", "type": 0},
+    {"id": "f_hidden", "name": "Internal", "type": 0, "visibility": 2},
+    {"id": "f_amount", "name": "Amount", "type": 1}
+  ],
+  "rows": [
+    {
+      "id": "r1",
+      "f_name": "Acme Corp",
+      "f_stage": "o_lead",
+      "f_tags": ["o_urgent"],
+      "f_site": "https://acme.example.com",
+      "f_notes": "Renewal in March",
+      "f_hidden": "secretword",
+      "f_amount": 48500
+    },
+    {"id": "r2", "f_name": "Globex", "f_stage": "o_won", "f_tags": ["o_q3"], "f_notes": "Signed the enterprise plan", "f_amount": 120000},
+    {"id": "r3", "f_name": "Initech rollout", "f_stage": "o_lost", "f_site": "https://initech.example.org/pricing", "f_amount": 900},
+    {
+      "id": "r4",
+      "f_name": "Umbrella Labs",
+      "f_stage": "o_lead",
+      "f_tags": ["o_urgent", "o_q3"],
+      "f_notes": "Security review pending",
+      "f_amount": 15
+    },
+    {"id": "r5", "f_name": "", "f_stage": "o_won", "f_notes": "Untitled deal from import", "f_amount": 7}
+  ],
+  "row_documents": {"r2": "Kickoff notes for the zephyr pilot"},
+  "queries": [
+    {"q": "acme", "ids": ["r1"]},
+    {"q": "  ACME  ", "ids": ["r1"]},
+    {"q": "corp", "ids": ["r1"]},
+    {"q": "lead", "ids": ["r1", "r4"]},
+    {"q": "won", "ids": ["r2", "r5"]},
+    {"q": "urgent", "ids": ["r1", "r4"]},
+    {"q": "q3", "ids": ["r2", "r4"]},
+    {"q": "example", "ids": ["r1", "r3"]},
+    {"q": "pric", "ids": ["r3"]},
+    {"q": "enterprise plan", "ids": ["r2"]},
+    {"q": "security review", "ids": ["r4"]},
+    {"q": "rollout", "ids": ["r3"]},
+    {"q": "untitled", "ids": ["r5"]},
+    {"q": "48500", "ids": ["r1"]},
+    {"q": "120000", "ids": ["r2"]},
+    {"q": "secretword", "ids": []},
+    {"q": "zzqx", "ids": []},
+    {"q": "", "ids": ["r1", "r2", "r3", "r4", "r5"]}
+  ],
+  "known_divergences": [
+    {"q": "acne", "web": [], "desktop": ["r1"], "why": "desktop fuzzy matching: a word one edit away from a token (acne, acme) matches"},
+    {"q": "brella", "web": ["r4"], "desktop": [], "why": "web substring inside a word; desktop matches whole tokens and token prefixes only"},
+    {"q": "globex q3", "web": [], "desktop": ["r2"], "why": "desktop matches every word anywhere in the row; web needs the whole query inside one field"},
+    {"q": "zephyr", "web": [], "desktop": ["r2"], "why": "desktop also indexes the row page text"}
+  ]
+}

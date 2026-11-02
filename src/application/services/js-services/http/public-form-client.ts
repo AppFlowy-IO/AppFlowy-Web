@@ -92,7 +92,7 @@ async function request<T>(
     // A concurrent request or another tab can rotate the refresh token while
     // this request is waiting. If our refresh loses that race, use the token
     // currently in storage instead of falling back to anonymous traffic.
-    token = await refreshStoredToken(token).catch(() => readStoredRequestToken());
+    token = await refreshStoredToken(token);
   }
 
   let response = await sendRequestWithRetry(path, method, body, options, token?.accessToken);
@@ -105,7 +105,7 @@ async function request<T>(
       const retryToken =
         storedTokenChanged && !isExpired(currentToken)
           ? currentToken
-          : await refreshStoredToken(currentToken).catch(() => readStoredRequestToken());
+          : await refreshStoredToken(currentToken);
 
       if (retryToken) {
         response = await sendRequestWithRetry(path, method, body, options, retryToken.accessToken);
@@ -296,9 +296,10 @@ function sameStoredToken(left: StoredRequestToken | null, right: StoredRequestTo
 }
 
 async function refreshStoredToken(token: StoredRequestToken): Promise<StoredRequestToken> {
-  const [{ initGrantService, refreshToken }, { invalidToken }] = await Promise.all([
+  const [{ initGrantService, refreshToken }, { invalidToken }, { isAuthRefreshFailure }] = await Promise.all([
     import('./gotrue'),
     import('@/application/session/token'),
+    import('./auth-refresh-error'),
   ]);
 
   initGrantService(defaultConfig.gotrueURL);
@@ -315,7 +316,12 @@ async function refreshStoredToken(token: StoredRequestToken): Promise<StoredRequ
     // Rotating refresh tokens are single-use. A failure for token A is
     // expected if another request/tab already saved token B; never let that
     // stale failure delete B or purge its account-scoped outbox.
-    if (sameStoredToken(readStoredRequestToken(), token)) invalidToken();
+    const current = readStoredRequestToken();
+
+    if (current && !sameStoredToken(current, token) && !isExpired(current)) return current;
+    if (isAuthRefreshFailure(error) && sameStoredToken(current, token)) invalidToken();
+    // A temporary failure must stay a temporary failure, rather than sending
+    // an expired bearer or silently submitting as an anonymous visitor.
     throw error;
   }
 }

@@ -592,6 +592,18 @@ it.each([true, false])('reserves a new tab synchronously and waits for save acce
   expect(mockUnmount).not.toHaveBeenCalled();
 });
 
+it.each([240, 800])('opens calendar rows in side peek with a center fallback (leftOffset=%s)', async (leftOffset) => {
+  mockView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Calendar);
+  render(<Fixture leftOffset={leftOffset} />);
+  const editor = await screen.findByRole('textbox', { name: 'Draft first' });
+
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe(leftOffset === 240 ? 'side' : 'center');
+  if (leftOffset === 240) {
+    expect(editor.closest('[data-testid="database-side-peek"]')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'grid.rowPage.centerPeek' })).toBeNull();
+  }
+});
+
 it('opens timeline rows centered and still allows an explicit side choice', async () => {
   mockView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Timeline);
   render(<Fixture />);

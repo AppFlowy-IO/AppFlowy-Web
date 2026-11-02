@@ -60,7 +60,7 @@ Feature: Database side peek entry points
 
   # Desktop PR #1531: the popover's open button is "Open as side peek", and a
   # temporary center choice does not carry over to the next opening.
-  Scenario: A calendar event expands from its popover into the side peek
+  Scenario: A calendar event expands into the side peek and reopens there after a temporary center choice
     Given I am signed in for side peek testing
     And I have created a calendar named "Peek Calendar" with events "Launch, Review"
     When I open the row "Launch" in the peek from its calendar event
@@ -71,6 +71,7 @@ Feature: Database side peek entry points
     When I close the peek by clicking the backdrop
     And I open the row "Launch" in the peek from its calendar event
     Then the peek is open in side mode showing "Launch"
+    And the peek has no backdrop
 
   # Desktop opens undated rows through `showEventDetails`, a side peek.
   Scenario: A calendar No Date row opens the side peek
@@ -81,6 +82,7 @@ Feature: Database side peek entry points
     Then the No Date list shows 1 undated row
     When I open the undated row "Backlog" from the No Date list
     Then the peek is open in side mode showing "Backlog"
+    And the peek has no backdrop
 
   # One category keeps bar 1 unambiguous: a select field always draws its
   # 0-row "No Type" bar (desktop parity), but it sorts last, so bar 1 stays

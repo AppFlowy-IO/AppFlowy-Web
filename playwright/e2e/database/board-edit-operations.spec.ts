@@ -71,7 +71,7 @@ test.describe('Board Operations', () => {
       // When: creating the first Board database
       await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
       await page.waitForTimeout(1000);
-      await page.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
+      await page.locator('[role="menuitem"]').filter({ hasText: /^Board$/ }).click({ force: true });
       await page.waitForTimeout(5000);
 
       // Then: the first board should load with default columns and cards

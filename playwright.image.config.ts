@@ -14,7 +14,7 @@ if (!process.env.CI && !existsSync(executable))
   throw new Error('An isolated Chrome for Testing installation is required.');
 export default defineConfig({
   testDir: './playwright/e2e/integrations',
-  testMatch: ['image.spec.ts', 'image-flutter.spec.ts'],
+  testMatch: ['image.spec.ts', 'image-flutter.spec.ts', 'image-hover.spec.ts'],
   // Each theme owns its browser context and Vite worker. Run the two projects
   // together so browser installation does not consume the CI test budget.
   workers: process.env.CI ? 2 : 1,

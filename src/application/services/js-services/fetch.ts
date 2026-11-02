@@ -6,8 +6,38 @@ import {
   getPublishViewMeta as getPublishViewMetaAPI,
 } from '@/application/services/js-services/http';
 import { RowDocumentSourcePayload, Types } from '@/application/types';
+import { createSharedRequest, SharedRequest, throwIfAborted } from '@/application/utils/shared-request';
 
 const pendingRequests = new Map();
+
+type CollabData = Awaited<ReturnType<typeof getCollab>>;
+const cancellableRequests = new Map<string, SharedRequest<CollabData>>();
+
+function fetchCancellable<T extends CollabData>(
+  key: string,
+  fetch: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  try {
+    throwIfAborted(signal);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  let request = cancellableRequests.get(key) as SharedRequest<T> | undefined;
+
+  if (!request || request.signal.aborted) {
+    request = createSharedRequest(fetch);
+    cancellableRequests.set(key, request);
+    const owned = request;
+
+    void request.promise.catch(() => undefined).finally(() => {
+      if (cancellableRequests.get(key) === owned) cancellableRequests.delete(key);
+    });
+  }
+
+  return request.join(signal);
+}
 
 function generateRequestKey<T> (url: string, params: T) {
   if (!params) return url;
@@ -43,16 +73,20 @@ export function fetchPublishView (namespace: string, publishName: string) {
   return fetchWithDeduplication(`fetchPublishView_${namespace}`, { publishName }, fetchFunction);
 }
 
-export function fetchPageCollab (workspaceId: string, viewId: string) {
-  const fetchFunction = () => getPageCollab(workspaceId, viewId);
-
-  return fetchWithDeduplication(`fetchPageCollab_${workspaceId}`, { viewId }, fetchFunction);
+export function fetchPageCollab (workspaceId: string, viewId: string, signal?: AbortSignal) {
+  return fetchCancellable(
+    `page:${workspaceId}:${viewId}`,
+    (sharedSignal) => getPageCollab(workspaceId, viewId, sharedSignal),
+    signal
+  );
 }
 
-export function fetchDatabaseCollab (workspaceId: string, databaseId: string) {
-  const fetchFunction = () => getCollab(workspaceId, databaseId, Types.Database);
-
-  return fetchWithDeduplication(`fetchDatabaseCollab_${workspaceId}`, { databaseId }, fetchFunction);
+export function fetchDatabaseCollab (workspaceId: string, databaseId: string, signal?: AbortSignal) {
+  return fetchCancellable(
+    `database:${workspaceId}:${databaseId}`,
+    (sharedSignal) => getCollab(workspaceId, databaseId, Types.Database, undefined, sharedSignal),
+    signal
+  );
 }
 
 export function fetchRowDocumentCollab (workspaceId: string, documentId: string, source?: RowDocumentSourcePayload) {

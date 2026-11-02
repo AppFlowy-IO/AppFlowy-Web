@@ -3,6 +3,7 @@
 
 @import "./variables/semantic.light.css";
 @import "./variables/semantic.dark.css";
+@import "./dashboard-tokens.css";
 @import "./template.css";
 
 :root {

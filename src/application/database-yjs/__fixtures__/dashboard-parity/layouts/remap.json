@@ -1,0 +1,216 @@
+{
+  "fixture": "layouts/remap",
+  "version": 1,
+  "encoding": {
+    "layout": "The dashboard layout map (layout_settings[\"9\"]) before the remap. {\"$bigint\": \"<decimal>\"} is a native integer; every comparison is by numeric value.",
+    "viewIdMap": "Old view id to new view id: every copied view of a database copy, or the owned copies made for a duplicated dashboard.",
+    "databaseIdMap": "Old database id to new database id: {source: copy} for a database copy, empty for a dashboard duplicate.",
+    "rule": "A widget whose database_id is in databaseIdMap moves to the copy only when its view_id is in viewIdMap too (view_id and database_id both rewritten); otherwise it keeps pointing at the original. A widget of any other database gets only its view_id rewritten when it is in viewIdMap. Global filter targets keys and target_order entries in databaseIdMap are renamed; field ids are kept because a database copy keeps them. Every other key at every level, and every value of the wrong type, is copied unchanged.",
+    "expected": "The layout after remapDashboardLayout. Key order does not matter.",
+    "unchanged": "true when nothing changes: web returns the same object, Rust returns None, and expected equals layout.",
+    "ownerCases": "remapDashboardOwner(owner, viewIdMap): the new owner id, or null to remove the marker."
+  },
+  "cases": [
+    {
+      "name": "database copy moves host widgets to the copy, keeps a foreign widget and a widget whose view was not copied",
+      "layout": {
+        "rows": [
+          { "id": "r:1", "height": { "$bigint": "360" }, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:grid", "database_id": "db:src", "width": { "$bigint": "6" }, "zz_parity_probe": { "widget": "w:1" } },
+            { "id": "w:2", "view_id": "v:board", "database_id": "db:src", "width": 6 }
+          ] },
+          { "id": "r:2", "height": 480, "widgets": [
+            { "id": "w:3", "view_id": "v:foreign", "database_id": "db:other", "width": 4 },
+            { "id": "w:4", "view_id": "v:not-copied", "database_id": "db:src", "width": 8 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Status", "ty": { "$bigint": "3" }, "condition": { "$bigint": "0" }, "content": "opt:done",
+            "targets": { "db:other": "f:state", "db:src": "f:status" }, "target_order": ["db:other", "db:src"], "zz_parity_probe": { "filter": "gf:1" } }
+        ],
+        "show_widget_titles": false,
+        "zz_parity_probe": { "from": "newer-app", "list": ["a", "b"] }
+      },
+      "viewIdMap": { "v:grid": "v:grid-copy", "v:board": "v:board-copy", "v:dashboard": "v:dashboard-copy" },
+      "databaseIdMap": { "db:src": "db:copy" },
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:grid-copy", "database_id": "db:copy", "width": 6, "zz_parity_probe": { "widget": "w:1" } },
+            { "id": "w:2", "view_id": "v:board-copy", "database_id": "db:copy", "width": 6 }
+          ] },
+          { "id": "r:2", "height": 480, "widgets": [
+            { "id": "w:3", "view_id": "v:foreign", "database_id": "db:other", "width": 4 },
+            { "id": "w:4", "view_id": "v:not-copied", "database_id": "db:src", "width": 8 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Status", "ty": 3, "condition": 0, "content": "opt:done",
+            "targets": { "db:other": "f:state", "db:copy": "f:status" }, "target_order": ["db:other", "db:copy"], "zz_parity_probe": { "filter": "gf:1" } }
+        ],
+        "show_widget_titles": false,
+        "zz_parity_probe": { "from": "newer-app", "list": ["a", "b"] }
+      }
+    },
+    {
+      "name": "dashboard duplicate points widgets at the owned copies in two databases and leaves a shared view",
+      "layout": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:owned-a", "database_id": "db:host", "width": 6 },
+            { "id": "w:2", "view_id": "v:owned-b", "database_id": "db:other", "width": 6, "zz_parity_probe": { "widget": "w:2" } }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:3", "view_id": "v:shared", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:host": "f:done" }, "target_order": ["db:host"] }
+        ],
+        "show_widget_titles": true
+      },
+      "viewIdMap": { "v:owned-a": "v:owned-a-copy", "v:owned-b": "v:owned-b-copy" },
+      "databaseIdMap": {},
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:owned-a-copy", "database_id": "db:host", "width": 6 },
+            { "id": "w:2", "view_id": "v:owned-b-copy", "database_id": "db:other", "width": 6, "zz_parity_probe": { "widget": "w:2" } }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:3", "view_id": "v:shared", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:host": "f:done" }, "target_order": ["db:host"] }
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "global filter targets of the copied database are renamed even when no widget points into it",
+      "layout": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:foreign", "database_id": "db:other", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Owner", "ty": 10, "condition": 0, "content": "", "targets": { "db:src": "f:owner", "db:other": "f:person" } }
+        ]
+      },
+      "viewIdMap": { "v:grid": "v:grid-copy" },
+      "databaseIdMap": { "db:src": "db:copy" },
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:foreign", "database_id": "db:other", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Owner", "ty": 10, "condition": 0, "content": "", "targets": { "db:copy": "f:owner", "db:other": "f:person" } }
+        ]
+      }
+    },
+    {
+      "name": "maps that name nothing in the layout leave it unchanged",
+      "layout": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:grid", "database_id": "db:src", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:src": "f:done" }, "target_order": ["db:src"] }
+        ],
+        "zz_parity_probe": { "from": "newer-app" }
+      },
+      "viewIdMap": { "v:elsewhere": "v:elsewhere-copy" },
+      "databaseIdMap": { "db:elsewhere": "db:elsewhere-copy" },
+      "unchanged": true,
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:grid", "database_id": "db:src", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:src": "f:done" }, "target_order": ["db:src"] }
+        ],
+        "zz_parity_probe": { "from": "newer-app" }
+      }
+    },
+    {
+      "name": "empty maps leave the layout unchanged",
+      "layout": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:grid", "database_id": "db:src", "width": 12 }
+          ] }
+        ],
+        "global_filters": []
+      },
+      "viewIdMap": {},
+      "databaseIdMap": {},
+      "unchanged": true,
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:grid", "database_id": "db:src", "width": 12 }
+          ] }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "malformed rows, widgets and filters pass through while valid entries are remapped",
+      "layout": {
+        "rows": [
+          "not a row",
+          { "id": "r:1", "height": "tall", "widgets": "not a list" },
+          { "id": "r:2", "widgets": [
+            42,
+            { "id": "w:1", "view_id": "v:grid", "database_id": "db:src", "width": 12 },
+            { "id": "w:2", "view_id": 7, "database_id": "db:src" }
+          ] }
+        ],
+        "global_filters": [
+          "not a filter",
+          { "id": "gf:1", "targets": "not a map", "target_order": [1, "db:src", null] },
+          { "id": "gf:2", "targets": { "db:src": 5, "db:other": "f:1" } }
+        ]
+      },
+      "viewIdMap": { "v:grid": "v:grid-copy" },
+      "databaseIdMap": { "db:src": "db:copy" },
+      "expected": {
+        "rows": [
+          "not a row",
+          { "id": "r:1", "height": "tall", "widgets": "not a list" },
+          { "id": "r:2", "widgets": [
+            42,
+            { "id": "w:1", "view_id": "v:grid-copy", "database_id": "db:copy", "width": 12 },
+            { "id": "w:2", "view_id": 7, "database_id": "db:src" }
+          ] }
+        ],
+        "global_filters": [
+          "not a filter",
+          { "id": "gf:1", "targets": "not a map", "target_order": [1, "db:copy", null] },
+          { "id": "gf:2", "targets": { "db:copy": 5, "db:other": "f:1" } }
+        ]
+      }
+    },
+    {
+      "name": "a rows or global_filters value that is not an array passes through",
+      "layout": { "rows": "not a list", "global_filters": { "gf:1": "not a list" }, "show_widget_titles": true },
+      "viewIdMap": { "v:grid": "v:grid-copy" },
+      "databaseIdMap": { "db:src": "db:copy" },
+      "unchanged": true,
+      "expected": { "rows": "not a list", "global_filters": { "gf:1": "not a list" }, "show_widget_titles": true }
+    }
+  ],
+  "ownerCases": [
+    { "name": "an owner that was copied follows its copy", "owner": "v:dashboard", "viewIdMap": { "v:dashboard": "v:dashboard-copy", "v:grid": "v:grid-copy" }, "expected": "v:dashboard-copy" },
+    { "name": "an owner outside the copy removes the marker", "owner": "v:dashboard", "viewIdMap": { "v:grid": "v:grid-copy" }, "expected": null },
+    { "name": "no copied view removes the marker", "owner": "v:dashboard", "viewIdMap": {}, "expected": null }
+  ]
+}
