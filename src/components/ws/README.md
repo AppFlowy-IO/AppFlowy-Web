@@ -40,6 +40,39 @@ incremental outbox updates, background repair of closed documents, or repair of 
 missing server snapshots. After context teardown, retained IndexedDB state participates in
 the normal bind exchange when reopened.
 
+## Catch-up admission and send ownership
+
+`CollabSendWindow` owns flow control on the elected workspace socket, including protocol traffic
+relayed by sibling tabs. It sends at most 16 Manifest requests concurrently and coalesces queued
+requests to the newest state vector per object. A server Manifest response frees a read slot.
+Requests without a response time out after 30 seconds so other objects can progress.
+
+When server-info advertises `supports_realtime_update_ack`, the same socket permits 32 outstanding
+update attempts, with one per object and an 8 MiB aggregate payload pacing budget. One individually
+valid larger frame may run alone; server frame-size and outbox HTTP-routing limits still apply.
+The server's existing protobuf `UpdateAck` (tag 7) retires an attempt in the native message callback,
+before React can coalesce renders. A peer update does not free a slot. ACKs must match the database
+restore generation and do not establish persistence or convergence.
+
+A full window refuses the send; it does not capture another payload queue. The durable outbox
+retains the row and resumes remembered object IDs on ACKs, without scanning IndexedDB for each
+response. `OutboxDrainScheduler` allows eight active payload readers and keeps waiting object IDs
+only. Fresh edits cannot overtake an older queued drain. Oversized records can still use the existing
+HTTP slow lane while WebSocket is offline. Purge, object discard, workspace/account changes and
+transport teardown retain their existing generation, ownership and permission fences.
+
+An update without an ACK for 30 seconds stalls the send window and invokes the existing authenticated
+reconnect path. It never invents an ACK to admit a causal successor. Replacing the socket URL lets
+react-use-websocket close its shared connection; directly calling its protected proxy's `close()`
+does not work. Disconnect clears transient reservations and queued reads; reconnect performs the
+normal state-vector exchange against retained local state. This does not add durable ACK-based
+retirement for incremental rows already handed to the transport.
+
+Older servers that omit the capability keep the existing update behavior; Manifest pacing still
+applies. Capability changes take effect at a connection boundary once any legacy update has been
+sent, avoiding an old untracked ACK releasing a new reservation. Deploy the Cloud capability and
+Web changes together to enable update pacing; legacy clients remain protected by server admission.
+
 ## Regression checks
 
 The first-upload test uses the actual `useSync` hook and protocol with real Yjs documents.
@@ -52,8 +85,14 @@ Additional cases cover retry backoff, offline behavior, deletion loss, unresolve
 dependencies, newer edits, stale version/restore metadata, permissions, teardown, session
 changes, cross-tab proof, and authority checks that finish after their context is obsolete.
 
+Direct production-component tests exercise 1500-object Manifest/update bursts with controlled ACK
+barriers, bounded drain readers, byte limits, timeout recovery and reservation cleanup. Persistent
+outbox cases use real Dexie with fake IndexedDB to check blocked-row retention, ACK resumption and
+discard. These are deterministic capacity/correctness tests, not backend throughput measurements.
+
 ```bash
 pnpm exec jest src/components/ws \
+  src/application/realtime src/application/sync-outbox/drain-scheduler.test.ts \
   src/application/services/js-services/__tests__/sync.test.ts \
   src/application/services/js-services/__tests__/manifest-recovery.test.ts \
   src/application/sync-outbox/__tests__ \

@@ -294,6 +294,10 @@ describe('useSync reconnect binding', () => {
     const server = createDoc(row.guid);
     const { result, unmount } = renderHook(() => useSync(ws, createBroadcastChannel(), defaultEventEmitter, defaultWorkspaceId));
     const send = ws.sendMessage as jest.Mock;
+    const outbox = jest.requireMock('@/application/sync-outbox');
+
+    outbox.__reset();
+    outbox.configureDrain({ workspaceId: defaultWorkspaceId, send, isReady: () => true });
     let context!: SyncContext;
     const manifest = () => ({
       objectId: row.guid,
@@ -335,6 +339,7 @@ describe('useSync reconnect binding', () => {
       expect(send).not.toHaveBeenCalled();
     } finally {
       unmount();
+      outbox.clearDrainConfig();
       row.destroy();
       server.destroy();
       jest.clearAllTimers();

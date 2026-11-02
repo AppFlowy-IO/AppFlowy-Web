@@ -763,6 +763,37 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(0);
   });
 
+  it('does not let a fresh edit overtake an older queued edit when admission becomes available', async () => {
+    let ready = false;
+    const send = jest.fn();
+    const doc = new Y.Doc();
+    const changes: Uint8Array[] = [];
+
+    doc.on('update', (update: Uint8Array) => changes.push(update));
+    doc.getMap('root').set('first', 'older edit');
+    doc.getMap('root').set('second', 'causal successor');
+    configureDrain({ userId, workspaceId, send, isReady: () => ready });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, version: null, payload: changes[0] });
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+
+    // No wake has run yet: the old object is queued, but no drain promise is active.
+    ready = true;
+    const successor = enqueueOutboxUpdate({ objectId, collabType: Types.Document, version: null, payload: changes[1] });
+
+    expect(send).not.toHaveBeenCalled();
+    await successor;
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    const serverDoc = new Y.Doc();
+
+    Y.applyUpdate(serverDoc, send.mock.calls[0][0].collabMessage.update.payload);
+    expect(serverDoc.getMap('root').toJSON()).toEqual({ first: 'older edit', second: 'causal successor' });
+    expect(mockRecords).toHaveLength(0);
+    doc.destroy();
+    serverDoc.destroy();
+  });
+
   it('attaches the before state vector to an immediately sent update (and no after)', async () => {
     const send = jest.fn();
 
@@ -833,45 +864,6 @@ describe('sync outbox live send', () => {
     // Merged payload covers first->last, so before = the first record's before.
     expect(update.beforeStateVector).toBe(firstBefore);
     expect(update.afterStateVector).toBeUndefined();
-    expect(mockRecords).toHaveLength(0);
-  });
-
-  it('live sends the current update and drains older queued records', async () => {
-    let ready = false;
-    const send = jest.fn();
-
-    configureDrain({
-      userId,
-      workspaceId,
-      send,
-      isReady: () => ready,
-    });
-
-    enqueueOutboxUpdate({
-      objectId,
-      collabType: Types.Document,
-      version: null,
-      payload: makeUpdate('old'),
-    });
-    await flushPromises();
-
-    expect(send).not.toHaveBeenCalled();
-    expect(mockRecords).toHaveLength(1);
-
-    ready = true;
-
-    enqueueOutboxUpdate({
-      objectId,
-      collabType: Types.Document,
-      version: null,
-      payload: makeUpdate('new'),
-    });
-
-    expect(send).toHaveBeenCalledTimes(1);
-
-    await flushPromises();
-
-    expect(send).toHaveBeenCalledTimes(2);
     expect(mockRecords).toHaveLength(0);
   });
 
