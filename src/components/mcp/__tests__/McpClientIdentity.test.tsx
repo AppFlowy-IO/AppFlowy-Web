@@ -143,6 +143,41 @@ describe('McpClientIdentity', () => {
     expect(screen.queryByTestId('mcp-client-verified-app-badge')).toBeNull();
   });
 
+  it('shows only the publisher in the publisher variant: the host, and a verified app only when proven', () => {
+    // A catalog app on the user's computer: no catalog name, no "Runs on your computer" here.
+    const claudeCode = {
+      client_name: 'Claude Code',
+      client_host: 'claude.ai',
+      client_kind: 'cimd' as const,
+      loopback_only: true,
+      logo_uri: null,
+      app_name: 'Claude Code',
+      verified_app: true,
+      identity_verified: false,
+    };
+    const { rerender } = render(<McpClientIdentity variant='publisher' client={claudeCode} />);
+
+    expect(screen.getByTestId('mcp-client-identity-name').textContent).toBe('claude.ai');
+    expect(screen.queryByTestId('mcp-client-identity-host')).toBeNull();
+    expect(screen.getByTestId('mcp-client-verified-badge')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-client-native-app-badge')).toBeNull();
+    expect(screen.queryByTestId('mcp-client-local-badge')).toBeNull();
+    expect(screen.queryByTestId('mcp-client-verified-app-badge')).toBeNull();
+
+    rerender(<McpClientIdentity variant='publisher' client={{ ...claudeCode, client_kind: 'dcr' }} />);
+    expect(screen.getByTestId('mcp-client-unverified-badge')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-client-native-app-badge')).toBeNull();
+
+    rerender(
+      <McpClientIdentity
+        variant='publisher'
+        client={{ ...claudeCode, loopback_only: false, app_name: 'Claude', identity_verified: true }}
+      />
+    );
+    expect(screen.getByTestId('mcp-client-identity-name').textContent).toBe('claude.ai');
+    expect(screen.getByTestId('mcp-client-verified-app-badge')).toBeTruthy();
+  });
+
   it('names an unknown client without badges', () => {
     render(<McpClientIdentity client={null} />);
 

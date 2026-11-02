@@ -24,6 +24,13 @@ export interface McpClientIdentityProps {
   client?: McpClientIdentityClient | null;
   /** Render the avatar before the name (default true). */
   showAvatar?: boolean;
+  /**
+   * `app` (default): the app's name, its host and every badge. `publisher`:
+   * only who publishes it, for the consent page's publisher row. The host
+   * leads, and only a proven identity counts as a verified app; where the
+   * app runs belongs to the redirect row.
+   */
+  variant?: 'app' | 'publisher';
   avatarSize?: McpClientAvatarSize;
   /** Extra lines under the badges, such as a connected time. */
   children?: ReactNode;
@@ -47,19 +54,21 @@ const BADGE_CLASS = 'inline-flex w-fit shrink-0 items-center whitespace-nowrap r
 export function McpClientIdentity({
   client,
   showAvatar = true,
+  variant = 'app',
   avatarSize = 'md',
   children,
   tooltipContainer,
   className,
 }: McpClientIdentityProps) {
   const { t } = useTranslation();
+  const publisher = variant === 'publisher';
   const verifiedApp = client?.verified_app === true;
   // Recognized and proven: a web app whose sign-ins only return to its publisher.
   const verifiedIdentity = verifiedApp && client?.identity_verified === true;
   // Recognized, but it runs on the user's computer, where any program can claim it.
-  const nativeApp = verifiedApp && !verifiedIdentity;
+  const nativeApp = !publisher && verifiedApp && !verifiedIdentity;
   // A recognized app is named by the catalog, not by its own registration.
-  const name = getMcpClientOwnName(client);
+  const name = publisher ? undefined : getMcpClientOwnName(client);
   const host = client?.client_host?.trim();
   const title = name || host || t('settings.mcp.unknownApp');
 
@@ -137,7 +146,7 @@ export function McpClientIdentity({
                 </TooltipContent>
               </Tooltip>
             )}
-            {client.loopback_only && !nativeApp && (
+            {client.loopback_only && !nativeApp && !publisher && (
               <span
                 className={cn(BADGE_CLASS, 'border-border-primary bg-fill-content text-text-secondary')}
                 data-testid='mcp-client-local-badge'

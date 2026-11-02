@@ -43,19 +43,7 @@ export function McpConsentDetails({ client, redirectUri }: McpConsentDetailsProp
       <dl className='flex flex-col divide-y divide-border-primary rounded-400 border border-border-primary text-sm'>
         <DetailRow label={t('mcp.consent.publisher')} testId='mcp-consent-publisher'>
           {/* The host leads (the title names the app); "Runs on your computer" belongs to the redirect row. */}
-          <McpClientIdentity
-            showAvatar={false}
-            client={{
-              client_name: null,
-              client_host: client.client_host,
-              client_kind: client.client_kind,
-              loopback_only: false,
-              logo_uri: null,
-              app_name: null,
-              verified_app: client.verified_app === true && client.identity_verified === true,
-              identity_verified: client.identity_verified,
-            }}
-          />
+          <McpClientIdentity showAvatar={false} variant='publisher' client={client} />
         </DetailRow>
         <DetailRow label={t('mcp.consent.returnsTo')} testId='mcp-consent-returns-to'>
           <span
