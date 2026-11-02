@@ -104,6 +104,36 @@ describe('McpSetupPage', () => {
     expect(screen.queryByTestId('mcp-setup-loading')).toBeNull();
   });
 
+  it('says it is retrying while Cloud server-info fails, then shows the URL once it answers', async () => {
+    jest.useFakeTimers();
+    // The server-info loop logs each failed request.
+    const logError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      getServerInfo
+        .mockRejectedValueOnce(Object.assign(new Error('Bad gateway'), { code: 502 }))
+        .mockResolvedValueOnce({ enable_page_history: true, mcp_url: 'https://mcp.discovered.example.com' });
+      renderPage();
+
+      expect((await screen.findByTestId('mcp-setup-retrying')).textContent).toBe('mcp.serverInfoRetrying');
+      expect(screen.getByTestId('mcp-setup-loading')).toBeTruthy();
+
+      // The server-info loop retries after a second.
+      await act(async () => {
+        jest.advanceTimersByTime(1_000);
+      });
+
+      expect((await screen.findByTestId<HTMLInputElement>('mcp-endpoint-value')).value).toBe(
+        'https://mcp.discovered.example.com/mcp'
+      );
+      expect(screen.queryByTestId('mcp-setup-retrying')).toBeNull();
+      expect(getServerInfo).toHaveBeenCalledTimes(2);
+    } finally {
+      logError.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('explains when neither the Web config nor Cloud server-info names an MCP service', async () => {
     renderPage();
 

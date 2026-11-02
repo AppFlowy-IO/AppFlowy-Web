@@ -45,11 +45,16 @@ export function McpSetupPage() {
           {configuration.status === 'loading' ? (
             <div
               role='status'
-              aria-label={t('loading')}
-              className='flex justify-center py-12'
+              aria-label={configuration.retrying ? undefined : t('loading')}
+              className='flex flex-col items-center gap-4 py-12'
               data-testid='mcp-setup-loading'
             >
               <Progress variant='primary' />
+              {configuration.retrying && (
+                <p className='text-center text-sm text-text-secondary' data-testid='mcp-setup-retrying'>
+                  {t('mcp.serverInfoRetrying')}
+                </p>
+              )}
             </div>
           ) : configuration.status === 'configured' ? (
             <>

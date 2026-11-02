@@ -345,6 +345,40 @@ describe('McpAuthorizePage request checks', () => {
     expect(await loginContinuation()).toBe(path);
   });
 
+  it('says it is retrying while Cloud server-info fails, then continues to sign-in once it answers', async () => {
+    jest.useFakeTimers();
+    // The server-info loop logs each failed request.
+    const logError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      mockAuthenticated = false;
+      delete mockConfig.APPFLOWY_MCP_BASE_URL;
+      mocked.serverInfo
+        .mockRejectedValueOnce(Object.assign(new Error('Bad gateway'), { code: 502 }))
+        .mockResolvedValueOnce({ enable_page_history: true, mcp_url: 'https://mcp.discovered.example.com' });
+      const path = authorizePath();
+
+      renderPage(path);
+
+      expect((await screen.findByTestId('mcp-consent-retrying')).textContent).toBe(
+        "Can't reach the AppFlowy server right now. Trying again…"
+      );
+      expect(screen.queryByTestId('mcp-consent-error')).toBeNull();
+      expect(screen.queryByTestId('location')).toBeNull();
+
+      // The server-info loop retries after a second.
+      await act(async () => {
+        jest.advanceTimersByTime(1_000);
+      });
+
+      expect(await loginContinuation()).toBe(path);
+      expect(mocked.serverInfo).toHaveBeenCalledTimes(2);
+    } finally {
+      logError.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('loads the consent view with the MCP service Cloud server-info names', async () => {
     delete mockConfig.APPFLOWY_MCP_BASE_URL;
     mocked.serverInfo.mockResolvedValue({ enable_page_history: true, mcp_url: 'https://mcp.discovered.example.com' });

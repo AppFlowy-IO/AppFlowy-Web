@@ -477,17 +477,20 @@ export interface McpDisconnectOptions extends McpRequestOptions {
 export type McpConfigurationSource = 'config' | 'server_info';
 
 /**
- * Where the MCP service is. `loading` until server-info answers; `configured`
- * with the service's origin (`baseUrl`, without `/mcp`); `not_configured` when
- * neither source names one, which hides Settings > MCP and makes the
- * consent and setup pages say AI app connections are not configured.
+ * Where the MCP service is. `loading` until server-info answers, with
+ * `retrying` while its last request failed and the refresh loop tries again;
+ * `configured` with the service's origin (`baseUrl`, without `/mcp`);
+ * `not_configured` when neither source names one, which hides Settings > MCP
+ * and makes the consent and setup pages say AI app connections are not
+ * configured.
  */
 export type McpConfiguration =
-  | { status: 'loading' }
+  | { status: 'loading'; retrying?: boolean }
   | { status: 'configured'; baseUrl: string; source: McpConfigurationSource }
   | { status: 'not_configured' };
 
 const MCP_CONFIGURATION_LOADING: McpConfiguration = { status: 'loading' };
+const MCP_CONFIGURATION_RETRYING: McpConfiguration = { status: 'loading', retrying: true };
 const MCP_NOT_CONFIGURED: McpConfiguration = { status: 'not_configured' };
 
 const warnedMcpUrls = new Set<string>();
@@ -559,6 +562,7 @@ function resolveMcpConfiguration(serverInfo: ServerInfoState, override: string):
   }
 
   if (serverInfo.status === 'unsupported') return MCP_NOT_CONFIGURED;
+  if (serverInfo.status === 'unavailable') return MCP_CONFIGURATION_RETRYING;
   if (serverInfo.status !== 'available') return MCP_CONFIGURATION_LOADING;
 
   const baseUrl = normalizeMcpBaseUrl(serverInfo.info.mcp_url, 'server-info mcp_url');
@@ -590,8 +594,12 @@ function warnIfServerInfoDisagrees(serverInfo: ServerInfoState, override: string
 }
 
 function sameMcpConfiguration(a: McpConfiguration, b: McpConfiguration): boolean {
-  if (a.status !== 'configured' || b.status !== 'configured') return a.status === b.status;
-  return a.baseUrl === b.baseUrl && a.source === b.source;
+  if (a.status === 'configured' && b.status === 'configured') {
+    return a.baseUrl === b.baseUrl && a.source === b.source;
+  }
+
+  if (a.status === 'loading' && b.status === 'loading') return a.retrying === b.retrying;
+  return a.status === b.status;
 }
 
 /** What server-info last confirmed; it stands while a refresh is pending or failing. */

@@ -66,7 +66,7 @@ function McpAuthorizeRequest() {
 
   if (expired) return <McpConsentExpired clientId={expired.clientId} configuration={configuration} />;
   if (!request) return <McpConsentErrorView reason='invalid_request' />;
-  if (configuration.status === 'loading') return <McpConsentLoading />;
+  if (configuration.status === 'loading') return <McpConsentLoading retrying={configuration.retrying} />;
   if (configuration.status === 'not_configured') return <McpConsentErrorView reason='not_configured' />;
   if (!isAuthenticated) return <McpConsentLoading />;
 
@@ -97,6 +97,7 @@ function McpConsentExpired({ clientId, configuration }: { clientId?: string; con
     return () => controller.abort();
   }, [clientId, lookup]);
 
-  if (configuration.status === 'loading' || (lookup && resolved?.lookup !== lookup)) return <McpConsentLoading />;
+  if (configuration.status === 'loading') return <McpConsentLoading retrying={configuration.retrying} />;
+  if (lookup && resolved?.lookup !== lookup) return <McpConsentLoading />;
   return <McpConsentExpiredView name={lookup ? resolved?.name : undefined} />;
 }

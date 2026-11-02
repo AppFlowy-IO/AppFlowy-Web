@@ -247,6 +247,23 @@ describe('MCP configuration discovery', () => {
     warn.mockRestore();
   });
 
+  it('says it is retrying while server-info fails before it ever answered', () => {
+    updateServerInfo(CLOUD, { status: 'unavailable' });
+    const retrying = getMcpConfiguration();
+
+    expect(retrying).toEqual({ status: 'loading', retrying: true });
+    // The loop's next failure gives the same answer.
+    updateServerInfo(CLOUD, { status: 'unavailable' });
+    expect(getMcpConfiguration()).toBe(retrying);
+
+    updateServerInfo(CLOUD, available('https://mcp.discovered.example.com'));
+    expect(getMcpConfiguration()).toEqual({
+      status: 'configured',
+      baseUrl: 'https://mcp.discovered.example.com',
+      source: 'server_info',
+    });
+  });
+
   it('keeps the last answer while a refresh is failing or pending', () => {
     updateServerInfo(CLOUD, available('https://mcp.discovered.example.com'));
     const configured = getMcpConfiguration();

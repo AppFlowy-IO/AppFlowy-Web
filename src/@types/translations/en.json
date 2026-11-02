@@ -5451,6 +5451,7 @@
     "publishNameTooLong": "Keep the page address to {{max}} characters or fewer."
   },
   "mcp": {
+    "serverInfoRetrying": "Can't reach the AppFlowy server right now. Trying again…",
     "setup": {
       "pageTitle": "Connect AI apps to AppFlowy",
       "pageDescription": "Use AppFlowy from Claude, ChatGPT, Cursor, VS Code and other AI apps through the Model Context Protocol (MCP).",

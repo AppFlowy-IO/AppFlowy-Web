@@ -354,12 +354,14 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    connections are not configured. A Web that relies on server-info lands here while AI app
    connections are turned off.
 
-The answer is `loading` until server-info responds (a failed request keeps it loading while the
-loop retries), and the consent and setup pages show a spinner meanwhile. `unsupported` (a server
-without `/api/server-info`) means not configured. Once server-info has answered, a later refresh
-that fails or is pending keeps that answer, so an open page does not lose the service on a
-transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`; only Cloud falls
-back as described above.
+The answer is `loading` until server-info responds, and the consent and setup pages show a spinner
+meanwhile. A failed request keeps it loading while the loop retries, with `retrying` set, and the
+spinner then says the AppFlowy server can't be reached and the page keeps trying
+(`mcp.serverInfoRetrying`); a signed-out user is sent to sign in only once it answers.
+`unsupported` (a server without `/api/server-info`) means not configured. Once server-info has
+answered, a later refresh that fails or is pending keeps that answer, so an open page does not lose
+the service on a transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`;
+only Cloud falls back as described above.
 
 **MCP service** — for the browser flow to work:
 
