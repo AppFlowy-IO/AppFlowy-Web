@@ -1,4 +1,4 @@
-import { Fragment, ReactNode } from 'react';
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { McpSnippetId } from '@/application/mcp/setup';
@@ -97,8 +97,4 @@ export function SetupSnippet({ id, text, onCopy }: { id: McpSnippetId; text: str
       </Button>
     </div>
   );
-}
-
-export function SetupBlock({ children }: { children: ReactNode }) {
-  return <div className='flex min-w-0 flex-col gap-3'>{children}</div>;
 }

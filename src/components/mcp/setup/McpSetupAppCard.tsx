@@ -32,8 +32,6 @@ export interface McpSetupAppCardProps {
   connected: boolean;
   /** Id of the steps region this card expands. */
   panelId: string;
-  /** Id for the card's toggle, which names the steps region. */
-  toggleId: string;
   onToggle: () => void;
   /** The card's primary action (install link, vendor page or copy); it sits above the card's click area. */
   action?: ReactNode;
@@ -51,7 +49,6 @@ export function McpSetupAppCard({
   selected,
   connected,
   panelId,
-  toggleId,
   onToggle,
   action,
 }: McpSetupAppCardProps) {
@@ -84,7 +81,6 @@ export function McpSetupAppCard({
         </span>
         <button
           type='button'
-          id={toggleId}
           aria-expanded={selected}
           aria-controls={selected ? panelId : undefined}
           aria-describedby={connected ? `${descriptionId} ${badgeId}` : descriptionId}

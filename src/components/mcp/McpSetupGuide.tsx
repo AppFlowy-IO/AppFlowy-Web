@@ -17,7 +17,6 @@ import {
   type McpSetupConnection,
 } from '@/application/mcp/setupApps';
 import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
-import { getMcpServerUrl } from '@/application/services/domains/mcp';
 import { ReactComponent as ArrowUpRightIcon } from '@/assets/icons/arrow_up_right.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { notify } from '@/components/_shared/notify';
@@ -46,12 +45,11 @@ const GALLERY_GRID_CLASS =
 
 export interface McpSetupGuideProps {
   /**
-   * The server URL to show and build every snippet from. Empty or omitted
-   * falls back to `getMcpServerUrl()`; pass `McpMemberStatus.endpoint` when known.
+   * The server URL to show and build every snippet from: `McpMemberStatus.endpoint`
+   * in Settings, the configured MCP URL on the setup page. Callers own the
+   * loading and not-configured states, so this is always a resolved URL.
    */
-  serverUrl?: string;
-  /** The app whose steps start expanded; none by default. */
-  defaultApp?: McpSetupAppId;
+  serverUrl: string;
   /**
    * The caller's connections in this workspace, for "Connected apps (N)" and
    * the cards' Connected badges (matched by the verified catalog `app_id`).
@@ -66,15 +64,15 @@ export interface McpSetupGuideProps {
  * a setup prompt for AI agents, the apps already connected, a gallery of apps
  * whose cards expand into copyable steps, and "Having trouble?".
  */
-export function McpSetupGuide({ serverUrl, defaultApp, connections, className }: McpSetupGuideProps) {
+export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGuideProps) {
   const { t } = useTranslation();
   const inputId = useId();
   const idPrefix = useId();
-  const url = (serverUrl?.trim() || getMcpServerUrl()).trim();
+  const url = serverUrl.trim();
   const snippets = useMemo(() => buildMcpSnippets(url), [url]);
   const connectedApps = useMemo(() => summarizeConnectedApps(connections ?? []), [connections]);
   const connectedCards = useMemo(() => connectedSetupApps(connectedApps), [connectedApps]);
-  const [selected, setSelected] = useState<McpSetupAppId | null>(defaultApp ?? null);
+  const [selected, setSelected] = useState<McpSetupAppId | null>(null);
   const selectedByUser = useRef(false);
   const stepsRef = useRef<HTMLDivElement>(null);
 
@@ -96,18 +94,6 @@ export function McpSetupGuide({ serverUrl, defaultApp, connections, className }:
     // jsdom has no scrollIntoView.
     if (selected && selectedByUser.current) stepsRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [selected]);
-
-  if (!url) {
-    return (
-      <div
-        role='status'
-        className={cn('rounded-400 border border-border-primary p-4 text-sm text-text-secondary', className)}
-        data-testid='mcp-setup-guide-not-configured'
-      >
-        {t('mcp.setup.notConfigured')}
-      </div>
-    );
-  }
 
   const select = (app: McpSetupAppId) => {
     selectedByUser.current = true;
@@ -220,7 +206,6 @@ export function McpSetupGuide({ serverUrl, defaultApp, connections, className }:
         {MCP_SETUP_APPS.map((app) => {
           const textKey = SETUP_APP_TEXT_KEYS[app];
           const name = t(`mcp.setup.${textKey}.name`);
-          const toggleId = `${idPrefix}-${app}-toggle`;
           const panelId = `${idPrefix}-${app}-steps`;
           const titleId = `${idPrefix}-${app}-title`;
 
@@ -233,7 +218,6 @@ export function McpSetupGuide({ serverUrl, defaultApp, connections, className }:
                 selected={selected === app}
                 connected={connectedCards.has(app)}
                 panelId={panelId}
-                toggleId={toggleId}
                 onToggle={() => toggle(app)}
                 action={primaryAction(app)}
               />

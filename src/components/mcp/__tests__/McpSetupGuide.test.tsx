@@ -15,7 +15,6 @@ import { copyTextToClipboard } from '@/utils/copy';
 import { McpSetupGuide } from '../McpSetupGuide';
 
 const SERVER_URL = 'https://mcp.example.com/mcp';
-let mockServerUrl = SERVER_URL;
 
 // Real i18next over en.json, so a name that loses RAW_INTERPOLATION shows escaped here as in the app.
 jest.mock('react-i18next', () => {
@@ -23,7 +22,6 @@ jest.mock('react-i18next', () => {
 
   return { useTranslation: () => ({ t: mcpTestT }) };
 });
-jest.mock('@/application/services/domains/mcp', () => ({ getMcpServerUrl: () => mockServerUrl }));
 jest.mock('@/utils/copy', () => ({ copyTextToClipboard: jest.fn() }));
 jest.mock('@/components/_shared/notify', () => ({ notify: { success: jest.fn(), error: jest.fn() } }));
 
@@ -63,13 +61,12 @@ describe('McpSetupGuide', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockServerUrl = SERVER_URL;
     copy.mockResolvedValue(undefined);
   });
 
   describe('server URL', () => {
-    it('shows the configured server URL and copies it', async () => {
-      render(<McpSetupGuide />);
+    it('shows the server URL and copies it', async () => {
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       expect(screen.getByTestId<HTMLInputElement>('mcp-endpoint-value').value).toBe(SERVER_URL);
       expect(screen.getByTestId<HTMLInputElement>('mcp-endpoint-value').readOnly).toBe(true);
@@ -78,29 +75,13 @@ describe('McpSetupGuide', () => {
       expect(notify.success).toHaveBeenCalledWith(setup.copied);
     });
 
-    it('prefers the server-reported endpoint over the configured URL', () => {
-      const { rerender } = render(<McpSetupGuide serverUrl='https://canonical.example.com/mcp' />);
-
-      expect(screen.getByTestId<HTMLInputElement>('mcp-endpoint-value').value).toBe('https://canonical.example.com/mcp');
-      rerender(<McpSetupGuide serverUrl='' />);
-      expect(screen.getByTestId<HTMLInputElement>('mcp-endpoint-value').value).toBe(SERVER_URL);
-    });
-
     it('reports a copy failure', async () => {
       copy.mockRejectedValueOnce(new Error('denied'));
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       await click('mcp-copy-endpoint');
       expect(notify.error).toHaveBeenCalledWith(translations.message.copy.fail);
       expect(notify.success).not.toHaveBeenCalled();
-    });
-
-    it('explains when the MCP service is not configured', () => {
-      mockServerUrl = '';
-      render(<McpSetupGuide />);
-
-      expect(screen.getByTestId('mcp-setup-guide-not-configured').textContent).toBe(setup.notConfigured);
-      expect(screen.queryByTestId('mcp-setup-guide')).toBeNull();
     });
   });
 
@@ -121,7 +102,7 @@ describe('McpSetupGuide', () => {
 
   describe('gallery', () => {
     it('shows a card per app with its name and description, none expanded', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       const gallery = screen.getByTestId('mcp-setup-gallery');
       const cards = within(gallery).getAllByTestId(/^mcp-setup-app-card-/);
@@ -140,7 +121,7 @@ describe('McpSetupGuide', () => {
     });
 
     it('expands one card’s steps at a time, right after that card, and collapses them again', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       toggle('codex');
       const button = screen.getByTestId('mcp-client-tab-codex');
@@ -163,14 +144,8 @@ describe('McpSetupGuide', () => {
       expect(openPanels()).toEqual([]);
     });
 
-    it('can start with one app expanded', () => {
-      render(<McpSetupGuide defaultApp='vscode' />);
-
-      expect(openPanels()).toEqual(['vscode']);
-    });
-
     it('opens Claude’s connectors in a new tab and shows the steps, including Team and Enterprise', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       const link = screen.getByTestId('mcp-open-claude-connectors');
 
@@ -195,7 +170,7 @@ describe('McpSetupGuide', () => {
     });
 
     it('opens ChatGPT and explains plans and Business, Enterprise and Edu workspaces', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       const link = screen.getByTestId('mcp-open-chatgpt');
 
@@ -210,7 +185,7 @@ describe('McpSetupGuide', () => {
     });
 
     it('installs in Cursor and VS Code through deeplinks, then explains signing in', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       const cursor = screen.getByTestId('mcp-install-cursor');
 
@@ -239,7 +214,7 @@ describe('McpSetupGuide', () => {
       ['windsurf', buildServerUrlJson(SERVER_URL)],
       ['other', SERVER_URL],
     ])('copies %s’s setup from its card and opens the steps', async (app, text) => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       await click(`mcp-setup-app-action-${app}`);
       expect(copy).toHaveBeenCalledWith(text);
@@ -255,7 +230,7 @@ describe('McpSetupGuide', () => {
       ['gemini', 'gemini', `gemini mcp add --transport http appflowy ${SERVER_URL}`],
       ['windsurf', 'server-url-json', buildServerUrlJson(SERVER_URL)],
     ])('copies the %s snippet %s from the steps', async (app, snippet, text) => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       toggle(app);
       expect(screen.getByTestId(`mcp-snippet-${snippet}`).textContent).toBe(text);
@@ -264,7 +239,7 @@ describe('McpSetupGuide', () => {
     });
 
     it('explains Claude Code’s scopes and how to sign in again', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       toggle('claude-code');
       const scope = screen.getByTestId('mcp-setup-claude-code-scope');
@@ -283,7 +258,7 @@ describe('McpSetupGuide', () => {
     });
 
     it('offers the Codex config.toml and app paths', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       toggle('codex');
       const panel = screen.getByTestId('mcp-client-panel-codex');
@@ -294,7 +269,7 @@ describe('McpSetupGuide', () => {
     });
 
     it('offers remote and mcp-remote configurations for other apps', async () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       toggle('other');
       expect(screen.getByTestId('mcp-snippet-remote-json').textContent).toContain(`"url": "${SERVER_URL}"`);
@@ -305,18 +280,19 @@ describe('McpSetupGuide', () => {
 
   describe('connected apps', () => {
     it('shows nothing about connections when they are unknown or empty', () => {
-      const { rerender } = render(<McpSetupGuide />);
+      const { rerender } = render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       expect(screen.queryByTestId('mcp-setup-connected-apps')).toBeNull();
       expect(screen.queryByTestId(/^mcp-setup-app-connected-/)).toBeNull();
 
-      rerender(<McpSetupGuide connections={[]} />);
+      rerender(<McpSetupGuide serverUrl={SERVER_URL} connections={[]} />);
       expect(screen.queryByTestId('mcp-setup-connected-apps')).toBeNull();
     });
 
     it('counts connected apps and badges the cards of recognized ones', () => {
       render(
         <McpSetupGuide
+          serverUrl={SERVER_URL}
           connections={[
             verified('cursor', 'dcr-laptop'),
             verified('cursor', 'dcr-desktop'),
@@ -352,6 +328,7 @@ describe('McpSetupGuide', () => {
     it('does not badge a card for a client that only claims the app’s name', () => {
       render(
         <McpSetupGuide
+          serverUrl={SERVER_URL}
           connections={[{ client_id: 'dcr-1', client_name: 'Claude', app_id: null, verified_app: false }]}
         />
       );
@@ -363,7 +340,7 @@ describe('McpSetupGuide', () => {
 
   describe('having trouble', () => {
     it('starts collapsed and answers reconnecting, approval and one workspace per connection', () => {
-      render(<McpSetupGuide />);
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
       const toggleButton = screen.getByTestId('mcp-setup-troubleshooting-toggle');
 

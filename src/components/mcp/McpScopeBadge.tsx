@@ -4,8 +4,8 @@ import { scopeLevel, type McpScopeLevel } from '@/application/mcp/setup';
 import { cn } from '@/lib/utils';
 
 export interface McpScopeBadgeProps {
-  /** A granted scope string (`read write`) or list; null or empty means read only. */
-  scope?: string | readonly string[] | null;
+  /** A granted scope string (`read write`); null or empty means read only. */
+  scope?: string | null;
   className?: string;
 }
 
