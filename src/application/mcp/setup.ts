@@ -43,7 +43,7 @@ export const CLAUDE_CONNECTORS_URL = 'https://claude.ai/customize/connectors';
 export const CHATGPT_SETTINGS_URL = 'https://chatgpt.com/#settings';
 
 /**
- * Deep link to Settings > AI apps (`SettingMenuItem.AI_APPS`). `/app` keeps the
+ * Deep link to Settings > MCP (`SettingMenuItem.AI_APPS`). `/app` keeps the
  * query through its redirect to the current workspace.
  */
 export const MCP_SETTINGS_PATH = '/app?setting=AI_APPS';

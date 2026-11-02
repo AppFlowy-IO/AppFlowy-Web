@@ -1,6 +1,6 @@
 /**
  * The whole AI-app journey, starting from what a user sees in AppFlowy Web: copy the MCP server
- * URL from Settings → AI apps, connect an MCP client with only that URL, create pages through MCP,
+ * URL from Settings → MCP, connect an MCP client with only that URL, create pages through MCP,
  * and find them in AppFlowy Web.
  *
  * The client gets nothing from the test configuration: every endpoint comes from the copied URL,
@@ -172,7 +172,7 @@ async function discover(request: APIRequestContext, serverUrl: string): Promise<
   };
 }
 
-/** Read the MCP server URL the way a user takes it: from Settings → AI apps, through Copy. */
+/** Read the MCP server URL the way a user takes it: from Settings → MCP, through Copy. */
 async function copyServerUrlFromSettings(page: Page): Promise<string> {
   await page.goto('/app?setting=AI_APPS', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('mcp-panel')).toBeVisible({ timeout: 30000 });
@@ -211,7 +211,7 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
       await signInAndWaitForApp(page, request, generateRandomEmail(), 1000);
       const serverUrl = await copyServerUrlFromSettings(page);
 
-      console.log(`MCP server URL copied from Settings → AI apps: ${serverUrl}`);
+      console.log(`MCP server URL copied from Settings → MCP: ${serverUrl}`);
 
       // Discovery, registration and authorization use nothing but the copied URL.
       const discovered = await discover(request, serverUrl);

@@ -36,7 +36,7 @@ export interface McpPanelProps {
 }
 
 /**
- * Settings > AI apps, rendered lazily with `key={workspaceId}`: how to connect
+ * Settings > MCP, rendered lazily with `key={workspaceId}`: how to connect
  * AI apps through the MCP server, the caller's own connections and, for
  * owners, which apps members may connect. See doc/MCP.md.
  *

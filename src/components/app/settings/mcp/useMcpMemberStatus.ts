@@ -22,7 +22,7 @@ export interface McpMemberStatusState {
   reload: () => Promise<void>;
 }
 
-/** Loads `GET /api/mcp/me/workspaces/{workspaceId}`, which gates everything else in Settings > AI apps. */
+/** Loads `GET /api/mcp/me/workspaces/{workspaceId}`, which gates everything else in Settings > MCP. */
 export function useMcpMemberStatus(workspaceId: string): McpMemberStatusState {
   const load = useCallback(
     (signal: AbortSignal) => McpService.getMcpMemberStatus(workspaceId, undefined, { signal }),

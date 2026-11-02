@@ -9,7 +9,7 @@ that flow:
 | --- | --- | --- |
 | Setup instructions | `/oauth/mcp/setup` (`src/pages/McpSetupPage.tsx`) | no |
 | OAuth consent | `/oauth/mcp/authorize` (`src/pages/McpAuthorizePage.tsx`) | yes (bounces to `/login`) |
-| Self-service and owner governance | Settings → AI apps (`src/components/app/settings/mcp/McpPanel.tsx`, `?setting=AI_APPS`) | yes |
+| Self-service and owner governance | Settings → MCP (`src/components/app/settings/mcp/McpPanel.tsx`, `?setting=AI_APPS`) | yes |
 
 The server contract (endpoints, error reasons, client summary) is documented in AppFlowy Cloud's
 `doc/context/integrations/mcp_context.md`.
@@ -19,7 +19,7 @@ At a glance (details in the sections below):
 - **One connection per device**: every sign-in from an AI app is its own connection (token
   family) with the device the app described ("Claude Code 2.1 · macOS"), "Connected …" and
   "Last used …"; disconnecting ends one device's connection and leaves the others working
-  ([Settings → AI apps](#settings--ai-apps)).
+  ([Settings → MCP](#settings--mcp)).
 - **Overview across workspaces**: "You have N apps connected across M workspaces" from
   `GET /api/mcp/me/connections`.
 - **Verified apps**: the server's catalog names apps it recognizes and marks web apps whose
@@ -70,7 +70,7 @@ At a glance (details in the sections below):
    When the user already has a connection with the app in that workspace (`client.connected`),
    `mcp-consent-already-connected` says that allowing again adds another connection and the existing
    ones keep working: every authorization is its own connection (one per device, see
-   [Settings → AI apps](#settings--ai-apps)).
+   [Settings → MCP](#settings--mcp)).
 6. The primary button follows the member status, decided by `client.approved` (approved here, or
    approval not required). `requires_approval` is not consulted: it mirrors the workspace setting,
    which the decision `/authorize/code` enforces can trail by up to 30 seconds after an owner turns
@@ -87,7 +87,7 @@ At a glance (details in the sections below):
    - **Approve and allow** (an owner, for an app not approved in the workspace) approves the app
      (`PUT /api/mcp/admin/workspaces/{id}/approvals?client_id=`), then allows.
    - **Request approval** (a member in the same situation) sends an access request
-     (`POST /api/mcp/me/workspaces/{id}/access-requests`) that owners see in Settings → AI apps. A
+     (`POST /api/mcp/me/workspaces/{id}/access-requests`) that owners see in Settings → MCP. A
      pending request disables the button.
 7. **Cancel** posts `POST /api/mcp/authorize/deny`; the server validates the client and redirect URI
    and returns the `access_denied` redirect (with `state` and `iss`), so a crafted link cannot turn
@@ -157,7 +157,7 @@ destinations (`AuthContinuationKind`: public Form links and MCP consent requests
 ## Setup guide
 
 `McpSetupGuide` (`src/components/mcp/McpSetupGuide.tsx`, parts in `src/components/mcp/setup/`)
-is the same on Settings → AI apps and on the public `/oauth/mcp/setup` page. From the top:
+is the same on Settings → MCP and on the public `/oauth/mcp/setup` page. From the top:
 
 - **Server URL** with Copy (`mcp-endpoint-value`, `mcp-copy-endpoint`).
 - **Copy setup prompt** (`mcp-copy-setup-prompt`): `buildMcpSetupPrompt` in
@@ -199,7 +199,7 @@ project`; Codex's `codex mcp login`, `config.toml` (user and project) and the ap
 `serverUrl` for Windsurf and Antigravity. Re-check them with vendor releases. Translated text
 marks commands and paths with backticks, which `RichText` renders as inline code.
 
-## Settings → AI apps
+## Settings → MCP
 
 The menu item appears once the MCP service's URL is known (`useMcpConfiguration`, see
 [MCP service URL](#mcp-service-url)). `?setting=AI_APPS` opens it, also through
@@ -332,7 +332,7 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    and the CI check in `.github/workflows/web_ci.yaml`. A value that is not an absolute http(s) URL
    is ignored with a console warning. AppFlowy Cloud's bundled Docker Compose (`appflowy_web`) and
    Helm (`appflowy-web`) deployments set it to the MCP origin, because server-info has no `mcp_url`
-   while AI app connections are turned off and Settings → AI apps must still show that and let
+   while AI app connections are turned off and Settings → MCP must still show that and let
    members disconnect. Set it in any other deployment that runs the MCP service for the same reason.
 2. **`mcp_url` from AppFlowy Cloud's `/api/server-info`** (web projection), set from Cloud's
    `APPFLOWY_MCP_BASE_URL`, the same variable the MCP service reads, so one compose `.env` serves
@@ -407,11 +407,11 @@ While it is off:
   on (a token refresh while off is a temporary 503 that does not use up the refresh token).
 - Cloud's server-info stops advertising `mcp_url`. A Web that finds the MCP service through
   server-info treats it as not configured after its next server-info refresh (every 5 minutes, and
-  when the tab regains focus or comes back online, at most every 30 seconds): Settings → AI apps
+  when the tab regains focus or comes back online, at most every 30 seconds): Settings → MCP
   disappears, and the `/oauth/mcp/*` pages say AI app connections are not configured. With the Web's
   own `APPFLOWY_MCP_BASE_URL`, or until that refresh, the Web still reaches the service and shows the
   turned-off states: the consent page's `mcp_disabled` error view (see the reasons table above) and
-  the Settings notice with Your connections (see [Settings → AI apps](#settings--ai-apps)).
+  the Settings notice with Your connections (see [Settings → MCP](#settings--mcp)).
 
 The Web reads the state from the member status's `enabled` (absent from servers that predate the
 switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reason
@@ -539,7 +539,7 @@ paths. Placed before them, the option swallows the paths and Jest runs the whole
 
 End to end, `playwright/e2e/mcp/oauth-consent.spec.ts` signs up an owner, registers a DCR client
 with a loopback callback, consents through the Web page (narrowing the scope to read, approve and
-allow), exchanges the code with `resource`, lists tools, finds the connection in Settings → AI apps,
+allow), exchanges the code with `resource`, lists tools, finds the connection in Settings → MCP,
 disconnects it and checks that the old token is refused. A second test cancels and expects
 `access_denied` with `state` and `iss`. It needs:
 
@@ -563,7 +563,7 @@ APPFLOWY_MCP_BASE_URL=http://localhost:8002 \
 ```
 
 `playwright/e2e/mcp/connect-and-create-pages.spec.ts` walks the whole user journey from what Web
-shows. It copies the MCP server URL from Settings → AI apps (checking the clipboard), then connects
+shows. It copies the MCP server URL from Settings → MCP (checking the clipboard), then connects
 with that URL alone, the way an AI app does:
 
 1. `401` from the copied URL, then the `resource_metadata` in its `WWW-Authenticate` header.

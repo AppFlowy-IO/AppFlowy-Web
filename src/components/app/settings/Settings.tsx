@@ -50,7 +50,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   );
   // Billing exists only on the official cloud, and only the owner can change a workspace's plan.
   const showBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isOfficialHosted);
-  // AI apps exist only where the MCP service is known: APPFLOWY_MCP_BASE_URL or Cloud server-info's mcp_url.
+  // The MCP tab exists only where the MCP service is known: APPFLOWY_MCP_BASE_URL or Cloud server-info's mcp_url.
   const showAiApps = mcpConfiguration.status === 'configured';
   const aiAppsMissing = mcpConfiguration.status === 'not_configured';
   // Owners see how many AI app approval requests are waiting.

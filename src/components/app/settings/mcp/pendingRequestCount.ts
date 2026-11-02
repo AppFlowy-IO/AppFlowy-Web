@@ -4,7 +4,7 @@ import * as McpService from '@/application/services/domains/mcp';
 
 /**
  * Pending AI app approval requests per workspace, for the owner's badge on
- * Settings > AI apps. The menu loads the count when Settings opens; the panel
+ * Settings > MCP. The menu loads the count when Settings opens; the panel
  * publishes every list it loads or changes, so approving or dismissing a
  * request updates the badge at once.
  */

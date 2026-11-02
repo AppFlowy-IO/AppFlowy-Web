@@ -809,7 +809,7 @@ describe('McpAuthorizePage decisions', () => {
 
     expect(error.getAttribute('data-reason')).toBe('request_limit');
     expect(error.textContent).toBe(
-      'This workspace has too many pending approval requests. Ask a workspace owner to review them in Settings → AI apps.'
+      'This workspace has too many pending approval requests. Ask a workspace owner to review them in Settings → MCP.'
     );
     expect(screen.queryByTestId('mcp-consent-request-sent')).toBeNull();
   });

@@ -246,7 +246,7 @@ test.describe('MCP OAuth consent', () => {
       expect(toolsResponse.status()).toBe(200);
       expect(((await toolsResponse.json()) as { result: { tools: unknown[] } }).result.tools.length).toBeGreaterThan(0);
 
-      // Settings > AI apps lists the connection with the granted scope.
+      // Settings > MCP lists the connection with the granted scope.
       await page.goto('/app?setting=AI_APPS', { waitUntil: 'domcontentloaded' });
       await expect(page.getByTestId('mcp-panel')).toBeVisible({ timeout: 30000 });
 

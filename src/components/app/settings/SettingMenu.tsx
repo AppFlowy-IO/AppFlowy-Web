@@ -16,9 +16,9 @@ interface SettingMenuProps {
   onSelectItem: (item: SettingMenuItem) => void;
   /** Plan and Billing exist only for workspace owners on the official AppFlowy cloud. */
   showBilling?: boolean;
-  /** AI apps exist only once the MCP service is known (`useMcpConfiguration()`). */
+  /** The MCP tab exists only once the MCP service is known (`useMcpConfiguration()`). */
   showAiApps?: boolean;
-  /** Pending AI app approval requests an owner can answer; a count badge on AI apps when above 0. */
+  /** Pending AI app approval requests an owner can answer; a count badge on the MCP tab when above 0. */
   aiAppsPendingRequests?: number;
 }
 

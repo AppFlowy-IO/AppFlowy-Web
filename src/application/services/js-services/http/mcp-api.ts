@@ -484,7 +484,7 @@ export type McpConfigurationSource = 'config' | 'server_info';
 /**
  * Where the MCP service is. `loading` until server-info answers; `configured`
  * with the service's origin (`baseUrl`, without `/mcp`); `not_configured` when
- * neither source names one, which hides Settings > AI apps and makes the
+ * neither source names one, which hides Settings > MCP and makes the
  * consent and setup pages say AI app connections are not configured.
  */
 export type McpConfiguration =
