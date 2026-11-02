@@ -19,6 +19,7 @@ import {
   pickDefaultWorkspaceId,
   toConsentErrorReason,
   toggleConsentScope,
+  type ConsentErrorReason,
 } from '../consentModel';
 
 const VALID = {
@@ -199,6 +200,17 @@ describe('reasons', () => {
 
     MCP_ERROR_REASONS.filter((reason) => !handledWithoutText.includes(reason)).forEach((reason) => {
       expect(consentErrorMessageKey(reason)).toBe(`mcp.consent.errors.${reason}`);
+    });
+  });
+
+  it('treats a reason this Web does not know, from an unchecked server field, like an unmapped one', () => {
+    // The member status's ineligible_reason is not checked at runtime.
+    (['workspace_suspended', 'constructor'] as unknown as ConsentErrorReason[]).forEach((reason) => {
+      expect(consentErrorMessageKey(reason)).toBe('mcp.consent.errors.generic');
+      expect(isRetryableConsentReason(reason)).toBe(false);
+      expect(isFatalConsentReason(reason)).toBe(false);
+      expect(isCancellableConsentReason(reason)).toBe(true);
+      expect(isAccountConsentReason(reason)).toBe(false);
     });
   });
 

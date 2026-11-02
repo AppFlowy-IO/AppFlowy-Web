@@ -159,87 +159,107 @@ export function pickDefaultWorkspaceId(
 /** Why the flow stopped: a server reason, or one the page detects itself. */
 export type ConsentErrorReason = McpErrorReason | 'not_configured' | 'no_workspace' | 'generic';
 
-/** Reasons with their own message under `mcp.consent.errors`; every other reason shows `generic`. */
-export const CONSENT_ERROR_MESSAGE_REASONS = [
-  'invalid_request',
-  'not_configured',
-  'mcp_disabled',
-  'no_workspace',
-  'unknown_client',
-  'invalid_redirect_uri',
-  'invalid_target',
-  'invalid_scope',
-  'client_blocked',
-  'email_not_allowed',
-  'guest_not_allowed',
-  'not_workspace_member',
-  'not_workspace_owner',
-  'invalid_session',
-  'request_limit',
-  'rate_limited',
-  'temporarily_unavailable',
-  'server_error',
-  'generic',
-] as const;
+/** What the consent flow does with one reason. */
+interface ConsentReasonPolicy {
+  /** It has its own message under `mcp.consent.errors`; every other reason shows `generic`. */
+  message: boolean;
+  /** The user can retry the same request unchanged after a moment. */
+  retryable: boolean;
+  /**
+   * Allowing or approving that fails with it ends the flow with the error view:
+   * the request itself or the user's access is wrong, or AI app connections are
+   * turned off for the server, so retrying the same request cannot succeed.
+   */
+  fatal: boolean;
+  /**
+   * Its error view offers "Cancel and return to …". The server's deny refuses an
+   * unknown client and a redirect URI the client never registered, and every
+   * request while AI app connections are turned off; without an MCP service
+   * there is no one to ask.
+   */
+  cancellable: boolean;
+  /** Another account may help: the error view offers "Use a different account". */
+  account: boolean;
+}
 
-export type ConsentErrorMessageReason = (typeof CONSENT_ERROR_MESSAGE_REASONS)[number];
+/**
+ * Every reason's policy in one row, so a reason added to `MCP_ERROR_REASONS`
+ * fails type-checking until someone decides each of its behaviours.
+ */
+const CONSENT_REASON_POLICY = {
+  invalid_request: { message: true, retryable: false, fatal: true, cancellable: true, account: false },
+  not_configured: { message: true, retryable: false, fatal: false, cancellable: false, account: false },
+  mcp_disabled: { message: true, retryable: false, fatal: true, cancellable: false, account: false },
+  no_workspace: { message: true, retryable: false, fatal: false, cancellable: true, account: true },
+  unknown_client: { message: true, retryable: false, fatal: true, cancellable: false, account: false },
+  invalid_redirect_uri: { message: true, retryable: false, fatal: true, cancellable: false, account: false },
+  invalid_target: { message: true, retryable: false, fatal: true, cancellable: true, account: false },
+  invalid_scope: { message: true, retryable: false, fatal: true, cancellable: true, account: false },
+  client_blocked: { message: true, retryable: false, fatal: true, cancellable: true, account: false },
+  email_not_allowed: { message: true, retryable: false, fatal: true, cancellable: true, account: true },
+  guest_not_allowed: { message: true, retryable: false, fatal: true, cancellable: true, account: true },
+  not_workspace_member: { message: true, retryable: false, fatal: true, cancellable: true, account: true },
+  not_workspace_owner: { message: true, retryable: false, fatal: false, cancellable: true, account: false },
+  invalid_session: { message: true, retryable: false, fatal: false, cancellable: true, account: true },
+  request_limit: { message: true, retryable: false, fatal: false, cancellable: true, account: false },
+  rate_limited: { message: true, retryable: true, fatal: false, cancellable: true, account: false },
+  temporarily_unavailable: { message: true, retryable: true, fatal: false, cancellable: true, account: false },
+  server_error: { message: true, retryable: true, fatal: false, cancellable: true, account: false },
+  generic: { message: true, retryable: true, fatal: false, cancellable: true, account: false },
+  // These two reload the member status and show the approval controls instead of text.
+  client_not_approved: { message: false, retryable: false, fatal: false, cancellable: true, account: false },
+  already_approved: { message: false, retryable: false, fatal: false, cancellable: true, account: false },
+} as const satisfies Record<ConsentErrorReason, ConsentReasonPolicy>;
+
+/** A reason this Web does not know: the generic message, nothing to retry, Cancel still offered. */
+const UNKNOWN_REASON_POLICY: ConsentReasonPolicy = {
+  message: false,
+  retryable: false,
+  fatal: false,
+  cancellable: true,
+  account: false,
+};
+
+/**
+ * The policy of `reason`. Some server fields reach this unchecked at runtime
+ * (the member status's `ineligible_reason`), so a value outside the type gets
+ * `UNKNOWN_REASON_POLICY` instead of failing.
+ */
+function consentReasonPolicy(reason: ConsentErrorReason): ConsentReasonPolicy {
+  return Object.prototype.hasOwnProperty.call(CONSENT_REASON_POLICY, reason)
+    ? CONSENT_REASON_POLICY[reason]
+    : UNKNOWN_REASON_POLICY;
+}
+
+type ConsentReasonPolicyTable = typeof CONSENT_REASON_POLICY;
+
+/** Reasons with their own message under `mcp.consent.errors`. */
+export type ConsentErrorMessageReason = {
+  [Reason in ConsentErrorReason]: ConsentReasonPolicyTable[Reason]['message'] extends true ? Reason : never;
+}[ConsentErrorReason];
+
+function hasConsentErrorMessage(reason: ConsentErrorReason): reason is ConsentErrorMessageReason {
+  return consentReasonPolicy(reason).message;
+}
+
+export const CONSENT_ERROR_MESSAGE_REASONS: readonly ConsentErrorMessageReason[] = (
+  Object.keys(CONSENT_REASON_POLICY) as ConsentErrorReason[]
+).filter(hasConsentErrorMessage);
 
 /** The `mcp.consent.errors.*` key for a reason. */
 export function consentErrorMessageKey(reason: ConsentErrorReason): `mcp.consent.errors.${ConsentErrorMessageReason}` {
-  const known = (CONSENT_ERROR_MESSAGE_REASONS as readonly string[]).includes(reason)
-    ? (reason as ConsentErrorMessageReason)
-    : 'generic';
-
-  return `mcp.consent.errors.${known}`;
+  return `mcp.consent.errors.${hasConsentErrorMessage(reason) ? reason : 'generic'}`;
 }
 
 /** Failures a user can retry unchanged after a moment. */
-const RETRYABLE_REASONS: ReadonlySet<ConsentErrorReason> = new Set([
-  'rate_limited',
-  'temporarily_unavailable',
-  'server_error',
-  'generic',
-]);
-
 export function isRetryableConsentReason(reason: ConsentErrorReason): boolean {
-  return RETRYABLE_REASONS.has(reason);
+  return consentReasonPolicy(reason).retryable;
 }
 
-/**
- * Reasons that end the flow with the error view when allowing or approving
- * fails. The request itself or the user's access is wrong, or AI app
- * connections are turned off for the server; retrying the same request cannot
- * succeed.
- */
-const FATAL_ACTION_REASONS: ReadonlySet<ConsentErrorReason> = new Set([
-  'mcp_disabled',
-  'email_not_allowed',
-  'guest_not_allowed',
-  'not_workspace_member',
-  'unknown_client',
-  'invalid_redirect_uri',
-  'invalid_target',
-  'invalid_scope',
-  'client_blocked',
-  'invalid_request',
-]);
-
+/** Allowing or approving that fails with `reason` ends the flow with the error view. */
 export function isFatalConsentReason(reason: ConsentErrorReason): boolean {
-  return FATAL_ACTION_REASONS.has(reason);
+  return consentReasonPolicy(reason).fatal;
 }
-
-/**
- * Error views without "Cancel and return to …": the server's deny refuses an
- * unknown client and a redirect URI the client never registered, and every
- * request while AI app connections are turned off; without an MCP service
- * there is no one to ask.
- */
-const UNCANCELLABLE_REASONS: ReadonlySet<ConsentErrorReason> = new Set([
-  'unknown_client',
-  'invalid_redirect_uri',
-  'not_configured',
-  'mcp_disabled',
-]);
 
 /**
  * Whether an error view of the consent flow offers to cancel: the request
@@ -247,20 +267,12 @@ const UNCANCELLABLE_REASONS: ReadonlySet<ConsentErrorReason> = new Set([
  * app stops waiting instead of timing out.
  */
 export function isCancellableConsentReason(reason: ConsentErrorReason): boolean {
-  return !UNCANCELLABLE_REASONS.has(reason);
+  return consentReasonPolicy(reason).cancellable;
 }
 
 /** Reasons for which another account may help: the error view offers "Use a different account". */
-const ACCOUNT_REASONS: ReadonlySet<ConsentErrorReason> = new Set([
-  'email_not_allowed',
-  'guest_not_allowed',
-  'not_workspace_member',
-  'no_workspace',
-  'invalid_session',
-]);
-
 export function isAccountConsentReason(reason: ConsentErrorReason): boolean {
-  return ACCOUNT_REASONS.has(reason);
+  return consentReasonPolicy(reason).account;
 }
 
 /**
