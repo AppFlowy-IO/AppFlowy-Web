@@ -4,7 +4,7 @@ import { Log } from '@/utils/log';
 const REDIRECT_TO_STORAGE_KEY = 'redirectTo';
 const AUTH_FLOW_ID_PATTERN = /^[a-f0-9]{32}$/;
 
-export const PUBLIC_FORM_AUTH_FLOW_PARAM = 'formAuth';
+const PUBLIC_FORM_AUTH_FLOW_PARAM = 'formAuth';
 
 /**
  * Public Form bearer links should survive an authentication round trip, but
@@ -12,7 +12,7 @@ export const PUBLIC_FORM_AUTH_FLOW_PARAM = 'formAuth';
  */
 export const PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS = 15 * 60 * 1000;
 
-export const MCP_CONSENT_AUTH_FLOW_PARAM = 'mcpAuth';
+const MCP_CONSENT_AUTH_FLOW_PARAM = 'mcpAuth';
 
 /**
  * An MCP consent request survives sign-in only while the MCP service keeps
@@ -615,10 +615,6 @@ export function isSafeRedirectUrl(url: string): boolean {
 
 export function isPublicFormRedirectUrl(value: string): boolean {
   return authContinuationKindOf(value) === PUBLIC_FORM_CONTINUATION;
-}
-
-export function isMcpConsentRedirectUrl(value: string): boolean {
-  return authContinuationKindOf(value) === MCP_CONSENT_CONTINUATION;
 }
 
 /**
