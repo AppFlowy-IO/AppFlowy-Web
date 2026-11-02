@@ -3,7 +3,8 @@ import { mcpApprovalKey } from '@/application/services/js-services/http/mcp-api'
 import { getMcpClientDisplayName, getMcpClientOwnName, type McpClientNaming, trustedCatalogAppId } from '../setup';
 import { summarizeConnectedApps } from '../setupApps';
 
-type Client = McpClientNaming & { client_id: string };
+// The MCP service's summaries send `verified_app` as a boolean or leave it out, never null.
+type Client = McpClientNaming & { client_id: string; verified_app?: boolean };
 
 // One client of each kind the consent page and Settings name. `app_id` and `app_name` are
 // trusted only with `verified_app: true`, whichever helper reads them.

@@ -385,7 +385,7 @@ describe('MCP requests', () => {
     });
     await denyMcpAuthorization({ client_id: 'c', redirect_uri: 'https://claude.ai/cb', state: 's' });
     await createMcpAccessRequest(WS, 'c');
-    await updateMcpWorkspaceSettings(WS, false);
+    await updateMcpWorkspaceSettings(WS, 'approved_only');
     await listMyMcpConnections(WS);
 
     expect(mockedRefresh).toHaveBeenCalledWith('refresh-1');
