@@ -178,8 +178,9 @@ is the same on Settings → MCP and on the public `/oauth/mcp/setup` page. From 
   (Settings; the public page knows no workspace). `summarizeConnectedApps` in
   `src/application/mcp/setupApps.ts` counts every device and registration of a recognized app
   once (`app:<app_id>`); other clients group by their own name, else their client ID. Chips follow
-  the gallery's card order, then name folded like dashboard labels (`normalizeDashboardText`, then
-  as written, by code unit; no locale collation, as Desktop sorts them), unnamed last.
+  the gallery's card order, then name like dashboard labels (`compareDashboardText`: folded with
+  `normalizeDashboardText`, then as written, by code unit; no locale collation, as Desktop sorts
+  them), unnamed last.
 - **App gallery** (`mcp-setup-gallery`): Claude, ChatGPT, Claude Code, Codex, Cursor, VS Code,
   Gemini CLI, Windsurf / Antigravity and Other app (`MCP_SETUP_APPS`). Each card has a lettered
   tile (no third-party logos), a one-line description, one primary action (Open Claude / Open
