@@ -60,8 +60,9 @@ const { McpApiError } = McpService;
 
 const WS = 'workspace-1';
 const ENDPOINT = 'https://mcp.example.com/mcp';
-const nowSeconds = Math.floor(Date.now() / 1000);
-const secondsAgo = (seconds: number) => nowSeconds - seconds;
+// The panel's clock: `Date.now` returns this in every test, so relative times never drift with the run.
+const NOW = Date.UTC(2026, 10, 1, 12, 0, 0);
+const secondsAgo = (seconds: number) => Math.floor(NOW / 1000) - seconds;
 const signal = { signal: expect.any(AbortSignal) };
 
 const claude: McpClientSummary = {
@@ -108,7 +109,6 @@ const cursorAppA: McpClientSummary = {
 };
 const cursorAppB: McpClientSummary = { ...cursorAppA, client_id: 'dcr-cursor-b' };
 
-// Every relative time sits mid-bucket so a slow run cannot tip it into the next one.
 const myClaude: McpMyConnection = {
   ...claude,
   scope: 'read write',
@@ -234,8 +234,11 @@ async function renderOwnerPanel() {
 }
 
 describe('McpPanel', () => {
+  let clock: jest.SpyInstance<number, []>;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    clock = jest.spyOn(Date, 'now').mockReturnValue(NOW);
     resetMcpPendingRequestCountsForTests();
     api.getMcpMemberStatus.mockResolvedValue(memberStatus());
     api.listMyMcpConnections.mockResolvedValue([myClaude]);
@@ -261,6 +264,10 @@ describe('McpPanel', () => {
     api.revokeMcpClientApproval.mockResolvedValue({ disconnected: 2 });
     api.disconnectMcpWorkspaceConnections.mockResolvedValue({ disconnected: 1 });
     api.disconnectAllMcpWorkspaceConnections.mockResolvedValue({ disconnected: 3 });
+  });
+
+  afterEach(() => {
+    clock.mockRestore();
   });
 
   describe('members', () => {
