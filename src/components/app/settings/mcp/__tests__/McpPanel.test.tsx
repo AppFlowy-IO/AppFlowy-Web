@@ -1200,6 +1200,29 @@ describe('McpPanel', () => {
       expect(api.listMcpWorkspaceConnections).not.toHaveBeenCalled();
     });
 
+    it('shows one alert with Retry when the settings fail, then the policy and approved apps', async () => {
+      api.getMcpWorkspaceSettings.mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }));
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
+      render(<McpPanel workspaceId={WS} />);
+
+      const access = await screen.findByTestId('mcp-workspace-access');
+
+      expect(await within(access).findByTestId('mcp-settings-error')).toBeTruthy();
+      await within(access).findAllByTestId('mcp-member-connection-row');
+      await within(access).findAllByTestId('mcp-access-request-row');
+      // The policy and the approved apps come from one request: one alert and one Retry for both.
+      expect(within(access).getAllByRole('alert')).toHaveLength(1);
+      expect(within(access).getAllByText(translations.settings.mcp.retry)).toHaveLength(1);
+      expect(screen.queryByTestId('mcp-approved-clients')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('mcp-settings-error-retry'));
+      expect(await screen.findByTestId('mcp-approval-mode')).toBeTruthy();
+      expect(modeRadio('verified_and_approved').checked).toBe(true);
+      expect(await screen.findByTestId('mcp-approved-client-row')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-settings-error')).toBeNull();
+      expect(api.getMcpWorkspaceSettings).toHaveBeenCalledTimes(2);
+    });
+
     it('reloads the member status when the caller is no longer an owner', async () => {
       api.approveMcpClient.mockRejectedValue(
         new McpApiError({ status: 403, error: 'forbidden', reason: 'not_workspace_owner' })

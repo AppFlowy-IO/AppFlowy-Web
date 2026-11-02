@@ -88,8 +88,11 @@ export function SectionLoading() {
   );
 }
 
-/** "Couldn't load AI app settings." with Retry, in place of a section's content. */
-export function SectionError({ loading, onRetry, testId }: { loading?: boolean; onRetry: () => void; testId?: string }) {
+/**
+ * "Couldn't load MCP settings." with Retry, in place of a section's content. Retry clears the
+ * failure as the reload starts, so a section shows its loading state, not this, while it runs.
+ */
+export function SectionError({ onRetry, testId }: { onRetry: () => void; testId?: string }) {
   const { t } = useTranslation();
 
   return (
@@ -99,13 +102,7 @@ export function SectionError({ loading, onRetry, testId }: { loading?: boolean; 
       data-testid={testId}
     >
       <p className='min-w-0 text-text-error'>{t('settings.mcp.loadFailed')}</p>
-      <Button
-        variant='outline'
-        size='sm'
-        loading={loading}
-        onClick={onRetry}
-        data-testid={testId ? `${testId}-retry` : undefined}
-      >
+      <Button variant='outline' size='sm' onClick={onRetry} data-testid={testId ? `${testId}-retry` : undefined}>
         {t('settings.mcp.retry')}
       </Button>
     </div>

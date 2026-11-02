@@ -149,8 +149,9 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
       description={t('settings.mcp.workspaceAccessDescription')}
       testId='mcp-workspace-access'
     >
+      {/* The policy and the approved apps load together: one alert here when that fails, no list below. */}
       {settings.failed ? (
-        <SectionError loading={settings.loading} onRetry={() => void settings.reload()} testId='mcp-settings-error' />
+        <SectionError onRetry={() => void settings.reload()} testId='mcp-settings-error' />
       ) : !settings.data || !approvalMode ? (
         <SectionLoading />
       ) : (
@@ -159,11 +160,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
 
       <SubSection title={t('settings.mcp.requestsTitle')} testId='mcp-access-requests'>
         {requests.failed ? (
-          <SectionError
-            loading={requests.loading}
-            onRetry={() => void requests.reload()}
-            testId='mcp-access-requests-error'
-          />
+          <SectionError onRetry={() => void requests.reload()} testId='mcp-access-requests-error' />
         ) : !requests.data ? (
           <SectionLoading />
         ) : requests.data.length === 0 ? (
@@ -229,79 +226,71 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
         )}
       </SubSection>
 
-      <SubSection title={t('settings.mcp.approvedTitle')} testId='mcp-approved-clients'>
-        {settings.failed ? (
-          <SectionError
-            loading={settings.loading}
-            onRetry={() => void settings.reload()}
-            testId='mcp-approved-clients-error'
-          />
-        ) : !settings.data ? (
-          <SectionLoading />
-        ) : approvedClients.length === 0 ? (
-          <EmptyState testId='mcp-approved-clients-empty'>{t('settings.mcp.approvedEmpty')}</EmptyState>
-        ) : (
-          <RowList>
-            {approvedClients.map((approval, index) => {
-              const approver = approval.approved_by_name?.trim() || approval.approved_by_email?.trim();
-              const appLevel = isMcpAppApprovalKey(approval.approval_key);
-              // Without the member connection list, a count of 0 would be a guess.
-              const count = connections.data?.filter((connection) => mcpApprovalCovers(approval, connection)).length;
+      {!settings.failed && (
+        <SubSection title={t('settings.mcp.approvedTitle')} testId='mcp-approved-clients'>
+          {!settings.data ? (
+            <SectionLoading />
+          ) : approvedClients.length === 0 ? (
+            <EmptyState testId='mcp-approved-clients-empty'>{t('settings.mcp.approvedEmpty')}</EmptyState>
+          ) : (
+            <RowList>
+              {approvedClients.map((approval, index) => {
+                const approver = approval.approved_by_name?.trim() || approval.approved_by_email?.trim();
+                const appLevel = isMcpAppApprovalKey(approval.approval_key);
+                // Without the member connection list, a count of 0 would be a guess.
+                const count = connections.data?.filter((connection) => mcpApprovalCovers(approval, connection)).length;
 
-              return (
-                <li
-                  key={approval.approval_key}
-                  className={ROW_CLASS}
-                  data-testid='mcp-approved-client-row'
-                  data-client-id={approval.client_id}
-                  data-approval-key={approval.approval_key}
-                >
-                  <PanelClientIdentity client={approval} className='flex-1'>
-                    {appLevel && (
-                      <span className='text-xs text-text-primary' data-testid='mcp-approved-client-scope'>
-                        {t('settings.mcp.allInstalls', { name: mcpClientName(approval, t), ...RAW_INTERPOLATION })}
-                      </span>
-                    )}
-                    <div className='flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-text-secondary'>
-                      {approver && (
-                        <span data-testid='mcp-approved-client-approver'>
-                          {t('settings.mcp.approvedBy', { name: approver, ...RAW_INTERPOLATION })}
+                return (
+                  <li
+                    key={approval.approval_key}
+                    className={ROW_CLASS}
+                    data-testid='mcp-approved-client-row'
+                    data-client-id={approval.client_id}
+                    data-approval-key={approval.approval_key}
+                  >
+                    <PanelClientIdentity client={approval} className='flex-1'>
+                      {appLevel && (
+                        <span className='text-xs text-text-primary' data-testid='mcp-approved-client-scope'>
+                          {t('settings.mcp.allInstalls', { name: mcpClientName(approval, t), ...RAW_INTERPOLATION })}
                         </span>
                       )}
-                      {approver && mcpDate(approval.approved_at) && <span aria-hidden='true'>·</span>}
-                      <McpTime value={approval.approved_at} testId='mcp-approved-client-time' />
+                      <div className='flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-text-secondary'>
+                        {approver && (
+                          <span data-testid='mcp-approved-client-approver'>
+                            {t('settings.mcp.approvedBy', { name: approver, ...RAW_INTERPOLATION })}
+                          </span>
+                        )}
+                        {approver && mcpDate(approval.approved_at) && <span aria-hidden='true'>·</span>}
+                        <McpTime value={approval.approved_at} testId='mcp-approved-client-time' />
+                      </div>
+                    </PanelClientIdentity>
+                    <div className='flex shrink-0 items-center gap-3'>
+                      {count !== undefined && (
+                        <span className='text-xs text-text-secondary' data-testid='mcp-approved-client-connections'>
+                          {t('settings.mcp.activeConnections', { count })}
+                        </span>
+                      )}
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        disabled={busy}
+                        onClick={() => ask({ kind: 'revoke', approval })}
+                        data-testid={`mcp-revoke-client-${index}`}
+                      >
+                        {t('settings.mcp.revoke')}
+                      </Button>
                     </div>
-                  </PanelClientIdentity>
-                  <div className='flex shrink-0 items-center gap-3'>
-                    {count !== undefined && (
-                      <span className='text-xs text-text-secondary' data-testid='mcp-approved-client-connections'>
-                        {t('settings.mcp.activeConnections', { count })}
-                      </span>
-                    )}
-                    <Button
-                      variant='outline'
-                      size='sm'
-                      disabled={busy}
-                      onClick={() => ask({ kind: 'revoke', approval })}
-                      data-testid={`mcp-revoke-client-${index}`}
-                    >
-                      {t('settings.mcp.revoke')}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </RowList>
-        )}
-      </SubSection>
+                  </li>
+                );
+              })}
+            </RowList>
+          )}
+        </SubSection>
+      )}
 
       <SubSection title={t('settings.mcp.memberConnectionsTitle')} testId='mcp-member-connections'>
         {connections.failed ? (
-          <SectionError
-            loading={connections.loading}
-            onRetry={() => void connections.reload()}
-            testId='mcp-member-connections-error'
-          />
+          <SectionError onRetry={() => void connections.reload()} testId='mcp-member-connections-error' />
         ) : !connections.data ? (
           <SectionLoading />
         ) : connections.data.length === 0 ? (

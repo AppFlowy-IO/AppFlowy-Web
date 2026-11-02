@@ -120,7 +120,6 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
       <PanelFailure
         title={t('settings.mcp.unavailableTitle')}
         description={t('settings.mcp.unavailableDescription')}
-        loading={member.loading}
         onRetry={member.reload}
         testId='mcp-panel-unavailable'
       />
@@ -128,7 +127,6 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
       <PanelFailure
         title={t('settings.mcp.loadFailed')}
         description={mcpErrorText(member.error, t)}
-        loading={member.loading}
         onRetry={member.reload}
         testId='mcp-panel-error'
       />
@@ -281,17 +279,18 @@ function IneligibleNotice({ status }: { status: McpMemberStatus }) {
   );
 }
 
-/** The member status could not be loaded: what went wrong, with Retry. */
+/**
+ * The member status could not be loaded: what went wrong, with Retry. Retry clears the failure as
+ * the reload starts, so the panel's spinner, not this, shows while it runs.
+ */
 function PanelFailure({
   title,
   description,
-  loading,
   onRetry,
   testId,
 }: {
   title: string;
   description: string;
-  loading: boolean;
   onRetry: () => Promise<void>;
   testId: string;
 }) {
@@ -305,7 +304,7 @@ function PanelFailure({
     >
       <h3 className='text-base font-semibold text-text-primary'>{title}</h3>
       <p className='text-sm text-text-secondary'>{description}</p>
-      <Button variant='outline' loading={loading} onClick={() => void onRetry()} data-testid='mcp-panel-retry'>
+      <Button variant='outline' onClick={() => void onRetry()} data-testid='mcp-panel-retry'>
         {t('settings.mcp.retry')}
       </Button>
     </div>

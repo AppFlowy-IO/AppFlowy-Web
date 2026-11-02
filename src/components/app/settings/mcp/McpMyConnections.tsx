@@ -33,7 +33,7 @@ export interface McpMyConnectionsProps {
 /** "Your connections": the AI apps that can act as the caller in this workspace, one row per device. */
 export function McpMyConnections({ state, onDisconnect, overview }: McpMyConnectionsProps) {
   const { t } = useTranslation();
-  const { connections, loaded, loading, failed, reload, disconnecting } = state;
+  const { connections, loaded, failed, reload, disconnecting } = state;
   // The target outlives `confirming` so the dialog keeps its text while it fades out.
   const [target, setTarget] = useState<McpMyConnection>();
   const [confirming, setConfirming] = useState(false);
@@ -63,7 +63,7 @@ export function McpMyConnections({ state, onDisconnect, overview }: McpMyConnect
         </p>
       )}
       {failed ? (
-        <SectionError loading={loading} onRetry={() => void reload()} testId='mcp-my-connections-error' />
+        <SectionError onRetry={() => void reload()} testId='mcp-my-connections-error' />
       ) : !loaded ? (
         <SectionLoading />
       ) : connections.length === 0 ? (
