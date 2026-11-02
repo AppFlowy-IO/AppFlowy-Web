@@ -7,6 +7,7 @@ import {
   type McpWorkspaceConnection,
 } from '@/application/services/domains/mcp';
 import { mcpTestT } from '@/components/mcp/__tests__/mcpTestI18n';
+import { consentErrorMessageKey, toConsentErrorReason } from '@/components/mcp/consent/consentModel';
 
 import {
   formatMcpRelativeTime,
@@ -130,6 +131,24 @@ describe('error text', () => {
     expect(mcpErrorText(new McpApiError({ status: 400, reason: 'invalid_request' }), t)).toBe(
       translations.settings.mcp.invalidRequest
     );
+  });
+
+  // Settings and the consent page read an error's reason the same way, reason or not.
+  it.each([
+    ['an unreachable service', new McpApiError({ status: 0, error: 'network_error' })],
+    ['a timeout', new McpApiError({ status: 0, error: 'timeout' })],
+    ['an unknown MCP service URL', new McpApiError({ status: 0, error: 'not_configured' })],
+    [
+      'a failed session refresh',
+      new McpApiError({ status: 0, error: 'session_refresh_failed', reason: 'temporarily_unavailable' }),
+    ],
+    ['a 401 without a reason', new McpApiError({ status: 401 })],
+    ['a 404 without a reason', new McpApiError({ status: 404 })],
+    ['an unreadable answer', new McpApiError({ status: 200, error: 'invalid_response', reason: 'server_error' })],
+    ['a throttle', new McpApiError({ status: 429, reason: 'rate_limited' })],
+    ['AI apps turned off', new McpApiError({ status: 503, error: 'mcp_disabled', reason: 'mcp_disabled' })],
+  ])('says what the consent page says for %s', (_case, error) => {
+    expect(mcpErrorText(error, t)).toBe(t(consentErrorMessageKey(toConsentErrorReason(error))));
   });
 
   // A consent text edit must not leak "Start again from your AI app" into Settings toasts.

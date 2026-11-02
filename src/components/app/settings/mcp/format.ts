@@ -13,7 +13,7 @@ import {
   type McpTimestamp,
   type McpWorkspaceConnection,
 } from '@/application/services/domains/mcp';
-import { consentErrorMessageKey } from '@/components/mcp/consent/consentModel';
+import { consentErrorMessageKey, toConsentErrorReason } from '@/components/mcp/consent/consentModel';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 
 import type { TFunction } from 'i18next';
@@ -23,16 +23,15 @@ export const MAX_REQUESTER_NAMES = 3;
 
 /**
  * Localized text for a failed MCP request: by `reason`, never the server's
- * English description. Settings shares the consent page's messages
- * (`mcp.consent.errors.*`) except where those send the user back to the AI app.
+ * English description. Settings reads the reason as the consent page does
+ * (`toConsentErrorReason`, which also covers errors without one) and shares
+ * its messages (`mcp.consent.errors.*`) except where those send the user back
+ * to the AI app.
  */
 export function mcpErrorText(error: unknown, t: TFunction): string {
-  if (!isMcpApiError(error)) return t('mcp.consent.errors.generic');
-  if (error.error === 'network_error' || error.error === 'timeout') {
-    return t('mcp.consent.errors.temporarily_unavailable');
-  }
+  const reason = toConsentErrorReason(error);
 
-  switch (error.reason) {
+  switch (reason) {
     case 'not_workspace_owner':
       return t('settings.mcp.notOwner');
     case 'unknown_client':
@@ -47,7 +46,7 @@ export function mcpErrorText(error: unknown, t: TFunction): string {
       // Consent-only reasons, whose text sends the user back to the AI app.
       return t('mcp.consent.errors.generic');
     default:
-      return t(consentErrorMessageKey(error.reason ?? 'generic'));
+      return t(consentErrorMessageKey(reason));
   }
 }
 

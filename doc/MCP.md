@@ -304,8 +304,9 @@ An owner endpoint that answers 403 `not_workspace_owner`, `not_workspace_member`
 `email_not_allowed` (only approving and loosening the policy check the email gate) reloads the
 member status, so the owner section disappears; so does any
 `mcp_disabled` (`isMcpAccessLost`), which turns the panel into the turned-off view. Failed actions show
-a toast: `settings.mcp.actionFailed` with the reason's consent message, except where Settings needs
-its own words (`mcpErrorText`): `not_workspace_owner` (`settings.mcp.notOwner`), and the reasons
+a toast: `settings.mcp.actionFailed` with the reason's consent message (the reason read as the
+consent page reads it, `toConsentErrorReason`, also for errors without one), except where Settings
+needs its own words (`mcpErrorText`): `not_workspace_owner` (`settings.mcp.notOwner`), and the reasons
 whose consent text sends the user back to the AI app: `unknown_client`
 (`settings.mcp.unknownClientId`), `invalid_request` (`settings.mcp.invalidRequest`, for example a
 typed client ID over the server's 2048 bytes; the Approve by client ID input stops at 2048
