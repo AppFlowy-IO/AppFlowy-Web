@@ -24,24 +24,11 @@ import McpAuthorizePage from '../McpAuthorizePage';
 let mockAuthenticated = true;
 let mockCurrentUser: { uid: string; email: string | null } | undefined = { uid: '42', email: 'owner@example.com' };
 
-// Real English strings, so assertions read like the page.
+// Real English strings through the real i18next, so assertions read like the page and catch escaping.
 jest.mock('react-i18next', () => {
-  const en = jest.requireActual('@/@types/translations/en.json');
-  const lookup = (key: string) =>
-    key
-      .split('.')
-      .reduce<unknown>(
-        (node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined),
-        en
-      );
-  const t = (key: string, options?: Record<string, unknown>) => {
-    const value = lookup(key);
+  const { mcpTestT } = jest.requireActual('@/components/mcp/__tests__/mcpTestI18n');
 
-    if (typeof value !== 'string') return key;
-    return value.replace(/{{(\w+)}}/g, (_match, name: string) => String(options?.[name] ?? ''));
-  };
-
-  return { useTranslation: () => ({ t }) };
+  return { useTranslation: () => ({ t: mcpTestT }) };
 });
 
 // Modules read the runtime config while they load, so it lives inside the mock.
