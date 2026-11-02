@@ -212,16 +212,42 @@ export function mcpClientsKeptApproved<T extends McpAppIdentity & McpVerifiedIde
   return Array.from(kept.values());
 }
 
+/** One connection as a disconnect sees it; `user_uuid` is absent from the caller's own connections. */
+type McpConnectionRef = Pick<McpClientSummary, 'client_id'> &
+  Pick<McpConnectionDetails, 'family_id' | 'connected_at'> & { user_uuid?: string };
+
+/** The connection's token family (one device); undefined for legacy records without one. */
+export function mcpFamilyId(connection: Pick<McpConnectionDetails, 'family_id'>): string | undefined {
+  return connection.family_id?.trim() || undefined;
+}
+
 /** A key for one connection: its client and token family (legacy records: its user and connection time). */
-export function mcpConnectionKey(
-  connection: Pick<McpClientSummary, 'client_id'> &
-    Pick<McpConnectionDetails, 'family_id' | 'connected_at'> & { user_uuid?: string }
-): string {
-  const family = connection.family_id?.trim();
+export function mcpConnectionKey(connection: McpConnectionRef): string {
+  const family = mcpFamilyId(connection);
 
   return family
     ? `${connection.client_id}#${family}`
     : `${connection.client_id}#${connection.user_uuid ?? ''}@${connection.connected_at}`;
+}
+
+/**
+ * Whether disconnecting `target` removes `connection`, as the server's DELETE does: with a token
+ * family only that device's connection goes; without one, every connection with the client, of
+ * the caller (their own connections) or of `target`'s member (an owner's disconnect).
+ */
+export function mcpDisconnectRemoves(target: McpConnectionRef, connection: McpConnectionRef): boolean {
+  if (connection.client_id !== target.client_id || connection.user_uuid !== target.user_uuid) return false;
+  return !mcpFamilyId(target) || mcpConnectionKey(connection) === mcpConnectionKey(target);
+}
+
+/** Whether the same person keeps another connection with the app once `target` is disconnected. */
+export function mcpOthersKeepWorking(target: McpConnectionRef, connections: readonly McpConnectionRef[]): boolean {
+  return connections.some(
+    (connection) =>
+      connection.client_id === target.client_id &&
+      connection.user_uuid === target.user_uuid &&
+      !mcpDisconnectRemoves(target, connection)
+  );
 }
 
 /** The device line of a connection, when the app described one at sign-in. */

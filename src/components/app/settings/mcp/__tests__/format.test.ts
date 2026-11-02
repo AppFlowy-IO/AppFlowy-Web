@@ -15,10 +15,13 @@ import {
   mcpConnectionKey,
   mcpDate,
   mcpDeviceLabel,
+  mcpDisconnectRemoves,
   mcpErrorText,
+  mcpFamilyId,
   mcpIsApproved,
   mcpMemberLabel,
   mcpModeAdmitsWithoutApproval,
+  mcpOthersKeepWorking,
   mcpRemainingAppApproval,
   mcpRequestedBy,
 } from '../format';
@@ -316,6 +319,56 @@ describe('connections', () => {
     expect(mcpConnectionKey(connection({ family_id: 'f1' }))).toBe('claude#f1');
     expect(mcpConnectionKey(connection())).toBe('claude#u1@100');
     expect(mcpConnectionKey({ client_id: 'claude', connected_at: 5, family_id: ' ' })).toBe('claude#@5');
+  });
+
+  it('reads a token family only when it is not blank', () => {
+    expect(mcpFamilyId({ family_id: ' f1 ' })).toBe('f1');
+    expect(mcpFamilyId({ family_id: ' ' })).toBeUndefined();
+    expect(mcpFamilyId({ family_id: null })).toBeUndefined();
+  });
+
+  describe('what a disconnect removes, like the server', () => {
+    const laptop = { client_id: 'claude', family_id: 'laptop', connected_at: 1 };
+    const desktop = { client_id: 'claude', family_id: 'desktop', connected_at: 2 };
+    const cursor = { client_id: 'cursor', family_id: 'cursor-1', connected_at: 3 };
+    const legacy = { client_id: 'claude', connected_at: 4 };
+
+    it('ends one device with a family, and the others keep working', () => {
+      expect([laptop, desktop, cursor, legacy].map((other) => mcpDisconnectRemoves(laptop, other))).toEqual([
+        true,
+        false,
+        false,
+        false,
+      ]);
+      expect(mcpOthersKeepWorking(laptop, [laptop, desktop, cursor])).toBe(true);
+      expect(mcpOthersKeepWorking(laptop, [laptop, cursor])).toBe(false);
+    });
+
+    it('ends every connection with the client without one, a blank family included', () => {
+      for (const target of [legacy, { ...laptop, family_id: '  ' }]) {
+        expect([laptop, desktop, cursor, legacy].map((other) => mcpDisconnectRemoves(target, other))).toEqual([
+          true,
+          true,
+          false,
+          true,
+        ]);
+        expect(mcpOthersKeepWorking(target, [laptop, desktop, cursor, legacy])).toBe(false);
+      }
+    });
+
+    it('stays within the member for an owner’s disconnect', () => {
+      const annLaptop = { ...laptop, user_uuid: 'ann' };
+      const annDesktop = { ...desktop, user_uuid: 'ann' };
+      const boLaptop = { ...laptop, user_uuid: 'bo' };
+      const annLegacy = { ...legacy, user_uuid: 'ann' };
+
+      expect(mcpDisconnectRemoves(annLaptop, boLaptop)).toBe(false);
+      expect(mcpDisconnectRemoves(annLegacy, boLaptop)).toBe(false);
+      expect(mcpDisconnectRemoves(annLegacy, annDesktop)).toBe(true);
+      // Bo's connection with the same app is not Ann's to keep.
+      expect(mcpOthersKeepWorking(annLaptop, [annLaptop, boLaptop])).toBe(false);
+      expect(mcpOthersKeepWorking(annLaptop, [annLaptop, annDesktop, boLaptop])).toBe(true);
+    });
   });
 
   it('reads a device label only when the app sent one', () => {

@@ -28,6 +28,7 @@ import {
   mcpDeviceLabel,
   mcpMemberLabel,
   mcpModeAdmitsWithoutApproval,
+  mcpOthersKeepWorking,
   mcpRemainingAppApproval,
   mcpRequestedBy,
   RAW_INTERPOLATION,
@@ -46,7 +47,7 @@ import {
   SectionLoading,
   SubSection,
 } from './McpPanelParts';
-import { mcpMemberConnectionId, type McpGovernanceAction, type McpGovernanceState } from './useMcpGovernance';
+import type { McpGovernanceAction, McpGovernanceState } from './useMcpGovernance';
 
 const NO_APPROVED_CLIENTS: McpApprovedClient[] = [];
 const NO_CLIENTS: McpClientSummary[] = [];
@@ -630,21 +631,11 @@ function MemberDisconnectDialog({
   let description: ReactNode = '';
 
   if (connection) {
-    // Only one device's connection ends when it has a family and the member has others with the app.
-    const othersKeepWorking =
-      Boolean(connection.family_id) &&
-      (connections ?? []).some(
-        (other) =>
-          other.client_id === connection.client_id &&
-          other.user_uuid === connection.user_uuid &&
-          mcpMemberConnectionId(other) !== mcpMemberConnectionId(connection)
-      );
-
     description = (
       <DisconnectDescription
         main={t('settings.mcp.memberDisconnectDescription', values)}
         device={mcpDeviceLabel(connection)}
-        othersKeepWorking={othersKeepWorking}
+        othersKeepWorking={mcpOthersKeepWorking(connection, connections ?? [])}
       />
     );
   }

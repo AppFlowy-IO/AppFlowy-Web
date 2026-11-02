@@ -11,7 +11,14 @@ import type {
 } from '@/application/services/domains/mcp';
 import { notify } from '@/components/_shared/notify';
 
-import { isMcpAccessLost, mcpApprovalCovers, mcpClientNames, mcpConnectionKey, RAW_INTERPOLATION } from './format';
+import {
+  isMcpAccessLost,
+  mcpApprovalCovers,
+  mcpClientNames,
+  mcpConnectionKey,
+  mcpDisconnectRemoves,
+  RAW_INTERPOLATION,
+} from './format';
 import { publishMcpPendingRequestCount } from './pendingRequestCount';
 import { type McpResource, useMcpAction, useMcpResource } from './useMcpRequest';
 
@@ -69,15 +76,8 @@ export interface McpGovernanceState {
 }
 
 /** The pending-action id of one member connection. */
-export function mcpMemberConnectionId(connection: McpWorkspaceConnection): string {
+function mcpMemberConnectionId(connection: McpWorkspaceConnection): string {
   return `${connection.user_uuid}:${mcpConnectionKey(connection)}`;
-}
-
-/** Whether `connection` goes when the owner disconnects `target`. */
-function removedWith(target: McpWorkspaceConnection, connection: McpWorkspaceConnection): boolean {
-  if (connection.client_id !== target.client_id || connection.user_uuid !== target.user_uuid) return false;
-  // Without a family, the server disconnects every connection of the member with the client.
-  return !target.family_id || mcpConnectionKey(connection) === mcpConnectionKey(target);
 }
 
 async function reportAccessLost<T>(request: Promise<T>, onAccessLost?: () => void): Promise<T> {
@@ -235,7 +235,7 @@ export function useMcpGovernance(
           ),
         () => {
           notify.success(t('settings.mcp.disconnected'));
-          updateConnections((current) => current?.filter((connection) => !removedWith(target, connection)));
+          updateConnections((current) => current?.filter((connection) => !mcpDisconnectRemoves(target, connection)));
           void reloadConnections();
           onConnectionsChanged?.();
         },

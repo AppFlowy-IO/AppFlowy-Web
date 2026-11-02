@@ -239,7 +239,9 @@ member status:
   tooltip says "To change access, reconnect the app" (`PanelScopeBadge`). Disconnect asks first and
   removes that device only (`DELETE /api/mcp/me/workspaces/{id}/connections?client_id=&family_id=`);
   the confirmation says other connections keep working when there are any. A legacy record without
-  a family disconnects by `client_id` alone (all of that app's connections). Above the list,
+  a family disconnects by `client_id` alone (all of that app's connections). `format.ts` holds this
+  rule once for both lists and both confirmations (`mcpDisconnectRemoves`, `mcpOthersKeepWorking`;
+  an owner's disconnect stays within the member). Above the list,
   "You have N apps connected across M workspaces" comes from `GET /api/mcp/me/connections`, with
   apps grouped exactly like the setup guide's "Connected apps (N)" (`summarizeConnectedApps`: once
   per recognized app, an unrecognized app once per name), so the two numbers agree; it is left out

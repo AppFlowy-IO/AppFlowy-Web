@@ -5,7 +5,7 @@ import type { McpMyConnection } from '@/application/services/domains/mcp';
 import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
 import { Button } from '@/components/ui/button';
 
-import { mcpClientName, mcpConnectionKey, mcpDeviceLabel, RAW_INTERPOLATION } from './format';
+import { mcpClientName, mcpConnectionKey, mcpDeviceLabel, mcpOthersKeepWorking, RAW_INTERPOLATION } from './format';
 import {
   ConnectionDetails,
   DisconnectDescription,
@@ -38,15 +38,7 @@ export function McpMyConnections({ state, onDisconnect, overview }: McpMyConnect
   const [target, setTarget] = useState<McpMyConnection>();
   const [confirming, setConfirming] = useState(false);
   const targetName = target ? mcpClientName(target, t) : '';
-  // Disconnecting a connection with a family ends only that device's connection.
-  const othersKeepWorking =
-    Boolean(target?.family_id) &&
-    connections.some(
-      (connection) =>
-        target !== undefined &&
-        connection.client_id === target.client_id &&
-        mcpConnectionKey(connection) !== mcpConnectionKey(target)
-    );
+  const othersKeepWorking = target !== undefined && mcpOthersKeepWorking(target, connections);
 
   return (
     <PanelSection
