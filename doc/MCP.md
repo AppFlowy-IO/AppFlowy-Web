@@ -207,7 +207,10 @@ The menu item appears once the MCP service's URL is known (`useMcpConfiguration`
 is still loading the deep link waits with a spinner, and it falls back to Account on a server
 without MCP (which includes a server that turned AI app connections off, when the Web learns the
 URL from server-info; see [Enable MCP switch](#enable-mcp-switch)). `McpPanel` renders lazily with
-`key={workspaceId}` and loads the member status first:
+`key={workspaceId}` and loads the member status together with the caller's own connections and
+their summary across workspaces, which need nothing from it (a failed status pauses those two, and
+its Retry loads them again); the owner lists wait for the status. What the panel shows follows the
+member status:
 
 - Loading shows a spinner. When the MCP service cannot answer (no response, 5xx, or a 404 without a
   reason, as from a server without these endpoints) the panel shows `mcp-panel-unavailable` with
@@ -238,7 +241,7 @@ URL from server-info; see [Enable MCP switch](#enable-mcp-switch)). `McpPanel` r
   "You have N apps connected across M workspaces" comes from `GET /api/mcp/me/connections`, with
   apps grouped exactly like the setup guide's "Connected apps (N)" (`summarizeConnectedApps`: once
   per recognized app, an unrecognized app once per name), so the two numbers agree; it is left out
-  when that call fails.
+  when that call fails and for an account the member status calls ineligible.
 - **Approved for this workspace**, for members while some apps need approval and the server sends
   `approved_apps` (C5): the approved apps by name only, with "All {app} installs" for app-level
   approvals. Under `verified_and_approved` an empty list says verified web apps need no approval
@@ -559,7 +562,31 @@ APPFLOWY_MCP_BASE_URL=http://localhost:8002 \
   pnpm exec playwright test playwright/e2e/mcp/oauth-consent.spec.ts --workers=1
 ```
 
-CI does not run it: `playwright/e2e/mcp` is in none of the groups in
+`playwright/e2e/mcp/connect-and-create-pages.spec.ts` walks the whole user journey from what Web
+shows. It copies the MCP server URL from Settings → AI apps (checking the clipboard), then connects
+with that URL alone, the way an AI app does:
+
+1. `401` from the copied URL, then the `resource_metadata` in its `WWW-Authenticate` header.
+2. The protected-resource metadata, whose `resource` must be the copied URL.
+3. The authorization-server metadata.
+4. Dynamic client registration.
+5. The Web consent page (approve and allow), then the token exchange.
+6. An MCP session (`initialize`, `notifications/initialized`, `tools/list`) on the copied URL.
+
+It then calls `create-pages` (a document with content and a grid) and finds both in Web, the
+document open with its content and both in the sidebar. Last, it checks the app is listed under
+"Your connections". It needs no `APPFLOWY_MCP_BASE_URL` of its own, but the same stack as above,
+with Web knowing the MCP origin. For one origin behind the bundled Nginx (Web, Cloud and MCP all
+on `http://localhost:18180`):
+
+```bash
+BASE_URL=http://localhost:18180 APPFLOWY_BASE_URL=http://localhost:18180 \
+  APPFLOWY_GOTRUE_BASE_URL=http://localhost:18180/gotrue \
+  APPFLOWY_WS_BASE_URL=ws://localhost:18180/ws/v2 \
+  pnpm exec playwright test playwright/e2e/mcp/connect-and-create-pages.spec.ts --workers=1
+```
+
+CI does not run these: `playwright/e2e/mcp` is in none of the groups in
 `.github/playwright-groups.json`, and the CI backend has no MCP service.
 
 ## Not in v1

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import translations from '@/@types/translations/en.json';
 import * as McpService from '@/application/services/domains/mcp';
@@ -294,6 +294,31 @@ describe('McpPanel', () => {
       expect(api.listMcpWorkspaceConnections).not.toHaveBeenCalled();
     });
 
+    it('loads the member’s own connections alongside the member status, not a round trip after it', async () => {
+      let resolveStatus!: (status: McpMemberStatus) => void;
+
+      api.getMcpMemberStatus.mockReturnValue(
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        })
+      );
+      render(<McpPanel workspaceId={WS} />);
+
+      expect(screen.getByTestId('mcp-panel-loading')).toBeTruthy();
+      expect(api.listMyMcpConnections).toHaveBeenCalledWith(WS, signal);
+      expect(api.listMyMcpConnectionsAcrossWorkspaces).toHaveBeenCalledWith(signal);
+
+      await act(async () => {
+        resolveStatus(memberStatus());
+      });
+
+      // Everything arrives with the status: no second spinner, and nothing pops in above the gallery later.
+      expect(screen.getByTestId('mcp-my-connection-row')).toBeTruthy();
+      expect(screen.getByTestId('mcp-all-connections-summary')).toBeTruthy();
+      expect(screen.getByTestId('mcp-setup-connected-apps')).toBeTruthy();
+      expect(api.listMyMcpConnections).toHaveBeenCalledTimes(1);
+    });
+
     it('sums up the user’s apps across workspaces and feeds the setup guide its connections', async () => {
       render(<McpPanel workspaceId={WS} />);
 
@@ -449,12 +474,17 @@ describe('McpPanel', () => {
 
       expect(unavailable.textContent).toContain(translations.settings.mcp.unavailableTitle);
       expect(screen.queryByTestId('mcp-setup-guide')).toBeNull();
-      expect(api.listMyMcpConnections).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('mcp-my-connections')).toBeNull();
+      // Asked for alongside the status; its failure pauses the list.
+      expect(api.listMyMcpConnections).toHaveBeenCalledTimes(1);
 
       fireEvent.click(screen.getByTestId('mcp-panel-retry'));
       expect(await screen.findByTestId('mcp-setup-guide')).toBeTruthy();
       expect(screen.queryByTestId('mcp-panel-unavailable')).toBeNull();
       expect(api.getMcpMemberStatus).toHaveBeenCalledTimes(2);
+      // Retry asks for the list again with the status.
+      expect(api.listMyMcpConnections).toHaveBeenCalledTimes(2);
+      expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
     });
 
     it('shows other status failures with their reason and Retry', async () => {
@@ -484,7 +514,8 @@ describe('McpPanel', () => {
       expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
       expect(screen.queryByTestId('mcp-setup-guide')).toBeNull();
       expect(screen.queryByTestId('mcp-approval-notice')).toBeNull();
-      expect(api.listMyMcpConnectionsAcrossWorkspaces).not.toHaveBeenCalled();
+      // The cross-workspace summary is for accounts that may connect apps.
+      expect(screen.queryByTestId('mcp-all-connections-summary')).toBeNull();
 
       fireEvent.click(screen.getByTestId('mcp-my-disconnect-0'));
       fireEvent.click(await screen.findByTestId('mcp-confirm-disconnect'));
@@ -1214,6 +1245,9 @@ describe('McpPanel', () => {
       expect(await screen.findByTestId('mcp-my-connections-empty')).toBeTruthy();
       // Turned off for everyone: the account's own ineligibility is beside the point.
       expect(screen.queryByTestId('mcp-panel-ineligible')).toBeNull();
+      // The summary loaded with the list, but it is for accounts that may connect apps.
+      expect(api.listMyMcpConnectionsAcrossWorkspaces).toHaveBeenCalled();
+      expect(screen.queryByTestId('mcp-all-connections-summary')).toBeNull();
     });
 
     it('loads no owner lists for an owner and drops the Settings menu badge', async () => {

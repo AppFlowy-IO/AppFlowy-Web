@@ -40,9 +40,10 @@ export interface McpPanelProps {
  * AI apps through the MCP server, the caller's own connections and, for
  * owners, which apps members may connect. See doc/MCP.md.
  *
- * Everything is gated on the member status: unreachable service, AI app
+ * Everything shown is gated on the member status: unreachable service, AI app
  * connections turned off for the server, ineligible account (email gate or
- * guest), member, or owner.
+ * guest), member, or owner. The caller's own connections load alongside it;
+ * the owner lists wait for it, since only owners may read them.
  */
 export default function McpPanel({ workspaceId }: McpPanelProps) {
   const { t } = useTranslation();
@@ -53,10 +54,17 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   // While AI apps are turned off the panel offers only the caller's own connections, so the
   // owner lists stay unloaded (approving, for one, is refused then).
   const isOwner = !disabled && status?.eligible === true && status.role === 'owner';
+  // The caller's own connections and their cross-workspace summary need nothing from the member
+  // status, so they load alongside it instead of a round trip after it. A failed status (other
+  // than AI apps turned off) shows neither and pauses them; its Retry loads them again.
+  const loadOwnConnections = !member.failed || disabled;
   // Own connections stay listed for ineligible accounts and while AI apps are turned off:
   // revoking must remain possible.
-  const mine = useMyMcpConnections(workspaceId, status !== undefined || disabled);
-  const { overview, reload: reloadOverview } = useMcpConnectionsOverview(status?.eligible === true);
+  const mine = useMyMcpConnections(workspaceId, loadOwnConnections);
+  const connectionsOverview = useMcpConnectionsOverview(loadOwnConnections);
+  const { reload: reloadOverview } = connectionsOverview;
+  // The cross-workspace summary is only for accounts that may connect apps.
+  const overview = status?.eligible === true ? connectionsOverview.overview : undefined;
   const { reload: reloadMine } = mine;
   const reloadMyConnections = useCallback(() => {
     void reloadMine();
