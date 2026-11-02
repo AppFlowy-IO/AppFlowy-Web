@@ -946,6 +946,29 @@ describe('MCP session handling', () => {
     expect(call(1).headers.Authorization).toBe('Bearer access-3');
   });
 
+  it('does not retry as another user who signed in meanwhile', async () => {
+    fetchMock.mockImplementationOnce(async () => {
+      // Another tab signed out and in as someone else; the token store is shared.
+      storedToken = makeToken({ access_token: 'access-b', refresh_token: 'refresh-b', user: { id: 'user-2' } });
+      return response(401, { reason: 'invalid_session' });
+    });
+
+    await expect(approveMcpClient(WS, CIMD_CLIENT)).rejects.toMatchObject({ status: 401, reason: 'invalid_session' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).not.toHaveBeenCalled();
+  });
+
+  it('does not send as another user whose session a refresh found', async () => {
+    storedToken = makeToken({ expires_at: nowSeconds() + 10 });
+    mockedRefresh.mockImplementationOnce(async () => {
+      storedToken = makeToken({ access_token: 'access-b', refresh_token: 'refresh-b', user: { id: 'user-2' } });
+      return storedToken;
+    });
+
+    await expect(listMyMcpConnections(WS)).rejects.toMatchObject({ status: 401, reason: 'invalid_session' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refreshes a token that expires within 30 seconds before sending', async () => {
     storedToken = makeToken({ expires_at: nowSeconds() + 10 });
     fetchMock.mockResolvedValueOnce(response(200, { connections: [] }));

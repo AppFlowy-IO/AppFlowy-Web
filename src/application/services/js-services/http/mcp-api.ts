@@ -10,11 +10,17 @@
  * refuses with other 4xx/5xx statuses and a machine `reason` (400, 403, 404,
  * 409, 429, 503 `mcp_disabled`…). Authenticated calls send the current GoTrue
  * access token as a bearer, refreshing it first when it expires within 30
- * seconds, and refresh once more and retry once on `invalid_session`. The
- * GoTrue refresh token never leaves the browser. See doc/MCP.md.
+ * seconds, and refresh once more and retry once on `invalid_session`, only
+ * as the user who sent the first attempt. The GoTrue refresh token never
+ * leaves the browser. See doc/MCP.md.
  */
 import { isSafeMcpRedirectUrl, trustedCatalogAppId } from '@/application/mcp/setup';
-import { captureTokenSession, getTokenParsed, invalidTokenForSession } from '@/application/session/token';
+import {
+  captureTokenSession,
+  getTokenParsed,
+  type GoTrueAuthToken,
+  invalidTokenForSession,
+} from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
 import { getServerInfoSnapshot, type ServerInfoState } from '@/utils/server-info';
 
@@ -876,11 +882,24 @@ function invalidSessionError(cause?: unknown): McpApiError {
   });
 }
 
-/** Returns a fresh access token, refreshing the session unless another caller already rotated it. */
-async function refreshedAccessToken(staleAccessToken: string): Promise<string> {
+/**
+ * The stored session while it still belongs to `userId`. The token store is
+ * shared between tabs, and another tab may have signed in as someone else
+ * meanwhile: never act as them.
+ */
+function userSession(userId: string): GoTrueAuthToken {
   const token = getTokenParsed();
 
-  if (!token) throw invalidSessionError();
+  if (!token || token.user.id !== userId) throw invalidSessionError();
+  return token;
+}
+
+/**
+ * Returns a fresh access token for `userId`, refreshing the session unless
+ * another caller already rotated it.
+ */
+async function refreshedAccessToken(staleAccessToken: string, userId: string): Promise<string> {
+  const token = userSession(userId);
 
   if (token.access_token === staleAccessToken) {
     const session = captureTokenSession();
@@ -904,22 +923,24 @@ async function refreshedAccessToken(staleAccessToken: string): Promise<string> {
     }
   }
 
-  const refreshed = getTokenParsed();
-
-  if (!refreshed) throw invalidSessionError();
-  return refreshed.access_token;
+  return userSession(userId).access_token;
 }
 
-async function currentAccessToken(): Promise<string> {
+/** The signed-in user and their access token, refreshed first when it expires within 30 seconds. */
+async function currentAccessToken(): Promise<{ accessToken: string; userId: string }> {
   const token = getTokenParsed();
 
   if (!token) throw invalidSessionError();
-  if (token.expires_at * 1000 - Date.now() > TOKEN_REFRESH_LEEWAY_MS) return token.access_token;
-  return refreshedAccessToken(token.access_token);
+
+  const userId = token.user.id;
+
+  if (token.expires_at * 1000 - Date.now() > TOKEN_REFRESH_LEEWAY_MS) return { accessToken: token.access_token, userId };
+  return { accessToken: await refreshedAccessToken(token.access_token, userId), userId };
 }
 
+/** Sends `request` as the signed-in user; the retry after a refused token stays bound to that user. */
 async function authorizedSend(request: McpRequest): Promise<McpResponse> {
-  const accessToken = await currentAccessToken();
+  const { accessToken, userId } = await currentAccessToken();
   const response = await send(request, accessToken);
 
   if (response.status !== 401 || !isRecord(response.body) || response.body.reason !== 'invalid_session') {
@@ -927,7 +948,7 @@ async function authorizedSend(request: McpRequest): Promise<McpResponse> {
   }
 
   // Expired or revoked between the local check and the server's: refresh once, retry once.
-  return send(request, await refreshedAccessToken(accessToken));
+  return send(request, await refreshedAccessToken(accessToken, userId));
 }
 
 function workspacePath(scope: 'me' | 'admin', workspaceId: string, suffix = ''): string {
