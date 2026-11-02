@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ErrorOutline } from '@/assets/icons/error.svg';
@@ -57,8 +57,26 @@ function fallbackAltFromUrl(url: string): string {
 
 function Img({ onLoad, imgRef, url, width, alt }: ImgProps) {
   const { t } = useTranslation();
-  const { src, phase, isImageReady, lastError, retry, onImageLoaded, onImageError } =
-    useImageWithRetry(url, onLoad);
+  const localRef = useRef<HTMLImageElement>(null);
+  const ref = imgRef ?? localRef;
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
+
+  useEffect(() => {
+    if (visible || !ref.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    });
+
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [ref, visible]);
+  const { src, phase, isImageReady, lastError, retry, onImageLoaded, onImageError } = useImageWithRetry(
+    visible ? url : '',
+    onLoad
+  );
 
   const showLoading = phase === 'loading' && !isImageReady;
   const showPending = phase === 'pending';
@@ -69,8 +87,9 @@ function Img({ onLoad, imgRef, url, width, alt }: ImgProps) {
   return (
     <>
       <img
-        ref={imgRef}
-        src={src}
+        key={src}
+        ref={ref}
+        src={src || undefined}
         alt={resolvedAlt}
         onLoad={onImageLoaded}
         onError={onImageError}
@@ -88,9 +107,7 @@ function Img({ onLoad, imgRef, url, width, alt }: ImgProps) {
           role={'status'}
           aria-live={'polite'}
           aria-label={t('editor.imageLoading', 'Loading image')}
-          className={
-            'absolute inset-0 flex h-full w-full items-center justify-center bg-background-primary'
-          }
+          className={'absolute inset-0 flex h-full w-full items-center justify-center bg-background-primary'}
         >
           <LoadingDots />
         </div>

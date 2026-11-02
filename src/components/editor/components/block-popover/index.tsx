@@ -35,6 +35,7 @@ function BlockPopover() {
   const { open, anchorEl, close, type, blockId } = usePopoverContext();
   const { setSelectedBlockIds } = useEditorLocalState();
   const editor = useSlateStatic() as YjsEditor;
+  const mediaPicker = type === BlockType.PDFBlock || type === BlockType.ImageBlock;
   const [origins, setOrigins] = useState<Origins>(defaultOrigins);
 
   const handleClose = useCallback(() => {
@@ -60,7 +61,7 @@ function BlockPopover() {
       case BlockType.PDFBlock:
         return <PDFBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.ImageBlock:
-        return <ImageBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+        return <ImageBlockPopoverContent key={blockId} blockId={blockId} onClose={handleClose} />;
       case BlockType.EquationBlock:
         return <MathEquationPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.VideoBlock:
@@ -82,24 +83,24 @@ function BlockPopover() {
   const popoverActions = useRef<PopoverActions>(null);
 
   useEffect(() => {
-    if (!open || type !== BlockType.PDFBlock || !paper) return;
+    if (!open || !mediaPicker || !paper) return;
     // The lazy picker initially has no height. Reposition after it loads and
     // whenever switching tabs or resizing changes its measured dimensions.
     const observer = new ResizeObserver(() => popoverActions.current?.updatePosition());
 
     observer.observe(paper);
     return () => observer.disconnect();
-  }, [open, type, paper]);
+  }, [open, mediaPicker, paper]);
 
   useEffect(() => {
-    // Desktop keeps the PDF placeholder in its neutral active state while
+    // Desktop keeps media placeholders in its neutral active state while
     // uploading; whole-block selection belongs to the six-dot action menu.
-    if (blockId && type !== BlockType.PDFBlock) {
+    if (blockId && !mediaPicker) {
       setSelectedBlockIds?.([blockId]);
     } else {
       setSelectedBlockIds?.([]);
     }
-  }, [blockId, type, setSelectedBlockIds]);
+  }, [blockId, mediaPicker, setSelectedBlockIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -139,28 +140,28 @@ function BlockPopover() {
           horizontal: 'center',
         },
         anchorOrigin: {
-          vertical: type === BlockType.PDFBlock && origins.anchorOrigin.vertical === 'top'
+          vertical: mediaPicker && origins.anchorOrigin.vertical === 'top'
             ? -4
-            : type === BlockType.PDFBlock && origins.anchorOrigin.vertical === 'bottom'
+            : mediaPicker && origins.anchorOrigin.vertical === 'bottom'
             ? panelPosition.height + 4
             : origins.anchorOrigin.vertical,
           horizontal: 'center',
         },
       });
     }
-  }, [open, anchorEl, type]);
+  }, [open, anchorEl, type, mediaPicker]);
 
   return (
     <Popover
       open={open}
       onClose={handleClose}
       anchorEl={anchorEl}
-      action={type === BlockType.PDFBlock ? popoverActions : undefined}
+      action={mediaPicker ? popoverActions : undefined}
       adjustOrigins={false}
       slotProps={{
         paper: {
           ref: setPaper,
-          className: `w-[400px] ${type === BlockType.PDFBlock ? '!max-h-[calc(100dvh-32px)] !rounded-lg !bg-surface-layer-04 !shadow-[0_2px_16px_#0000001f]' : 'max-h-[366px]'} ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-layer-04' : ''}`,
+          className: `w-[400px] ${mediaPicker ? '!max-h-[calc(100dvh-32px)] !rounded-lg !bg-surface-layer-04 !shadow-[0_2px_16px_#0000001f]' : 'max-h-[366px]'} ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-layer-04' : ''}`,
         },
       }}
       {...origins}

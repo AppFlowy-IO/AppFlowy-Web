@@ -2948,6 +2948,10 @@
         "unableToEmbed": "Unable to embed URL, saved as a bookmark.",
         "worksWithLinksOfPDF": "Works with links of PDF.",
         "uploadHint": "Drag & drop a file or click to",
+      "unsupportedSource": "This image source is not supported yet.",
+      "fileSizeLimit": "This file exceeds the upload size limit.",
+      "storageLimit": "This workspace has reached its storage limit.",
+      "unsplashFailed": "Unable to load images. Please try again.",
         "embedPlaceholder": "Paste a link...",
         "embedTab": "Embed Link",
         "embedAction": "Embed",
@@ -3987,7 +3991,33 @@
     "addMessagesToPageDisabled": "No messages available",
     "accountSettings": "Account settings",
     "settings": "Settings",
-    "startWeekOn": "Start week on"
+    "startWeekOn": "Start week on",
+    "imageBlock": {
+      "uploadHint": "Drag & drop a file or click to",
+      "unsupportedSource": "This image source is not supported yet.",
+      "fileSizeLimit": "This file exceeds the upload size limit.",
+      "storageLimit": "This workspace has reached its storage limit.",
+      "unsplashFailed": "Unable to load images. Please try again.",
+      "options": "Image options",
+      "controls": "Image controls",
+      "actionFailed": "Unable to complete this image action. Please try again.",
+      "copyImage": "Copy image",
+      "embedLink": "Embed link",
+      "openLink": "Open image link",
+      "linkPlaceholder": "Paste link or search pages",
+      "pages": "Pages",
+      "applyLink": "Apply link",
+      "removeLink": "Remove link",
+      "editLink": "Edit link",
+      "caption": "Image caption",
+      "embedTab": "Embed Link",
+      "resize": {
+        "left": "Resize image left",
+        "right": "Resize image right",
+        "top": "Resize image top",
+        "bottom": "Resize image bottom"
+      }
+    }
   },
   "globalComment": {
     "comments": "Comments",

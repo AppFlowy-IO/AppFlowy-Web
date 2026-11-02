@@ -1,102 +1,141 @@
-import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Element } from 'slate';
+import TextareaAutosize from '@mui/material/TextareaAutosize';
+import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import ImageResizer from '@/components/editor/components/blocks/image/ImageResizer';
-import ImageToolbar from '@/components/editor/components/blocks/image/ImageToolbar';
-import Img from '@/components/editor/components/blocks/image/Img';
 import { ImageBlockNode } from '@/components/editor/editor.type';
-import { Log } from '@/utils/log';
+import { useEditorContext } from '@/components/editor/EditorContext';
+import { openUrl } from '@/utils/url';
 
+import { imageLink, imageURL } from './image-data';
+import { writableImage } from './image-upload';
+import { ImageIcon } from './ImageIcons';
+import ImageResizeHandle from './ImageResizeHandle';
+import ImageToolbar from './ImageToolbar';
+import Img from './Img';
 
-const MIN_WIDTH = 100;
-
-function ImageRender({
+export default function ImageRender({
   node,
-  showToolbar,
   localUrl,
+  captionRef,
 }: {
-  selected: boolean;
-  localUrl?: string;
   node: ImageBlockNode;
-  showToolbar?: boolean;
+  localUrl?: string;
+  captionRef?: RefObject<HTMLTextAreaElement>;
 }) {
   const editor = useSlateStatic() as YjsEditor;
-  const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const [rendered, setRendered] = useState(false);
+  const readOnly = useReadOnly() || editor.isElementReadOnly(node);
+  const context = useEditorContext();
+  const { t } = useTranslation();
+  const host = useRef<HTMLDivElement>(null);
+  const img = useRef<HTMLImageElement>(null);
+  const [loadedUrl, setLoadedUrl] = useState<string>();
+  const [width, setWidth] = useState(node.data.width);
+  const [maxWidth, setMaxWidth] = useState(1000);
+  // Slate publishes changes after the input event. Keep the immediate draft
+  // controlled locally so React cannot restore the old value/caret.
+  const [caption, setCaption] = useState(node.data.caption ?? '');
 
-  const { width: imageWidth } = useMemo(() => node.data || {}, [node.data]);
+  useEffect(() => setCaption(node.data.caption ?? ''), [node.data.caption]);
   const url = localUrl || node.data.url;
+  const rendered = loadedUrl === url;
+  const link = imageLink(node.data.link);
 
-  Log.debug('[ImageRender] url', { url, localUrl, node: node.data });
-  const [initialWidth, setInitialWidth] = useState<number | null>(null);
-  const [newWidth, setNewWidth] = useState<number | null>(imageWidth ?? null);
-
+  useEffect(() => setWidth(node.data.width), [node.data.width, node.data.align, url]);
   useEffect(() => {
-    if (rendered && initialWidth === null && imgRef.current) {
-      setInitialWidth(imgRef.current.offsetWidth);
-    }
-  }, [initialWidth, rendered]);
+    const parent = host.current?.parentElement;
 
-  const debounceSubmitWidth = useMemo(() => {
-    return debounce((newWidth: number) => {
-      CustomEditor.setBlockData(editor, node.blockId, {
-        width: newWidth,
-      });
-    }, 300);
-  }, [editor, node]);
+    if (!parent) return;
+    const observer = new ResizeObserver(() => setMaxWidth(parent.clientWidth));
 
-  const handleWidthChange = useCallback(
-    (newWidth: number) => {
-      setNewWidth(newWidth);
-      debounceSubmitWidth(newWidth);
+    observer.observe(parent);
+    setMaxWidth(parent.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+  const change = useCallback(
+    (data: Record<string, unknown>) => {
+      if (!readOnly && writableImage(editor, node.blockId)) CustomEditor.setBlockData(editor, node.blockId, data);
     },
-    [debounceSubmitWidth],
+    [editor, node.blockId, readOnly]
   );
 
   if (!url) return null;
-
   return (
-    <div
-      style={{
-        minWidth: MIN_WIDTH,
-      }}
-      className={`image-render relative min-h-[48px] ${!rendered ? 'w-full' : 'w-fit'}`}
-    >
-      <Img
-        width={rendered ? (newWidth ?? '100%') : 0}
-        imgRef={imgRef}
-        url={url}
-        // `ImageBlockData` has no caption field today, so let `Img` derive
-        // an alt from the URL filename. This avoids screen readers reading
-        // the raw blob URL or skipping the image entirely.
-        onLoad={() => {
-          setRendered(true);
-        }}
-      />
+    <div ref={host} className='image-render relative min-w-0 max-w-full' style={{ width: width || '100%' }}>
+      <div className='image-selection-surface image-content relative min-h-12 rounded-xl'>
+        <Img
+          url={url}
+          imgRef={img}
+          width='100%'
+          alt={node.data.caption || node.data.name || undefined}
+          onLoad={() => setLoadedUrl(url)}
+        />
+        {!readOnly &&
+          rendered &&
+          (['left', 'right', 'top', 'bottom'] as const).map((side) => (
+            <ImageResizeHandle
+              key={`${url}-${node.data.align}-${maxWidth}-${side}`}
+              side={side}
+              savedWidth={node.data.width}
+              width={Math.min(width || img.current?.offsetWidth || maxWidth, maxWidth)}
+              maxWidth={maxWidth}
+              ratio={(img.current?.naturalWidth || 1) / (img.current?.naturalHeight || 1)}
+              onWidthChange={setWidth}
+              onCommit={(width) => change({ width, height: undefined })}
+            />
+          ))}
+        {rendered && <ImageToolbar node={{ ...node, data: { ...node.data, url } }} />}
+        {link && (
+          <button
+            type='button'
+            className='absolute inset-0 z-10 cursor-pointer rounded-xl bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-theme-thick'
+            title={link.url}
+            aria-label={t('web.imageBlock.openLink')}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (link.is_page_link && context.navigateToView) void context.navigateToView(link.page_id!);
+              else if (link.is_page_link && context.openPageModal) context.openPageModal(link.page_id!);
+              else if (imageURL(link.url)) void openUrl(link.url, '_blank', 'noopener,noreferrer');
+            }}
+          >
+            <span className='image-link-badge pointer-events-none' aria-hidden='true'>
+              <ImageIcon name='link' />
+            </span>
+          </button>
+        )}
+      </div>
+      {typeof node.data.caption === 'string' && (
+        <TextareaAutosize
+          ref={captionRef}
+          readOnly={readOnly}
+          className='image-caption'
+          aria-label={t('web.imageBlock.caption')}
+          placeholder={t('document.plugins.pdf.captionPlaceholder')}
+          value={caption}
+          onChange={(event) => {
+            setCaption(event.target.value);
+            change({ caption: event.target.value });
+          }}
+          onCompositionStart={(event) => event.stopPropagation()}
+          onCompositionEnd={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
 
-      {!readOnly && initialWidth && (
-        <>
-          <ImageResizer
-            isLeft
-            minWidth={MIN_WIDTH}
-            width={imageWidth ?? initialWidth}
-            onWidthChange={handleWidthChange}
-          />
-          <ImageResizer
-            minWidth={MIN_WIDTH}
-            width={imageWidth ?? initialWidth}
-            onWidthChange={handleWidthChange}
-          />
-        </>
+            if (event.key === 'Backspace' && !event.currentTarget.value) {
+              event.preventDefault();
+              change({ caption: undefined });
+            }
+          }}
+        />
       )}
-      {showToolbar && <ImageToolbar node={node} />}
     </div>
   );
 }
-
-export default ImageRender;

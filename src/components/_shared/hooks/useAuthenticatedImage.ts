@@ -1,4 +1,4 @@
-import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { RefObject, useEffect, useMemo, useState } from 'react';
 
 import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
 import { subscribeToDevicePixelRatio } from '@/utils/device-pixel-ratio';
@@ -65,41 +65,41 @@ export function useAuthenticatedOriginalImage(src: string | undefined): string {
 }
 
 function useFullSizeImage(src: string | undefined): string {
-  const [authenticatedSrc, setAuthenticatedSrc] = useState<string>('');
-  const blobUrlRef = useRef<string>('');
+  const [resolved, setResolved] = useState({ src: '', url: '' });
 
   useEffect(() => {
-    if (!src) {
-      setAuthenticatedSrc('');
-      return;
-    }
+    if (!src) return;
 
     let isMounted = true;
+    let ownedBlobUrl = '';
 
     Log.debug('[useAuthenticatedImage] src', isAppFlowyPublicFormUploadUrl(src) ? '[public-form-attachment]' : src);
     getImageUrl(src)
       .then((url) => {
+        // External/local preview URLs are borrowed. Only a newly fetched URL
+        // may be revoked here; the owner can still be displaying the preview.
+        const owned = url !== src && url.startsWith('blob:');
+
         if (isMounted) {
-          setAuthenticatedSrc(url);
-          blobUrlRef.current = url;
-        }
+          ownedBlobUrl = owned ? url : '';
+          setResolved({ src, url });
+        } else if (owned) revokeBlobUrl(url);
       })
       .catch((error) => {
         console.error('Failed to load authenticated image:', error);
         if (isMounted) {
-          setAuthenticatedSrc('');
+          setResolved({ src, url: '' });
         }
       });
 
     return () => {
       isMounted = false;
       // Clean up blob URL if it was created
-      if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) {
-        revokeBlobUrl(blobUrlRef.current);
-        blobUrlRef.current = '';
-      }
+      if (ownedBlobUrl) revokeBlobUrl(ownedBlobUrl);
     };
   }, [src]);
+
+  const authenticatedSrc = resolved.src === src ? resolved.url : '';
 
   // Accepted form attachments are never anonymously readable. Keep their
   // protected route out of `<img src>` while the bearer fetch is pending (or

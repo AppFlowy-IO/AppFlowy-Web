@@ -154,6 +154,12 @@ export enum ImageType {
 }
 
 export interface ImageBlockData extends BlockData {
+  name?: string;
+  caption?: string;
+  link?: string;
+  source?: 'upload' | 'network' | 'unsplash';
+  upload_error?: boolean;
+  upload_error_code?: number | null;
   url?: string;
   width?: number;
   align?: AlignType;
