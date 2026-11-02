@@ -436,16 +436,15 @@ switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reas
   rotating token triggers GoTrue reuse detection and logs the user out of the Web app.)
 - Client IDs travel in the query string (`?client_id=`), never in a path segment: CIMD client IDs are
   URLs, and some proxies decode `%2F`.
-- Errors are `McpApiError { status, error, reason, description, retryAfter }`. `status` 0 means no
+- Errors are `McpApiError { status, error, reason, description }`. `status` 0 means no
   response (`error`: `network_error`, `timeout`, `not_configured`, `session_refresh_failed`) or a call
   refused before sending (`invalid_request`). Show localized text for `reason`, never `description`.
   Reasons this Web does not know are dropped; a body without a known one gets its reason from its
   `error` (`mcp_disabled`) or its status (429 `rate_limited`, 502/503/504 `temporarily_unavailable`,
   other 5xx `server_error`), so a 503 `policy_unavailable` reads as temporarily unavailable.
-  Helpers: `isMcpServiceUnavailable` (false for `mcp_disabled`: the service answered),
-  `isMcpDisabledError`, `isRetryableMcpError` (also false for `mcp_disabled`: only an administrator
-  can change it), `isMcpAbortError`. Every call takes an optional `{ signal }`; aborting rejects with
-  the fetch `AbortError`.
+  Helpers: `isMcpServiceUnavailable` (false for `mcp_disabled`, where the service answered, and for
+  `session_refresh_failed`, where it was never asked), `isMcpDisabledError`, `isMcpAbortError`.
+  Every call takes an optional `{ signal }`; aborting rejects with the fetch `AbortError`.
 - `redirect_url` responses are rejected unless `isSafeMcpRedirectUrl` accepts them (no
   `javascript:`, `data:` and similar), because CIMD documents may register any redirect URI.
 

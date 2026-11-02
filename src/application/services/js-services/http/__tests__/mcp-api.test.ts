@@ -23,7 +23,6 @@ import {
   isMcpAppApprovalKey,
   isMcpDisabledError,
   isMcpServiceUnavailable,
-  isRetryableMcpError,
   listMcpAccessRequests,
   listMcpWorkspaceConnections,
   listMyMcpConnections,
@@ -461,7 +460,10 @@ describe('MCP owner disconnect', () => {
   });
 
   it('refuses an empty client id before sending', async () => {
-    await expect(approveMcpClient(WS, '  ')).rejects.toMatchObject({ reason: 'invalid_request' });
+    const error = await approveMcpClient(WS, '  ').catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ status: 0, reason: 'invalid_request' });
+    expect(isMcpServiceUnavailable(error)).toBe(false);
     await expect(getMcpClientInfo('')).rejects.toMatchObject({ reason: 'invalid_request' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -693,16 +695,15 @@ describe('MCP errors', () => {
       message: 'Only owners',
     });
     expect(isMcpServiceUnavailable(error)).toBe(false);
-    expect(isRetryableMcpError(error)).toBe(false);
   });
 
-  it('reads Retry-After and implies rate_limited for a 429 without a reason', async () => {
+  it('implies rate_limited for a 429 without a reason', async () => {
     fetchMock.mockResolvedValueOnce(response(429, { error: 'slow_down' }, { 'Retry-After': '30' }));
 
     const error = await getMcpClientInfo('client').catch((e: unknown) => e);
 
-    expect(error).toMatchObject({ status: 429, reason: 'rate_limited', retryAfter: 30 });
-    expect(isRetryableMcpError(error)).toBe(true);
+    expect(error).toMatchObject({ status: 429, reason: 'rate_limited' });
+    expect(isMcpServiceUnavailable(error)).toBe(false);
   });
 
   it.each([
@@ -740,9 +741,8 @@ describe('MCP errors', () => {
 
     expect(error).toMatchObject({ status: 503, error: 'mcp_disabled', reason: 'mcp_disabled' });
     expect(isMcpDisabledError(error)).toBe(true);
-    // The service answered on purpose: no "unavailable" state, and retrying does not help.
+    // The service answered on purpose: no "unavailable" state.
     expect(isMcpServiceUnavailable(error)).toBe(false);
-    expect(isRetryableMcpError(error)).toBe(false);
   });
 
   it('reads mcp_disabled from the error code when the body has no reason', async () => {
@@ -777,7 +777,18 @@ describe('MCP errors', () => {
 
     expect(error).toMatchObject({ status: 0, error: 'network_error', reason: undefined });
     expect(isMcpServiceUnavailable(error)).toBe(true);
-    expect(isRetryableMcpError(error)).toBe(true);
+  });
+
+  it.each([
+    ['network_error', true],
+    ['timeout', true],
+    ['not_configured', true],
+    // The AppFlowy session refresh failed, or the call was refused before sending: the MCP service
+    // was never asked.
+    ['session_refresh_failed', false],
+    ['invalid_request', false],
+  ])('%s, without a response, means the MCP service is unavailable: %s', (error, unavailable) => {
+    expect(isMcpServiceUnavailable(new McpApiError({ status: 0, error }))).toBe(unavailable);
   });
 
   it('rethrows the abort error when the caller aborts during the request', async () => {
@@ -890,7 +901,8 @@ describe('MCP session handling', () => {
     const error = await listMyMcpConnections(WS).catch((e: unknown) => e);
 
     expect(error).toMatchObject({ status: 0, reason: 'temporarily_unavailable', error: 'session_refresh_failed' });
-    expect(isRetryableMcpError(error)).toBe(true);
+    // GoTrue failed, not the MCP service: Settings shows the error, not "MCP service not configured".
+    expect(isMcpServiceUnavailable(error)).toBe(false);
     expect(invalidTokenForSession).not.toHaveBeenCalled();
   });
 

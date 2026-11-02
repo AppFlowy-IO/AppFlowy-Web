@@ -61,7 +61,6 @@ export interface McpApiErrorInit {
   error?: string;
   reason?: McpErrorReason;
   description?: string;
-  retryAfter?: number;
   cause?: unknown;
 }
 
@@ -77,16 +76,14 @@ export interface McpApiErrorInit {
  *   502/503/504 `temporarily_unavailable` and other 5xx `server_error`.
  *   Unknown reasons are dropped.
  * - `description`: English text from the server, for logs only.
- * - `retryAfter`: seconds from the `Retry-After` header.
  */
 export class McpApiError extends Error {
   readonly status: number;
   readonly error?: string;
   readonly reason?: McpErrorReason;
   readonly description?: string;
-  readonly retryAfter?: number;
 
-  constructor({ status, error, reason, description, retryAfter, cause }: McpApiErrorInit) {
+  constructor({ status, error, reason, description, cause }: McpApiErrorInit) {
     super(
       description || error || (status ? `MCP request failed with HTTP ${status}` : 'MCP request failed'),
       cause === undefined ? undefined : { cause }
@@ -96,7 +93,6 @@ export class McpApiError extends Error {
     this.error = error;
     this.reason = reason;
     this.description = description;
-    this.retryAfter = retryAfter;
   }
 }
 
@@ -120,25 +116,21 @@ export function isMcpDisabledError(error: unknown): boolean {
 }
 
 /**
- * The MCP service gave no usable answer: unreachable, timed out, failing (5xx)
- * or missing the endpoint (a 404 without a reason, from a server that predates
- * it). Settings shows "unavailable" with Retry for these. A server that turned
- * AI app connections off (`isMcpDisabledError`) did answer, so it is not one.
+ * The MCP service gave no usable answer: unknown, unreachable, timed out,
+ * failing (5xx) or missing the endpoint (a 404 without a reason, from a server
+ * that predates it). Settings shows "unavailable" with Retry for these. A
+ * server that turned AI app connections off (`isMcpDisabledError`) did answer,
+ * and a failed AppFlowy session refresh (`session_refresh_failed`) never
+ * reached the MCP service, so neither is one.
  */
 export function isMcpServiceUnavailable(error: unknown): boolean {
   if (!(error instanceof McpApiError)) return false;
-  if (error.status === 0) return error.error !== 'invalid_request';
+  if (error.status === 0) {
+    return error.error === 'network_error' || error.error === 'timeout' || error.error === 'not_configured';
+  }
+
   if (isMcpDisabledError(error)) return false;
   return error.status >= 500 || (error.status === 404 && !error.reason);
-}
-
-/** Worth retrying unchanged: network failure, timeout, rate limit or a temporary server error. */
-export function isRetryableMcpError(error: unknown): boolean {
-  if (!(error instanceof McpApiError)) return false;
-  if (error.error === 'network_error' || error.error === 'timeout') return true;
-  return (
-    error.reason === 'rate_limited' || error.reason === 'temporarily_unavailable' || error.reason === 'server_error'
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -621,7 +613,6 @@ interface McpResponse {
   ok: boolean;
   status: number;
   body: unknown;
-  retryAfter?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -636,15 +627,6 @@ function parseBody(text: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-function parseRetryAfter(value: string | null): number | undefined {
-  if (!value) return undefined;
-  if (/^\d+$/.test(value.trim())) return Number(value.trim());
-
-  const date = Date.parse(value);
-
-  return Number.isFinite(date) ? Math.max(0, Math.ceil((date - Date.now()) / 1000)) : undefined;
 }
 
 function buildUrl(path: string, query?: Record<string, string | undefined>): string {
@@ -702,7 +684,6 @@ async function send(request: McpRequest, accessToken?: string): Promise<McpRespo
       ok: response.ok,
       status: response.status,
       body: parseBody(text),
-      retryAfter: parseRetryAfter(response.headers.get('Retry-After')),
     };
   } catch (error) {
     if (callerSignal?.aborted) throw error;
@@ -746,7 +727,6 @@ function responseError(response: McpResponse): McpApiError {
     error,
     reason: isMcpErrorReason(body.reason) ? body.reason : impliedReason(response.status, error),
     description,
-    retryAfter: response.retryAfter,
   });
 }
 
