@@ -216,35 +216,57 @@ describe('MCP URL helpers', () => {
     expect(describeRedirectUri('https://claude.ai/api/mcp/auth_callback')).toEqual({
       host: 'claude.ai',
       scheme: 'https',
-      loopback: false,
+      kind: 'web',
+      label: 'claude.ai',
     });
     expect(describeRedirectUri('http://127.0.0.1:33418/callback')).toEqual({
       host: '127.0.0.1',
       scheme: 'http',
-      loopback: true,
+      kind: 'loopback',
+      label: '127.0.0.1',
     });
-    expect(describeRedirectUri('http://[::1]:8787/callback')).toEqual({ host: '[::1]', scheme: 'http', loopback: true });
+    expect(describeRedirectUri('http://[::1]:8787/callback')).toEqual({
+      host: '[::1]',
+      scheme: 'http',
+      kind: 'loopback',
+      label: '[::1]',
+    });
     // URL parsing lower-cases the host first, as the server's URL parser does.
     expect(describeRedirectUri('https://LOCALHOST:8443/callback')).toEqual({
       host: 'localhost',
       scheme: 'https',
-      loopback: true,
+      kind: 'loopback',
+      label: 'localhost',
     });
     // Only the server's loopback hosts: the server lists these as remote in Settings too.
-    expect(describeRedirectUri('https://dev.localhost/callback')?.loopback).toBe(false);
-    expect(describeRedirectUri('https://127.0.0.2/callback')?.loopback).toBe(false);
+    expect(describeRedirectUri('https://dev.localhost/callback')?.kind).toBe('web');
+    expect(describeRedirectUri('https://127.0.0.2/callback')?.kind).toBe('web');
+    expect(describeRedirectUri('not a url')).toBeNull();
+    expect(describeRedirectUri(undefined)).toBeNull();
+  });
+
+  it('describes a private-use redirect as an app on this computer, never as a bare web host', () => {
     expect(describeRedirectUri('cursor://anysphere.cursor-mcp/oauth/callback')).toEqual({
       host: 'anysphere.cursor-mcp',
       scheme: 'cursor',
-      loopback: false,
+      kind: 'private-use',
+      label: 'cursor://anysphere.cursor-mcp',
+    });
+    // A client ID metadata document may list any scheme, with a host that looks like a web domain.
+    expect(describeRedirectUri('x-app://claude.ai/cb')).toMatchObject({
+      kind: 'private-use',
+      label: 'x-app://claude.ai',
+    });
+    expect(describeRedirectUri('raycast://mcp-oauth-callback')).toMatchObject({
+      kind: 'private-use',
+      label: 'raycast://mcp-oauth-callback',
     });
     expect(describeRedirectUri('com.example.app:/callback')).toEqual({
       host: 'com.example.app',
       scheme: 'com.example.app',
-      loopback: false,
+      kind: 'private-use',
+      label: 'com.example.app:',
     });
-    expect(describeRedirectUri('not a url')).toBeNull();
-    expect(describeRedirectUri(undefined)).toBeNull();
   });
 
   it.each([

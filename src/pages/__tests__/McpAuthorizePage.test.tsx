@@ -695,6 +695,23 @@ describe('McpAuthorizePage trust and scope hints', () => {
     expect(byTestId<HTMLButtonElement>('mcp-consent-request-approval').disabled).toBe(false);
   });
 
+  it.each([
+    ['raycast://mcp-oauth-callback', 'raycast://mcp-oauth-callback'],
+    // A client ID metadata document may list any scheme, with a host that looks like a web domain.
+    ['x-app://claude.ai/cb', 'x-app://claude.ai'],
+    ['com.example.app:/callback', 'com.example.app:'],
+  ])('shows the private-use return address %s with its scheme, as an app on the computer', async (redirect, label) => {
+    await renderConsent(authorizePath({ redirect_uri: redirect }));
+
+    expect(byTestId('mcp-consent-redirect-host').textContent).toBe(label);
+    expect(byTestId('mcp-consent-local-app').textContent).toBe('Runs on your computer');
+    expect(byTestId('mcp-consent-localhost-warning').textContent).toContain(
+      'Only continue if you started this connection yourself.'
+    );
+    expect(screen.queryByTestId('mcp-consent-acknowledge')).toBeNull();
+    expect(byTestId<HTMLButtonElement>('mcp-consent-allow').disabled).toBe(false);
+  });
+
   it('does not ask about a loopback return address, which gets its own warning', async () => {
     mocked.clientInfo.mockResolvedValue(localTool);
     mocked.status.mockResolvedValue(memberStatus({}, { ...localTool }));

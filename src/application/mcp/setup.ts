@@ -231,13 +231,27 @@ export function isLoopbackHost(host: string): boolean {
   return LOOPBACK_HOSTS.has(host);
 }
 
+/**
+ * Where a redirect returns: `web`, an http(s) host elsewhere; `loopback`, an
+ * http(s) server on this computer; `private-use`, any other scheme
+ * (`cursor://…`, `com.example.app:/cb`), which the device hands to whichever
+ * app claimed it. Loopback and private-use redirects both return to an app on
+ * this computer.
+ */
+export type McpRedirectKind = 'web' | 'loopback' | 'private-use';
+
 export interface McpRedirectTarget {
   /** Host name, or the scheme for a host-less private-use URI such as `com.example.app:/cb`. */
   host: string;
   /** URI scheme without the colon, e.g. `https`. */
   scheme: string;
-  /** The redirect returns to an app on this computer. */
-  loopback: boolean;
+  kind: McpRedirectKind;
+  /**
+   * What to show: the host of a web or loopback redirect; for a private-use
+   * one the scheme with its host (`cursor://anysphere.cursor-mcp`) or alone
+   * (`com.example.app:`), so it never reads like a web domain.
+   */
+  label: string;
 }
 
 /** Where an OAuth `redirect_uri` sends the browser, for display; null when it is not a URL. */
@@ -249,7 +263,13 @@ export function describeRedirectUri(uri?: string | null): McpRedirectTarget | nu
     const scheme = parsed.protocol.replace(/:$/, '');
     const host = parsed.hostname || scheme;
 
-    return { host, scheme, loopback: Boolean(parsed.hostname) && isLoopbackHost(parsed.hostname) };
+    if (scheme !== 'http' && scheme !== 'https') {
+      const label = parsed.hostname ? `${scheme}://${parsed.hostname}` : `${scheme}:`;
+
+      return { host, scheme, kind: 'private-use', label };
+    }
+
+    return { host, scheme, kind: isLoopbackHost(parsed.hostname) ? 'loopback' : 'web', label: host };
   } catch {
     return null;
   }

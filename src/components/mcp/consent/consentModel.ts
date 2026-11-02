@@ -111,8 +111,9 @@ export function isReadOnlyConsentRequest(scope?: string | null): boolean {
  * for a self-registered (DCR) app the verified catalog does not recognize
  * that returns to an https host other than this computer: its name is
  * self-asserted, so the redirect host is the one thing that says where the
- * access goes. Loopback redirects get the "runs on your computer" warning
- * instead; CIMD apps are named by their own https domain.
+ * access goes. Loopback and private-use redirects return to an app on this
+ * computer and get the "runs on your computer" warning instead of the tick;
+ * CIMD apps are named by their own https domain.
  */
 export function consentHostToAcknowledge(
   client: Pick<McpClientSummary, 'client_kind' | 'verified_app'>,
@@ -122,7 +123,7 @@ export function consentHostToAcknowledge(
 
   const target = describeRedirectUri(redirectUri);
 
-  return target && target.scheme === 'https' && !target.loopback ? target.host : null;
+  return target?.kind === 'web' && target.scheme === 'https' ? target.host : null;
 }
 
 /** `scopes` with `scope` turned on or off, in canonical order; `read` cannot be removed. */

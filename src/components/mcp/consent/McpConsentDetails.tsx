@@ -25,15 +25,18 @@ function DetailRow({ label, children, testId }: { label: ReactNode; children: Re
 /**
  * Who is asking and where the browser goes next: the publisher's host with
  * Verified app (the server's catalog proves who the app is) / Verified domain
- * / Not verified (a DCR client's name is self-asserted), the redirect host,
- * and a warning when it returns to an app on this computer. A catalog app
- * that runs on the user's computer (Claude Code, Cursor) is not a verified
- * app here: any program there could use its name, so its publisher row reads
- * like any other client's and the redirect row carries the warning.
+ * / Not verified (a DCR client's name is self-asserted), the redirect host
+ * (with its scheme for a private-use URI such as `cursor://…`), and a warning
+ * when it returns to an app on this computer, over loopback or a private-use
+ * scheme: any program there could claim it. A catalog app that runs on the
+ * user's computer (Claude Code, Cursor) is not a verified app here: any
+ * program there could use its name, so its publisher row reads like any
+ * other client's and the redirect row carries the warning.
  */
 export function McpConsentDetails({ client, redirectUri }: McpConsentDetailsProps) {
   const { t } = useTranslation();
   const target = describeRedirectUri(redirectUri);
+  const onThisComputer = target?.kind === 'loopback' || target?.kind === 'private-use';
 
   return (
     <div className='flex flex-col gap-3'>
@@ -60,9 +63,9 @@ export function McpConsentDetails({ client, redirectUri }: McpConsentDetailsProp
             title={redirectUri}
             data-testid='mcp-consent-redirect-host'
           >
-            {target?.host ?? redirectUri}
+            {target?.label ?? redirectUri}
           </span>
-          {target?.loopback && (
+          {onThisComputer && (
             <span
               className='inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full border border-border-primary bg-fill-content px-2 py-0.5 text-xs text-text-secondary'
               data-testid='mcp-consent-local-app'
@@ -72,7 +75,7 @@ export function McpConsentDetails({ client, redirectUri }: McpConsentDetailsProp
           )}
         </DetailRow>
       </dl>
-      {target?.loopback && (
+      {onThisComputer && (
         <McpConsentNotice tone='warning' data-testid='mcp-consent-localhost-warning'>
           {t('mcp.consent.localhostWarning')}
         </McpConsentNotice>
