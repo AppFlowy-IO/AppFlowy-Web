@@ -16,7 +16,6 @@ import {
   type McpErrorReason,
   type McpMemberStatus,
 } from '@/application/services/domains/mcp';
-import { MCP_CONSENT_EXPIRED_PARAM } from '@/application/session/sign_in';
 import { Role, type Workspace } from '@/application/types';
 
 /** The OAuth authorization request the MCP service forwarded to the consent page. */
@@ -69,19 +68,6 @@ export function parseMcpConsentRequest(search: URLSearchParams): McpConsentReque
     // The MCP service only forwards UUIDs; anything else is ignored rather than fatal.
     workspaceId: workspaceId && UUID_PATTERN.test(workspaceId) ? workspaceId : undefined,
   };
-}
-
-/**
- * The "request expired" view (`?expired=1[&client_id=…]`), where a sign-in
- * lands when it outlived the consent request it started from; null for any
- * other consent URL. Checked before `parseMcpConsentRequest`.
- */
-export function parseMcpConsentExpired(search: URLSearchParams): { clientId?: string } | null {
-  if (search.get(MCP_CONSENT_EXPIRED_PARAM) !== '1') return null;
-
-  const clientId = search.get('client_id')?.trim();
-
-  return { clientId: clientId || undefined };
 }
 
 /**

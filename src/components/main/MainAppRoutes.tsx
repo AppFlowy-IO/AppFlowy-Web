@@ -2,6 +2,8 @@ import { lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import '@/i18n/config';
+import { MCP_CONSENT_PATH } from '@/application/mcp/consentUrl';
+import { MCP_SETUP_PAGE_PATH } from '@/application/mcp/setup';
 import { AUTH_CALLBACK_PATH } from '@/application/session/sign_in';
 import NotFound from '@/components/error/NotFound';
 import withAppWrapper from '@/components/main/withAppWrapper';
@@ -34,8 +36,8 @@ const WrappedRoutes = withAppWrapper(() => {
       <Route path='/import' element={<ImportPage />} />
       {/* MCP consent and setup live outside /app's AuthLayout; the consent page sends signed-out users to /login. */}
       {/* caseSensitive: hosts send anti-framing headers for the lowercase /oauth/ paths only (deploy/app-paths.ts). */}
-      <Route path='/oauth/mcp/authorize' element={<McpAuthorizePage />} caseSensitive />
-      <Route path='/oauth/mcp/setup' element={<McpSetupPage />} caseSensitive />
+      <Route path={MCP_CONSENT_PATH} element={<McpAuthorizePage />} caseSensitive />
+      <Route path={MCP_SETUP_PAGE_PATH} element={<McpSetupPage />} caseSensitive />
       <Route path='/' element={<Navigate to='/app' replace />} />
       <Route path='/app/*' element={<AppRouter />} />
       <Route path='*' element={<NotFound />} />

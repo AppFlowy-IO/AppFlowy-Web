@@ -15,7 +15,6 @@ import {
   isFatalConsentReason,
   isReadOnlyConsentRequest,
   isRetryableConsentReason,
-  parseMcpConsentExpired,
   parseMcpConsentRequest,
   pickDefaultWorkspaceId,
   toConsentErrorReason,
@@ -262,22 +261,6 @@ describe('reasons', () => {
 describe('isConsentFramed', () => {
   it('is false for a top-level page', () => {
     expect(isConsentFramed()).toBe(false);
-  });
-});
-
-describe('parseMcpConsentExpired', () => {
-  it('reads the expired view and its client ID', () => {
-    expect(
-      parseMcpConsentExpired(new URLSearchParams(`expired=1&client_id=${encodeURIComponent(VALID.client_id)}`))
-    ).toEqual({
-      clientId: VALID.client_id,
-    });
-    expect(parseMcpConsentExpired(new URLSearchParams('expired=1&client_id=%20'))).toEqual({ clientId: undefined });
-  });
-
-  it('is null for a consent request', () => {
-    expect(parseMcpConsentExpired(new URLSearchParams(new URLSearchParams(VALID).toString()))).toBeNull();
-    expect(parseMcpConsentExpired(new URLSearchParams('expired=true'))).toBeNull();
   });
 });
 

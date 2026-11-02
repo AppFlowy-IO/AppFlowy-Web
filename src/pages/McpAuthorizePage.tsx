@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { parseMcpConsentExpired } from '@/application/mcp/consentUrl';
 import { getMcpClientDisplayName } from '@/application/mcp/setup';
 import { getMcpClientInfo, type McpConfiguration } from '@/application/services/domains/mcp';
 import { buildLoginUrl, saveMcpConsentRedirectTo } from '@/application/session/sign_in';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
-import { isConsentFramed, parseMcpConsentExpired, parseMcpConsentRequest } from '@/components/mcp/consent/consentModel';
+import { isConsentFramed, parseMcpConsentRequest } from '@/components/mcp/consent/consentModel';
 import { McpConsentFlow } from '@/components/mcp/consent/McpConsentFlow';
 import { McpConsentLoading } from '@/components/mcp/consent/McpConsentLayout';
 import {

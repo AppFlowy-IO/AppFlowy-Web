@@ -1,3 +1,4 @@
+import { buildMcpConsentExpiredPath, MCP_CONSENT_PATH } from '@/application/mcp/consentUrl';
 import { Log } from '@/utils/log';
 
 const REDIRECT_TO_STORAGE_KEY = 'redirectTo';
@@ -11,9 +12,6 @@ export const PUBLIC_FORM_AUTH_FLOW_PARAM = 'formAuth';
  */
 export const PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS = 15 * 60 * 1000;
 
-/** The MCP OAuth consent page (`src/pages/McpAuthorizePage.tsx`). */
-export const MCP_CONSENT_PATH = '/oauth/mcp/authorize';
-
 export const MCP_CONSENT_AUTH_FLOW_PARAM = 'mcpAuth';
 
 /**
@@ -22,9 +20,6 @@ export const MCP_CONSENT_AUTH_FLOW_PARAM = 'mcpAuth';
  * that the AI app has given up on it.
  */
 export const MCP_CONSENT_AUTH_CONTINUATION_TTL_MS = 10 * 60 * 1000;
-
-/** Query parameter of the consent page's "request expired" view (`?expired=1[&client_id=…]`). */
-export const MCP_CONSENT_EXPIRED_PARAM = 'expired';
 
 interface AuthContinuation {
   expiresAt: number;
@@ -433,25 +428,6 @@ export function getPublicFormRedirectExpiresAt(now = Date.now()): number | null 
 
 export function clearPublicFormRedirectTo() {
   clearAuthContinuation(PUBLIC_FORM_CONTINUATION);
-}
-
-/**
- * The consent page's "request expired" view, where a sign-in lands when it
- * outlived the consent request it started from. Only the client ID travels
- * along, to name the app.
- */
-export function buildMcpConsentExpiredPath(consentUrl?: string | null): string {
-  const search = new URLSearchParams({ [MCP_CONSENT_EXPIRED_PARAM]: '1' });
-  let clientId: string | null = null;
-
-  try {
-    clientId = consentUrl ? new URL(consentUrl, window.location.origin).searchParams.get('client_id') : null;
-  } catch {
-    clientId = null;
-  }
-
-  if (clientId) search.set('client_id', clientId);
-  return `${MCP_CONSENT_PATH}?${search.toString()}`;
 }
 
 export const AUTH_CALLBACK_PATH = '/auth/callback';
