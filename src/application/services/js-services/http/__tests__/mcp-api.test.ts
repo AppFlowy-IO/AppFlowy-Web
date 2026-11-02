@@ -677,14 +677,19 @@ describe('MCP connections per device', () => {
     expect(call().rawBody).toBeUndefined();
   });
 
-  it('revokes and dismisses app-level keys as given', async () => {
-    fetchMock.mockResolvedValue(response(200, { disconnected: 3, dismissed: true }));
+  it('approves, revokes and dismisses app-level keys as given', async () => {
+    fetchMock.mockResolvedValue(response(200, { approved: true, disconnected: 3, dismissed: true }));
 
     await revokeMcpClientApproval(WS, 'app:cursor');
     await dismissMcpAccessRequest(WS, 'app:cursor');
+    await approveMcpClient(WS, 'app:cursor');
     expect(call(0).url.search).toBe('?client_id=app%3Acursor');
     expect(call(1).url.pathname).toBe(`/api/mcp/admin/workspaces/${WS}/access-requests`);
     expect(call(1).url.searchParams.get('client_id')).toBe('app:cursor');
+    // A merged request is approved by its app key; the server approves every registration of the app.
+    expect(call(2).method).toBe('PUT');
+    expect(call(2).url.pathname).toBe(`/api/mcp/admin/workspaces/${WS}/approvals`);
+    expect(call(2).url.search).toBe('?client_id=app%3Acursor');
   });
 
   it('lists my connections across workspaces with their counts', async () => {

@@ -1149,19 +1149,21 @@ export async function updateMcpWorkspaceSettings(
 }
 
 /**
- * Approves a client for the workspace; also clears its pending access request.
- * A client the catalog recognizes is approved as its app (`app:<app_id>`),
- * which covers every registration of that app.
+ * Approves `target` for the workspace and clears its pending access request.
+ * `target` is a client ID, which the server approves as its app
+ * (`app:<app_id>`) when the catalog recognizes it, or an `app:<app_id>`
+ * approval key (a merged request's `mcpApprovalKey`), which approves every
+ * registration of that app without looking any of them up.
  */
 export async function approveMcpClient(
   workspaceId: string,
-  clientId: string,
+  target: string,
   options: McpRequestOptions = {}
 ): Promise<McpApproveResponse> {
   const response = await authorizedSend({
     method: 'PUT',
     path: workspacePath('admin', workspaceId, '/approvals'),
-    query: { client_id: requireClientId(clientId) },
+    query: { client_id: requireClientId(target) },
     signal: options.signal,
   });
 
