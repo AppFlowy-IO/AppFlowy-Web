@@ -1,3 +1,4 @@
+import en from '@/@types/translations/en.json';
 import { SettingMenuItem } from '@/application/types';
 
 import {
@@ -123,6 +124,18 @@ describe('MCP setup builders', () => {
     expect(snippets['codex-toml']).toBe(buildCodexConfigToml(URL));
     expect(snippets['server-url-json']).toBe(buildServerUrlJson(URL));
     expect(snippets['mcp-remote-json']).toBe(buildMcpRemoteJson(URL));
+  });
+
+  it('quotes the server name as code wherever the translated guide names it', () => {
+    // Backticks render as code, which translators leave as typed; a bare name could be
+    // translated or capitalized, and AI apps list the server under this exact, case-sensitive name.
+    const strings = (value: unknown): string[] =>
+      typeof value === 'string' ? [value] : Object.values(value as object).flatMap(strings);
+    const bareName = new RegExp(`\\b${MCP_SERVER_NAME}\\b`);
+    const texts = strings(en.mcp.setup);
+
+    expect(texts.filter((text) => text.includes(MCP_SERVER_NAME)).length).toBeGreaterThan(0);
+    texts.forEach((text) => expect(text.replace(/`[^`]*`/g, '')).not.toMatch(bareName));
   });
 
   it('links to the vendor pages and the public setup page', () => {

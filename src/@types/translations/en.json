@@ -5498,8 +5498,8 @@
         "description": "One command in your terminal",
         "step1": "Run this command in your terminal:",
         "scope": "Add `--scope user` to use AppFlowy in every project, or `--scope project` to share it with your team through `.mcp.json` (each teammate still signs in).",
-        "step2": "Start Claude Code, run `/mcp`, choose appflowy and sign in.",
-        "reconnect": "To sign in again later, run `/mcp`, choose appflowy and select Re-authenticate."
+        "step2": "Start Claude Code, run `/mcp`, choose `appflowy` and sign in.",
+        "reconnect": "To sign in again later, run `/mcp`, choose `appflowy` and select Re-authenticate."
       },
       "codex": {
         "name": "Codex",
@@ -5513,7 +5513,7 @@
         "name": "Cursor",
         "description": "One-click install, then sign in",
         "install": "Add to Cursor",
-        "afterInstall": "After installing, open Cursor's MCP settings, find appflowy and select Connect (or Needs login) to sign in.",
+        "afterInstall": "After installing, open Cursor's MCP settings, find `appflowy` and select Connect (or Needs login) to sign in.",
         "manual": "Or add this to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):"
       },
       "vscode": {
@@ -5546,10 +5546,10 @@
         "reconnectTitle": "Reconnect an app",
         "reconnectClaude": "Claude: Customize → Connectors → AppFlowy → Disconnect, then Connect.",
         "reconnectChatgpt": "ChatGPT: find the AppFlowy app in ChatGPT's settings, disconnect it, then connect again.",
-        "reconnectClaudeCode": "Claude Code: run `/mcp`, choose appflowy and select Re-authenticate.",
+        "reconnectClaudeCode": "Claude Code: run `/mcp`, choose `appflowy` and select Re-authenticate.",
         "reconnectCodex": "Codex: run `codex mcp login appflowy`.",
-        "reconnectCursor": "Cursor: in its MCP settings, select Connect or Needs login next to appflowy.",
-        "reconnectVscode": "VS Code: run MCP: List Servers from the Command Palette, choose appflowy and restart it.",
+        "reconnectCursor": "Cursor: in its MCP settings, select Connect or Needs login next to `appflowy`.",
+        "reconnectVscode": "VS Code: run MCP: List Servers from the Command Palette, choose `appflowy` and restart it.",
         "reconnectGemini": "Gemini CLI: run `/mcp auth appflowy`.",
         "approvalTitle": "Waiting for approval",
         "approval": "If AppFlowy says the app needs approval, select Request approval. Once a workspace owner approves it in Settings → MCP, connect again from the app.",
