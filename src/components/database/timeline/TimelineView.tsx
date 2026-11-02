@@ -155,7 +155,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const { formatTimeDisplay } = useTimeFormat();
   const primaryFieldId = usePrimaryFieldId();
   const { field: primaryField } = useFieldSelector(primaryFieldId || '');
-  const primaryFieldName = (primaryField?.get(YjsDatabaseKey.name) as string | undefined) ?? '';
+  const primaryFieldName = primaryField?.get(YjsDatabaseKey.name) ?? '';
 
   // Read-only viewers may explore another scale or hide the table without
   // writing shared data, exactly as the calendar keeps a local view mode. The
