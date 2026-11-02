@@ -85,6 +85,11 @@ const claude: McpClientInfo = {
   client_host: 'claude.ai',
   redirect_hosts: ['claude.ai'],
   loopback_only: false,
+  // Not one the catalog recognizes: these tests name it by its registration.
+  app_id: null,
+  app_name: null,
+  verified_app: false,
+  identity_verified: false,
 };
 
 const localTool: McpClientInfo = {
@@ -96,6 +101,10 @@ const localTool: McpClientInfo = {
   client_host: 'localhost',
   redirect_hosts: ['localhost'],
   loopback_only: true,
+  app_id: null,
+  app_name: null,
+  verified_app: false,
+  identity_verified: false,
 };
 
 function workspace(id: string, name: string, role?: Role): Workspace {
@@ -110,13 +119,19 @@ function memberStatus(
   overrides: Partial<McpMemberStatus> = {},
   client: Partial<McpMemberClientStatus> = {}
 ): McpMemberStatus {
+  const requiresApproval = overrides.requires_approval ?? false;
+
   return {
     workspace_id: OWNER_WS,
+    enabled: true,
     endpoint: RESOURCE,
     role: 'owner',
     eligible: true,
     ineligible_reason: null,
-    requires_approval: false,
+    // As the server derives it: every policy but `any` requires approval for some apps.
+    requires_approval: requiresApproval,
+    approval_mode: requiresApproval ? 'approved_only' : 'any',
+    approved_apps: [],
     client: {
       ...claude,
       known: true,
@@ -542,6 +557,7 @@ describe('McpAuthorizePage trust and scope hints', () => {
     app_id: null,
     app_name: null,
     verified_app: false,
+    identity_verified: false,
   };
   const webAgentPath = (overrides: Record<string, string | null> = {}) =>
     authorizePath({
@@ -793,6 +809,7 @@ describe('McpAuthorizePage decisions', () => {
       requested: true,
       request: {
         ...claude,
+        approval_key: CLIENT_ID,
         requesters: [{ user_uuid: 'user-uuid', requested_at: 1_760_000_000 }],
         first_requested_at: 1_760_000_000,
         last_requested_at: 1_760_000_000,

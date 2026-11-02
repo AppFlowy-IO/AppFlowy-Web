@@ -78,6 +78,7 @@ const cursor: McpClientSummary = {
   app_id: null,
   app_name: null,
   verified_app: false,
+  identity_verified: false,
 };
 const vscode: McpClientSummary = { ...cursor, client_id: 'dcr-vscode', client_name: 'Visual Studio Code' };
 // Two registrations the catalog recognizes as the same app (Cursor's own https redirect). Cursor
@@ -125,17 +126,17 @@ function approval(client: McpClientSummary, approvalKey = client.client_id): Mcp
 
 const settings: McpWorkspaceSettings = {
   workspace_id: WS,
-  allow_unapproved_clients: false,
   approval_mode: 'verified_and_approved',
   approved_clients: [approval(claude)],
 };
 
 function settingsWith(mode: McpApprovalMode, approved = settings.approved_clients): McpWorkspaceSettings {
-  return { ...settings, approval_mode: mode, allow_unapproved_clients: mode === 'any', approved_clients: approved };
+  return { ...settings, approval_mode: mode, approved_clients: approved };
 }
 
 const cursorRequest: McpAccessRequest = {
   ...cursor,
+  approval_key: cursor.client_id,
   requesters: [
     { user_uuid: 'u1', name: 'Ann', email: 'ann@example.com', requested_at: secondsAgo(5 * 60 + 30) },
     { user_uuid: 'u2', name: null, email: 'bo@example.com', requested_at: secondsAgo(3600) },
@@ -147,6 +148,7 @@ const cursorRequest: McpAccessRequest = {
 };
 const vscodeRequest: McpAccessRequest = {
   ...vscode,
+  approval_key: vscode.client_id,
   requesters: [{ user_uuid: 'u1', name: 'Ann', requested_at: secondsAgo(600) }],
   first_requested_at: secondsAgo(600),
   last_requested_at: secondsAgo(600),
@@ -186,14 +188,20 @@ const boOnCursor: McpWorkspaceConnection = {
 const boOnVscode: McpWorkspaceConnection = { ...boOnCursor, ...vscode, family_id: 'bo-vscode' };
 
 function memberStatus(overrides: Partial<McpMemberStatus> = {}): McpMemberStatus {
+  const requiresApproval = overrides.requires_approval ?? false;
+
   return {
     workspace_id: WS,
+    enabled: true,
     endpoint: ENDPOINT,
     role: 'member',
     eligible: true,
     ineligible_reason: null,
-    requires_approval: false,
+    // As the server derives it: every policy but `any` requires approval for some apps.
+    requires_approval: requiresApproval,
+    approval_mode: requiresApproval ? 'approved_only' : 'any',
     client: null,
+    approved_apps: [],
     ...overrides,
   };
 }
@@ -233,7 +241,14 @@ describe('McpPanel', () => {
       connections: [
         { ...myClaude, workspace_id: WS },
         { ...myClaude, family_id: 'family-other', workspace_id: 'workspace-2' },
-        { ...cursorAppA, scope: null, connected_at: secondsAgo(60), workspace_id: 'workspace-2' },
+        {
+          ...cursorAppA,
+          scope: null,
+          connected_at: secondsAgo(60),
+          family_id: 'family-cursor',
+          last_used_at: null,
+          workspace_id: 'workspace-2',
+        },
       ],
       workspace_count: 2,
       connection_count: 3,
@@ -353,9 +368,11 @@ describe('McpPanel', () => {
         app_id: null,
         app_name: null,
         verified_app: false,
+        identity_verified: false,
         scope: 'read',
         connected_at: secondsAgo(3600 + 900),
         family_id,
+        last_used_at: null,
       });
       const laptop = gemini('dcr-gemini-laptop', 'family-gemini-laptop');
       const desktop = gemini('dcr-gemini-desktop', 'family-gemini-desktop');
@@ -411,7 +428,7 @@ describe('McpPanel', () => {
       expect(screen.queryByTestId('mcp-revoke-client-0')).toBeNull();
     });
 
-    it('says when no app is approved, and hides the list where approval does not apply or is unknown', async () => {
+    it('says when no app is approved, and hides the list where approval does not apply', async () => {
       api.getMcpMemberStatus.mockResolvedValue(memberStatus({ requires_approval: true, approved_apps: [] }));
       const { unmount } = render(<McpPanel workspaceId={WS} />);
 
@@ -424,12 +441,6 @@ describe('McpPanel', () => {
       await screen.findByTestId('mcp-my-connection-row');
       expect(screen.queryByTestId('mcp-approved-for-workspace')).toBeNull();
       second.unmount();
-
-      // A server that predates the list sends none.
-      api.getMcpMemberStatus.mockResolvedValue(memberStatus({ requires_approval: true }));
-      render(<McpPanel workspaceId={WS} />);
-      await screen.findByTestId('mcp-my-connection-row');
-      expect(screen.queryByTestId('mcp-approved-for-workspace')).toBeNull();
     });
 
     it('tells members which apps connect without approval under the verified policy', async () => {
@@ -543,7 +554,7 @@ describe('McpPanel', () => {
       let resolveRetry!: (connections: McpMyConnection[]) => void;
 
       api.listMyMcpConnections
-        .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'storage_unavailable' }))
+        .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'temporarily_unavailable' }))
         .mockReturnValueOnce(
           new Promise((resolve) => {
             resolveRetry = resolve;
@@ -826,7 +837,10 @@ describe('McpPanel', () => {
 
       api.getMcpWorkspaceSettings.mockResolvedValueOnce(settingsWith('any')).mockResolvedValue(approvedAgain);
       api.listMcpWorkspaceConnections.mockResolvedValue([annOnClaude, annOnCursor, boOnCursor, boOnVscode]);
-      api.updateMcpWorkspaceSettings.mockResolvedValue({ ...approvedAgain, auto_approved_clients: [cursor, vscode] });
+      api.updateMcpWorkspaceSettings.mockResolvedValue({
+        ...approvedAgain,
+        auto_approved_clients: [cursor, vscode].map((client) => ({ ...client, approval_key: client.client_id })),
+      });
       await renderOwnerPanel();
 
       expect(modeRadio('any').checked).toBe(true);
@@ -881,7 +895,7 @@ describe('McpPanel', () => {
       );
       api.updateMcpWorkspaceSettings.mockResolvedValue({
         ...settingsWith('approved_only'),
-        auto_approved_clients: [cursor],
+        auto_approved_clients: [{ ...cursor, approval_key: cursor.client_id }],
       });
       render(<McpPanel workspaceId={WS} />);
       await screen.findByTestId('mcp-member-connections-error');
@@ -945,8 +959,8 @@ describe('McpPanel', () => {
     });
 
     it('approves a recognized app’s merged request by its app key', async () => {
-      // Without approval_key from the server, the key still comes from the catalog id.
-      const cursorAppRequest: McpAccessRequest = { ...cursorRequest, ...cursorAppB };
+      // The server merges a recognized app's requests under its app key.
+      const cursorAppRequest: McpAccessRequest = { ...cursorRequest, ...cursorAppB, approval_key: 'app:cursor' };
 
       api.listMcpAccessRequests
         .mockResolvedValueOnce([cursorAppRequest, vscodeRequest])
@@ -1397,7 +1411,7 @@ describe('McpPanel', () => {
     it('shows a failed list of the member’s connections with Retry while they are off', async () => {
       api.getMcpMemberStatus.mockResolvedValue(memberStatus({ enabled: false }));
       api.listMyMcpConnections
-        .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'storage_unavailable' }))
+        .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'temporarily_unavailable' }))
         .mockResolvedValue([myClaude]);
       render(<McpPanel workspaceId={WS} />);
 

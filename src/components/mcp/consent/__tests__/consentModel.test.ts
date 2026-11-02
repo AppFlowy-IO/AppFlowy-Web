@@ -47,17 +47,24 @@ function status(overrides: Partial<McpMemberStatus> = {}): McpMemberStatus {
     eligible: true,
     ineligible_reason: null,
     requires_approval: true,
+    approval_mode: 'approved_only',
     client: {
       client_id: 'client',
       client_kind: 'dcr',
       redirect_hosts: [],
       loopback_only: false,
+      app_id: null,
+      app_name: null,
+      verified_app: false,
+      identity_verified: false,
       known: true,
       blocked: false,
       approved: false,
       request_pending: false,
       connected: false,
     },
+    approved_apps: [],
+    enabled: true,
     ...overrides,
   };
 }
@@ -152,13 +159,15 @@ describe('consentHostToAcknowledge', () => {
     // Not loopback hosts for the server either, which shows them as remote in Settings.
     expect(consentHostToAcknowledge(dcr, 'https://dev.localhost/cb')).toBe('dev.localhost');
     expect(consentHostToAcknowledge(dcr, 'https://127.0.0.2/cb')).toBe('127.0.0.2');
-    // Servers without the catalog send no verified_app.
-    expect(consentHostToAcknowledge({ client_kind: 'dcr' }, 'https://agents.example.com/cb')).toBe('agents.example.com');
   });
 
   it.each([
     ['a recognized app', { client_kind: 'dcr' as const, verified_app: true }, 'https://www.cursor.com/cb'],
-    ['a CIMD app (named by its own domain)', { client_kind: 'cimd' as const }, 'https://agents.example.com/cb'],
+    [
+      'a CIMD app (named by its own domain)',
+      { client_kind: 'cimd' as const, verified_app: false },
+      'https://agents.example.com/cb',
+    ],
     ['a loopback redirect (warned about instead)', dcr, 'http://127.0.0.1:4567/callback'],
     ['an https localhost redirect', dcr, 'https://localhost:8443/callback'],
     ['a private-use scheme', dcr, 'cursor://anysphere.cursor-mcp/oauth/callback'],

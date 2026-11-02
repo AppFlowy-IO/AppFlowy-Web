@@ -1,10 +1,13 @@
-import { mcpApprovalKey } from '@/application/services/js-services/http/mcp-api';
+import { type McpClientSummary, mcpApprovalKey } from '@/application/services/js-services/http/mcp-api';
 
-import { getMcpClientDisplayName, getMcpClientOwnName, type McpClientNaming, trustedCatalogAppId } from '../setup';
+import { getMcpClientDisplayName, getMcpClientOwnName, trustedCatalogAppId } from '../setup';
 import { summarizeConnectedApps } from '../setupApps';
 
-// The MCP service's summaries send `verified_app` as a boolean or leave it out, never null.
-type Client = McpClientNaming & { client_id: string; verified_app?: boolean };
+// The naming fields of the MCP service's client summaries, which it always sends.
+type Client = Pick<
+  McpClientSummary,
+  'client_id' | 'client_name' | 'client_host' | 'app_id' | 'app_name' | 'verified_app'
+>;
 
 // One client of each kind the consent page and Settings name. `app_id` and `app_name` are
 // trusted only with `verified_app: true`, whichever helper reads them.
@@ -41,8 +44,22 @@ const CLIENTS: Record<string, Client> = {
     app_name: null,
     verified_app: false,
   },
-  dcrLoopback: { client_id: 'dcr-gemini', client_name: 'gemini-cli', client_host: 'localhost', verified_app: false },
-  legacySummary: { client_id: 'dcr-legacy', client_name: null, client_host: 'old.example.com' },
+  dcrLoopback: {
+    client_id: 'dcr-gemini',
+    client_name: 'gemini-cli',
+    client_host: 'localhost',
+    app_id: null,
+    app_name: null,
+    verified_app: false,
+  },
+  hostOnly: {
+    client_id: 'dcr-unnamed',
+    client_name: null,
+    client_host: 'tools.example.com',
+    app_id: null,
+    app_name: null,
+    verified_app: false,
+  },
 };
 
 describe.each([
@@ -52,7 +69,7 @@ describe.each([
   ['unverifiedWithCatalogFields', undefined, 'Totally Cursor', 'Totally Cursor', 'dcr-fake', 'name:totally cursor'],
   ['cimdApp', undefined, 'Agents', 'Agents', CLIENTS.cimdApp.client_id, 'name:agents'],
   ['dcrLoopback', undefined, 'gemini-cli', 'gemini-cli', 'dcr-gemini', 'name:gemini-cli'],
-  ['legacySummary', undefined, undefined, 'old.example.com', 'dcr-legacy', 'client:dcr-legacy'],
+  ['hostOnly', undefined, undefined, 'tools.example.com', 'dcr-unnamed', 'client:dcr-unnamed'],
 ])('the %s client', (id, appId, ownName, displayName, approvalKey, groupKey) => {
   const client = CLIENTS[id];
 

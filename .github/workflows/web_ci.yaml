@@ -55,6 +55,11 @@ jobs:
         run: |
           pnpm run lint
 
+      # Jest only transpiles test files and type-check excludes them; this catches stale MCP fixtures.
+      - name: Type-check MCP tests
+        run: |
+          pnpm run type-check:mcp-tests
+
       - name: Build Storybook
         run: |
           pnpm run build-storybook

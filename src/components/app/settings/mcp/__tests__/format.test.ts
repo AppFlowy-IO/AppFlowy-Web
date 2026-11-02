@@ -1,5 +1,11 @@
 import translations from '@/@types/translations/en.json';
-import { MCP_ERROR_REASONS, McpApiError, type McpApprovalMode, mcpApprovalKey } from '@/application/services/domains/mcp';
+import {
+  MCP_ERROR_REASONS,
+  McpApiError,
+  type McpApprovalMode,
+  mcpApprovalKey,
+  type McpWorkspaceConnection,
+} from '@/application/services/domains/mcp';
 import { mcpTestT } from '@/components/mcp/__tests__/mcpTestI18n';
 
 import {
@@ -158,9 +164,17 @@ describe('error text', () => {
 });
 
 describe('names', () => {
+  // An app the catalog does not recognize, as the server lists it.
+  const unrecognized = (client_name: string | null, client_host: string | null = null) => ({
+    client_name,
+    client_host,
+    app_name: null,
+    verified_app: false,
+  });
+
   it('names an app by name, host, or "Unknown app"', () => {
-    expect(mcpClientName({ client_name: 'Claude', client_host: 'claude.ai' }, t)).toBe('Claude');
-    expect(mcpClientName({ client_name: null, client_host: 'claude.ai' }, t)).toBe('claude.ai');
+    expect(mcpClientName(unrecognized('Claude', 'claude.ai'), t)).toBe('Claude');
+    expect(mcpClientName(unrecognized(null, 'claude.ai'), t)).toBe('claude.ai');
     expect(mcpClientName(null, t)).toBe('Unknown app');
   });
 
@@ -187,7 +201,7 @@ describe('names', () => {
   });
 
   it('joins app names for a sentence', () => {
-    expect(mcpClientNames([{ client_name: 'Cursor' }, { client_name: null, client_host: 'claude.ai' }, {}], t)).toBe(
+    expect(mcpClientNames([unrecognized('Cursor'), unrecognized(null, 'claude.ai'), unrecognized(null)], t)).toBe(
       'Cursor, claude.ai, Unknown app'
     );
   });
@@ -198,7 +212,7 @@ describe('approvals', () => {
   const cursorA = { client_id: 'dcr-cursor-a', app_id: 'cursor', verified_app: true, identity_verified: false };
   const cursorB = { client_id: 'dcr-cursor-b', app_id: 'cursor', verified_app: true, identity_verified: false };
   const claude = { client_id: 'dcr-claude', app_id: 'claude', verified_app: true, identity_verified: true };
-  const tool = { client_id: 'dcr-tool', app_id: null, verified_app: false };
+  const tool = { client_id: 'dcr-tool', app_id: null, verified_app: false, identity_verified: false };
 
   it('covers every registration of an app with its app-level key, and one client otherwise', () => {
     const appApproval = { client_id: 'dcr-cursor-a', approval_key: 'app:cursor' };
@@ -211,9 +225,8 @@ describe('approvals', () => {
     expect(mcpApprovalCovers(appApproval, { ...cursorB, verified_app: false })).toBe(false);
     expect(mcpApprovalCovers(clientApproval, cursorA)).toBe(true);
     expect(mcpApprovalCovers(clientApproval, cursorB)).toBe(false);
-    // Older servers send no approval_key: the client ID is the key.
-    expect(mcpApprovalCovers({ client_id: 'dcr-tool' }, tool)).toBe(true);
-    expect(mcpIsApproved([clientApproval, { client_id: 'dcr-tool' }], cursorB)).toBe(false);
+    expect(mcpApprovalCovers({ client_id: 'dcr-tool', approval_key: 'dcr-tool' }, tool)).toBe(true);
+    expect(mcpIsApproved([clientApproval, { client_id: 'dcr-tool', approval_key: 'dcr-tool' }], cursorB)).toBe(false);
     expect(mcpIsApproved([appApproval], cursorB)).toBe(true);
   });
 
@@ -226,9 +239,6 @@ describe('approvals', () => {
     expect(mcpModeAdmitsWithoutApproval('verified_and_approved', claude)).toBe(true);
     // Recognized is not enough: an app on the user's computer needs an approval.
     expect(mcpModeAdmitsWithoutApproval('verified_and_approved', cursorA)).toBe(false);
-    expect(mcpModeAdmitsWithoutApproval('verified_and_approved', { ...claude, identity_verified: undefined })).toBe(
-      false
-    );
     expect(mcpModeAdmitsWithoutApproval('verified_and_approved', { ...tool, identity_verified: true })).toBe(false);
     expect(mcpModeAdmitsWithoutApproval('verified_and_approved', tool)).toBe(false);
     expect(mcpModeAdmitsWithoutApproval('approved_only', claude)).toBe(false);
@@ -274,10 +284,9 @@ describe('mcpClientsKeptApproved', () => {
     ];
 
     // From any app to approved apps only: everything not approved, each recognized app once.
-    expect(mcpClientsKeptApproved(connections, [{ client_id: 'claude' }], 'approved_only', 'any')).toEqual([
-      connection('cursor-a', 'u1', 'cursor'),
-      connection('tool', 'u2'),
-    ]);
+    expect(
+      mcpClientsKeptApproved(connections, [{ client_id: 'claude', approval_key: 'claude' }], 'approved_only', 'any')
+    ).toEqual([connection('cursor-a', 'u1', 'cursor'), connection('tool', 'u2')]);
     // To verified and approved: proven web apps still connect, so Cursor and the tool are kept.
     expect(mcpClientsKeptApproved(connections, [], 'verified_and_approved', 'any')).toEqual([
       connection('cursor-a', 'u1', 'cursor'),
@@ -346,16 +355,22 @@ describe('mcpClientsKeptApproved', () => {
 });
 
 describe('connections', () => {
-  const connection = (overrides: Record<string, unknown> = {}) => ({
+  const connection = (overrides: Partial<McpWorkspaceConnection> = {}): McpWorkspaceConnection => ({
     client_id: 'claude',
     user_uuid: 'u1',
     user_name: 'Ann',
     user_email: 'ann@example.com',
-    client_kind: 'cimd' as const,
+    client_kind: 'cimd',
     redirect_hosts: [],
     loopback_only: false,
+    app_id: null,
+    app_name: null,
+    verified_app: false,
+    identity_verified: false,
     scope: null,
     connected_at: 100,
+    family_id: null,
+    last_used_at: null,
     workspace_id: 'ws',
     ...overrides,
   });
@@ -376,7 +391,7 @@ describe('connections', () => {
     const laptop = { client_id: 'claude', family_id: 'laptop', connected_at: 1 };
     const desktop = { client_id: 'claude', family_id: 'desktop', connected_at: 2 };
     const cursor = { client_id: 'cursor', family_id: 'cursor-1', connected_at: 3 };
-    const legacy = { client_id: 'claude', connected_at: 4 };
+    const legacy = { client_id: 'claude', family_id: null, connected_at: 4 };
 
     it('ends one device with a family, and the others keep working', () => {
       expect([laptop, desktop, cursor, legacy].map((other) => mcpDisconnectRemoves(laptop, other))).toEqual([

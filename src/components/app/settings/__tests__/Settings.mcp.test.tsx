@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import {
   getMcpMemberStatus,
   listMcpAccessRequests,
+  type McpAccessRequest,
   McpApiError,
   type McpMemberStatus,
 } from '@/application/services/domains/mcp';
@@ -171,7 +172,20 @@ describe('Settings AI apps badge', () => {
   const status = jest.mocked(getMcpMemberStatus);
   const requests = jest.mocked(listMcpAccessRequests);
   const signal = { signal: expect.any(AbortSignal) };
-  const request = { client_id: 'dcr-1', client_kind: 'dcr' as const, redirect_hosts: [], loopback_only: true };
+  const request: McpAccessRequest = {
+    client_id: 'dcr-1',
+    client_kind: 'dcr',
+    redirect_hosts: [],
+    loopback_only: true,
+    app_id: null,
+    app_name: null,
+    verified_app: false,
+    identity_verified: false,
+    approval_key: 'dcr-1',
+    requesters: [],
+    first_requested_at: 0,
+    last_requested_at: 0,
+  };
 
   function workspaceInfo(role: Role): UserWorkspaceInfo {
     const workspace = {
@@ -196,7 +210,9 @@ describe('Settings AI apps badge', () => {
       eligible: true,
       ineligible_reason: null,
       requires_approval: true,
+      approval_mode: 'verified_and_approved',
       client: null,
+      approved_apps: [],
       enabled: true,
       ...overrides,
     };
@@ -209,13 +225,11 @@ describe('Settings AI apps badge', () => {
     });
   }
 
-  function pending(count: number) {
+  function pending(count: number): McpAccessRequest[] {
     return Array.from({ length: count }, (_, index) => ({
       ...request,
       client_id: `dcr-${index}`,
-      requesters: [],
-      first_requested_at: 0,
-      last_requested_at: 0,
+      approval_key: `dcr-${index}`,
     }));
   }
 

@@ -800,10 +800,7 @@ describe('mcpApprovalKey', () => {
     expect(mcpApprovalKey({ client_id: 'dcr-1', app_id: 'cursor', verified_app: true })).toBe('app:cursor');
     expect(mcpApprovalKey({ client_id: 'dcr-1', app_id: null, verified_app: false })).toBe('dcr-1');
     // Never from an app id the catalog did not vouch for.
-    expect(mcpApprovalKey({ client_id: 'dcr-1', app_id: 'cursor' })).toBe('dcr-1');
-    expect(mcpApprovalKey({ client_id: 'dcr-1', approval_key: 'dcr-1', app_id: 'cursor', verified_app: true })).toBe(
-      'dcr-1'
-    );
+    expect(mcpApprovalKey({ client_id: 'dcr-1', app_id: 'cursor', verified_app: false })).toBe('dcr-1');
     expect(isMcpAppApprovalKey('app:cursor')).toBe(true);
     expect(isMcpAppApprovalKey('https://app.example.com/client.json')).toBe(false);
     expect(isMcpAppApprovalKey(undefined)).toBe(false);

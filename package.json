@@ -11,6 +11,7 @@
     "clean": "rm -rf dist storybook-static coverage .nyc_output node_modules/.vite node_modules/.cache",
     "type-check": "tsc --noEmit --project tsconfig.web.json",
     "type-check:watch": "tsc --build --watch",
+    "type-check:mcp-tests": "tsc --noEmit --project tsconfig.mcp-tests.json",
     "lint": "pnpm error-catalog:check && pnpm type-check && eslint --quiet --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
     "start": "vite preview --port 3000",
     "css:variables": "node scripts/generateTailwindColors.cjs",

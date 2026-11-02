@@ -12,6 +12,10 @@ const claude = {
   client_kind: 'cimd' as const,
   loopback_only: false,
   logo_uri: 'https://claude.ai/logo.png',
+  // Named by its own client ID document, not by the catalog.
+  app_name: null,
+  verified_app: false,
+  identity_verified: false,
 };
 
 describe('McpClientIdentity', () => {
@@ -28,7 +32,16 @@ describe('McpClientIdentity', () => {
   it('marks a self-registered local app as not verified and running on this computer', () => {
     render(
       <McpClientIdentity
-        client={{ client_name: null, client_host: 'localhost', client_kind: 'dcr', loopback_only: true, logo_uri: null }}
+        client={{
+          client_name: null,
+          client_host: 'localhost',
+          client_kind: 'dcr',
+          loopback_only: true,
+          logo_uri: null,
+          app_name: null,
+          verified_app: false,
+          identity_verified: false,
+        }}
       />
     );
 
@@ -88,7 +101,7 @@ describe('McpClientIdentity', () => {
     expect(screen.queryByTestId('mcp-client-verified-app-badge')).toBeNull();
     expect(screen.queryByTestId('mcp-client-unverified-badge')).toBeNull();
 
-    // A loopback-only one says so once; a server without the field never gets a verified badge either.
+    // A loopback-only one says so once, and never gets a verified badge either.
     rerender(
       <McpClientIdentity
         client={{
@@ -99,6 +112,7 @@ describe('McpClientIdentity', () => {
           logo_uri: null,
           app_name: 'Claude Code',
           verified_app: true,
+          identity_verified: false,
         }}
       />
     );
@@ -119,6 +133,7 @@ describe('McpClientIdentity', () => {
           logo_uri: null,
           app_name: 'Cursor',
           verified_app: false,
+          identity_verified: false,
         }}
       />
     );
@@ -151,7 +166,15 @@ describe('McpClientAvatar', () => {
 
   it('never loads a script URL as a logo', () => {
     const { container } = render(
-      <McpClientAvatar client={{ client_name: null, client_host: 'evil.example', logo_uri: 'javascript:alert(1)' }} />
+      <McpClientAvatar
+        client={{
+          client_name: null,
+          client_host: 'evil.example',
+          logo_uri: 'javascript:alert(1)',
+          app_name: null,
+          verified_app: false,
+        }}
+      />
     );
 
     expect(container.querySelector('img')).toBeNull();
