@@ -1414,3 +1414,70 @@ describe('McpAuthorizePage cancel from error views', () => {
     expect(byTestId('mcp-consent-error-retry')).toBeTruthy();
   });
 });
+
+// Answers the test gives by hand, ignoring their AbortSignal like a response already on its way.
+describe('McpAuthorizePage late answers and repeated clicks', () => {
+  it('keeps the chosen workspace’s status when the one before it answers late', async () => {
+    const answers = new Map<string, (status: McpMemberStatus) => void>();
+
+    mocked.status.mockImplementation(
+      (workspaceId) =>
+        new Promise((resolve) => {
+          answers.set(workspaceId, resolve);
+        })
+    );
+    renderPage();
+    await waitFor(() => expect(answers.has(OWNER_WS)).toBe(true));
+
+    fireEvent.click(byTestId(`mcp-consent-workspace-option-${MEMBER_WS}`));
+    await waitFor(() => expect(answers.has(MEMBER_WS)).toBe(true));
+    // The member workspace needs an approval first.
+    await act(async () => {
+      answers.get(MEMBER_WS)?.(
+        memberStatus({ workspace_id: MEMBER_WS, role: 'member', requires_approval: true }, { approved: false })
+      );
+    });
+    expect(byTestId('mcp-consent-request-approval')).toBeTruthy();
+
+    // The owner workspace, where the app is approved, answers after the switch.
+    await act(async () => {
+      answers.get(OWNER_WS)?.(memberStatus());
+    });
+    expect(byTestId<HTMLInputElement>(`mcp-consent-workspace-option-${MEMBER_WS}`).checked).toBe(true);
+    expect(byTestId('mcp-consent-request-approval')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-consent-allow')).toBeNull();
+    expect(screen.queryByTestId('mcp-consent-status-loading')).toBeNull();
+  });
+
+  it('sends one decision for clicks that land before the page re-renders', async () => {
+    let answer!: (value: { redirect_url: string }) => void;
+
+    mocked.code.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    await renderConsent();
+
+    // A double click, then Cancel and another workspace, all before the busy state disables them.
+    act(() => {
+      byTestId('mcp-consent-allow').click();
+      byTestId('mcp-consent-allow').click();
+      byTestId('mcp-consent-deny').click();
+      byTestId(`mcp-consent-workspace-option-${MEMBER_WS}`).click();
+    });
+
+    expect(mocked.code).toHaveBeenCalledTimes(1);
+    expect(mocked.code).toHaveBeenCalledWith(expect.objectContaining({ workspace_id: OWNER_WS }), expect.anything());
+    expect(mocked.deny).not.toHaveBeenCalled();
+    // The workspace being authorized stays selected.
+    expect(byTestId<HTMLInputElement>(`mcp-consent-workspace-option-${OWNER_WS}`).checked).toBe(true);
+    expect(mocked.status).not.toHaveBeenCalledWith(MEMBER_WS, CLIENT_ID, expect.anything());
+
+    await act(async () => {
+      answer({ redirect_url: CODE_REDIRECT });
+    });
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(CODE_REDIRECT));
+    expect(mocked.code).toHaveBeenCalledTimes(1);
+  });
+});
