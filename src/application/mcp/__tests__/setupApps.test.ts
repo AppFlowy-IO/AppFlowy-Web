@@ -106,6 +106,48 @@ describe('summarizeConnectedApps', () => {
     expect([...connectedSetupApps(apps)]).toEqual(['claude-code', 'cursor']);
   });
 
+  // Folded (case and accents ignored), then as written, both by code unit, like dashboard labels
+  // and Desktop's mcp_setup.dart: the same order in every browser language. localeCompare puts
+  // "raycast" before "Raycast" and "Straße" before "Strata".
+  it('orders the other apps by name, case and accents ignored', () => {
+    const apps = summarizeConnectedApps([
+      connection({ client_id: 'dcr-zed', client_name: 'Zed' }),
+      connection({ client_id: 'dcr-eclair', client_name: 'Éclair' }),
+      connection({
+        client_id: 'https://raycast.example/meta.json',
+        app_id: 'raycast',
+        app_name: 'Raycast',
+        verified_app: true,
+      }),
+      connection({ client_id: 'dcr-raycast', client_name: 'raycast' }),
+      connection({ client_id: 'dcr-oz', client_name: 'Öz Agent' }),
+      connection({ client_id: 'dcr-resume-accented', client_name: 'résumé' }),
+      connection({ client_id: 'dcr-resume', client_name: 'Resume' }),
+    ]);
+
+    expect(apps.map(({ key }) => key)).toEqual([
+      'name:éclair',
+      'name:öz agent',
+      // Equal once folded: as written, uppercase first.
+      'app:raycast',
+      'name:raycast',
+      'name:resume',
+      'name:résumé',
+      'name:zed',
+    ]);
+  });
+
+  it.each([
+    ['keeping ß a letter of its own', ['Strasse', 'Strata', 'Straße']],
+    ['in another script by its letters', ['Агент', 'Бот', 'Мой агент']],
+  ])('orders names without locale collation, %s', (_, names) => {
+    const apps = summarizeConnectedApps(
+      [...names].reverse().map((name) => connection({ client_id: `dcr-${name}`, client_name: name }))
+    );
+
+    expect(apps.map(({ name }) => name)).toEqual(names);
+  });
+
   it('groups unrecognized installs of one app by their name, never by a shared host', () => {
     const apps = summarizeConnectedApps([
       connection({ client_id: 'dcr-1', client_name: 'Gemini CLI', client_host: 'localhost' }),

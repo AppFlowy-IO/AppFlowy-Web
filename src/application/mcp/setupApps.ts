@@ -5,6 +5,8 @@
  * a self-asserted client name. See doc/MCP.md. AppFlowy Desktop ports the
  * cards and this grouping (mcp_setup.dart); keep the two in step.
  */
+import { normalizeDashboardText } from '@/utils/normalize-text';
+
 import { getMcpClientDisplayName, type McpClientNaming, trustedCatalogAppId } from './setup';
 
 /** Cards of the setup guide, in display order. */
@@ -74,12 +76,25 @@ function galleryRank(app: McpConnectedApp): number {
   return app.setupApp ? MCP_SETUP_APPS.indexOf(app.setupApp) : MCP_SETUP_APPS.length;
 }
 
+function codeUnitCompare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Gallery rank, then named apps by name, unnamed last. Names compare folded
+ * with `normalizeDashboardText` (case and accents ignored), then as written,
+ * both by UTF-16 code unit: the rule dashboard labels sort by on both clients
+ * (`compareChartLabels`), which Desktop's `mcp_setup.dart` uses here too. No
+ * locale collation, so the order is the same in every browser language.
+ */
 function compareConnectedApps(a: McpConnectedApp, b: McpConnectedApp): number {
   const rank = galleryRank(a) - galleryRank(b);
 
   if (rank !== 0) return rank;
   if (a.name === undefined || b.name === undefined) return a.name === b.name ? 0 : a.name === undefined ? 1 : -1;
-  return a.name.localeCompare(b.name);
+  return (
+    codeUnitCompare(normalizeDashboardText(a.name), normalizeDashboardText(b.name)) || codeUnitCompare(a.name, b.name)
+  );
 }
 
 /**
