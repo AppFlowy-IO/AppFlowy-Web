@@ -5,7 +5,7 @@ import { handlePDFProxy } from '../api/_lib/pdf-proxy-response';
 import { handleYoutubeImport } from '../api/_lib/youtube-import';
 
 import { fetchPublishedViewRoute, fetchPublishMetadata, fetchPublishSnapshot, type SnapshotFetchResult } from './api';
-import { APP_PATHS, FRAME_DENY_PATHS, matchesAppPath } from './app-paths';
+import { APP_PATHS, FRAME_DENY_HEADERS, isFrameDenyPath, matchesAppPath } from './app-paths';
 import { defaultSite, distDir } from './config';
 import { type PublishPageSsr, renderMarketingPage, renderPublishPage } from './html';
 import {
@@ -35,15 +35,8 @@ const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const STATIC_CACHE_CONTROL = 'public, max-age=3600';
 const HTML_CACHE_CONTROL = 'no-cache';
 
-// Anti-framing headers for FRAME_DENY_PATHS. Keep in step with the matching
-// `location ^~ /oauth/` block in docker/nginx.conf (the nginx-only image).
-const FRAME_DENY_HEADERS = {
-  'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "frame-ancestors 'none'",
-};
-
 const frameDenyHeaders = (pathname: string): Record<string, string> =>
-  FRAME_DENY_PATHS.some((base) => matchesAppPath(pathname, base)) ? FRAME_DENY_HEADERS : {};
+  isFrameDenyPath(pathname) ? FRAME_DENY_HEADERS : {};
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -127,7 +120,9 @@ const appRoute = async ({ req, url }: RequestContext) => {
     return;
   }
 
-  if (APP_PATHS.some(path => matchesAppPath(url.pathname, path))) {
+  // A percent-encoded variant of a frame-deny path (`/%6Fauth/...`) renders the
+  // same SPA page, so it gets the app shell and its headers too.
+  if (APP_PATHS.some(path => matchesAppPath(url.pathname, path)) || isFrameDenyPath(url.pathname)) {
     const html = renderMarketingPage(url.pathname);
 
     return new Response(html, {

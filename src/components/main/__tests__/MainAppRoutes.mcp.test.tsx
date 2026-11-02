@@ -56,6 +56,18 @@ describe('MCP routes', () => {
     expect(screen.queryByTestId('publish-route')).toBeNull();
   });
 
+  // Hosts add the anti-framing headers for the lowercase /oauth/ paths only.
+  it.each(['/OAuth/mcp/authorize?client_id=dcr-1', '/oauth/MCP/setup'])(
+    'does not serve the MCP pages at a case variant such as %s',
+    async (path) => {
+      renderAt(path);
+
+      expect(await screen.findByTestId('not-found-route')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-authorize-route')).toBeNull();
+      expect(screen.queryByTestId('mcp-setup-route')).toBeNull();
+    }
+  );
+
   it('has no other /oauth/mcp pages', async () => {
     renderAt('/oauth/mcp/unknown');
 

@@ -23,7 +23,39 @@ export const APP_PATHS = [
 // allow clickjacking (RFC 9700 section 4.16).
 export const FRAME_DENY_PATHS = ['/oauth'];
 
+// The anti-framing headers of FRAME_DENY_PATHS. Each host sets them itself:
+// deploy/routes.ts (the SSR image) from here, the `location ^~ /oauth/` block
+// in docker/nginx.conf (the nginx-only image) and the `headers` entry in
+// vercel.json. deploy/frame-deny.test.ts checks that the three agree.
+export const FRAME_DENY_HEADERS: Readonly<Record<string, string>> = {
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "frame-ancestors 'none'",
+};
+
 // Matches whole path segments: '/auth' matches '/auth' and '/auth/callback'
 // but not a publish namespace like '/authors'.
 export const matchesAppPath = (pathname: string, base: string) =>
   pathname === base || pathname.startsWith(`${base}/`);
+
+// React Router percent-decodes each path segment before it matches a route
+// (`decodePath` in @remix-run/router), keeping an encoded '/' as '%2F'.
+const decodePathSegments = (pathname: string) => {
+  try {
+    return pathname
+      .split('/')
+      .map((segment) => decodeURIComponent(segment).replace(/\//g, '%2F'))
+      .join('/');
+  } catch {
+    return pathname;
+  }
+};
+
+// Whether the SPA may render a FRAME_DENY_PATHS page at `pathname`. Matched
+// after decoding, like the SPA: `/%6Fauth/mcp/authorize` renders the consent
+// page too. Case variants such as `/OAuth/...` never do: those routes are
+// `caseSensitive` (src/components/main/MainAppRoutes.tsx).
+export const isFrameDenyPath = (pathname: string) => {
+  const decoded = decodePathSegments(pathname);
+
+  return FRAME_DENY_PATHS.some((base) => matchesAppPath(decoded, base));
+};

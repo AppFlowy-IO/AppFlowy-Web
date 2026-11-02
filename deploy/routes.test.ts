@@ -441,6 +441,18 @@ describe('routes - static file handling', () => {
       }
     );
 
+    it.each(['/%6Fauth/mcp/authorize', '/%6fauth/mcp/setup'])(
+      'serves the percent-encoded MCP path %s, which the SPA decodes to the same page, with the same headers',
+      async (pathname) => {
+        const response = await runRoutes(pathname);
+
+        expect(await response!.text()).toBe('<html>marketing</html>');
+        expect(response!.headers.get('X-Frame-Options')).toBe('DENY');
+        expect(response!.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+        expect(mockFetchPublishMetadata).not.toHaveBeenCalled();
+      }
+    );
+
     it('keeps other app shells frameable as before', async () => {
       const response = await runRoutes('/app/workspace-id');
 
