@@ -908,6 +908,40 @@ describe('MCP errors', () => {
     expect(isMcpServiceUnavailable(error)).toBe(true);
   });
 
+  it('gives up on a request after 30 seconds and reports a timeout', async () => {
+    jest.useFakeTimers();
+
+    try {
+      let fetchStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        fetchStarted = resolve;
+      });
+
+      fetchMock.mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            fetchStarted();
+            init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+          })
+      );
+
+      const pending = getMcpMemberStatus(WS).catch((e: unknown) => e);
+
+      await started;
+      jest.advanceTimersByTime(29_999);
+      expect(call().url.pathname).toBe(`/api/mcp/me/workspaces/${WS}`);
+      expect(fetchMock.mock.calls[0][1].signal?.aborted).toBe(false);
+      jest.advanceTimersByTime(1);
+
+      const error = await pending;
+
+      expect(error).toMatchObject({ status: 0, error: 'timeout', reason: undefined });
+      expect(isMcpServiceUnavailable(error)).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it.each([
     ['network_error', true],
     ['timeout', true],
