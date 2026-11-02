@@ -225,7 +225,8 @@ member status:
   This wins over an ineligible account, a 503 `mcp_disabled` gets no "unavailable" state or Retry,
   and the panel clears the owner's pending-request menu badge (approving is refused while off).
 - An ineligible account (email gate or guest) sees `mcp-panel-ineligible`. Its own connections stay
-  listed when it has any, so it can still revoke them.
+  listed when it has any, so it can still revoke them, and once their list fails to load the section
+  stays with its error and Retry.
 - **Connect an AI app**: `McpSetupGuide` with `status.endpoint` and the caller's connections in this
   workspace (for "Connected apps (N)" and the cards' Connected badges); members also see a notice
   when some apps need an owner's approval. Under `verified_and_approved` (the member status's

@@ -61,6 +61,12 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   // Own connections stay listed for ineligible accounts and while AI apps are turned off:
   // revoking must remain possible.
   const mine = useMyMcpConnections(workspaceId, loadOwnConnections);
+  // An ineligible account sees Your connections only when it has some to revoke, or once loading
+  // them failed: the error and its Retry must show, and the section stays through the Retry.
+  const [mineFailedOnce, setMineFailedOnce] = useState(false);
+
+  if (mine.failed && !mineFailedOnce) setMineFailedOnce(true);
+
   const connectionsOverview = useMcpConnectionsOverview(loadOwnConnections);
   const { reload: reloadOverview } = connectionsOverview;
   // The cross-workspace summary is only for accounts that may connect apps.
@@ -138,7 +144,9 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
     body = (
       <div className='flex flex-col gap-8'>
         <IneligibleNotice status={status} />
-        {mine.connections.length > 0 && <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} />}
+        {(mine.connections.length > 0 || mineFailedOnce) && (
+          <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} />
+        )}
       </div>
     );
   } else {

@@ -542,6 +542,35 @@ describe('McpPanel', () => {
       expect(screen.queryByTestId('mcp-workspace-access')).toBeNull();
     });
 
+    it('shows an ineligible account its connections’ load failure with Retry', async () => {
+      api.getMcpMemberStatus.mockResolvedValue(
+        memberStatus({ eligible: false, ineligible_reason: 'email_not_allowed', requires_approval: true })
+      );
+      let resolveRetry!: (connections: McpMyConnection[]) => void;
+
+      api.listMyMcpConnections
+        .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'storage_unavailable' }))
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveRetry = resolve;
+          })
+        );
+      render(<McpPanel workspaceId={WS} />);
+
+      expect(await screen.findByTestId('mcp-panel-ineligible')).toBeTruthy();
+      expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-my-connections-empty')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('mcp-my-connections-error-retry'));
+      // The section stays, loading, while the Retry runs.
+      expect(screen.getByTestId('mcp-my-connections')).toBeTruthy();
+      await act(async () => {
+        resolveRetry([myClaude]);
+      });
+      expect(screen.getByTestId('mcp-my-connection-row')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-my-connections-error')).toBeNull();
+    });
+
     it('disconnects one device only after confirmation and keeps the others', async () => {
       api.listMyMcpConnections.mockResolvedValueOnce([myClaude, myClaudeDesktop]).mockResolvedValue([myClaudeDesktop]);
       render(<McpPanel workspaceId={WS} />);
