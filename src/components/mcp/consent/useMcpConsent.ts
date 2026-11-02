@@ -42,7 +42,11 @@ type ConsentStatusState =
 
 export type ConsentAction = 'allow' | 'approve-and-allow' | 'request-approval' | 'deny';
 
-export type ConsentOutcome = { kind: 'done'; redirectUrl: string } | { kind: 'request-sent' };
+export type ConsentOutcome =
+  | { kind: 'done'; redirectUrl: string }
+  /** The user cancelled; `redirectUrl` is the server-validated `access_denied` redirect. */
+  | { kind: 'cancelled'; redirectUrl: string }
+  | { kind: 'request-sent' };
 
 /** An error that replaces the consent view. */
 export interface ConsentFailure {
@@ -158,10 +162,10 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
     return () => controller.abort();
   }, [handleSessionExpired, request.clientId, statusAttempt, workspaceId]);
 
-  // Render the done view first, then leave: a private-use scheme (cursor://)
-  // opens the app and keeps this tab, which then explains what happened.
+  // Render the done or cancelled view first, then leave: a private-use scheme
+  // (cursor://) opens the app and keeps this tab, which then explains what happened.
   useEffect(() => {
-    if (outcome?.kind !== 'done' || navigatedRef.current) return;
+    if (!outcome || outcome.kind === 'request-sent' || navigatedRef.current) return;
 
     navigatedRef.current = true;
     window.location.assign(outcome.redirectUrl);
@@ -198,13 +202,12 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
     [handleSessionExpired, reloadStatus]
   );
 
-  /** Runs one action at a time; a task resolving to 'leave' keeps the buttons disabled while the page unloads. */
+  /** Runs one action at a time; a task that ends the flow sets the outcome, whose view replaces the buttons. */
   const run = useCallback(
-    async (action: ConsentAction, task: (signal: AbortSignal) => Promise<'leave' | void>) => {
+    async (action: ConsentAction, task: (signal: AbortSignal) => Promise<void>) => {
       if (busyRef.current) return;
 
       const controller = new AbortController();
-      let leaving = false;
 
       busyRef.current = action;
       actionControllerRef.current = controller;
@@ -212,16 +215,14 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
       setActionError(null);
 
       try {
-        leaving = (await task(controller.signal)) === 'leave';
+        await task(controller.signal);
       } catch (error) {
         if (!controller.signal.aborted && !isMcpAbortError(error)) {
           handleActionError(action, toConsentErrorReason(error));
         }
       } finally {
-        if (!leaving) {
-          busyRef.current = null;
-          setBusy(null);
-        }
+        busyRef.current = null;
+        setBusy(null);
       }
     },
     [handleActionError]
@@ -295,8 +296,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
     void run('deny', async (signal) => {
       const { redirect_url } = await requestDeny(signal);
 
-      window.location.assign(redirect_url);
-      return 'leave';
+      setOutcome({ kind: 'cancelled', redirectUrl: redirect_url });
     });
   }, [requestDeny, run]);
 
@@ -312,9 +312,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
         return null;
       });
 
-      if (!result) return;
-      window.location.assign(result.redirect_url);
-      return 'leave';
+      if (result) setOutcome({ kind: 'cancelled', redirectUrl: result.redirect_url });
     });
   }, [requestDeny, run]);
 

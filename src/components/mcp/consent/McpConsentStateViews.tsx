@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
 import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
@@ -90,6 +91,27 @@ export function McpConsentDoneView({ name }: { name: string }) {
         <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.doneTitle')}</h1>
         <p role='status' className='text-sm text-text-secondary'>
           {t('mcp.consent.doneDescription', { name, ...RAW_INTERPOLATION })}
+        </p>
+      </div>
+    </McpConsentLayout>
+  );
+}
+
+/**
+ * The user cancelled and the server validated the `access_denied` redirect;
+ * the browser is on its way back to the app. A private-use scheme opens the
+ * app and keeps this tab, so this view stays and says what happened.
+ */
+export function McpConsentCancelledView({ name }: { name: string }) {
+  const { t } = useTranslation();
+
+  return (
+    <McpConsentLayout data-testid='mcp-consent-cancelled'>
+      <div className='flex flex-col items-center gap-3 text-center'>
+        <InfoIcon className='h-10 w-10 text-icon-info-thick' aria-hidden='true' />
+        <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.cancelledTitle')}</h1>
+        <p role='status' className='text-sm text-text-secondary'>
+          {t('mcp.consent.cancelledDescription', { name, ...RAW_INTERPOLATION })}
         </p>
       </div>
     </McpConsentLayout>

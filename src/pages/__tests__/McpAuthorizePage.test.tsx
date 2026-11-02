@@ -873,14 +873,40 @@ describe('McpAuthorizePage decisions', () => {
 
     fireEvent.click(byTestId('mcp-consent-deny'));
 
+    expect(await screen.findByTestId('mcp-consent-cancelled')).toBeTruthy();
     await waitFor(() => expect(assign).toHaveBeenCalledWith(DENY_REDIRECT));
+    expect(assign).toHaveBeenCalledTimes(1);
     expect(mocked.deny).toHaveBeenCalledWith(
       { client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, state: 'state-1' },
       expect.anything()
     );
     expect(mocked.code).not.toHaveBeenCalled();
-    expect(byTestId<HTMLButtonElement>('mcp-consent-deny').disabled).toBe(true);
-    expect(byTestId<HTMLButtonElement>('mcp-consent-allow').disabled).toBe(true);
+    expect(screen.queryByTestId('mcp-consent-page')).toBeNull();
+  });
+
+  it.each([
+    ['the consent view', 'mcp-consent-deny'],
+    ['an error view', 'mcp-consent-error-cancel'],
+  ])('says the request was cancelled when Cancel from %s opens an app through a private-use scheme', async (_from, button) => {
+    // The browser hands raycast:// to the app and keeps this tab open.
+    const deniedToApp = 'raycast://mcp-oauth-callback?error=access_denied&state=state-1';
+
+    mocked.deny.mockResolvedValue({ redirect_url: deniedToApp });
+    if (button === 'mcp-consent-error-cancel') {
+      mocked.status.mockResolvedValue(memberStatus({ eligible: false, ineligible_reason: 'email_not_allowed' }));
+    }
+
+    renderPage(authorizePath({ redirect_uri: 'raycast://mcp-oauth-callback' }));
+    fireEvent.click(await screen.findByTestId(button));
+
+    const cancelled = await screen.findByTestId('mcp-consent-cancelled');
+
+    expect(cancelled.textContent).toContain('Request cancelled');
+    expect(cancelled.textContent).toContain('You can close this tab and return to Claude.');
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(deniedToApp));
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[aria-busy]')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('never redirects when the server refuses the deny', async () => {

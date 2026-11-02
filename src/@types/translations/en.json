@@ -5598,6 +5598,8 @@
       "requestSentDescription": "Workspace owners can approve {{name}} in Settings → MCP. Return to {{name}} and connect again once it's approved.",
       "doneTitle": "Access granted",
       "doneDescription": "You can close this tab and return to {{name}}.",
+      "cancelledTitle": "Request cancelled",
+      "cancelledDescription": "You can close this tab and return to {{name}}.",
       "expiredTitle": "Request expired",
       "expiredDescription": "This request expired. Return to {{name}} and start again.",
       "expiredDescriptionUnnamed": "This request expired. Return to your AI app and start again.",

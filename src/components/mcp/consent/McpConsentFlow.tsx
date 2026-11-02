@@ -15,7 +15,12 @@ import {
   type McpConsentRequest,
 } from './consentModel';
 import { McpConsentLoading } from './McpConsentLayout';
-import { McpConsentDoneView, McpConsentErrorView, McpConsentRequestSentView } from './McpConsentStateViews';
+import {
+  McpConsentCancelledView,
+  McpConsentDoneView,
+  McpConsentErrorView,
+  McpConsentRequestSentView,
+} from './McpConsentStateViews';
 import { McpConsentView } from './McpConsentView';
 import { useMcpConsent } from './useMcpConsent';
 
@@ -59,6 +64,7 @@ export function McpConsentFlow({ request, onLoginRequired }: McpConsentFlowProps
   );
 
   if (outcome?.kind === 'done') return <McpConsentDoneView name={name} />;
+  if (outcome?.kind === 'cancelled') return <McpConsentCancelledView name={name} />;
   if (outcome?.kind === 'request-sent') return <McpConsentRequestSentView name={name} />;
   if (failure) {
     return errorView(failure.reason, failure.dismissible ? consent.dismissFailure : undefined, {
