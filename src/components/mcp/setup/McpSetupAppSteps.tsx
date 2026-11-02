@@ -14,8 +14,9 @@ export interface McpSetupAppStepsProps {
 /**
  * The steps of one gallery card. Menu paths follow each vendor's documentation
  * as of 2026-11 (doc/MCP.md lists the sources); re-check them with vendor releases.
+ * The `JSX.Element` return type makes a gallery app without a case a compile error.
  */
-export function McpSetupAppSteps({ app, snippets, onCopy }: McpSetupAppStepsProps) {
+export function McpSetupAppSteps({ app, snippets, onCopy }: McpSetupAppStepsProps): JSX.Element {
   const { t } = useTranslation();
   const snippet = (id: McpSnippetId) => <SetupSnippet id={id} text={snippets[id]} onCopy={onCopy} />;
 

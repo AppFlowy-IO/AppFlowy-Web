@@ -111,8 +111,12 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
     void copy(buildMcpSetupPrompt(url, { setupPageUrl }), t('mcp.setup.promptCopied'));
   };
 
-  /** The card's one primary action: the vendor's page, a one-click install, or a copy. Each also opens the steps. */
-  const primaryAction = (app: McpSetupAppId): ReactNode => {
+  /**
+   * The card's one primary action: the vendor's page, a one-click install, or a copy. Each also
+   * opens the steps. `JSX.Element`, not `ReactNode`, so a new gallery app without a case fails to
+   * compile instead of rendering a card without its action.
+   */
+  const primaryAction = (app: McpSetupAppId): JSX.Element => {
     const copyAction = (text: string, label: string) => (
       <Button
         variant='outline'

@@ -120,6 +120,19 @@ describe('McpSetupGuide', () => {
       });
     });
 
+    it.each(MCP_SETUP_APPS)('gives the %s card a primary action and steps', (app) => {
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
+
+      const actions = Array.from(card(app).querySelectorAll('a[href], button')).filter(
+        (element) => element !== screen.getByTestId(`mcp-client-tab-${app}`)
+      );
+
+      expect(actions).toHaveLength(1);
+      toggle(app);
+      // The title, then the steps.
+      expect(screen.getByTestId(`mcp-client-panel-${app}`).childElementCount).toBeGreaterThan(1);
+    });
+
     it('expands one card’s steps at a time, right after that card, and collapses them again', () => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
