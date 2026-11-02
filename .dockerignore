@@ -24,9 +24,9 @@ coverage
 .vscode
 .idea
 *.log
-.env.local
-.env.development
-.env.test
+# Local env files (dev.env copied to .env): Vite would bake their values into the image.
+.env
+.env.*
 
 # Documentation
 *.md
