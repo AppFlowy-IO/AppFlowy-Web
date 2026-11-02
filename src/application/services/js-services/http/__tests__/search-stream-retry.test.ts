@@ -1,8 +1,9 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
-import { saveGoTrueAuth } from '@/application/session/token';
+import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
 
 import { getAxiosInstance, initAPIService } from '../core';
+import { reportSearchPresentationMetrics } from '../search-presentation-metrics';
 
 jest.mock('@/utils/log', () => ({ Log: { debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() } }));
 jest.mock('@/application/sync-outbox', () => ({ purgeAllOutbox: jest.fn(async () => undefined) }));
@@ -103,4 +104,74 @@ it('closes a denied stream and allows one pre-header authentication recovery', a
   expect(cancel).toHaveBeenCalledTimes(1);
   expect(request).toHaveBeenCalledTimes(3);
   expect(request.mock.calls[2][0].headers.Authorization).toBe('Bearer access-b');
+});
+
+it.each([401, 429, 503, 'network', 'timeout'])(
+  'keeps a failed client-timing report isolated after %s without refresh, logout or replay',
+  async (failure) => {
+    const token = {
+      access_token: 'telemetry-access',
+      refresh_token: 'telemetry-refresh',
+      expires_at: 4102444800,
+      user: { id: 'account-a' },
+    };
+
+    saveGoTrueAuth(JSON.stringify(token));
+    request.mockImplementation(async (config) => {
+      if (typeof failure === 'number')
+        throw new AxiosError('Report unavailable', 'ERR_BAD_RESPONSE', config, undefined, {
+          config,
+          data: {},
+          headers: {},
+          status: failure,
+          statusText: String(failure),
+        });
+      throw new AxiosError('Report interrupted', failure === 'timeout' ? 'ECONNABORTED' : 'ERR_NETWORK', config);
+    });
+    await expect(
+      reportSearchPresentationMetrics('workspace', {
+        transport: 'stream',
+        mode: 'hybrid',
+        outcome: 'complete',
+        elapsed_ms: 500,
+        all_results_received_ms: 450,
+      })
+    ).resolves.toBeUndefined();
+    await jest.runAllTimersAsync();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][0].timeout).toBe(3000);
+    expect(request.mock.calls[0][0].signal).toBeUndefined();
+    expect(getTokenParsed()?.access_token).toBe(token.access_token);
+  }
+);
+
+it('drops telemetry with an expired access token without refreshing credentials or clearing the login', async () => {
+  const token = {
+    access_token: 'expired-telemetry-access',
+    refresh_token: 'retained-telemetry-refresh',
+    expires_at: 1,
+    user: { id: 'account-a' },
+  };
+
+  saveGoTrueAuth(JSON.stringify(token));
+  request.mockImplementation(async (config) => {
+    throw new AxiosError('Expired', 'ERR_BAD_RESPONSE', config, undefined, {
+      config,
+      data: {},
+      headers: {},
+      status: 401,
+      statusText: 'Unauthorized',
+    });
+  });
+  await expect(
+    reportSearchPresentationMetrics('workspace', {
+      transport: 'stream',
+      mode: 'hybrid',
+      outcome: 'cancelled',
+      elapsed_ms: 500,
+    })
+  ).resolves.toBeUndefined();
+  await jest.runAllTimersAsync();
+  expect(request).not.toHaveBeenCalled();
+  expect(getTokenParsed()).toMatchObject(token);
 });

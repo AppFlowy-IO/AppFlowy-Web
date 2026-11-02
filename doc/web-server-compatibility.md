@@ -103,3 +103,22 @@ The stream has no pagination cursor. A full keyword preview or full final window
 results. Subsequent pages follow the server's cursor and deduplicate by object/row identity. A full
 window is only an indication that another page might exist; the first page response determines the
 actual continuation. This compatibility path leaves the minimum supported server version unchanged.
+
+
+Search presentation timing is reported separately from server enqueue metrics. The monotonic
+origin is the latest query input (including the 300 ms debounce and lazy component loading);
+a workspace or retrieval-mode switch starts a new origin. `first_result_visible_ms` waits for
+nonempty routable rows to commit and two frames in a visible document, an estimate of a paint
+opportunity. `all_results_received_ms` waits for validated SSE EOF or the legacy initial page.
+`final_results_visible_ms` waits for final metadata to settle and the final state to commit with
+a visible-document paint opportunity. The initial ranked window includes an empty final state;
+later pagination and AI overview work are excluded.
+
+One best-effort timing report goes to `POST /api/search/{workspace_id}/stream/metrics`, independently
+of the search cancellation signal. It has a three-second timeout, no retry/auth recovery and no
+user-facing error. The observer records no query text or resource/user IDs, omits unavailable or
+out-of-window milestones, and disposes after 120 seconds. Hidden tabs and tab closure can lose
+samples. Older servers may lack the collector; that does not change search behavior. Cloud exposes
+these reports as `cloud_search_client_milestone_seconds` and `cloud_search_client_reports_total`,
+with fixed mode/transport/outcome/milestone labels. The Search dashboard distinguishes these
+client-reported timings and their sample counts from Search/Cloud server-side measurements.

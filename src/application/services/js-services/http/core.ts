@@ -20,6 +20,8 @@ declare module 'axios' {
     authSessionWitness?: TokenSessionWitness;
     /** A safe read gets at most one retry after authentication recovery. */
     authRefreshAttempted?: boolean;
+    /** Best-effort telemetry must not refresh credentials or invalidate its caller's login. */
+    skipAuthRefresh?: boolean;
     skipResponseCache?: boolean;
     /** Streaming reads can incur work even when their response is interrupted. Never replay them. */
     skipTransportRetry?: boolean;
@@ -526,6 +528,7 @@ export function initAPIService(config: AFCloudConfig) {
       const refresh_token = token.refresh_token;
 
       if (isExpired) {
+        if (config.skipAuthRefresh) throw new Error('Request requires a current access token');
         try {
           const newToken = await refreshToken(refresh_token);
 
@@ -576,7 +579,7 @@ export function initAPIService(config: AFCloudConfig) {
     // emitting SESSION_INVALID here restarts catalog consumers and can turn
     // one mistaken public-page request into an endless stream of 401s.
     if (axiosError.response?.status !== 401 || !request || !session ||
-      !isTokenSessionCurrent(session) || request.authRefreshAttempted || request.signal?.aborted) {
+      !isTokenSessionCurrent(session) || request.skipAuthRefresh || request.authRefreshAttempted || request.signal?.aborted) {
       return Promise.reject(error);
     }
 
