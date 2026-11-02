@@ -13,6 +13,7 @@ import {
   disconnectMyMcpConnection,
   dismissMcpAccessRequest,
   getMcpBaseUrl,
+  getMcpBaseUrlOverride,
   getMcpClientInfo,
   getMcpConfiguration,
   getMcpMemberStatus,
@@ -20,7 +21,6 @@ import {
   getMcpWorkspaceSettings,
   isMcpAbortError,
   isMcpAppApprovalKey,
-  isMcpConfigured,
   isMcpDisabledError,
   isMcpServiceUnavailable,
   isRetryableMcpError,
@@ -114,13 +114,13 @@ describe('MCP configuration', () => {
   it('normalizes the base URL and derives the server URL', () => {
     expect(getMcpBaseUrl()).toBe(BASE);
     expect(getMcpServerUrl()).toBe(`${BASE}/mcp`);
-    expect(isMcpConfigured()).toBe(true);
+    expect(getMcpConfiguration()).toEqual({ status: 'configured', baseUrl: BASE, source: 'config' });
   });
 
   it('never falls back to APPFLOWY_BASE_URL', async () => {
     mockConfig = { APPFLOWY_BASE_URL: 'https://cloud.example.com' };
 
-    expect(isMcpConfigured()).toBe(false);
+    expect(getMcpConfiguration()).toEqual({ status: 'loading' });
     expect(getMcpServerUrl()).toBe('');
     await expect(getMcpMemberStatus(WS)).rejects.toMatchObject({ status: 0, error: 'not_configured' });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -130,9 +130,9 @@ describe('MCP configuration', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     mockConfig = { APPFLOWY_MCP_BASE_URL: 'mcp.example.com' };
-    expect(isMcpConfigured()).toBe(false);
+    expect(getMcpBaseUrlOverride()).toBe('');
     mockConfig = { APPFLOWY_MCP_BASE_URL: '   ' };
-    expect(isMcpConfigured()).toBe(false);
+    expect(getMcpBaseUrlOverride()).toBe('');
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
@@ -150,7 +150,6 @@ describe('MCP configuration discovery', () => {
 
   it('is loading until server-info answers, then uses its mcp_url', async () => {
     expect(getMcpConfiguration()).toEqual({ status: 'loading' });
-    expect(isMcpConfigured()).toBe(false);
     await expect(getMcpMemberStatus(WS)).rejects.toMatchObject({ status: 0, error: 'not_configured' });
 
     updateServerInfo(CLOUD, available('https://mcp.discovered.example.com/'));
@@ -183,7 +182,6 @@ describe('MCP configuration discovery', () => {
     updateServerInfo(CLOUD, state);
 
     expect(getMcpConfiguration()).toEqual({ status: 'not_configured' });
-    expect(isMcpConfigured()).toBe(false);
   });
 
   it('ignores an mcp_url that is not an absolute http(s) URL', () => {

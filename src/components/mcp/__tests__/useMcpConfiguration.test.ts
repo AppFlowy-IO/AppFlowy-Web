@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 
 import { AuthService } from '@/application/services/domains';
-import { resetMcpConfigurationForTests } from '@/application/services/domains/mcp';
+import { resetMcpConfigurationForTests } from '@/application/services/js-services/http/mcp-api';
 import { updateServerInfo } from '@/utils/server-info';
 
 import { useMcpConfiguration } from '../useMcpConfiguration';

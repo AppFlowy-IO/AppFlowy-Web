@@ -10,11 +10,11 @@ import {
   getMcpClientInfo,
   getMcpMemberStatus,
   McpApiError,
-  resetMcpConfigurationForTests,
   type McpClientInfo,
   type McpMemberClientStatus,
   type McpMemberStatus,
 } from '@/application/services/domains/mcp';
+import { resetMcpConfigurationForTests } from '@/application/services/js-services/http/mcp-api';
 import { signOutCurrentUser } from '@/application/session/sign-out';
 import { getTokenParsed } from '@/application/session/token';
 import { Role, type Workspace } from '@/application/types';

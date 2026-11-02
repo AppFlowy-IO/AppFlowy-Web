@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
 import { AuthService } from '@/application/services/domains';
-import { resetMcpConfigurationForTests } from '@/application/services/domains/mcp';
+import { resetMcpConfigurationForTests } from '@/application/services/js-services/http/mcp-api';
 import { copyTextToClipboard } from '@/utils/copy';
 
 import { McpSetupPage } from '../McpSetupPage';

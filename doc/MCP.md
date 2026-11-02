@@ -355,8 +355,7 @@ loop retries), and the consent and setup pages show a spinner meanwhile. `unsupp
 without `/api/server-info`) means not configured. Once server-info has answered, a later refresh
 that fails or is pending keeps that answer, so an open page does not lose the service on a
 transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`; only Cloud falls
-back as described above. `isMcpConfigured()` stays as a synchronous "known now" check (false while
-loading).
+back as described above.
 
 **MCP service** — for the browser flow to work:
 

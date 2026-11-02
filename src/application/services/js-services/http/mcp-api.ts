@@ -577,10 +577,11 @@ export function getMcpConfiguration(): McpConfiguration {
   return value;
 }
 
-/** Forgets what server-info confirmed; tests only. */
+/** Forgets what server-info confirmed and which values were warned about; tests only. */
 export function resetMcpConfigurationForTests() {
   confirmedMcpConfiguration = undefined;
   mcpConfigurationSnapshot = undefined;
+  warnedInvalidMcpUrls.clear();
 }
 
 /** The MCP service's origin without a trailing slash, or '' while unknown or not configured. */
@@ -600,15 +601,6 @@ export function getMcpServerUrl(): string {
   const base = getMcpBaseUrl();
 
   return base ? toMcpServerUrl(base) : '';
-}
-
-/**
- * Whether the MCP service's origin is known now. False while server-info is
- * loading; use `getMcpConfiguration` (or `useMcpConfiguration` in React) to
- * tell loading from not configured.
- */
-export function isMcpConfigured(): boolean {
-  return getMcpBaseUrl() !== '';
 }
 
 // ---------------------------------------------------------------------------

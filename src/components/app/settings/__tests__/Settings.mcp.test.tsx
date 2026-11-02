@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-import { listMcpAccessRequests, McpApiError, resetMcpConfigurationForTests } from '@/application/services/domains/mcp';
+import { listMcpAccessRequests, McpApiError } from '@/application/services/domains/mcp';
+import { resetMcpConfigurationForTests } from '@/application/services/js-services/http/mcp-api';
 import { Role, type UserWorkspaceInfo } from '@/application/types';
 import { resetMcpPendingRequestCountsForTests } from '@/components/app/settings/mcp/pendingRequestCount';
 import { SERVER_INFO_LOADING, type ServerInfoState, updateServerInfo } from '@/utils/server-info';
