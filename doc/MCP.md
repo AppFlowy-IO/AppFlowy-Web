@@ -299,8 +299,10 @@ member status:
   admits). That route answers any owner, and requests stay for 30 days, so without the status
   leftover requests would show while AI apps are off or to an excluded owner. The panel publishes
   every request list it loads or changes (`pendingRequestCount.ts`), so Approve and Dismiss update
-  the badge at once, and a menu load that answers after a publish is dropped. A failed load shows
-  no badge.
+  the badge at once, and clears it whenever its member status says the caller does not manage AI
+  apps there (the same `mcpManagesApprovals` rule). The latest write wins: a publish, or a load
+  started later, drops a menu load still in flight. A failed load shows no badge. Desktop's
+  `McpPendingRequestCounts` follows the same rules.
 
 An owner endpoint that answers 403 `not_workspace_owner`, `not_workspace_member` or
 `email_not_allowed` (only approving and loosening the policy check the email gate) reloads the
@@ -573,7 +575,7 @@ against the wire types: a fixture missing a field the server always sends fails 
 | `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges and "Connected apps (N)", setup prompt, Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
 | `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
 | `src/components/app/settings/mcp/**` | Panel states, member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted like "Connected apps (N)"), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared) |
-| `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count), deep links that wait for server-info, routes |
+| `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count or a newer load's), deep links that wait for server-info, routes |
 | `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
 | `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers (Web-CI's docker-runtime-test also fetches `/oauth/mcp/authorize` from both images and checks them) |
 

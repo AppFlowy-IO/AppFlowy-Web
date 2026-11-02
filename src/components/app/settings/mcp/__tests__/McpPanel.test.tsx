@@ -1334,6 +1334,28 @@ describe('McpPanel', () => {
       expect(screen.getByTestId('mcp-my-connection-row')).toBeTruthy();
     });
 
+    it('drops the Settings menu badge when the caller is no longer an owner', async () => {
+      function Badge() {
+        const count = useMcpPendingRequestCount(WS, true);
+
+        return <span data-testid='badge'>{count ?? 'none'}</span>;
+      }
+
+      api.approveMcpClient.mockRejectedValue(
+        new McpApiError({ status: 403, error: 'forbidden', reason: 'not_workspace_owner' })
+      );
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
+      render(<Badge />);
+      await renderOwnerPanel();
+      await waitFor(() => expect(text('badge')).toBe('1'));
+      api.getMcpMemberStatus.mockResolvedValue(memberStatus());
+
+      fireEvent.click(screen.getByTestId('mcp-approve-request-0'));
+
+      await waitFor(() => expect(screen.queryByTestId('mcp-workspace-access')).toBeNull());
+      await waitFor(() => expect(text('badge')).toBe('none'));
+    });
+
     it('keeps the Settings menu badge in step with the requests the owner answers', async () => {
       function Badge() {
         const count = useMcpPendingRequestCount(WS, true);

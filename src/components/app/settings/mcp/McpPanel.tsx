@@ -86,13 +86,14 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   const { disconnect: disconnectMine } = mine;
   const reloadMemberConnections = governance.connections.reload;
 
-  const ineligible = status?.eligible === false;
+  // Requests cannot be answered while AI apps are turned off, and the panel shows them only to a
+  // caller who manages AI apps here (`mcpManagesApprovals`, the menu's rule too): not to an owner
+  // the email gate excludes, nor to one the MCP service now lists as a member. The badge goes.
+  const clearsBadge = disabled || (status !== undefined && !member.failed && !isOwner);
 
   useEffect(() => {
-    // Requests cannot be approved while AI apps are turned off or by an ineligible account (an
-    // owner the email gate excludes), and the panel shows them none; the menu badge goes.
-    if (disabled || ineligible) publishMcpPendingRequestCount(workspaceId, undefined);
-  }, [disabled, ineligible, workspaceId]);
+    if (clearsBadge) publishMcpPendingRequestCount(workspaceId, undefined);
+  }, [clearsBadge, workspaceId]);
 
   const handleDisconnectMine = useCallback(
     async (connection: McpMyConnection) => {

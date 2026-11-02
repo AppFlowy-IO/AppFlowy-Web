@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import {
@@ -13,6 +13,7 @@ import { Role, type UserWorkspaceInfo } from '@/application/types';
 import {
   publishMcpPendingRequestCount,
   resetMcpPendingRequestCountsForTests,
+  useMcpPendingRequestCount,
 } from '@/components/app/settings/mcp/pendingRequestCount';
 import { SERVER_INFO_LOADING, type ServerInfoState, updateServerInfo } from '@/utils/server-info';
 
@@ -287,6 +288,8 @@ describe('Settings AI apps badge', () => {
       'the status is refused with mcp_disabled',
       () => status.mockRejectedValue(new McpApiError({ status: 503, error: 'mcp_disabled', reason: 'mcp_disabled' })),
     ],
+    // The workspace list still says Owner, but the MCP service decides.
+    ['the MCP service lists the caller as a member', () => status.mockResolvedValue(ownerStatus({ role: 'member' }))],
   ])('shows no badge for leftover requests the panel would not show when %s', async (_case, arrange) => {
     mockWorkspaceInfo = workspaceInfo(Role.Owner);
     arrange();
@@ -322,6 +325,43 @@ describe('Settings AI apps badge', () => {
       await settleAnswers();
     });
     expect(screen.getByTestId('settings-menu-ai_apps-badge').textContent).toBe('2');
+  });
+
+  // Another reader of the badge starts a load while the menu's is in flight: the load started
+  // last wins, whichever answers first.
+  it.each([['first'], ['last']])('keeps the newer load’s count when the older one answers %s', async (order) => {
+    mockWorkspaceInfo = workspaceInfo(Role.Owner);
+    const settles: Settle[] = [];
+
+    requests.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          settles.push({ resolve, reject });
+        })
+    );
+    renderSettings();
+    await waitFor(() => expect(requests).toHaveBeenCalledTimes(1));
+    renderHook(() => useMcpPendingRequestCount('workspace-1', true));
+    await waitFor(() => expect(requests).toHaveBeenCalledTimes(2));
+
+    const [older, newer] = settles;
+    const answer = async (settle: Settle, count: number) => {
+      await act(async () => {
+        settle.resolve(pending(count));
+        await settleAnswers();
+      });
+    };
+
+    if (order === 'first') {
+      await answer(older, 3);
+      expect(screen.queryByTestId('settings-menu-ai_apps-badge')).toBeNull();
+      await answer(newer, 1);
+    } else {
+      await answer(newer, 1);
+      await answer(older, 3);
+    }
+
+    expect(screen.getByTestId('settings-menu-ai_apps-badge').textContent).toBe('1');
   });
 
   it('never asks for members', () => {
