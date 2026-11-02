@@ -631,6 +631,54 @@ describe('McpPanel', () => {
         signal: expect.any(AbortSignal),
       });
     });
+
+    it('shows a failed list of the member’s connections with Retry, not the empty state', async () => {
+      api.listMyMcpConnections
+        .mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }))
+        .mockResolvedValue([myClaude]);
+      render(<McpPanel workspaceId={WS} />);
+
+      expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-my-connections-empty')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('mcp-my-connections-error-retry'));
+      expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-my-connections-error')).toBeNull();
+    });
+
+    it('shows a failed reload after a disconnect as an error, not as nothing connected', async () => {
+      api.listMyMcpConnections
+        .mockResolvedValueOnce([myClaude])
+        .mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }))
+        .mockResolvedValue([]);
+      render(<McpPanel workspaceId={WS} />);
+
+      fireEvent.click(await screen.findByTestId('mcp-my-disconnect-0'));
+      fireEvent.click(await screen.findByTestId('mcp-confirm-disconnect'));
+
+      expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-my-connections-empty')).toBeNull();
+      fireEvent.click(screen.getByTestId('mcp-my-connections-error-retry'));
+      expect(await screen.findByTestId('mcp-my-connections-empty')).toBeTruthy();
+    });
+
+    it('reports a failed disconnect and keeps its confirmation and the connection', async () => {
+      api.disconnectMyMcpConnection.mockRejectedValue(new McpApiError({ status: 429, reason: 'rate_limited' }));
+      render(<McpPanel workspaceId={WS} />);
+
+      fireEvent.click(await screen.findByTestId('mcp-my-disconnect-0'));
+      fireEvent.click(await screen.findByTestId('mcp-confirm-disconnect'));
+
+      await waitFor(() =>
+        expect(notify.error).toHaveBeenCalledWith("That didn't work. Too many attempts. Wait a minute and try again.")
+      );
+      // A closed dialog stays in the DOM while it fades out; wait that out before checking it stayed open.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+      expect(screen.getByTestId('mcp-disconnect-dialog')).toBeTruthy();
+      expect(rows('mcp-my-connection-row')).toHaveLength(1);
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(api.listMyMcpConnections).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('owners', () => {
@@ -1329,6 +1377,21 @@ describe('McpPanel', () => {
       // The summary loaded with the list, but it is for accounts that may connect apps.
       expect(api.listMyMcpConnectionsAcrossWorkspaces).toHaveBeenCalled();
       expect(screen.queryByTestId('mcp-all-connections-summary')).toBeNull();
+    });
+
+    it('shows a failed list of the member’s connections with Retry while they are off', async () => {
+      api.getMcpMemberStatus.mockResolvedValue(memberStatus({ enabled: false }));
+      api.listMyMcpConnections
+        .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'storage_unavailable' }))
+        .mockResolvedValue([myClaude]);
+      render(<McpPanel workspaceId={WS} />);
+
+      await expectTurnedOff();
+      expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-my-connections-empty')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('mcp-my-connections-error-retry'));
+      expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
     });
 
     it('loads no owner lists for an owner and drops the Settings menu badge', async () => {
