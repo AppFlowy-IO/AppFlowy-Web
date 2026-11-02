@@ -3,7 +3,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { debounce } from 'lodash-es';
 
 import { SearchStreamUnsupportedError } from '@/application/services/domains/search';
-import type { SearchDocumentResponseItem, SearchStreamSnapshot } from '@/application/services/domains/search';
+import type {
+  SearchDocumentResponseItem,
+  SearchStreamSnapshot,
+  SearchSummary,
+} from '@/application/services/domains/search';
 import { ViewLayout } from '@/application/types';
 import type { View } from '@/application/types';
 
@@ -67,10 +71,18 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 jest.mock('@/components/app/search/SearchAIOverview', () => ({
-  SearchAIOverview: ({ sources, canAskFollowUp }: { sources: typeof mockOverviewSources; canAskFollowUp: boolean }) => {
+  SearchAIOverview: ({
+    sources,
+    canAskFollowUp,
+    summary,
+  }: {
+    sources: typeof mockOverviewSources;
+    canAskFollowUp: boolean;
+    summary: SearchSummary | null;
+  }) => {
     mockOverviewSources = sources;
     mockCanAskFollowUp = canAskFollowUp;
-    return <div data-testid='ai-overview' />;
+    return <div data-testid='ai-overview'>{summary?.content}</div>;
   },
 }));
 
@@ -820,5 +832,111 @@ describe('BestMatch', () => {
 
     expect(metrics).not.toHaveProperty('first_result_visible_ms');
     expect(metrics.final_results_visible_ms).toBeGreaterThanOrEqual(metrics.all_results_received_ms);
+  });
+
+  it('prefetches legacy context while the initial page is blocked and reuses an early summary once', async () => {
+    const page = deferred<{ items: SearchDocumentResponseItem[]; has_more: boolean; next_offset: null }>();
+    const summary = deferred<{ summaries: SearchSummary[] }>();
+
+    mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
+    mockGenerateSearchSummary.mockReturnValue(summary.promise);
+    mockAppOutline = [createView({ view_id: 'legacy', name: 'Legacy page' })];
+    renderBestMatch('legacy');
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
+    const signal = mockSearchWorkspaceDocumentPage.mock.calls[0][4] as AbortSignal;
+
+    expect(mockGenerateSearchSummary).toHaveBeenCalledWith('workspace-id', 'legacy', signal);
+    await act(async () =>
+      summary.resolve({ summaries: [{ content: 'Prefetched legacy context', sources: ['legacy'] }] })
+    );
+    expect(screen.queryByText('Legacy page')).toBeNull();
+    expect(screen.queryByText('Prefetched legacy context')).toBeNull();
+    expect(screen.getByTestId('view-list').getAttribute('data-loading')).toBe('true');
+    await act(async () => page.resolve({ items: [result('legacy')], has_more: false, next_offset: null }));
+    expect(await screen.findByText('Legacy page')).toBeTruthy();
+    expect(await screen.findByText('Prefetched legacy context')).toBeTruthy();
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+    expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
+  });
+
+  it.each(['failed', 'cancelled'] as const)(
+    'keeps a late legacy summary out of the UI after its page is %s',
+    async (state) => {
+      const page = deferred<{ items: SearchDocumentResponseItem[]; has_more: boolean; next_offset: null }>();
+      const summary = deferred<{ summaries: SearchSummary[] }>();
+
+      mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
+      mockGenerateSearchSummary.mockReturnValue(summary.promise);
+      mockAppOutline = [createView({ view_id: 'legacy', name: 'Legacy page' })];
+      const { rerender } = renderBestMatch('legacy');
+
+      await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
+      if (state === 'failed') {
+        await act(async () => page.reject(new Error('page failed')));
+        expect(mockNotifyError).toHaveBeenCalledTimes(1);
+      } else {
+        rerender(<BestMatch askingAI={false} searchValue='' onAskAI={jest.fn()} onClose={jest.fn()} />);
+        const signal = mockSearchWorkspaceDocumentPage.mock.calls[0][4] as AbortSignal;
+
+        expect(signal.aborted).toBe(true);
+        await act(async () => page.resolve({ items: [result('legacy')], has_more: false, next_offset: null }));
+      }
+
+      await act(async () =>
+        summary.resolve({ summaries: [{ content: 'Obsolete legacy context', sources: ['legacy'] }] })
+      );
+      expect(screen.queryByText('Legacy page')).toBeNull();
+      expect(screen.queryByText('Obsolete legacy context')).toBeNull();
+      expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+      expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
+      expect(mockNotifyError).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
+    }
+  );
+
+  it('does not prefetch legacy context when AI is disabled', async () => {
+    mockUseAIEnabled.mockReturnValue(false);
+    const page = deferred<{ items: SearchDocumentResponseItem[]; has_more: boolean; next_offset: null }>();
+
+    mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
+    renderBestMatch('keyword');
+    await waitFor(() => expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1));
+    expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
+    await act(async () => page.resolve({ items: [], has_more: false, next_offset: null }));
+    expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
+  });
+
+  it('ends initial presentation timing before pagination can contribute new visible rows', async () => {
+    mockUseAIEnabled.mockReturnValue(false);
+    const completion = deferred<{ outcome: string }>();
+    const metadata = deferred<View>();
+    const initial = Array.from({ length: 10 }, (_, index) => result(`unroutable-${index}`));
+
+    mockSearchStream.mockReturnValue(completion.promise);
+    mockGetView.mockReturnValue(metadata.promise);
+    mockAppOutline = [createView({ view_id: 'later-page', name: 'Later page only' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({
+      items: [result('later-page')],
+      has_more: false,
+      next_offset: null,
+    });
+    const { unmount } = renderBestMatch('page');
+    const options = await streamOptions();
+
+    act(() => options.onSnapshot(snapshot(initial, 'final')));
+    await act(async () => completion.resolve({ outcome: 'complete' }));
+    fireEvent.click(await screen.findByText('Load more'));
+    expect(mockReportPresentation).toHaveBeenCalledTimes(1);
+    expect(mockReportPresentation.mock.calls[0][1]).toMatchObject({
+      outcome: 'complete',
+      all_results_received_ms: expect.any(Number),
+    });
+    expect(mockReportPresentation.mock.calls[0][1]).not.toHaveProperty('first_result_visible_ms');
+    expect(mockReportPresentation.mock.calls[0][1]).not.toHaveProperty('final_results_visible_ms');
+    expect(await screen.findByText('Later page only')).toBeTruthy();
+    paintResults();
+    await act(async () => metadata.resolve(createView({ view_id: 'initial-late', name: 'Late initial page' })));
+    paintResults();
+    unmount();
+    expect(mockReportPresentation).toHaveBeenCalledTimes(1);
   });
 });

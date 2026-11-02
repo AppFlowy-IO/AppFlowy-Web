@@ -198,6 +198,44 @@ describe('SearchPresentationObservation', () => {
     expect(h.report).not.toHaveBeenCalled();
   });
 
+  it.each(['complete', 'degraded'] as const)('ends the initial %s window before pending final paint', (outcome) => {
+    const h = harness();
+
+    h.observation.issue();
+    h.at(350);
+    h.observation.committedRows(true, false);
+    h.paint();
+    h.at(400);
+    h.observation.received(outcome);
+    h.observation.committedRows(true, true);
+    h.at(500);
+    h.observation.finishInitialWindow();
+    expect(h.report).toHaveBeenCalledWith({
+      transport: 'stream',
+      mode: 'hybrid',
+      outcome,
+      elapsed_ms: 500,
+      first_result_visible_ms: 350,
+      all_results_received_ms: 400,
+    });
+    expect(h.cancelPaint).toHaveBeenCalledTimes(1);
+    h.paint();
+    h.observation.terminate('cancelled');
+    expect(h.report).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops an initial window without a known terminal outcome and detaches pending paint', () => {
+    const h = harness();
+
+    h.observation.issue();
+    h.observation.committedRows(true, false);
+    h.observation.finishInitialWindow();
+    h.paint();
+    h.observation.received('complete');
+    expect(h.cancelPaint).toHaveBeenCalledTimes(1);
+    expect(h.report).not.toHaveBeenCalled();
+  });
+
   it('omits a milestone beyond the accepted duration instead of clamping it', () => {
     const h = harness();
 
@@ -219,7 +257,7 @@ describe('SearchPresentationObservation', () => {
 });
 
 describe('afterVisibleSearchPaint', () => {
-  it('gives a final commit its own two frames when it arrives between keyword frames', () => {
+  it.each([false, true])('gives updated final rows two frames (initially empty final: %s)', (emptyFinal) => {
     let now = 400;
     let nextId = 0;
     const frames = new Map<number, FrameRequestCallback>();
@@ -244,11 +282,12 @@ describe('afterVisibleSearchPaint', () => {
 
     try {
       observation.issue();
-      observation.committedRows(true, false);
+      observation.committedRows(!emptyFinal, emptyFinal);
+      if (emptyFinal) observation.received('complete');
       frame(416);
       now = 420;
       observation.committedRows(true, true);
-      observation.received('complete');
+      if (!emptyFinal) observation.received('complete');
       frame(432);
       expect(report).not.toHaveBeenCalled();
       frame(448);
@@ -258,8 +297,8 @@ describe('afterVisibleSearchPaint', () => {
         mode: 'hybrid',
         outcome: 'complete',
         elapsed_ms: 448,
-        first_result_visible_ms: 432,
-        all_results_received_ms: 420,
+        first_result_visible_ms: emptyFinal ? 448 : 432,
+        all_results_received_ms: emptyFinal ? 400 : 420,
         final_results_visible_ms: 448,
       });
     } finally {

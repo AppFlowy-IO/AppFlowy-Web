@@ -7,6 +7,7 @@ import type {
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
   SearchSummary,
+  SearchSummaryResult,
 } from '@/application/services/domains/search';
 import { SearchStreamUnsupportedError } from '@/application/services/domains/search';
 import { View } from '@/application/types';
@@ -259,6 +260,7 @@ function BestMatch({
       let revision = 0;
       let keywordWindowFull = false;
       let usedLegacySearch = false;
+      let legacySummaryPromise: Promise<SearchSummaryResult | null> | undefined;
       const routes = new Map<string, Promise<View | undefined>>();
       const presentation = presentationRef.current;
       // Publish rows before optional metadata reads finish. Each phase replaces the list; late
@@ -338,6 +340,16 @@ function BestMatch({
           if (!(error instanceof SearchStreamUnsupportedError)) throw error;
           usedLegacySearch = true;
           presentation?.useLegacy();
+          // Legacy automatic context is independent of the keyword page. Start both
+          // together, and handle rejection now even if the page later fails or is cancelled.
+          if (aiEnabled) {
+            legacySummaryPromise = SearchService.generateSearchSummary(
+              currentWorkspaceId,
+              searchTerm,
+              controller.signal
+            ).catch(() => null);
+          }
+
           const page = await SearchService.searchWorkspaceDocumentPage(
             currentWorkspaceId,
             searchTerm,
@@ -360,15 +372,14 @@ function BestMatch({
           setSummaryLoading(true);
           // Completed stream IDs let the summary endpoint reload its own content without
           // repeating vector retrieval. Older servers retain their existing automatic context.
-          const summaryResult = await (usedLegacySearch
-            ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm, controller.signal)
-            : SearchService.generateSearchSummaryForDocuments(
+          const summaryResult = usedLegacySearch
+            ? await legacySummaryPromise
+            : await SearchService.generateSearchSummaryForDocuments(
                 currentWorkspaceId,
                 searchTerm,
                 results.map((item) => item.object_id),
                 controller.signal
-              )
-          ).catch(() => null);
+              ).catch(() => null);
 
           if (!isCurrent()) return;
           const nextSummary = summaryResult?.summaries[0] || null;
@@ -414,6 +425,7 @@ function BestMatch({
     )
       return;
 
+    presentationRef.current?.finishInitialWindow();
     const searchSeq = searchSeqRef.current;
 
     setLoadingMore(true);

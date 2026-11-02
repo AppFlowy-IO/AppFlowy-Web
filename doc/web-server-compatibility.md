@@ -112,7 +112,9 @@ nonempty routable rows to commit and two frames in a visible document, an estima
 opportunity. `all_results_received_ms` waits for validated SSE EOF or the legacy initial page.
 `final_results_visible_ms` waits for final metadata to settle and the final state to commit with
 a visible-document paint opportunity. The initial ranked window includes an empty final state;
-later pagination and AI overview work are excluded.
+later pagination and AI overview work are excluded. Starting “Load more” finalizes the initial
+window report with known completion/paint milestones and cancels any pending initial paints, so
+appended rows cannot become its first visible result.
 
 One best-effort timing report goes to `POST /api/search/{workspace_id}/stream/metrics`, independently
 of the search cancellation signal. It has a three-second timeout, no retry/auth recovery and no

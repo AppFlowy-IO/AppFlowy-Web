@@ -92,6 +92,8 @@ export class SearchPresentationObservation {
 
   /** Called after React commits; raw snapshots without routable metadata do not count as visible. */
   committedRows(hasRows: boolean, finalRowsSettled: boolean): void {
+    const changedRows = this.hasRows !== hasRows;
+
     this.hasRows = hasRows;
     this.finalRowsSettled = finalRowsSettled;
     if (!this.issued || this.ended) return;
@@ -108,11 +110,13 @@ export class SearchPresentationObservation {
     }
 
     // A final commit may arrive between the keyword paint's two frames. Its own
-    // schedule ensures both final frames happen after final metadata/rows commit.
-    if (!finalRowsSettled) {
+    // schedule also restarts when an empty final list gains rows (or loses them).
+    if (!finalRowsSettled || changedRows) {
       this.cancelFinalPaint?.();
       this.cancelFinalPaint = undefined;
-    } else if (this.finalVisible === undefined && !this.cancelFinalPaint) {
+    }
+
+    if (finalRowsSettled && this.finalVisible === undefined && !this.cancelFinalPaint) {
       this.cancelFinalPaint = this.afterPaint(() => {
         this.cancelFinalPaint = undefined;
         if (this.ended || !this.finalRowsSettled) return;
@@ -128,6 +132,12 @@ export class SearchPresentationObservation {
     this.allReceived = this.sample();
     this.outcome = outcome;
     this.finishIfReady();
+  }
+
+  /** Later pagination must not contribute paint milestones to the initial ranked window. */
+  finishInitialWindow(): void {
+    if (this.outcome) this.flush(this.outcome);
+    else this.dispose();
   }
 
   terminate(outcome: 'superseded' | 'error' | 'cancelled'): void {
