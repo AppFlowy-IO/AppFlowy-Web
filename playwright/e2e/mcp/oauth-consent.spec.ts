@@ -167,13 +167,8 @@ test.describe('MCP OAuth consent', () => {
       await expect(row).toHaveCount(1, { timeout: 15000 });
       await expect(row.getByTestId('mcp-scope-badge')).toHaveAttribute('data-level', 'read');
 
-      await page.getByTestId('mcp-my-disconnect-0').click();
-      await page
-        .getByRole('dialog')
-        .filter({ hasText: `Disconnect ${CLIENT_NAME}?` })
-        .last()
-        .getByRole('button', { name: 'Disconnect', exact: true })
-        .click();
+      await row.locator('[data-testid^="mcp-my-disconnect-"]').click();
+      await page.getByTestId('mcp-disconnect-dialog').getByTestId('mcp-confirm-disconnect').click();
       await expect(row).toHaveCount(0, { timeout: 15000 });
 
       // Disconnecting revoked the app's tokens.
