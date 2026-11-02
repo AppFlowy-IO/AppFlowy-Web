@@ -25,7 +25,7 @@ import {
   RowList,
 } from './McpPanelParts';
 import { McpWorkspaceAccess } from './McpWorkspaceAccess';
-import { publishMcpPendingRequestCount } from './pendingRequestCount';
+import { mcpManagesApprovals, publishMcpPendingRequestCount } from './pendingRequestCount';
 import { useMcpConnectionsOverview } from './useMcpConnectionsOverview';
 import { useMcpGovernance } from './useMcpGovernance';
 import { useMcpMemberStatus } from './useMcpMemberStatus';
@@ -54,7 +54,7 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   // While AI apps are turned off, and for an owner the email gate excludes, the panel offers only
   // the caller's own connections, so the owner lists stay unloaded (approving, for one, is refused
   // then). The server would let such owners withdraw access; doc/MCP.md lists that as not in v1.
-  const isOwner = !disabled && status?.eligible === true && status.role === 'owner';
+  const isOwner = !disabled && mcpManagesApprovals(status);
   // The caller's own connections and their cross-workspace summary need nothing from the member
   // status, so they load alongside it instead of a round trip after it. A failed status (other
   // than AI apps turned off) shows neither and pauses them; its Retry loads them again.

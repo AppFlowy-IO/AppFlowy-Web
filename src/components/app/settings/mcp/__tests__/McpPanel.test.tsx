@@ -1239,6 +1239,7 @@ describe('McpPanel', () => {
         return <span data-testid='badge'>{count ?? 'none'}</span>;
       }
 
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
       api.listMcpAccessRequests.mockResolvedValueOnce([cursorRequest, vscodeRequest]);
       render(<Badge />);
       await waitFor(() => expect(text('badge')).toBe('2'));
@@ -1306,6 +1307,7 @@ describe('McpPanel', () => {
         return <span data-testid='badge'>{count ?? 'none'}</span>;
       }
 
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
       api.listMcpAccessRequests.mockResolvedValueOnce([cursorRequest, vscodeRequest]);
       render(<Badge />);
       await waitFor(() => expect(text('badge')).toBe('2'));
@@ -1414,6 +1416,7 @@ describe('McpPanel', () => {
         return <span data-testid='badge'>{count ?? 'none'}</span>;
       }
 
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
       api.listMcpAccessRequests.mockResolvedValueOnce([cursorRequest, vscodeRequest]);
       render(<Badge />);
       await waitFor(() => expect(text('badge')).toBe('2'));
