@@ -13,7 +13,9 @@ export interface McpSetupAppStepsProps {
 
 /**
  * The steps of one gallery card. Menu paths follow each vendor's documentation
- * as of 2026-11 (doc/MCP.md lists the sources); re-check them with vendor releases.
+ * as of 2026-11. doc/MCP.md (Setup guide) summarizes them; the source list is in
+ * research outside this repo. Re-check them against the vendors' current
+ * documentation with their releases.
  * The `JSX.Element` return type makes a gallery app without a case a compile error.
  */
 export function McpSetupAppSteps({ app, snippets, onCopy }: McpSetupAppStepsProps): JSX.Element {

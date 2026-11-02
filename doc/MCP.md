@@ -244,8 +244,10 @@ member status:
   an owner's disconnect stays within the member). Above the list,
   "You have N apps connected across M workspaces" comes from `GET /api/mcp/me/connections`, with
   apps grouped exactly like the setup guide's "Connected apps (N)" (`summarizeConnectedApps`: once
-  per recognized app, an unrecognized app once per name), so the two numbers agree; it is left out
-  when that call fails and for an account the member status calls ineligible.
+  per recognized app, an unrecognized app once per name). The guide counts this workspace only, so
+  the summary's number is larger whenever another workspace has an app this one lacks; that is not
+  a mismatch to fix. The summary is left out when that call fails and for an account the member
+  status calls ineligible.
 - **Approved for this workspace**, for members while some apps need approval and the server sends
   `approved_apps` (C5): the approved apps by name only, with "All {app} installs" for app-level
   approvals. Under `verified_and_approved` an empty list says verified web apps need no approval
