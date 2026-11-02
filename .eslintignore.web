@@ -12,6 +12,7 @@ cypress/support/
 playwright/
 playwright.config.ts
 playwright.callout.config.ts
+playwright.block-spacing.config.ts
 playwright.document-width.config.ts
 playwright.code-block.config.ts
 playwright.pdf.config.ts

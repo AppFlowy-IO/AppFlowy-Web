@@ -153,7 +153,7 @@ export const FileBlock = memo(
         onMouseLeave={() => setShowToolbar(false)}
         onClick={handleClick}
       >
-        <div contentEditable={false} className={`embed-block items-center p-4`}>
+        <div contentEditable={false} data-file-row className={`embed-block items-center p-4`}>
           <div className={'flex h-full items-start'}>
             <FileIcon className={'h-6 w-6'} />
           </div>
