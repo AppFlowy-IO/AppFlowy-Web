@@ -193,9 +193,9 @@ export function parseScopes(scope?: string | null): McpScope[] {
   return MCP_SCOPES.filter((candidate) => requested.has(candidate));
 }
 
-/** The level a scope string or list grants: `full` with `admin`, `write` with `write`, otherwise `read`. */
-export function scopeLevel(scope?: string | readonly string[] | null): McpScopeLevel {
-  const scopes = parseScopes(typeof scope === 'string' || !scope ? scope : scope.join(' '));
+/** The level a granted scope string gives: `full` with `admin`, `write` with `write`, otherwise `read`. */
+export function scopeLevel(scope?: string | null): McpScopeLevel {
+  const scopes = parseScopes(scope);
 
   if (scopes.includes('admin')) return 'full';
   if (scopes.includes('write')) return 'write';

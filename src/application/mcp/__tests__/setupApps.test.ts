@@ -55,7 +55,7 @@ describe('summarizeConnectedApps', () => {
   it('counts every device and registration of a recognized app once', () => {
     const apps = summarizeConnectedApps([cursor('dcr-1'), cursor('dcr-2'), cursor('dcr-1')]);
 
-    expect(apps).toEqual([{ key: 'app:cursor', setupApp: 'cursor', name: 'Cursor', connectionCount: 3 }]);
+    expect(apps).toEqual([{ key: 'app:cursor', setupApp: 'cursor', name: 'Cursor' }]);
   });
 
   it('orders gallery apps by card, then other apps by name, then unnamed ones', () => {
@@ -114,11 +114,7 @@ describe('summarizeConnectedApps', () => {
       connection({ client_id: 'dcr-4', client_host: 'localhost' }),
     ]);
 
-    expect(apps.map(({ key, connectionCount }) => [key, connectionCount])).toEqual([
-      ['name:gemini cli', 2],
-      ['client:dcr-3', 1],
-      ['client:dcr-4', 1],
-    ]);
+    expect(apps.map(({ key }) => key)).toEqual(['name:gemini cli', 'client:dcr-3', 'client:dcr-4']);
     expect(apps[1].name).toBe('localhost');
   });
 
@@ -151,6 +147,6 @@ describe('summarizeConnectedApps', () => {
       { client_id: 'https://claude.ai/oauth/claude-code-client-metadata', client_name: 'Claude Code' },
     ]);
 
-    expect(apps).toEqual([{ key: 'name:claude code', setupApp: undefined, name: 'Claude Code', connectionCount: 1 }]);
+    expect(apps).toEqual([{ key: 'name:claude code', setupApp: undefined, name: 'Claude Code' }]);
   });
 });

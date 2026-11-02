@@ -81,8 +81,6 @@ describe.each([
 
   it('gets the same app from every key built on that rule', () => {
     expect(mcpApprovalKey(client)).toBe(approvalKey);
-    expect(summarizeConnectedApps([client])).toEqual([
-      expect.objectContaining({ key: groupKey, name: displayName, connectionCount: 1 }),
-    ]);
+    expect(summarizeConnectedApps([client])).toEqual([expect.objectContaining({ key: groupKey, name: displayName })]);
   });
 });

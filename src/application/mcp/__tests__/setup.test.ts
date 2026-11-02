@@ -170,10 +170,8 @@ describe('MCP scopes', () => {
     ['read write', 'write'],
     ['admin', 'full'],
     ['read write admin', 'full'],
-    [['read', 'write'], 'write'],
-    [['admin'], 'full'],
   ])('scopeLevel(%p) is %p', (scope, expected) => {
-    expect(scopeLevel(scope as string | string[] | null | undefined)).toBe(expected);
+    expect(scopeLevel(scope)).toBe(expected);
   });
 });
 

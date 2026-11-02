@@ -59,8 +59,6 @@ export interface McpConnectedApp {
   setupApp?: McpSetupAppId;
   /** The catalog's name, else the client's own name or host; undefined means "Unknown app". */
   name?: string;
-  /** Live connections (devices or registrations) with this app. */
-  connectionCount: number;
 }
 
 function groupKey(connection: McpSetupConnection, appId: string | undefined): string {
@@ -87,8 +85,9 @@ function compareConnectedApps(a: McpConnectedApp, b: McpConnectedApp): number {
 /**
  * The distinct apps among the caller's connections: gallery apps first, in
  * gallery order, then the others by name. Every device and registration of a
- * recognized app counts once (`app:<app_id>`). Settings counts "N apps across
- * M workspaces" with this same grouping, so its number matches "Connected apps (N)".
+ * recognized app counts once (`app:<app_id>`). Settings' "N apps across M
+ * workspaces" groups the same way over every workspace, so it is larger
+ * whenever another workspace has an app this one lacks.
  */
 export function summarizeConnectedApps(connections: readonly McpSetupConnection[]): McpConnectedApp[] {
   const apps = new Map<string, McpConnectedApp>();
@@ -98,19 +97,9 @@ export function summarizeConnectedApps(connections: readonly McpSetupConnection[
     // also carries that app's catalog name.
     const appId = trustedCatalogAppId(connection);
     const key = groupKey(connection, appId);
-    const existing = apps.get(key);
 
-    if (existing) {
-      existing.connectionCount += 1;
-      return;
-    }
-
-    apps.set(key, {
-      key,
-      setupApp: setupAppForCatalogApp(appId),
-      name: getMcpClientDisplayName(connection),
-      connectionCount: 1,
-    });
+    if (apps.has(key)) return;
+    apps.set(key, { key, setupApp: setupAppForCatalogApp(appId), name: getMcpClientDisplayName(connection) });
   });
 
   return Array.from(apps.values()).sort(compareConnectedApps);
