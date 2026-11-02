@@ -122,7 +122,12 @@ export function saveRedirectTo(redirectTo: string) {
 
   // The new-password form reached with a recovery code during a flow-bound
   // sign-in continues that flow; any other destination ends it.
-  if (!passwordResetFlowOf(safeRedirectTo)) clearAuthContinuations();
+  const resetFlow = passwordResetFlowOf(safeRedirectTo);
+
+  if (!resetFlow || readAuthContinuation(resetFlow.kind)?.continuation.flowId !== resetFlow.flowId) {
+    clearAuthContinuations();
+  }
+
   localStorage.setItem(REDIRECT_TO_STORAGE_KEY, safeRedirectTo);
 }
 
@@ -456,9 +461,9 @@ function boundAuthFlow(redirectTo: string | null | undefined): AuthFlow | null {
 }
 
 /**
- * The flow a new-password login URL continues. A recovery code entered during
- * a flow-bound sign-in keeps the flow ID in that URL, so signing in again
- * after the reset still returns to the flow's destination.
+ * The flow a new-password login URL carries. A recovery code entered during a
+ * flow-bound sign-in keeps the flow ID in that URL, so signing in again after
+ * the reset still returns to the flow's destination while the flow lasts.
  */
 function passwordResetFlowOf(safeRedirectTo: string): AuthFlow | null {
   const url = new URL(safeRedirectTo, window.location.origin);
@@ -467,13 +472,17 @@ function passwordResetFlowOf(safeRedirectTo: string): AuthFlow | null {
 
   return (
     AUTH_CONTINUATION_KINDS.map((kind) => ({ kind, flowId: url.searchParams.get(kind.flowParam) })).find(
-      (flow): flow is AuthFlow =>
-        flow.flowId !== null && readAuthContinuation(flow.kind)?.continuation.flowId === flow.flowId
+      (flow): flow is AuthFlow => flow.flowId !== null && AUTH_FLOW_ID_PATTERN.test(flow.flowId)
     ) ?? null
   );
 }
 
-/** The new-password form `saveRedirectTo` stored during a recovery sign-in, with the flow it continues. */
+/**
+ * The new-password form `saveRedirectTo` stored during a recovery sign-in,
+ * with the flow it belongs to. Matched by the flow ID in its URL, not by the
+ * stored continuation: a recovery session needs the form even when the flow
+ * expired meanwhile (an expired Form continuation is already gone).
+ */
 function storedPasswordResetStep(): { url: string; flow: AuthFlow } | null {
   const stored = localStorage.getItem(REDIRECT_TO_STORAGE_KEY);
   const safeRedirectTo = stored ? getSafeRedirectUrl(stored) : null;

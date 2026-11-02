@@ -568,6 +568,126 @@ describe('afterAuth', () => {
   });
 });
 
+describe('password recovery during a flow-bound sign-in', () => {
+  const formPath = '/form/267699aa-58ef-452f-b822-57271c2c218d';
+  const consentPath =
+    '/oauth/mcp/authorize?client_id=https%3A%2F%2Fclaude.ai%2Foauth%2Fmcp-oauth-client-metadata' +
+    '&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback&response_type=code' +
+    '&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&state=state-1';
+  const flowId = 'e'.repeat(32);
+
+  interface FlowCase {
+    kind: string;
+    flowParam: string;
+    destination: string;
+    storageKey: string;
+    ttlMs: number;
+    start: (redirectTo: string, now: number, flowId: string) => string | null;
+    /** Where the sign-in after the reset lands once the flow expired. */
+    afterExpiry: string;
+  }
+
+  const flows: FlowCase[] = [
+    {
+      kind: 'public Form',
+      flowParam: 'formAuth',
+      destination: formPath,
+      storageKey: 'publicFormAuthContinuation',
+      ttlMs: PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS,
+      start: savePublicFormRedirectTo,
+      afterExpiry: '/app',
+    },
+    {
+      kind: 'MCP consent',
+      flowParam: 'mcpAuth',
+      destination: consentPath,
+      storageKey: 'mcpConsentAuthContinuation',
+      ttlMs: MCP_CONSENT_AUTH_CONTINUATION_TTL_MS,
+      start: saveMcpConsentRedirectTo,
+      afterExpiry:
+        '/oauth/mcp/authorize?expired=1&client_id=https%3A%2F%2Fclaude.ai%2Foauth%2Fmcp-oauth-client-metadata',
+    },
+  ];
+
+  /** The destination's page sends a signed-out user to sign in; returns the login URL. */
+  function startSignIn(flow: FlowCase, now = Date.now()) {
+    hrefValue = `http://localhost${flow.destination}`;
+    expect(flow.start(flow.destination, now, flowId)).toBe(flowId);
+    return buildLoginUrl({ redirectTo: flow.destination });
+  }
+
+  function changePasswordUrlOf(flow: FlowCase) {
+    return new URL(
+      buildLoginUrl({ action: PASSWORD_RESET_LOGIN_ACTION, email: 'user@example.com', redirectTo: flow.destination }),
+      window.location.origin
+    ).toString();
+  }
+
+  /** The recovery code signs in on the check-email step. */
+  function signInWithRecoveryCode(loginUrl: string, changePasswordUrl: string) {
+    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=checkEmailResetPassword`;
+    saveRedirectTo(changePasswordUrl);
+    afterAuth();
+  }
+
+  it.each(flows)('$kind: continues through the new-password form, then returns to the destination', (flow) => {
+    const loginUrl = startSignIn(flow);
+    const changePasswordUrl = changePasswordUrlOf(flow);
+
+    expect(new URL(changePasswordUrl).searchParams.get(flow.flowParam)).toBe(flowId);
+
+    signInWithRecoveryCode(loginUrl, changePasswordUrl);
+
+    expect(window.location.href).toBe(changePasswordUrl);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+    expect(sessionStorage.getItem(flow.storageKey)).not.toBeNull();
+
+    // After the reset the user signs in again with the new password.
+    hrefValue = `http://localhost${loginUrl}`;
+    saveRedirectTo(flow.destination);
+    afterAuth();
+
+    expect(window.location.href).toBe(flow.destination);
+  });
+
+  it.each(flows)('$kind: does not let a failed recovery attempt hijack a later sign-in of the flow', (flow) => {
+    const loginUrl = startSignIn(flow);
+
+    // A wrong recovery code: the new-password step is stored, but nobody signs in.
+    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=checkEmailResetPassword`;
+    saveRedirectTo(changePasswordUrlOf(flow));
+
+    // The user goes back and signs in with the password after all.
+    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=enterPassword`;
+    saveRedirectTo(flow.destination);
+    afterAuth();
+
+    expect(window.location.href).toBe(flow.destination);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it.each(flows)('$kind: still shows the new-password form when recovery outlives the flow', (flow) => {
+    const now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const loginUrl = startSignIn(flow, now);
+    const changePasswordUrl = changePasswordUrlOf(flow);
+
+    nowSpy.mockReturnValue(now + flow.ttlMs + 1);
+    signInWithRecoveryCode(loginUrl, changePasswordUrl);
+
+    // The recovery session needs a new password either way, and no step is left for a later sign-in.
+    expect(window.location.href).toBe(changePasswordUrl);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+
+    hrefValue = `http://localhost${loginUrl}`;
+    saveRedirectTo(flow.destination);
+    afterAuth();
+
+    expect(window.location.href).toBe(flow.afterExpiry);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+});
+
 describe('MCP consent continuation', () => {
   const consentPath =
     '/oauth/mcp/authorize?client_id=https%3A%2F%2Fclaude.ai%2Foauth%2Fmcp-oauth-client-metadata' +
@@ -716,53 +836,6 @@ describe('MCP consent continuation', () => {
     mcpChannel()?.dispatch({ flowId, type: 'authenticated' });
 
     expect(window.location.href).toBe(expiredView);
-  });
-
-  it('continues through the new-password form after a recovery code, then returns to the request', () => {
-    const loginUrl = startSignIn();
-    const checkEmail = `http://localhost${loginUrl}&email=user%40example.com&action=checkEmailResetPassword`;
-    const changePasswordUrl = new URL(
-      buildLoginUrl({ action: PASSWORD_RESET_LOGIN_ACTION, email: 'user@example.com', redirectTo: consentPath }),
-      window.location.origin
-    ).toString();
-
-    expect(new URL(changePasswordUrl).searchParams.get('mcpAuth')).toBe(flowId);
-
-    // The recovery code signs in on the check-email step.
-    hrefValue = checkEmail;
-    saveRedirectTo(changePasswordUrl);
-    afterAuth();
-
-    expect(window.location.href).toBe(changePasswordUrl);
-    expect(localStorage.getItem('redirectTo')).toBeNull();
-    expect(sessionStorage.getItem('mcpConsentAuthContinuation')).not.toBeNull();
-
-    // After the reset the user signs in again with the new password.
-    hrefValue = `http://localhost${loginUrl}`;
-    saveRedirectTo(consentPath);
-    afterAuth();
-
-    expect(window.location.href).toBe(consentPath);
-  });
-
-  it('does not let a failed recovery attempt hijack a later sign-in of the same flow', () => {
-    const loginUrl = startSignIn();
-    const changePasswordUrl = new URL(
-      buildLoginUrl({ action: PASSWORD_RESET_LOGIN_ACTION, email: 'user@example.com', redirectTo: consentPath }),
-      window.location.origin
-    ).toString();
-
-    // A wrong recovery code: the new-password step is stored, but nobody signs in.
-    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=checkEmailResetPassword`;
-    saveRedirectTo(changePasswordUrl);
-
-    // The user goes back and signs in with the password after all.
-    hrefValue = `http://localhost${loginUrl}&email=user%40example.com&action=enterPassword`;
-    saveRedirectTo(consentPath);
-    afterAuth();
-
-    expect(window.location.href).toBe(consentPath);
-    expect(localStorage.getItem('redirectTo')).toBeNull();
   });
 
   it('replaces another flow-bound sign-in in the same tab', () => {
