@@ -50,6 +50,8 @@ import { mcpMemberConnectionId, type McpGovernanceAction, type McpGovernanceStat
 
 const NO_APPROVED_CLIENTS: McpApprovedClient[] = [];
 const NO_CLIENTS: McpClientSummary[] = [];
+/** The server's longest client ID (`MAX_CLIENT_ID_BYTES`, in bytes; the server still decides). */
+const MAX_CLIENT_ID_LENGTH = 2048;
 
 /** i18n keys of each approval policy option. */
 const APPROVAL_MODE_TEXT = {
@@ -750,6 +752,7 @@ function ApproveById({
               autoFocus
               value={clientId}
               onChange={(event) => setClientId(event.target.value)}
+              maxLength={MAX_CLIENT_ID_LENGTH}
               placeholder={t('settings.mcp.clientIdPlaceholder')}
               aria-label={t('settings.mcp.advancedTitle')}
               aria-describedby={descriptionId}

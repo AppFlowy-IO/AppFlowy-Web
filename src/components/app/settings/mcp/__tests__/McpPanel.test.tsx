@@ -1173,6 +1173,8 @@ describe('McpPanel', () => {
       const submit = screen.getByTestId<HTMLButtonElement>('mcp-approve-by-id-submit');
 
       expect(submit.disabled).toBe(true);
+      // No longer than the server accepts (MAX_CLIENT_ID_BYTES).
+      expect(input.maxLength).toBe(2048);
       fireEvent.change(input, { target: { value: '  https://app.example.com/oauth/client.json ' } });
       expect(submit.disabled).toBe(false);
       fireEvent.click(submit);

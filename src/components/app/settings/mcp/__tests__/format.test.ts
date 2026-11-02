@@ -1,5 +1,5 @@
 import translations from '@/@types/translations/en.json';
-import { McpApiError } from '@/application/services/domains/mcp';
+import { MCP_ERROR_REASONS, McpApiError } from '@/application/services/domains/mcp';
 import { mcpTestT } from '@/components/mcp/__tests__/mcpTestI18n';
 
 import {
@@ -117,6 +117,15 @@ describe('error text', () => {
     expect(mcpErrorText(new McpApiError({ status: 404, reason: 'unknown_client' }), t)).toBe(
       translations.settings.mcp.unknownClientId
     );
+    // For example a typed client ID longer than the server accepts.
+    expect(mcpErrorText(new McpApiError({ status: 400, reason: 'invalid_request' }), t)).toBe(
+      translations.settings.mcp.invalidRequest
+    );
+  });
+
+  // A consent text edit must not leak "Start again from your AI app" into Settings toasts.
+  it.each(MCP_ERROR_REASONS)('never sends a Settings user back to the AI app for %s', (reason) => {
+    expect(mcpErrorText(new McpApiError({ status: 400, reason }), t)).not.toMatch(/your AI app|start again/i);
   });
 
   it('wraps action failures', () => {

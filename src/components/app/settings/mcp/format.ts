@@ -43,6 +43,13 @@ export function mcpErrorText(error: unknown, t: TFunction): string {
       // Approving an app that is not registered (typed client ID, or a request whose app is gone):
       // the consent text ("Start again from your AI app") does not apply here.
       return t('settings.mcp.unknownClientId');
+    case 'invalid_request':
+      // A value Settings sent was refused, such as a typed client ID over the server's 2048 bytes.
+      return t('settings.mcp.invalidRequest');
+    case 'invalid_redirect_uri':
+    case 'invalid_target':
+      // Consent-only reasons, whose text sends the user back to the AI app.
+      return t('mcp.consent.errors.generic');
     default:
       return t(consentErrorMessageKey(error.reason ?? 'generic'));
   }

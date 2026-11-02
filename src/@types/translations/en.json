@@ -961,6 +961,7 @@
       "actionFailed": "That didn't work. {{message}}",
       "notOwner": "Only workspace owners can change AI app access.",
       "unknownClientId": "No app is registered with this client ID.",
+      "invalidRequest": "AppFlowy couldn't accept this request. Check what you entered and try again.",
       "verified": "Verified domain",
       "verifiedApp": "Verified app",
       "verifiedAppTooltip": "AppFlowy recognizes this app: it signs in through its publisher's own website.",

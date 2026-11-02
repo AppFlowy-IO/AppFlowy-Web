@@ -290,10 +290,15 @@ An owner endpoint that answers 403 `not_workspace_owner`, `not_workspace_member`
 `email_not_allowed` (only approving and loosening the policy check the email gate) reloads the
 member status, so the owner section disappears; so does any
 `mcp_disabled` (`isMcpAccessLost`), which turns the panel into the turned-off view. Failed actions show
-a toast: `settings.mcp.actionFailed` with the reason's consent message, except `not_workspace_owner`
-(`settings.mcp.notOwner`) and `unknown_client` (`settings.mcp.unknownClientId`), whose consent
-messages point back to the AI app. Tooltips render inside the panel so they stay above the MUI
-dialog. The hooks (`useMcpMemberStatus`, `useMyMcpConnections`, `useMcpConnectionsOverview`,
+a toast: `settings.mcp.actionFailed` with the reason's consent message, except where Settings needs
+its own words (`mcpErrorText`): `not_workspace_owner` (`settings.mcp.notOwner`), and the reasons
+whose consent text sends the user back to the AI app: `unknown_client`
+(`settings.mcp.unknownClientId`), `invalid_request` (`settings.mcp.invalidRequest`, for example a
+typed client ID over the server's 2048 bytes; the Approve by client ID input stops at 2048
+characters), and the consent-only `invalid_redirect_uri` and `invalid_target` (the generic
+message). A table test in `format.test.ts` checks that no reason's Settings text says "your AI
+app". Tooltips render inside the panel so they stay above the MUI dialog. The hooks
+(`useMcpMemberStatus`, `useMyMcpConnections`, `useMcpConnectionsOverview`,
 `useMcpGovernance`) share `useMcpRequest.ts`: a new load aborts the previous one, an action's result
 wins over a load still in flight, and one action runs at a time.
 
