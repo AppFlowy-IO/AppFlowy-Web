@@ -37,6 +37,7 @@ import {
   DisconnectDescription,
   EmptyState,
   McpTime,
+  Notice,
   PanelClientIdentity,
   PanelScopeBadge,
   PanelSection,
@@ -154,8 +155,11 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
       {/* The policy and the approved apps load together: one alert here when that fails, no list below. */}
       {settings.failed ? (
         <SectionError onRetry={() => void settings.reload()} testId='mcp-settings-error' />
-      ) : !settings.data || !approvalMode ? (
+      ) : !settings.data ? (
         <SectionLoading />
+      ) : !approvalMode ? (
+        // A policy a newer server added: changing it would need to know how strict it is.
+        <Notice testId='mcp-approval-mode-unknown'>{t('settings.mcp.approvalModeUnknown')}</Notice>
       ) : (
         <ApprovalPolicy mode={approvalMode} disabled={busy} onChoose={chooseMode} />
       )}

@@ -461,7 +461,8 @@ The Web reads the state from the member status's `enabled` and from the `mcp_dis
   like the axios interceptor does.
 - Reads responses as the MCP service serializes them (the wire types mirror its structs): a
   missing or malformed list is an `invalid_response` failure, never an empty list, and an approval
-  policy this Web does not know reads as undefined. Timestamps have one form per field, Unix
+  policy this Web does not know reads as undefined (Workspace access then says so instead of
+  showing the policy choices). Timestamps have one form per field, Unix
   seconds or RFC 3339 (`mcpTimestampToDate`).
 - Never sends the GoTrue refresh token. (Earlier prototypes forwarded it; MCP refreshing the same
   rotating token triggers GoTrue reuse detection and logs the user out of the Web app.)

@@ -905,6 +905,7 @@
       "approvalModeAny": "Any app",
       "approvalModeAnyDescription": "Members can connect any AI app without approval.",
       "approvalModeRecommended": "Recommended",
+      "approvalModeUnknown": "This workspace uses an approval policy this version of AppFlowy doesn't know. Update AppFlowy to see or change it.",
       "allowAllTitle": "Allow any AI app?",
       "allowAllDescription": "Members will be able to connect any AI app without approval. Each app can act as the member who connected it.",
       "allowAllConfirm": "Allow any app",

@@ -1299,6 +1299,25 @@ describe('McpPanel', () => {
       expect(api.getMcpWorkspaceSettings).toHaveBeenCalledTimes(2);
     });
 
+    it('says when the workspace’s approval policy is one this Web does not know, instead of loading', async () => {
+      // A policy a newer server added reads as undefined (getMcpWorkspaceSettings).
+      api.getMcpWorkspaceSettings.mockResolvedValue({ ...settings, approval_mode: undefined });
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
+      render(<McpPanel workspaceId={WS} />);
+
+      const access = await screen.findByTestId('mcp-workspace-access');
+
+      expect((await within(access).findByTestId('mcp-approval-mode-unknown')).textContent).toBe(
+        translations.settings.mcp.approvalModeUnknown
+      );
+      expect(within(access).queryByTestId('mcp-approval-mode')).toBeNull();
+      // The approved apps came with the settings; with every list loaded, nothing is still loading.
+      expect(within(access).getByTestId('mcp-approved-client-row')).toBeTruthy();
+      await within(access).findAllByTestId('mcp-access-request-row');
+      await within(access).findAllByTestId('mcp-member-connection-row');
+      expect(within(access).queryByRole('status')).toBeNull();
+    });
+
     it('reloads the member status when the caller is no longer an owner', async () => {
       api.approveMcpClient.mockRejectedValue(
         new McpApiError({ status: 403, error: 'forbidden', reason: 'not_workspace_owner' })
