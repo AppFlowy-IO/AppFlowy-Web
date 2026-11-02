@@ -226,7 +226,8 @@ member status:
   and the panel clears the owner's pending-request menu badge (approving is refused while off).
 - An ineligible account (email gate or guest) sees `mcp-panel-ineligible`. Its own connections stay
   listed when it has any, so it can still revoke them, and once their list fails to load the section
-  stays with its error and Retry.
+  stays with its error and Retry. An owner the email gate excludes gets no Workspace access (see
+  [Not in v1](#not-in-v1)), and the panel clears their pending-request menu badge.
 - **Connect an AI app**: `McpSetupGuide` with `status.endpoint` and the caller's connections in this
   workspace (for "Connected apps (N)" and the cards' Connected badges); members also see a notice
   when some apps need an owner's approval. Under `verified_and_approved` (the member status's
@@ -286,7 +287,8 @@ member status:
   load shows no badge.
 
 An owner endpoint that answers 403 `not_workspace_owner`, `not_workspace_member` or
-`email_not_allowed` reloads the member status, so the owner section disappears; so does any
+`email_not_allowed` (only approving and loosening the policy check the email gate) reloads the
+member status, so the owner section disappears; so does any
 `mcp_disabled` (`isMcpAccessLost`), which turns the panel into the turned-off view. Failed actions show
 a toast: `settings.mcp.actionFailed` with the reason's consent message, except `not_workspace_owner`
 (`settings.mcp.notOwner`) and `unknown_client` (`settings.mcp.unknownClientId`), whose consent
@@ -606,5 +608,6 @@ approval requests (owners get the Settings menu badge); audit events for consent
 governance (changes to the server-wide MCP policy are recorded by Cloud and shown in
 AppFlowy-Admin); approvals by publisher domain for apps outside the verified catalog; renaming apps;
 sorting member connections by last use; owners' member connections and approvals in Settings while
-AI app connections are turned off (the server still lets owners list and disconnect member
-connections and revoke approvals then, but the panel shows only the caller's own connections).
+AI app connections are turned off or for an owner the MCP email allowlist excludes (the server
+still lets owners list and disconnect member connections and revoke approvals then, but the panel
+shows only the caller's own connections).

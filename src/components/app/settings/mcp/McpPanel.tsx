@@ -51,8 +51,9 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const member = useMcpMemberStatus(workspaceId);
   const { status, disabled } = member;
-  // While AI apps are turned off the panel offers only the caller's own connections, so the
-  // owner lists stay unloaded (approving, for one, is refused then).
+  // While AI apps are turned off, and for an owner the email gate excludes, the panel offers only
+  // the caller's own connections, so the owner lists stay unloaded (approving, for one, is refused
+  // then). The server would let such owners withdraw access; doc/MCP.md lists that as not in v1.
   const isOwner = !disabled && status?.eligible === true && status.role === 'owner';
   // The caller's own connections and their cross-workspace summary need nothing from the member
   // status, so they load alongside it instead of a round trip after it. A failed status (other
@@ -84,10 +85,13 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   const { disconnect: disconnectMine } = mine;
   const reloadMemberConnections = governance.connections.reload;
 
+  const ineligible = status?.eligible === false;
+
   useEffect(() => {
-    // Requests cannot be approved while AI apps are turned off; the menu badge goes.
-    if (disabled) publishMcpPendingRequestCount(workspaceId, undefined);
-  }, [disabled, workspaceId]);
+    // Requests cannot be approved while AI apps are turned off or by an ineligible account (an
+    // owner the email gate excludes), and the panel shows them none; the menu badge goes.
+    if (disabled || ineligible) publishMcpPendingRequestCount(workspaceId, undefined);
+  }, [disabled, ineligible, workspaceId]);
 
   const handleDisconnectMine = useCallback(
     async (connection: McpMyConnection) => {

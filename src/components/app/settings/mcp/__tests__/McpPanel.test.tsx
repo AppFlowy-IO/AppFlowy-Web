@@ -1171,6 +1171,35 @@ describe('McpPanel', () => {
       expect(screen.queryByTestId('mcp-access-requests-error')).toBeNull();
     });
 
+    it('shows an owner the email gate excludes only their own connections and drops the menu badge', async () => {
+      function Badge() {
+        const count = useMcpPendingRequestCount(WS, true);
+
+        return <span data-testid='badge'>{count ?? 'none'}</span>;
+      }
+
+      api.listMcpAccessRequests.mockResolvedValueOnce([cursorRequest, vscodeRequest]);
+      render(<Badge />);
+      await waitFor(() => expect(text('badge')).toBe('2'));
+      api.listMcpAccessRequests.mockClear();
+
+      api.getMcpMemberStatus.mockResolvedValue({
+        ...ownerStatus(),
+        eligible: false,
+        ineligible_reason: 'email_not_allowed',
+      });
+      render(<McpPanel workspaceId={WS} />);
+
+      expect((await screen.findByTestId('mcp-panel-ineligible')).getAttribute('data-reason')).toBe('email_not_allowed');
+      expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
+      await waitFor(() => expect(text('badge')).toBe('none'));
+      // Owner governance for excluded owners is not in v1 (doc/MCP.md).
+      expect(screen.queryByTestId('mcp-workspace-access')).toBeNull();
+      expect(api.getMcpWorkspaceSettings).not.toHaveBeenCalled();
+      expect(api.listMcpAccessRequests).not.toHaveBeenCalled();
+      expect(api.listMcpWorkspaceConnections).not.toHaveBeenCalled();
+    });
+
     it('reloads the member status when the caller is no longer an owner', async () => {
       api.approveMcpClient.mockRejectedValue(
         new McpApiError({ status: 403, error: 'forbidden', reason: 'not_workspace_owner' })

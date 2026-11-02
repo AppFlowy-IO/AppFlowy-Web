@@ -50,7 +50,8 @@ export function useMcpPendingRequestCount(workspaceId: string | undefined, enabl
         if (!controller.signal.aborted) publishMcpPendingRequestCount(workspaceId, requests.length);
       },
       () => {
-        // Not an owner (any more), not eligible, or the service is down.
+        // Not an owner (any more), or the service is down. The list still answers an owner the
+        // email gate excludes; the MCP panel clears that badge.
         if (!controller.signal.aborted) publishMcpPendingRequestCount(workspaceId, undefined);
       }
     );
