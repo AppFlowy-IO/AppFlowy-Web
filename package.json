@@ -61,6 +61,7 @@
     "error-catalog:check": "node scripts/sync-error-catalog.mjs --check",
     "test:e2e:code-block": "playwright test -c playwright.code-block.config.ts",
     "test:e2e:pdf": "playwright test -c playwright.pdf.config.ts",
+    "test:e2e:google-drive": "playwright test -c playwright.google-drive.config.ts",
     "test:interop:desktop": "playwright test -c playwright.interop.config.ts"
   },
   "dependencies": {

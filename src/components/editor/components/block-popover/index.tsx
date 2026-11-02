@@ -35,6 +35,7 @@ function BlockPopover() {
   const { open, anchorEl, close, type, blockId } = usePopoverContext();
   const { setSelectedBlockIds } = useEditorLocalState();
   const editor = useSlateStatic() as YjsEditor;
+  const isMediaPicker = type === BlockType.PDFBlock || type === BlockType.GoogleDriveBlock;
   const [origins, setOrigins] = useState<Origins>(defaultOrigins);
 
   const handleClose = useCallback(() => {
@@ -72,7 +73,8 @@ function BlockPopover() {
       case BlockType.AudioBlock:
         return <AudioBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.GoogleDriveBlock:
-        return <GoogleDriveBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+        // A new target owns a fresh draft, replacement guard, and account picker.
+        return <GoogleDriveBlockPopoverContent key={blockId} blockId={blockId} onClose={handleClose} />;
       default:
         return null;
     }
@@ -82,24 +84,24 @@ function BlockPopover() {
   const popoverActions = useRef<PopoverActions>(null);
 
   useEffect(() => {
-    if (!open || type !== BlockType.PDFBlock || !paper) return;
+    if (!open || !isMediaPicker || !paper) return;
     // The lazy picker initially has no height. Reposition after it loads and
     // whenever switching tabs or resizing changes its measured dimensions.
     const observer = new ResizeObserver(() => popoverActions.current?.updatePosition());
 
     observer.observe(paper);
     return () => observer.disconnect();
-  }, [open, type, paper]);
+  }, [open, isMediaPicker, paper]);
 
   useEffect(() => {
     // Desktop keeps the PDF placeholder in its neutral active state while
     // uploading; whole-block selection belongs to the six-dot action menu.
-    if (blockId && type !== BlockType.PDFBlock) {
+    if (blockId && !isMediaPicker) {
       setSelectedBlockIds?.([blockId]);
     } else {
       setSelectedBlockIds?.([]);
     }
-  }, [blockId, type, setSelectedBlockIds]);
+  }, [blockId, isMediaPicker, setSelectedBlockIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -139,31 +141,33 @@ function BlockPopover() {
           horizontal: 'center',
         },
         anchorOrigin: {
-          vertical: type === BlockType.PDFBlock && origins.anchorOrigin.vertical === 'top'
+          vertical: isMediaPicker && origins.anchorOrigin.vertical === 'top'
             ? -4
-            : type === BlockType.PDFBlock && origins.anchorOrigin.vertical === 'bottom'
+            : isMediaPicker && origins.anchorOrigin.vertical === 'bottom'
             ? panelPosition.height + 4
             : origins.anchorOrigin.vertical,
           horizontal: 'center',
         },
       });
     }
-  }, [open, anchorEl, type]);
+  }, [open, anchorEl, type, isMediaPicker]);
 
   return (
     <Popover
       open={open}
       onClose={handleClose}
       anchorEl={anchorEl}
-      action={type === BlockType.PDFBlock ? popoverActions : undefined}
+      action={isMediaPicker ? popoverActions : undefined}
       adjustOrigins={false}
       slotProps={{
         paper: {
           ref: setPaper,
-          className: `w-[400px] ${type === BlockType.PDFBlock ? '!max-h-[calc(100dvh-32px)] !rounded-lg !bg-surface-layer-04 !shadow-[0_2px_16px_#0000001f]' : 'max-h-[366px]'} ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-layer-04' : ''}`,
+          className: `w-[400px] ${isMediaPicker ? '!max-h-[calc(100dvh-32px)] !rounded-lg !bg-surface-layer-04 !shadow-[0_2px_16px_#0000001f]' : 'max-h-[366px]'} ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-layer-04' : ''}`,
         },
       }}
       {...origins}
+      // Google Picker owns a portal outside this popover and manages its own focus.
+      disableEnforceFocus={type === BlockType.GoogleDriveBlock}
       disableRestoreFocus={true}
     >
       <Suspense fallback={null}>{content}</Suspense>

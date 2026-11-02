@@ -6,8 +6,8 @@ import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
-import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
@@ -27,6 +27,7 @@ import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { GoogleDriveBlockMenu } from '@/components/editor/components/blocks/google-drive/GoogleDriveBlockMenu';
 import { MathEquationMenu } from '@/components/editor/components/blocks/math-equation/MathEquationMenu';
 import { PDFBlockMenu } from '@/components/editor/components/blocks/pdf/PDFBlockMenu';
 import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
@@ -38,7 +39,15 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { PDFNode , CalloutNode, CodeNode, DatabaseNode, MathEquationNode, OutlineNode } from '@/components/editor/editor.type';
+import {
+  CalloutNode,
+  CodeNode,
+  DatabaseNode,
+  GoogleDriveBlockNode,
+  MathEquationNode,
+  OutlineNode,
+  PDFNode,
+} from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
@@ -667,6 +676,18 @@ function ControlsMenu({
     return (
       <CodeMenu
         node={node as CodeNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
+
+  if (onlySingleBlockSelected && node?.type === BlockType.GoogleDriveBlock && anchorEl && open) {
+    return (
+      <GoogleDriveBlockMenu
+        node={node as GoogleDriveBlockNode}
         anchorEl={anchorEl}
         onClose={onClose}
         anchorOrigin={popoverProps.anchorOrigin}

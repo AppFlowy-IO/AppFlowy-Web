@@ -2,6 +2,8 @@ interface RuntimeConfig {
   APPFLOWY_BASE_URL?: string;
   APPFLOWY_GOTRUE_BASE_URL?: string;
   APPFLOWY_WS_BASE_URL?: string;
+  APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID?: string;
+  APPFLOWY_GOOGLE_DRIVE_PICKER_API_KEY?: string;
 }
 
 declare global {
