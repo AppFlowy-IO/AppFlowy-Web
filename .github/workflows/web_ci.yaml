@@ -160,6 +160,32 @@ jobs:
           
           echo "✓ Configuration format and structure verified"
 
+      - name: Verify the MCP consent page cannot be framed
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+        run: |
+          set -euo pipefail
+          # The /oauth/ anti-framing headers live in docker/nginx.conf, deploy/app-paths.ts and
+          # vercel.json; this checks the copy each image serves.
+          HEADERS=$(curl -sS --max-time 5 -D - -o /tmp/appflowy-oauth-body 'http://localhost:8080/oauth/mcp/authorize?client_id=ci')
+          echo "$HEADERS" | head -n 1 | grep -q ' 200' || (echo "ERROR: /oauth/mcp/authorize did not answer 200" && exit 1)
+          echo "$HEADERS" | grep -qi "^x-frame-options: DENY" || (echo "ERROR: /oauth/mcp/authorize lacks X-Frame-Options: DENY" && exit 1)
+          echo "$HEADERS" | grep -qi "^content-security-policy: frame-ancestors 'none'" || \
+            (echo "ERROR: /oauth/mcp/authorize lacks Content-Security-Policy: frame-ancestors 'none'" && exit 1)
+          grep -q "window.__APP_CONFIG__" /tmp/appflowy-oauth-body || (echo "ERROR: /oauth/mcp/authorize did not serve the configured app shell" && exit 1)
+          echo "✓ /oauth/mcp/authorize serves the configured app shell and cannot be framed"
+
+          # Only /oauth/ pages are protected. The SSR server's /oauthors/... publish pages would query
+          # the unreachable CI backend; deploy/routes.test.ts covers them there.
+          UNPROTECTED="/app"
+          if [ "$DOCKERFILE" = docker/Dockerfile ]; then UNPROTECTED="/app /oauthors/x"; fi
+          for path in $UNPROTECTED; do
+            if curl -sS --max-time 5 -D - -o /dev/null "http://localhost:8080$path" | grep -qiE '^(x-frame-options|content-security-policy):'; then
+              echo "ERROR: $path carries the /oauth/ anti-framing headers" && exit 1
+            fi
+          done
+          echo "✓ $UNPROTECTED carry no anti-framing headers"
+
       - name: Verify SSR readiness and PDF routes
         if: matrix.dockerfile == 'docker/Dockerfile.ssr'
         run: |
