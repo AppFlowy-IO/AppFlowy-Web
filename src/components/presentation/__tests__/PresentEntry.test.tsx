@@ -5,6 +5,11 @@ import { setActiveRowPage } from '@/application/row-document/row-page-state';
 import { CoverType, type ViewCover } from '@/application/types';
 import AppShareButton from '@/components/app/share/ShareButton';
 
+// Compile the real lazy chunks before timed interactions; cold coverage transforms
+// otherwise consume the first test's UI deadline on CI.
+import '../DocumentPresenter';
+import '../PresentationDialog';
+import '../PresentationStudio';
 import PresentEntry from '../PresentEntry';
 import { serverOptions } from '../server-adapter';
 import { APPFLOWY_SLIDE_THEMES } from '../slide-themes';
@@ -71,6 +76,7 @@ jest.mock('@/application/session/token', () => ({ captureTokenSession: () => moc
 const mockToView = jest.fn(async () => undefined);
 let mockCover: ViewCover | undefined;
 const mockPermissions = { canRead: true, canWrite: true, hasLoadedViewActionPermissions: true };
+let mockWorkspaceRole: string | undefined = 'Member';
 const mockPermissionHook = jest.fn((..._args: unknown[]) => mockPermissions);
 const mockContent = {
   type: 'page',
@@ -99,6 +105,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceIdOptional: () => 'workspace',
   useEventEmitterOptional: () => undefined,
   useAppOperations: () => ({ loadView: mockLoadView, loadRowDocument: mockLoadRowDocument, toView: mockToView }),
+  useUserWorkspaceInfoOptional: () => ({ selectedWorkspace: { role: mockWorkspaceRole } }),
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: mockUserId }) }));
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
@@ -124,6 +131,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPermissions.canRead = true;
   mockPermissions.canWrite = true;
+  mockWorkspaceRole = 'Member';
   mockCover = undefined;
   setActiveRowPage(null);
   mockUserId = 'user';
@@ -368,3 +376,35 @@ it('cancels old-actor source reads and never renders their late content after id
 });
 
 beforeAll(() => { Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => '00000000-0000-4000-8000-000000000001' }); });
+
+describe('AI options without permission', () => {
+  async function openMenu() {
+    render(<PresentEntry viewId='document' />);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+    return screen.findByRole('menuitem', { name: 'Present AI mind map' });
+  }
+
+  it('keeps AI rows visible but unavailable for a page the user cannot edit, and explains why', async () => {
+    mockPermissions.canWrite = false;
+    const mindMap = await openMenu();
+    const slides = screen.getByRole('menuitem', { name: 'Generate AI ppt' });
+
+    expect(mindMap.getAttribute('aria-disabled')).toBe('true');
+    expect(slides.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByRole('menuitem', { name: 'Present document' }).getAttribute('aria-disabled')).toBeNull();
+    fireEvent.focus(mindMap);
+    expect((await screen.findAllByText(/You need edit access to this page/)).length).toBeGreaterThan(0);
+    fireEvent.click(mindMap);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('tells a workspace guest with edit access that AI needs membership', async () => {
+    mockWorkspaceRole = 'Guest';
+    const mindMap = await openMenu();
+
+    expect(mindMap.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.focus(mindMap);
+    expect((await screen.findAllByText(/Guests can’t use AI mind maps or slides/)).length).toBeGreaterThan(0);
+  });
+});

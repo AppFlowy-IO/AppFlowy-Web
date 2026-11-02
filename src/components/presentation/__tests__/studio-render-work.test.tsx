@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
+import { notify } from '@/components/_shared/notify';
+
 import {
   createGenerationRunner,
   loadPresentation,
@@ -202,7 +204,7 @@ test('job polls that repeat the shown state do not render the studio again', asy
 
 test('setup uses its footer progress and can cancel without a duplicate banner', async () => {
   run.mockImplementation(() => new Promise(() => undefined));
-  open();
+  await act(async () => { open(); });
   await waitFor(() => expect(generateButton().disabled).toBe(false));
   fireEvent.click(generateButton());
   await waitFor(() => expect(run).toHaveBeenCalled());
@@ -295,7 +297,10 @@ test('a failed saved-deck lookup stops loading and can be retried', async () => 
   await waitFor(() => expect(screen.getByTestId('stage').textContent).toBe('preview'));
 });
 
-test('a failed saved-map lookup stops the full-screen spinner and offers retry', async () => {
+test('a failed saved-map lookup returns to the page with a toast instead of a full-screen error', async () => {
+  const toast = jest.spyOn(notify, 'error').mockImplementation(() => undefined);
+  const onClose = jest.fn();
+
   jest.mocked(loadPresentation).mockRejectedValueOnce(new Error('INVALID_QUERY'));
   render(
     <PresentationStudio
@@ -305,11 +310,22 @@ test('a failed saved-map lookup stops the full-screen spinner and offers retry',
       initialMode='mindmap'
       presentMindMap
       canWrite
+      onClose={onClose}
     />
   );
-  await screen.findByRole('alert');
-  expect(screen.queryByText('Loading saved mind map…')).toBeNull();
-  expect(screen.queryByText('INVALID_QUERY')).toBeNull();
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(toast).toHaveBeenCalledTimes(1);
+  expect(toast.mock.calls[0][0]).not.toContain('INVALID_QUERY');
+  toast.mockRestore();
+});
+
+test('a failed saved-deck lookup in the slides window keeps an in-place error with both actions', async () => {
+  const onClose = jest.fn();
+
+  jest.mocked(loadPresentation).mockRejectedValueOnce(new Error('INVALID_QUERY'));
+  render(<PresentationStudio workspaceId='workspace' userId='user' snapshot={source} onClose={onClose} />);
+  expect((await screen.findByRole('alert')).textContent).toContain('Couldn’t load your presentation');
+  fireEvent.click(screen.getByRole('button', { name: 'Back to page' }));
+  expect(onClose).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Back to page' })).toBeTruthy();
 });

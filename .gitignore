@@ -47,3 +47,4 @@ cypress/downloads
 *storybook.log
 storybook-static
 docs/
+__pycache__/

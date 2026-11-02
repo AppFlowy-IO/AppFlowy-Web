@@ -4,6 +4,10 @@ import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { setActiveRowPage } from '@/application/row-document/row-page-state';
 import { CoverType, type ViewCover } from '@/application/types';
 
+// Compile lazy chunks before the first interaction's coverage deadline.
+import '../DocumentPresenter';
+import '../PresentationDialog';
+import '../PresentationStudio';
 import PresentEntry from '../PresentEntry';
 import { cachedSavedDecks, forgetSavedDecks, listCachedSavedDecks } from '../saved-deck-cache';
 import { APPFLOWY_SLIDE_THEMES } from '../slide-themes';
@@ -131,6 +135,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceIdOptional: () => 'workspace',
   useEventEmitterOptional: () => undefined,
   useAppOperations: () => mockOperations,
+  useUserWorkspaceInfoOptional: () => undefined,
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: 'user' }) }));
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({

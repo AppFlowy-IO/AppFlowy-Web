@@ -13,6 +13,7 @@ import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCre
 import { ViewIcon } from '@/components/_shared/view-icon/ViewIcon';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
+import { isProPlanDatabaseViewLayout } from '@/utils/subscription';
 import {
   DropdownMenuItem,
   DropdownMenuItemTick,
@@ -42,14 +43,17 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
     getSubscriptions,
     enabled: open,
   });
+  // Switching to Timeline or Dashboard makes a view of that layout, so the
+  // workspace plan gates it as it gates creating one.
+  const isRefusedLayout = (option: LayoutOption) =>
+    option.value !== currentLayout && isProPlanDatabaseViewLayout(option.icon) && getAction(option.icon).type !== 'create';
   const timelineAction = getAction(ViewLayout.Timeline);
+  const dashboardAction = getAction(ViewLayout.Dashboard);
   const timelineDisabledReason = timelineAction.type === 'create' ? undefined : timelineAction.reason;
+  const dashboardDisabledReason = dashboardAction.type === 'create' ? undefined : dashboardAction.reason;
   const viewId = useDatabaseViewId();
   const updateLayout = useUpdateDatabaseLayout(viewId);
-  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
-    getSubscriptions,
-    { workspaceId, enabled: open }
-  );
+  const { available: canCreateDashboard } = useDashboardCreationGate();
   // Dashboards never nest, so a widget's view cannot become one. Like
   // Timeline, an existing dashboard keeps its option in a mobile context:
   // it still reads as one even where creation is unavailable.
@@ -150,19 +154,9 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
                 key={option.value}
                 className={'w-full'}
                 data-testid={`database-layout-option-${option.value}`}
-                disabled={
-                  Boolean(option.disabledReason) ||
-                  (option.value === DatabaseViewLayout.Timeline &&
-                    option.value !== currentLayout &&
-                    timelineAction.type !== 'create')
-                }
+                disabled={Boolean(option.disabledReason) || isRefusedLayout(option)}
                 onSelect={() => {
-                  if (
-                    option.value === currentLayout ||
-                    option.disabledReason ||
-                    (option.value === DatabaseViewLayout.Timeline && getAction(ViewLayout.Timeline).type !== 'create')
-                  )
-                    return;
+                  if (option.value === currentLayout || option.disabledReason || isRefusedLayout(option)) return;
                   void (async () => {
                     try {
                       await updateLayout(option.value);
@@ -181,7 +175,7 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
             return (
               <DatabaseViewCreationHint
                 key={option.value}
-                enabled={option.value === DatabaseViewLayout.Timeline || option.value === DatabaseViewLayout.Dashboard}
+                enabled={isProPlanDatabaseViewLayout(option.icon)}
                 reason={option.disabledReason}
               >
                 {item}

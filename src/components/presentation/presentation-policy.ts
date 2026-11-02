@@ -1,3 +1,5 @@
+import { Role } from '@/application/types';
+
 import type { PresentationStatus } from './server-contract';
 
 const MIB = 1024 * 1024;
@@ -82,4 +84,26 @@ export function slideCountLimitMessage(count: number, limits: SlideLimits): stri
     return `Choose at most ${limits.maxSlides} slides per presentation.`;
   }
 
+}
+
+/**
+ * Why AI mind maps and slides cannot start from this page, known before opening them. The server
+ * allows AI presentation work only to workspace members and owners, so a guest with edit access is
+ * still refused; the studio generates only from a page the user can edit. Unknown permissions do not
+ * block: the presentation checks again when it opens.
+ */
+export function presentationAIAccessReason({
+  role,
+  canWrite,
+  permissionsLoaded,
+}: {
+  role?: Role;
+  canWrite: boolean;
+  permissionsLoaded: boolean;
+}): string | undefined {
+  if (role === Role.Guest)
+    return 'Guests can’t use AI mind maps or slides. Ask a workspace owner to add you as a member.';
+  if (permissionsLoaded && !canWrite)
+    return 'You need edit access to this page to use AI mind maps or slides. Ask the page owner to give you edit access.';
+  return undefined;
 }

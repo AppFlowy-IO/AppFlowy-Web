@@ -14,7 +14,7 @@ import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
-import { PRESENTATION_ENTRY_ENABLED } from '@/components/presentation/feature-flags';
+import { usePresentationEntryEnabled } from '@/components/presentation/feature-flags';
 import PresentEntry from '@/components/presentation/PresentEntry';
 import { openOrDownload } from '@/utils/open_schema';
 
@@ -32,6 +32,7 @@ function RightMenu() {
   const workspaceId = useCurrentWorkspaceId();
   const [searchParams] = useSearchParams();
   const hasRowPageRoute = searchParams.has('r');
+  const presentationEntryEnabled = usePresentationEntryEnabled();
   const rowPageRowId = searchParams.get('r');
   const activeRowPage = useActiveRowPage();
   const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM);
@@ -87,7 +88,7 @@ function RightMenu() {
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
-      {PRESENTATION_ENTRY_ENABLED &&
+      {presentationEntryEnabled &&
         (hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
           <PresentEntry
             viewId={rowPage?.documentId || routeViewId!}

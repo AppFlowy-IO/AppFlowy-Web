@@ -1,16 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 
-import { DatabaseViewLayout } from '@/application/types';
+import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 import Layout from '../Layout';
 
 const mockUpdateLayout = jest.fn();
 const mockGetSubscriptions = jest.fn();
-const timelineRequiresPro = 'Creating a Timeline view requires a Pro workspace.';
-const dashboardRequiresPro = 'Creating a Dashboard view requires a Pro workspace.';
-const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }[] = [];
+const timelineRequiresPro = 'Upgrade this workspace to Pro to create a Timeline view.';
+const dashboardRequiresPro = 'Upgrade this workspace to Pro to create a Dashboard view.';
 let mockIsDashboardWidget = false;
 let mockRequiresPro = false;
 let mockSelfHosted = false;
@@ -25,9 +24,16 @@ jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
   useDatabaseViewCreation: (options: { enabled?: boolean; workspaceId?: string }) => {
     mockCreationCalls.push(options);
     return {
-      getAction: () => !mockRequiresPro && mockTimelineAllowed
-        ? { type: 'create' }
-        : { type: 'upgrade', reason: timelineRequiresPro },
+      // Timeline and Dashboard share the workspace's Pro plan check.
+      getAction: (layout?: ViewLayout) => {
+        if (layout === ViewLayout.Dashboard) {
+          return mockRequiresPro ? { type: 'upgrade', requiresPro: true, reason: dashboardRequiresPro } : { type: 'create' };
+        }
+
+        return !mockRequiresPro && mockTimelineAllowed
+          ? { type: 'create' }
+          : { type: 'upgrade', requiresPro: true, reason: timelineRequiresPro };
+      },
     };
   },
 }));
@@ -39,16 +45,6 @@ jest.mock('@/application/database-yjs', () => ({
     workspaceId: 'workspace-id',
   }),
   useDatabaseViewId: () => 'view-id',
-}));
-jest.mock('@/components/app/hooks/useTimelineCreationDisabledReason', () => ({
-  useTimelineCreationDisabledReason: (
-    getSubscriptions: unknown,
-    options: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }
-  ) => {
-    mockReasonCalls.push(options);
-    if (getSubscriptions !== mockGetSubscriptions || !mockRequiresPro) return undefined;
-    return options.requiresProMessage ?? timelineRequiresPro;
-  },
 }));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateDatabaseLayout: () => mockUpdateLayout }));
 jest.mock('react-i18next', () => ({
@@ -75,7 +71,6 @@ describe('database Layout', () => {
   beforeEach(() => {
     mockIsDashboardWidget = false;
     mockRequiresPro = false;
-    mockReasonCalls.length = 0;
     mockCreationCalls.length = 0;
     mockSelfHosted = false;
     mockTimelineAllowed = true;
@@ -194,15 +189,10 @@ describe('database Layout', () => {
     );
     await screen.findByTestId('database-layout-settings-trigger');
 
-    expect(mockReasonCalls.every(({ enabled }) => enabled === false)).toBe(true);
+    expect(mockCreationCalls.every(({ enabled }) => enabled === false)).toBe(true);
     fireEvent.keyDown(screen.getByTestId('database-layout-settings-trigger'), { key: 'ArrowRight' });
     await screen.findByTestId(`database-layout-option-${DatabaseViewLayout.Grid}`);
     expect(mockCreationCalls.at(-1)).toEqual({ workspaceId: 'workspace-id', getSubscriptions: mockGetSubscriptions, enabled: true });
-    expect(mockReasonCalls[mockReasonCalls.length - 1]).toEqual({
-      workspaceId: 'workspace-id',
-      enabled: true,
-      requiresProMessage: dashboardRequiresPro,
-    });
   });
 
   it.each([

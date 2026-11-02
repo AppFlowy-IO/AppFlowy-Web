@@ -843,15 +843,6 @@ export async function expectNewWidgetViewHiddenFromTabs(page: Page, databaseName
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the app is a Vite development build. Development and test builds
- * skip the workspace plan check (`useTimelineCreationDisabledReason`:
- * `isDevelopmentOrTestEnvironment()`), so a Free plan cannot be shown there.
- */
-export async function isDevelopmentBuild(page: Page): Promise<boolean> {
-  return page.evaluate(() => Boolean(document.querySelector('script[src="/@vite/client"]')));
-}
-
-/**
  * Undo the Background's server-side Pro grant (`grantWorkspaceProSubscription`):
  * the workspace's subscriptions become inactive. CI provides the Postgres
  * container; a local server without one does not enforce the plan.
@@ -891,11 +882,7 @@ export function revokeWorkspaceProSubscription(workspaceId: string) {
  * (these routes win over `mockProSubscription`'s, registered earlier), then
  * the app reloads so it reads the plan again.
  */
-export async function putWorkspaceOnFreePlan(page: Page, testInfo: TestInfo) {
-  testInfo.skip(
-    await isDevelopmentBuild(page),
-    'A development build skips the workspace plan check (isDevelopmentOrTestEnvironment); run against a production build'
-  );
+export async function putWorkspaceOnFreePlan(page: Page) {
   revokeWorkspaceProSubscription(dashboardWorld(page).workspaceId);
   const noPlan = (data: unknown) => ({
     status: 200,
@@ -908,35 +895,43 @@ export async function putWorkspaceOnFreePlan(page: Page, testInfo: TestInfo) {
   await page.reload({ waitUntil: 'domcontentloaded' });
 }
 
-/** Open a database's view tab "+" menu and try its Dashboard option. */
-export async function tryAddingDashboard(page: Page, databaseName: string) {
+/** Open a database's view tab "+" menu. */
+export async function openViewTabMenu(page: Page, databaseName: string) {
   const database = fixtureDatabase(page, databaseName);
 
   await openDatabasePage(page, databaseName, database.views.Grid);
   await DatabaseViewSelectors.addViewButton(page).click();
-  const option = DashboardSelectors.addDashboardViewOption(page);
-
-  await expect(option).toBeVisible(WAIT);
-  // A refused option is disabled; a click must not create a view.
-  await option.click({ force: true });
+  await expect(DashboardSelectors.addDashboardViewOption(page)).toBeVisible(WAIT);
 }
 
-/** The reason the open "+" menu gives on its disabled Dashboard option (its tooltip). */
-export async function expectDashboardRefusedWith(page: Page, message: string) {
+/**
+ * Like Timeline, the open "+" menu's Dashboard option offers a Free owner the
+ * upgrade: it stays enabled, shows the Pro crown, and its tooltip says why.
+ */
+export async function expectDashboardOffersUpgrade(page: Page, message: string) {
   const option = DashboardSelectors.addDashboardViewOption(page);
   // The tooltip's own popper layer (the "+" menu is another one, which never holds this text).
   const tooltip = page.locator('[data-radix-popper-content-wrapper]').filter({ hasText: message }).first();
 
-  await expect(option).toBeVisible(WAIT);
-  await expect(option).toHaveAttribute('data-disabled', '');
-  // The tooltip trigger wraps the disabled item; its text follows the plan check.
+  // The crown appears once the plan check settles.
+  await expect(option.getByLabel('Pro')).toHaveCount(1, WAIT);
+  await expect(option).not.toHaveAttribute('data-disabled', '');
   await expect(async () => {
-    // The refused click closes the tooltip. Leave its trigger before re-entering
-    // so Radix can open it again, as it does for a user's next hover.
+    // Leave the trigger before re-entering so Radix can open the tooltip again.
     await page.mouse.move(0, 0);
     await option.locator('xpath=..').hover();
     await expect(tooltip).toBeVisible({ timeout: 2_000 });
   }).toPass(WAIT);
+}
+
+/** Choose the open "+" menu's Dashboard option. */
+export async function chooseDashboardOption(page: Page) {
+  await DashboardSelectors.addDashboardViewOption(page).click();
+}
+
+/** The upgrade opens the workspace plan comparison (before any checkout). */
+export async function expectPlanComparisonOpened(page: Page) {
+  await expect(page).toHaveURL(/[?&]action=change_plan(&|$)/, WAIT);
 }
 
 export async function expectNoDashboardView(page: Page, databaseName: string) {

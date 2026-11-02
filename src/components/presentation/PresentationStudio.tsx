@@ -2,6 +2,10 @@ import Dialog from '@mui/material/Dialog';
 import { ArrowLeft, FileText, Play, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { ReactComponent as MindMapIcon } from '@/assets/icons/mind_map.svg';
+import { notify } from '@/components/_shared/notify';
+import { Button } from '@/components/ui/button';
+
 import { aiMapUnavailableReason } from './ai-map-availability';
 import { documentOutline } from './document-outline';
 import DocumentContentProvider from './DocumentContentProvider';
@@ -25,7 +29,7 @@ import {
   PresentationAPIError,
 } from './presentation-client';
 import { aiMapUpgradeMessage, CUSTOM_SLIDE_MESSAGE, presentationCapabilities, presentationUpgradeRequired, slideCountLimitMessage, templateUploadLimit } from './presentation-policy';
-import PresentationLoading, { MindMapLoading } from './PresentationLoading';
+import PresentationLoading, { MindMapLoading, PresentationState } from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
 import { describeSlideSources } from './slide-sources';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
@@ -160,7 +164,7 @@ export default function PresentationStudio({
   const [activeDeck, setActiveDeck] = useState<SavedDeck | undefined>(initialDeck);
   const [mapArtifact, setMapArtifact] = useState<Artifact<MindMap>>();
   const [loadedIdentity, setLoadedIdentity] = useState<string>();
-  const [loadFailure, setLoadFailure] = useState<string>();
+  const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [structuralState, setStructuralState] = useState<StructuralMapState>();
   const [structuralAttempt, setStructuralAttempt] = useState(0);
@@ -250,7 +254,7 @@ export default function PresentationStudio({
     const epoch = ++scopeEpoch.current;
 
     assessmentCache.current.clear();
-    setLoadFailure(undefined);
+    setLoadFailed(false);
     setStatus(undefined);
     setActiveDeck(initialDeck);
     setMapArtifact(undefined);
@@ -318,7 +322,7 @@ export default function PresentationStudio({
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setLoadFailure('Unable to load your saved presentation. Please try again.');
+          setLoadFailed(true);
           if (initialDeck) setNotice('Some presentation controls are unavailable. Close and reopen to try again.');
         }
       });
@@ -701,15 +705,62 @@ export default function PresentationStudio({
           snapshot.properties.find((property) => property.id === sourceNode)?.value,
     [sourceNode, snapshot]
   );
-  const closeMapPresentation = () => {
+  const closeMapPresentation = useCallback(() => {
     setMapPresentationOpen(false);
     if (presentMindMap) onClose?.();
-  };
+  }, [presentMindMap, onClose]);
 
   // Loading the saved map and then the page structure reads as one step while presenting.
   const mapLoading = showAIMap
-    ? loadedIdentity !== identity && !loadFailure
+    ? loadedIdentity !== identity && !loadFailed
     : canWrite && !!snapshot.serverSource && structuralResult?.state !== 'error' && structuralResult?.state !== 'ready';
+  // A presented map that cannot load returns to the page and says why there, rather than
+  // replacing the whole screen with an error.
+  const mapPresentationError =
+    !mapPresentationOpen || currentMap?.nodes.length
+      ? undefined
+      : showAIMap && loadFailed
+      ? 'Couldn’t load your saved mind map. Please try again.'
+      : !showAIMap && structuralResult?.state === 'error'
+      ? `Couldn’t load the mind map. ${structuralResult.message}`
+      : undefined;
+
+  useEffect(() => {
+    if (!mapPresentationError) return;
+    notify.error(mapPresentationError);
+    closeMapPresentation();
+  }, [mapPresentationError, closeMapPresentation]);
+  const mapStatus: {
+    message: string;
+    title?: string;
+    loading?: boolean;
+    retry?: { label: string; run: () => void };
+  } = loadFailed
+    ? {
+        title: 'Couldn’t load your saved mind map',
+        message: 'Something went wrong while loading it. Please try again.',
+        retry: { label: 'Retry', run: () => setLoadAttempt((value) => value + 1) },
+      }
+    : showAIMap
+    ? loadedIdentity !== identity
+      ? { message: 'Loading saved mind map…', loading: true }
+      : { message: currentMap ? 'The saved mind map has no nodes to display.' : 'No saved mind map is selected.' }
+    : !canWrite
+    ? {
+        message:
+          'Editor access is required to create a map from page structure. You can view an authorized saved mind map.',
+      }
+    : !snapshot.serverSource
+    ? { message: 'Reload the source before creating a map from page structure.' }
+    : structuralResult?.state === 'error'
+    ? {
+        title: 'Couldn’t load the page structure map',
+        message: structuralResult.message,
+        retry: { label: 'Retry page structure', run: () => setStructuralAttempt((attempt) => attempt + 1) },
+      }
+    : structuralResult?.state === 'ready'
+    ? { message: 'The source has no content to show as a mind map.' }
+    : { message: 'Loading page structure…', loading: true };
   const mapSourceDetails = useMemo(() => describeSlideSources(snapshot), [snapshot]);
   const mapViewer = currentMap?.nodes.length ? (
     <MindMapViewer
@@ -773,57 +824,56 @@ export default function PresentationStudio({
       }}
       onClosePresentation={mapPresentationOpen ? closeMapPresentation : undefined}
     />
-  ) : mapPresentationOpen && mapLoading ? (
+  ) : mapPresentationOpen && (mapLoading || mapPresentationError) ? (
+    // A map that failed to load keeps this surface until the effect above closes it.
     <MindMapLoading onClose={closeMapPresentation} />
   ) : (
     <section
       className={mapPresentationOpen ? 'ps-map-presentation-status' : 'ps-page'}
       aria-label='Mind map availability'
     >
-      {loadFailure ? (
-        <>
-          <p role='alert'>{loadFailure}</p>
-          <Action onClick={() => setLoadAttempt((value) => value + 1)}>Retry</Action>
-        </>
-      ) : showAIMap ? (
-        <p role='status'>
-          {loadedIdentity !== identity
-            ? 'Loading saved mind map…'
-            : currentMap
-            ? 'The saved mind map has no nodes to display.'
-            : 'No saved mind map is selected.'}
-        </p>
-      ) : !canWrite ? (
-        <p role='status'>
-          Editor access is required to create a map from page structure. You can view an authorized saved mind map.
-        </p>
-      ) : !snapshot.serverSource ? (
-        <p role='status'>Reload the source before creating a map from page structure.</p>
-      ) : structuralResult?.state === 'error' ? (
-        <>
-          <p role='alert'>Could not load the page structure map. {structuralResult.message}</p>
-          <Action onClick={() => setStructuralAttempt((attempt) => attempt + 1)}>Retry page structure</Action>
-        </>
-      ) : structuralResult?.state === 'ready' ? (
-        <p role='status'>The source has no content to show as a mind map.</p>
-      ) : (
-        <p role='status'>Loading page structure…</p>
-      )}
-      {reuse.error && (
-        <Notice>
-          {reuse.error} <Action onClick={reuse.refresh}>Try again</Action>
-        </Notice>
-      )}
-      {(reuse.job || canGenerateMap) && (
-        <Action
-          disabled={busy || reuse.checking || !!reuse.error}
-          onClick={() => (reuse.job ? void openExisting() : void generate('mindmap'))}
-        >
-          {reuse.job ? 'Open mind map' : 'Generate AI mind map'}
+      {mapPresentationOpen && (
+        <Action className='ps-map-close' aria-label='Back to page' title='Close (Esc)' onClick={closeMapPresentation}>
+          <X size={20} />
         </Action>
       )}
-      {canWrite && !reuse.job && aiMapUpgradeMessage(status) && <PresentationPaywall message={aiMapUpgradeMessage(status)!} onUpgrade={upgrade} />}
-      {mapPresentationOpen && <Action onClick={closeMapPresentation}>Back to page</Action>}
+      <PresentationState
+        variant={mapStatus.retry ? 'error' : 'empty'}
+        icon={mapStatus.retry || mapStatus.loading ? undefined : <MindMapIcon />}
+        title={mapStatus.title}
+        message={mapStatus.message}
+        actions={
+          <>
+            {mapPresentationOpen && (
+              <Button variant='outline' onClick={closeMapPresentation}>
+                Back to page
+              </Button>
+            )}
+            {mapStatus.retry && (
+              <Button variant={reuse.job || canGenerateMap ? 'outline' : 'default'} onClick={mapStatus.retry.run}>
+                {mapStatus.retry.label}
+              </Button>
+            )}
+            {(reuse.job || canGenerateMap) && (
+              <Button
+                disabled={busy || reuse.checking || !!reuse.error}
+                onClick={() => (reuse.job ? void openExisting() : void generate('mindmap'))}
+              >
+                {reuse.job ? 'Open mind map' : 'Generate AI mind map'}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {reuse.error && (
+          <Notice>
+            {reuse.error} <Action onClick={reuse.refresh}>Try again</Action>
+          </Notice>
+        )}
+        {canWrite && !reuse.job && aiMapUpgradeMessage(status) && (
+          <PresentationPaywall message={aiMapUpgradeMessage(status)!} onUpgrade={upgrade} />
+        )}
+      </PresentationState>
     </section>
   );
 
@@ -877,12 +927,22 @@ export default function PresentationStudio({
             </Notice>
           )}
           {mode === 'slides' && loadedIdentity !== identity && !initialDeck ? (
-            loadFailure ? (
-              <div className='ps-page' role='alert'>
-                <p>{loadFailure}</p>
-                <Action onClick={() => setLoadAttempt((value) => value + 1)}>Retry</Action>
-                <Action onClick={onClose}>Back to page</Action>
-              </div>
+            loadFailed ? (
+              <PresentationState
+                variant='error'
+                title='Couldn’t load your presentation'
+                message='Something went wrong while loading your saved presentation. Please try again.'
+                actions={
+                  <>
+                    {onClose && (
+                      <Button variant='outline' onClick={onClose}>
+                        Back to page
+                      </Button>
+                    )}
+                    <Button onClick={() => setLoadAttempt((value) => value + 1)}>Retry</Button>
+                  </>
+                }
+              />
             ) : (
               <PresentationLoading message='Loading saved presentation…' />
             )
