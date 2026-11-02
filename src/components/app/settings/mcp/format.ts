@@ -164,10 +164,18 @@ export function mcpRemainingAppApproval<T extends McpApprovalCoverage>(
   return approvals.find((other) => (other.approval_key?.trim() || other.client_id) === appKey);
 }
 
-/** How strict each approval policy is: a higher rank refuses more apps. */
+/*
+ * The approval policy rules below predict, for the owner's confirmations, what the server decides.
+ * They mirror `McpApprovalMode` and `keys_to_keep_approved` in AppFlowy Cloud's
+ * libs/appflowy-mcp-core/src/governance.rs, and Desktop ports them (mcp_rules.dart,
+ * mcp_models.dart): a change to the server rule needs both clients. format.test.ts runs the
+ * server's tightening_keeps_what_the_previous_policy_admitted vectors.
+ */
+
+/** How strict each approval policy is: a higher rank refuses more apps (server: `strictness`). */
 const APPROVAL_MODE_RANK: Record<McpApprovalMode, number> = { any: 0, verified_and_approved: 1, approved_only: 2 };
 
-/** `next` refuses apps that `current` lets members connect without approval. */
+/** `next` refuses apps that `current` lets members connect without approval (server: `is_stricter_than`). */
 export function isStricterMcpApprovalMode(next: McpApprovalMode, current: McpApprovalMode): boolean {
   return APPROVAL_MODE_RANK[next] > APPROVAL_MODE_RANK[current];
 }
@@ -177,7 +185,8 @@ type McpVerifiedIdentity = Pick<McpClientSummary, 'verified_app' | 'identity_ver
 /**
  * Whether `mode` lets members connect `client` without an owner's approval.
  * Under `verified_and_approved` that takes a proven identity: the catalog's
- * web apps, not the ones that run on the user's computer.
+ * web apps, not the ones that run on the user's computer. The server's
+ * `McpApprovalMode::admits` with `approved: false`.
  */
 export function mcpModeAdmitsWithoutApproval(mode: McpApprovalMode, client: McpVerifiedIdentity) {
   return (
@@ -190,8 +199,8 @@ export function mcpModeAdmitsWithoutApproval(mode: McpApprovalMode, client: McpV
  * The apps members are connected to that the `current` policy admits without
  * an approval and the `next` one would refuse, each once (per app for
  * recognized apps), in connection-list order. When an owner moves to a
- * stricter policy, the server approves exactly these (`auto_approved_clients`)
- * so the members using them keep working.
+ * stricter policy, the server approves exactly these (`auto_approved_clients`,
+ * from `keys_to_keep_approved`) so the members using them keep working.
  */
 export function mcpClientsKeptApproved<T extends McpAppIdentity & McpVerifiedIdentity>(
   connections: readonly T[] | null | undefined,

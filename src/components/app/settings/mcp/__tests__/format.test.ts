@@ -1,5 +1,5 @@
 import translations from '@/@types/translations/en.json';
-import { MCP_ERROR_REASONS, McpApiError } from '@/application/services/domains/mcp';
+import { MCP_ERROR_REASONS, McpApiError, type McpApprovalMode, mcpApprovalKey } from '@/application/services/domains/mcp';
 import { mcpTestT } from '@/components/mcp/__tests__/mcpTestI18n';
 
 import {
@@ -288,6 +288,51 @@ describe('mcpClientsKeptApproved', () => {
       connection('claude', 'u1', 'claude'),
     ]);
     expect(mcpClientsKeptApproved(connections, [], 'any', 'approved_only')).toEqual([]);
+  });
+
+  // The server's tightening_keeps_what_the_previous_policy_admitted (AppFlowy Cloud,
+  // libs/appflowy-mcp-core/src/governance.rs) with the same clients, approvals and keys, so the two
+  // can be diffed. The server returns keys sorted; the Web returns connections in list order.
+  it('keeps the approval keys the server keeps (keys_to_keep_approved)', () => {
+    const CLAUDE_CODE = 'https://claude.ai/oauth/claude-code-client-metadata';
+    // Claude is the catalog's web app; Cursor and Claude Code run on members' computers.
+    const client = (client_id: string, app?: string) => ({
+      client_id,
+      app_id: app ?? null,
+      verified_app: Boolean(app),
+      identity_verified: app === 'claude',
+    });
+    const connected = [
+      client('dcr-cursor-1', 'cursor'),
+      client('dcr-cursor-2', 'cursor'),
+      client(CLAUDE_CODE, 'claude-code'),
+      client('dcr-claude', 'claude'),
+      client('dcr-local'),
+      client('dcr-approved'),
+      client('dcr-legacy-cursor', 'cursor'),
+      client('dcr-local'),
+    ];
+    // An app-level approval and two per-client rows, one of them a recognized app's.
+    const approved = ['app:claude-code', 'dcr-approved', 'dcr-legacy-cursor'].map((key) => ({
+      client_id: key,
+      approval_key: key,
+    }));
+    const keysToKeep = (previous: McpApprovalMode, next: McpApprovalMode) =>
+      mcpClientsKeptApproved(connected, approved, next, previous).map(mcpApprovalKey).sort();
+
+    expect(keysToKeep('any', 'verified_and_approved')).toEqual(['app:cursor', 'dcr-local']);
+    expect(keysToKeep('verified_and_approved', 'approved_only')).toEqual(['app:claude']);
+    expect(keysToKeep('any', 'approved_only')).toEqual(['app:claude', 'app:cursor', 'dcr-local']);
+    // Loosening, or staying, never approves anything.
+    const loosening: [McpApprovalMode, McpApprovalMode][] = [
+      ['approved_only', 'verified_and_approved'],
+      ['approved_only', 'any'],
+      ['verified_and_approved', 'any'],
+      ['verified_and_approved', 'verified_and_approved'],
+      ['approved_only', 'approved_only'],
+    ];
+
+    loosening.forEach(([previous, next]) => expect(keysToKeep(previous, next)).toEqual([]));
   });
 
   it('is empty when every connected app is approved or nothing is known yet', () => {
