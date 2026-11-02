@@ -319,7 +319,7 @@ message). A table test in `format.test.ts` checks that no reason's Settings text
 app". Tooltips render inside the panel so they stay above the MUI dialog. The hooks
 (`useMcpMemberStatus`, `useMyMcpConnections`, `useMcpConnectionsOverview`,
 `useMcpGovernance`) share `useMcpRequest.ts`: a new load aborts the previous one, an action's result
-wins over a load still in flight, and one action runs at a time.
+wins over a load still in flight and clears an earlier load's failure, and one action runs at a time.
 
 ### App identity
 

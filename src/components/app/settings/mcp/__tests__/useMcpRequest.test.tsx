@@ -105,6 +105,26 @@ describe('useMcpResource', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  // An approval reloads the settings; that reload fails while a policy change is in flight, which
+  // answers after it and updates the settings without reloading them.
+  it('lets an action’s update clear an earlier load’s failure', async () => {
+    const { load, calls } = controlledLoad<string>();
+    const { result } = renderHook(() => useMcpResource(load));
+
+    await settle(() => calls[0].answer.resolve('verified_and_approved'));
+    act(() => {
+      void result.current.reload();
+    });
+    await settle(() => calls[1].answer.reject(new McpApiError({ status: 0, error: 'network_error' })));
+    expect(result.current.failed).toBe(true);
+
+    act(() => result.current.update(() => 'approved_only'));
+    expect(result.current.failed).toBe(false);
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.data).toBe('approved_only');
+    expect(result.current.loading).toBe(false);
+  });
+
   it('drops a load answered after it was disabled', async () => {
     const { load, calls } = controlledLoad<string>();
     const { result, rerender } = renderHook(({ enabled }) => useMcpResource(load, enabled), {

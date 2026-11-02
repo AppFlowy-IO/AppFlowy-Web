@@ -10,13 +10,14 @@ export interface McpResource<T> {
   data: T | undefined;
   /** A load is in flight. */
   loading: boolean;
-  /** The last load failed; `error` holds why. Cleared when a reload starts. */
+  /** The last load failed; `error` holds why. Cleared when a reload starts or an action updates the data. */
   failed: boolean;
   error: unknown;
   reload: () => Promise<void>;
   /**
    * Applies the result of a successful action. It wins over a load already in
-   * flight, which may have been answered before the action took effect.
+   * flight, which may have been answered before the action took effect, and
+   * clears an earlier load's failure, which it is newer than.
    */
   update: (updater: (current: T | undefined) => T | undefined) => void;
 }
@@ -68,6 +69,8 @@ export function useMcpResource<T>(load: (signal: AbortSignal) => Promise<T>, ena
       setLoading(false);
     }
 
+    // A policy change answered after a failed settings reload is not a failed section.
+    setFailure(undefined);
     setData(updater);
   }, []);
 
