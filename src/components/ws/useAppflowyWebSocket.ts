@@ -2,8 +2,9 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
-import { refreshToken } from '@/application/services/js-services/http/gotrue';
+import { CollabSendWindow } from '@/application/realtime/send-window';
 import { isAuthRefreshFailure } from '@/application/services/js-services/http/auth-refresh-error';
+import { refreshToken } from '@/application/services/js-services/http/gotrue';
 import { captureTokenSession, getTokenParsed, invalidToken, isTokenSessionCurrent } from '@/application/session/token';
 import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -53,6 +54,8 @@ export type AppflowyWebSocketType = {
    * @param keep - Should the message be cached if the WebSocket is not open? (default: true)
    */
   sendMessage: (msg: messages.IMessage, keep?: boolean) => void;
+  canSendUpdate?: (objectId?: string) => boolean;
+  subscribeSendReady?: (listener: () => void) => () => void;
   /**
    * The current ready state of the WebSocket.
    * It can be one of the following values:
@@ -105,6 +108,8 @@ export interface Options {
   connect?: boolean;
   /** Keep the elected cross-tab socket alive while its owner tab is hidden. */
   reconnectWhenHidden?: boolean;
+  /** Opt in only when the Web server-info response advertises UpdateAck support. */
+  supportsUpdateAck?: boolean;
 }
 
 export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType => {
@@ -255,6 +260,21 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
   triggerNonceReconnectRef.current = triggerNonceReconnect;
 
+  const rawSendRef = useRef<(message: messages.IMessage, keep: boolean) => void>(() => {
+    throw new Error('WebSocket sender is not initialized');
+  });
+  const decodedMessages = useMemo(() => new WeakMap<MessageEvent, messages.Message>(), []);
+  const sendWindow = useMemo(() => new CollabSendWindow({
+    send: (message, keep) => rawSendRef.current(message, keep),
+    onUpdateStalled: () => {
+      Log.warn('[sync] Workspace send window stalled', { workspaceId: options.workspaceId, clientId, deviceId });
+      // share=true returns a protected WebSocket proxy whose close() is a no-op.
+      // Replacing the URL through the existing recovery path closes it via its owner.
+      triggerNonceReconnectRef.current('update-response-timeout', true);
+    },
+    onManifestTimeout: (objectId) => Log.warn('[sync] Manifest response timed out', { objectId }),
+  }), [options.workspaceId, clientId, deviceId]);
+
   const { lastMessage, sendMessage, readyState, getWebSocket } = useWebSocket(
     socketUrl,
     {
@@ -331,6 +351,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       // Connection event callback
       onOpen: () => {
         Log.info('✅ WebSocket connection opened');
+        sendWindow.setConnection(true, options.supportsUpdateAck === true);
         setAutomaticRetryScheduled(false);
         setReconnectAttempt(0);
         lastCloseCodeRef.current = null;
@@ -344,8 +365,23 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       },
 
       onClose: (event) => {
+        sendWindow.disconnect();
         lastCloseCodeRef.current = event.code;
         Log.info('❌ WebSocket connection closed', event);
+      },
+
+      // React can coalesce lastMessage renders. Retire every transport ACK in the socket
+      // callback, before React scheduling, so a burst cannot leak send-window reservations.
+      onMessage: (event) => {
+        if (typeof event.data === 'string') return;
+        try {
+          const decoded = messages.Message.decode(new Uint8Array(event.data));
+
+          decodedMessages.set(event, decoded);
+          if (decoded.collabMessage) sendWindow.receive(decoded.collabMessage);
+        } catch (error) {
+          Log.warn('[sync] Could not process realtime flow-control response', error);
+        }
       },
 
       onError: (event) => {
@@ -370,6 +406,18 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     },
     shouldConnect
   );
+
+  useLayoutEffect(() => {
+    rawSendRef.current = (message, keep) => {
+      const protobufMessage = messages.Message.encode(message).finish();
+
+      sendMessage(protobufMessage, shouldConnectRef.current ? keep : false);
+    };
+
+    sendWindow.setConnection(shouldConnect && readyState === 1, options.supportsUpdateAck === true);
+  }, [sendMessage, sendWindow, shouldConnect, readyState, options.supportsUpdateAck]);
+
+  useLayoutEffect(() => () => sendWindow.disconnect(), [sendWindow]);
 
   const tryDeferredReconnect = useCallback(
     (reason: 'online' | 'visibility') => {
@@ -435,17 +483,18 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     (message: messages.IMessage, keep = true): void => {
       Log.debug('sending sync message:', message);
 
-      const protobufMessage = messages.Message.encode(message).finish();
+      if (!shouldConnectRef.current) {
+        rawSendRef.current(message, false);
+        return;
+      }
 
-      // Followers route protocol messages through BroadcastChannel. Do not
-      // retain a second in-memory socket queue while this tab is not leader.
-      // The latest-value ref keeps this callback stable for SyncContexts that
-      // outlive a follower-to-leader handoff while still enabling buffering as
-      // soon as this tab owns the replacement socket.
-      sendMessage(protobufMessage, shouldConnectRef.current ? keep : false);
+      sendWindow.send(message, keep);
     },
-    [sendMessage]
+    [sendWindow]
   );
+
+  const canSendUpdate = useCallback((objectId?: string) => sendWindow.canSendUpdate(objectId), [sendWindow]);
+  const subscribeSendReady = useCallback((listener: () => void) => sendWindow.subscribeReady(listener), [sendWindow]);
 
   const manualReconnect = useCallback(() => {
     if (!shouldConnect || readyState !== WS_READY_STATE_CLOSED) return;
@@ -464,8 +513,8 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   }, [triggerNonceReconnect, shouldConnect, readyState]);
 
   const lastProtobufMessage = useMemo(
-    () => (lastMessage ? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
-    [lastMessage]
+    () => (lastMessage ? decodedMessages.get(lastMessage) ?? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
+    [lastMessage, decodedMessages]
   );
 
   // Depend on the primitive fields, not the options object identity: callers
@@ -492,11 +541,13 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     () => ({
       lastMessage: lastProtobufMessage,
       sendMessage: sendProtobufMessage,
+      canSendUpdate,
+      subscribeSendReady,
       readyState: effectiveReadyState,
       options: resolvedOptions,
       reconnectAttempt,
       reconnect: manualReconnect,
     }),
-    [lastProtobufMessage, sendProtobufMessage, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
+    [lastProtobufMessage, sendProtobufMessage, canSendUpdate, subscribeSendReady, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
   );
 };

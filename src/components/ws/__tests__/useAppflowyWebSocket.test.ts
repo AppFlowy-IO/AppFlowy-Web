@@ -1,8 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 
 import { getServerInfo } from '@/application/services/js-services/http/auth-api';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
+import { messages } from '@/proto/messages';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 
@@ -71,6 +73,7 @@ const lastSocketOptions = () => {
     {
       shouldReconnect?: (event: CloseEvent) => boolean;
       reconnectInterval?: (attemptNumber: number) => number;
+      onMessage?: (event: MessageEvent) => void;
     }
   ][];
 
@@ -98,6 +101,53 @@ describe('useAppflowyWebSocket', () => {
     expect(await resolveLastSocketUrl()).toContain('/workspace-1/');
     expect(new URL(await resolveLastSocketUrl()).searchParams.has('server_restore_id')).toBe(false);
     expect(getServerInfo).not.toHaveBeenCalled();
+  });
+
+  it('consumes every ACK in a socket burst even when React has no lastMessage render', () => {
+    const { result, unmount } = renderHook(() => useAppflowyWebSocket({ ...baseOptions, supportsUpdateAck: true }));
+    const update = (objectId: string) => ({ collabMessage: { objectId, update: { payload: new Uint8Array([1]) } } });
+
+    for (let i = 0; i < 32; i += 1) result.current.sendMessage(update(`doc-${i}`));
+    expect(() => result.current.sendMessage(update('waiting'))).toThrow('send window is full');
+    act(() => {
+      for (let i = 0; i < 32; i += 1) {
+        const frame = messages.Message.encode({ collabMessage: { objectId: `doc-${i}`, updateAck: {} } }).finish();
+
+        lastSocketOptions().onMessage?.(new MessageEvent('message', { data: Uint8Array.from(frame).buffer }));
+      }
+    });
+    expect(result.current.lastMessage).toBeNull();
+    expect(result.current.canSendUpdate?.('waiting')).toBe(true);
+    for (let i = 0; i < 32; i += 1) result.current.sendMessage(update(`next-${i}`));
+    expect(stableSendMessage).toHaveBeenCalledTimes(64);
+    unmount();
+  });
+
+  it('recovers a stalled shared socket through its owner rather than calling the protected proxy', async () => {
+    jest.useFakeTimers();
+    const { result, unmount } = renderHook(() => useAppflowyWebSocket({ ...baseOptions, supportsUpdateAck: true }));
+
+    try {
+      result.current.sendMessage({ collabMessage: { objectId: 'stalled', update: { payload: new Uint8Array([1]) } } });
+      await act(async () => { jest.advanceTimersByTime(30_000); });
+      expect(await resolveLastSocketUrl()).toContain('_rc=1');
+      expect(result.current.canSendUpdate?.('successor')).toBe(false);
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the send window usable after StrictMode replays effect cleanup', () => {
+    const { result, unmount } = renderHook(
+      () => useAppflowyWebSocket({ ...baseOptions, supportsUpdateAck: true }),
+      { wrapper: StrictMode }
+    );
+
+    result.current.sendMessage({ collabMessage: { objectId: 'doc', update: { payload: new Uint8Array([1]) } } });
+    expect(stableSendMessage).toHaveBeenCalledTimes(1);
+    expect(result.current.canSendUpdate?.('doc')).toBe(false);
+    unmount();
   });
 
   // A token rotation must not replace the URL callback during a live session,

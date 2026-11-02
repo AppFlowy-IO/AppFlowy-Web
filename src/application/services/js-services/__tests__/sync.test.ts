@@ -15,10 +15,11 @@ jest.mock('@/application/sync-outbox', () => {
   // *other* peers via handleMessage; routing through every registered
   // peer is harmless because applying your own update is a no-op in Yjs.
   const clientsByObjectId = new Map<string, SyncContext[]>();
+  let receivingClient: SyncContext | undefined;
 
   return {
     enqueueOutboxUpdate: jest.fn((record: { objectId: string; collabType: number; version?: string | null; payload: Uint8Array }) => {
-      const peers = clientsByObjectId.get(record.objectId) ?? [];
+      const peers = receivingClient ? [receivingClient] : clientsByObjectId.get(record.objectId) ?? [];
       const message = {
         collabMessage: {
           objectId: record.objectId,
@@ -48,6 +49,12 @@ jest.mock('@/application/sync-outbox', () => {
       clientsByObjectId.set(ctx.doc.guid, list);
     },
     __clearTestClients: () => clientsByObjectId.clear(),
+    __receiveAs: (client: SyncContext, receive: () => void) => {
+      const previous = receivingClient;
+
+      receivingClient = client;
+      try { receive(); } finally { receivingClient = previous; }
+    },
   };
 });
 
@@ -171,7 +178,9 @@ const createQueuedSyncBus = (clientCount: number): QueuedSyncBus => {
 
       clients.forEach((client, index) => {
         if (index !== sender && online[index]) {
-          handleMessage(client, message.collabMessage!);
+          // Manifest catch-up now uses the outbox too. Route that upload as the
+          // receiving peer; offline/local edits still wait for this manifest exchange.
+          outboxMock.__receiveAs(client, () => handleMessage(client, message.collabMessage!));
         }
       });
     }

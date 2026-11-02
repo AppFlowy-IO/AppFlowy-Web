@@ -13,6 +13,7 @@ interface WorkspaceRealtimeTransportOptions {
   workspaceId: string;
   clientId: number;
   deviceId: string;
+  supportsUpdateAck?: boolean;
 }
 
 export interface WorkspaceRealtimeTransport {
@@ -38,6 +39,7 @@ export function useWorkspaceRealtimeTransport({
   workspaceId,
   clientId,
   deviceId,
+  supportsUpdateAck,
 }: WorkspaceRealtimeTransportOptions): WorkspaceRealtimeTransport {
   const leadership = useWorkspaceWebSocketLeader(workspaceId);
   const broadcastChannel = useBroadcastChannel(`workspace:${workspaceId}`);
@@ -46,6 +48,7 @@ export function useWorkspaceRealtimeTransport({
     clientId,
     deviceId,
     connect: leadership.isLeader,
+    supportsUpdateAck,
     // The elected owner may be hidden while serving visible follower tabs.
     reconnectWhenHidden: leadership.isCoordinated,
   });
