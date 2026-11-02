@@ -204,17 +204,20 @@ export function safeHttpUrl(value?: string | null): string | undefined {
   }
 }
 
-/** True for `localhost`, `127.x.x.x` and `[::1]`, the hosts of an app running on this computer. */
-export function isLoopbackHost(host: string): boolean {
-  const normalized = host.trim().toLowerCase().replace(/\.$/, '');
+// The same list as the server's `is_loopback_host` (AppFlowy-Cloud
+// libs/appflowy-mcp-core/src/client_registration.rs), which decides a client's
+// `loopback_only` in Settings and which http redirects registration accepts.
+// A wider list here would call an https redirect to, say, dev.localhost local
+// on the consent page while Settings shows it as a remote host.
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
-  return (
-    normalized === 'localhost' ||
-    normalized.endsWith('.localhost') ||
-    /^127(?:\.\d{1,3}){3}$/.test(normalized) ||
-    normalized === '[::1]' ||
-    normalized === '::1'
-  );
+/**
+ * True for `localhost`, `127.0.0.1` and `::1` (`[::1]` as a URL host), the
+ * hosts of an app running on this computer, exactly as the server decides it.
+ * Pass a URL's `hostname`, which is already lower case.
+ */
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host);
 }
 
 export interface McpRedirectTarget {

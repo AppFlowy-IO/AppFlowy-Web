@@ -145,6 +145,9 @@ describe('consentHostToAcknowledge', () => {
 
   it('asks about the https host of a self-registered app the catalog does not recognize', () => {
     expect(consentHostToAcknowledge(dcr, 'https://agents.example.com/oauth/callback')).toBe('agents.example.com');
+    // Not loopback hosts for the server either, which shows them as remote in Settings.
+    expect(consentHostToAcknowledge(dcr, 'https://dev.localhost/cb')).toBe('dev.localhost');
+    expect(consentHostToAcknowledge(dcr, 'https://127.0.0.2/cb')).toBe('127.0.0.2');
     // Servers without the catalog send no verified_app.
     expect(consentHostToAcknowledge({ client_kind: 'dcr' }, 'https://agents.example.com/cb')).toBe('agents.example.com');
   });

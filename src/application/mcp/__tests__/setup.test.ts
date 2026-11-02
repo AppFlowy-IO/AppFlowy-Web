@@ -180,16 +180,20 @@ describe('MCP URL helpers', () => {
     expect(safeHttpUrl(value)).toBe(expected);
   });
 
+  // The server's vectors (is_loopback_host in libs/appflowy-mcp-core): any other host is remote.
   it.each([
     ['localhost', true],
-    ['LOCALHOST', true],
-    ['app.localhost', true],
     ['127.0.0.1', true],
-    ['127.1.2.3', true],
     ['[::1]', true],
     ['::1', true],
+    ['LOCALHOST', false],
+    ['localhost.', false],
+    ['app.localhost', false],
+    ['127.0.0.2', false],
+    ['127.1.2.3', false],
     ['claude.ai', false],
     ['localhost.evil.com', false],
+    ['localhost.example.com', false],
     ['127.0.0.1.evil.com', false],
   ])('isLoopbackHost(%p) is %p', (host, expected) => {
     expect(isLoopbackHost(host)).toBe(expected);
@@ -207,6 +211,15 @@ describe('MCP URL helpers', () => {
       loopback: true,
     });
     expect(describeRedirectUri('http://[::1]:8787/callback')).toEqual({ host: '[::1]', scheme: 'http', loopback: true });
+    // URL parsing lower-cases the host first, as the server's URL parser does.
+    expect(describeRedirectUri('https://LOCALHOST:8443/callback')).toEqual({
+      host: 'localhost',
+      scheme: 'https',
+      loopback: true,
+    });
+    // Only the server's loopback hosts: the server lists these as remote in Settings too.
+    expect(describeRedirectUri('https://dev.localhost/callback')?.loopback).toBe(false);
+    expect(describeRedirectUri('https://127.0.0.2/callback')?.loopback).toBe(false);
     expect(describeRedirectUri('cursor://anysphere.cursor-mcp/oauth/callback')).toEqual({
       host: 'anysphere.cursor-mcp',
       scheme: 'cursor',
