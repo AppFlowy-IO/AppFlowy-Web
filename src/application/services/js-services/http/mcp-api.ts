@@ -492,29 +492,57 @@ const MCP_NOT_CONFIGURED: McpConfiguration = { status: 'not_configured' };
 
 const warnedInvalidMcpUrls = new Set<string>();
 
-/** `value` without trailing slashes when it is an absolute http(s) URL; otherwise '' (warning once per value). */
+/**
+ * Why `value` cannot be the MCP service's origin, or undefined when it can.
+ * Cloud applies the same rule to the same variable (`parse_mcp_public_origin`):
+ * clients append `/mcp` and the API paths to it, so anything after the host
+ * would build wrong URLs.
+ */
+function mcpOriginProblem(value: string): string | undefined {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return 'it is not an absolute URL';
+  }
+
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || !url.hostname) {
+    return 'it must be an http(s) URL with a host';
+  }
+
+  if (url.username || url.password) return 'it must not contain credentials';
+  if (url.pathname !== '/' || /[?#]/.test(value)) {
+    return 'it must be an origin without a path (no /mcp), query or fragment';
+  }
+
+  return undefined;
+}
+
+/**
+ * `value` without trailing slashes when it is an http(s) origin; otherwise ''
+ * (warning once per value, without echoing it, since it may carry credentials).
+ */
 function normalizeMcpBaseUrl(value: string | null | undefined, origin: string): string {
   const trimmed = (value ?? '').trim().replace(/\/+$/, '');
 
   if (!trimmed) return '';
 
-  try {
-    const { protocol } = new URL(trimmed);
+  const problem = mcpOriginProblem(trimmed);
 
-    if (protocol === 'https:' || protocol === 'http:') return trimmed;
-  } catch {
-    // Reported below.
-  }
+  if (!problem) return trimmed;
 
   if (!warnedInvalidMcpUrls.has(`${origin}=${trimmed}`)) {
     warnedInvalidMcpUrls.add(`${origin}=${trimmed}`);
-    console.warn(`[MCP] Ignoring ${origin} "${trimmed}": expected an absolute http(s) URL.`);
+    console.warn(
+      `[MCP] Ignoring ${origin}: ${problem}. Set it to the public origin of the MCP service, such as https://mcp.example.com.`
+    );
   }
 
   return '';
 }
 
-/** The `APPFLOWY_MCP_BASE_URL` runtime config, normalized; '' when unset or not an http(s) URL. */
+/** The `APPFLOWY_MCP_BASE_URL` runtime config, normalized; '' when unset or not an http(s) origin. */
 export function getMcpBaseUrlOverride(): string {
   return normalizeMcpBaseUrl(getConfigValue('APPFLOWY_MCP_BASE_URL', ''), 'APPFLOWY_MCP_BASE_URL');
 }

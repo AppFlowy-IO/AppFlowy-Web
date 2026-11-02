@@ -332,8 +332,9 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    without asking the server. It is a runtime config key like `APPFLOWY_BASE_URL`: `dev.env`
    (`http://localhost:8002`; copy it to `.env` for `pnpm dev`), `deploy.env` (empty),
    `docker/entrypoint*.sh` (injected into `window.__APP_CONFIG__`), `src/utils/runtime-config.ts`,
-   and the CI check in `.github/workflows/web_ci.yaml`. A value that is not an absolute http(s) URL
-   is ignored with a console warning. AppFlowy Cloud's bundled Docker Compose (`appflowy_web`) and
+   and the CI check in `.github/workflows/web_ci.yaml`. A value that is not an http(s) origin (it has
+   a path such as `/mcp`, a query, a fragment or credentials) is ignored with a console warning, as
+   Cloud ignores it. AppFlowy Cloud's bundled Docker Compose (`appflowy_web`) and
    Helm (`appflowy-web`) deployments set it to the MCP origin, because server-info has no `mcp_url`
    while AI app connections are turned off and Settings → MCP must still show that and let
    members disconnect. Set it in any other deployment that runs the MCP service for the same reason.

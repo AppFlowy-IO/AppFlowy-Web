@@ -112,4 +112,17 @@ describe('McpSetupPage', () => {
     expect(screen.queryByTestId('mcp-setup-manage-link')).toBeNull();
     expect(getServerInfo).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores an APPFLOWY_MCP_BASE_URL that names the MCP server URL instead of its origin', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com/mcp';
+    renderPage();
+
+    // Not https://mcp.example.com/mcp/mcp: the page falls back to server-info, which names none.
+    expect(await screen.findByTestId('mcp-setup-not-configured')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-endpoint-value')).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
 });

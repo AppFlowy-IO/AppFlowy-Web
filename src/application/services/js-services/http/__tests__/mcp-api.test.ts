@@ -135,6 +135,32 @@ describe('MCP configuration', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
+
+  it.each([
+    ['the MCP server URL', `${BASE}/mcp`],
+    ['a path', `${BASE}/appflowy/`],
+    ['credentials', 'https://user:secret@mcp.example.com'],
+    ['a query', `${BASE}/?tenant=a`],
+    ['an empty query', `${BASE}?`],
+    ['a fragment', `${BASE}#mcp`],
+  ])('ignores a URL with %s, as Cloud does, and warns once without echoing it', (_case, value) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    mockConfig = { APPFLOWY_MCP_BASE_URL: value };
+
+    expect(getMcpBaseUrlOverride()).toBe('');
+    expect(getMcpServerUrl()).toBe('');
+    expect(getMcpBaseUrlOverride()).toBe('');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).not.toContain(value.replace(/\/$/, ''));
+    warn.mockRestore();
+  });
+
+  it('accepts an origin with a port and a trailing slash', () => {
+    mockConfig = { APPFLOWY_MCP_BASE_URL: ' http://localhost:8002/ ' };
+
+    expect(getMcpBaseUrlOverride()).toBe('http://localhost:8002');
+  });
 });
 
 describe('MCP configuration discovery', () => {
@@ -183,12 +209,15 @@ describe('MCP configuration discovery', () => {
     expect(getMcpConfiguration()).toEqual({ status: 'not_configured' });
   });
 
-  it('ignores an mcp_url that is not an absolute http(s) URL', () => {
+  it.each([
+    ['not an absolute http(s) URL', 'mcp.example.com'],
+    ['not an origin', 'https://mcp.discovered.example.com/mcp'],
+  ])('ignores an mcp_url that is %s', (_case, mcpUrl) => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    updateServerInfo(CLOUD, available('mcp.example.com'));
+    updateServerInfo(CLOUD, available(mcpUrl));
     expect(getMcpConfiguration()).toEqual({ status: 'not_configured' });
-    updateServerInfo(CLOUD, available('mcp.example.com'));
+    updateServerInfo(CLOUD, available(mcpUrl));
     expect(getMcpConfiguration()).toEqual({ status: 'not_configured' });
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
