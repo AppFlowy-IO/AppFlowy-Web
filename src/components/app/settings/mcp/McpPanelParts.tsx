@@ -5,11 +5,12 @@ import type { McpConnectionDetails, McpTimestamp } from '@/application/services/
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { McpClientIdentity, type McpClientIdentityProps } from '@/components/mcp/McpClientIdentity';
 import { McpScopeBadge } from '@/components/mcp/McpScopeBadge';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import { formatMcpDateTime, formatMcpRelativeTime, mcpDate, mcpDeviceLabel, RAW_INTERPOLATION } from './format';
+import { formatMcpDateTime, formatMcpRelativeTime, mcpDate, mcpDeviceLabel } from './format';
 
 /**
  * An element inside the Settings dialog. Radix tooltips portal to `body` by

@@ -10,15 +10,9 @@ import type {
   McpWorkspaceSettings,
 } from '@/application/services/domains/mcp';
 import { notify } from '@/components/_shared/notify';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 
-import {
-  isMcpAccessLost,
-  mcpApprovalCovers,
-  mcpClientNames,
-  mcpConnectionKey,
-  mcpDisconnectRemoves,
-  RAW_INTERPOLATION,
-} from './format';
+import { isMcpAccessLost, mcpApprovalCovers, mcpClientNames, mcpConnectionKey, mcpDisconnectRemoves } from './format';
 import { publishMcpPendingRequestCount } from './pendingRequestCount';
 import { type McpResource, useMcpAction, useMcpResource } from './useMcpRequest';
 

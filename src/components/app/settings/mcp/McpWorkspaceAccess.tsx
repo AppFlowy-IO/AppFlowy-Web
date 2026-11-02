@@ -12,6 +12,7 @@ import {
 } from '@/application/services/domains/mcp';
 import { ReactComponent as ArrowRightIcon } from '@/assets/icons/alt_arrow_right_small.svg';
 import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -31,7 +32,6 @@ import {
   mcpOthersKeepWorking,
   mcpRemainingAppApproval,
   mcpRequestedBy,
-  RAW_INTERPOLATION,
 } from './format';
 import {
   ConnectionDetails,

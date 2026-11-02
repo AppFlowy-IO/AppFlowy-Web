@@ -517,7 +517,9 @@ Verified domain / Not verified, Runs on your computer), `McpScopeBadge` and `Mcp
   warning to continue only when the user started the connection; an unrecognized DCR app returning
   to another https host needs the "I recognize {host}" tick before Allow or Approve and allow.
 - App and member names are server data: React renders them as text, and the i18next calls that
-  interpolate them disable i18next's own escaping instead of rendering HTML.
+  interpolate them disable i18next's own escaping instead of rendering HTML (`RAW_INTERPOLATION`,
+  defined once in `src/components/mcp/rawInterpolation.ts` for the consent page, the setup guide
+  and Settings → MCP).
 
 ## Testing
 

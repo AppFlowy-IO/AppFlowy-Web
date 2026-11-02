@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import type { McpMyConnection } from '@/application/services/domains/mcp';
 import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 
-import { mcpClientName, mcpConnectionKey, mcpDeviceLabel, mcpOthersKeepWorking, RAW_INTERPOLATION } from './format';
+import { mcpClientName, mcpConnectionKey, mcpDeviceLabel, mcpOthersKeepWorking } from './format';
 import {
   ConnectionDetails,
   DisconnectDescription,

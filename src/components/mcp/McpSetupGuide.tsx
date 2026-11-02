@@ -20,6 +20,7 @@ import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
 import { ReactComponent as ArrowUpRightIcon } from '@/assets/icons/arrow_up_right.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { notify } from '@/components/_shared/notify';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { McpConnectedApps } from '@/components/mcp/setup/McpConnectedApps';
 import { McpSetupAppCard } from '@/components/mcp/setup/McpSetupAppCard';
 import { McpSetupAppSteps } from '@/components/mcp/setup/McpSetupAppSteps';
@@ -30,9 +31,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/utils/copy';
-
-/** The names in i18next interpolations are product names; React escapes what it renders. */
-const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 
 /**
  * Cards of at least 12rem and at most three per row: the Settings dialog and

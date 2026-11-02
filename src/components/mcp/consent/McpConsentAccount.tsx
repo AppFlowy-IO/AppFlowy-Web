@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -24,7 +25,7 @@ export function McpConsentAccount({ email, onSwitch, disabled }: McpConsentAccou
     >
       {email && (
         <span className='min-w-0 truncate text-text-secondary' title={email} data-testid='mcp-consent-signed-in'>
-          {t('mcp.consent.signedInAs', { email, interpolation: { escapeValue: false } })}
+          {t('mcp.consent.signedInAs', { email, ...RAW_INTERPOLATION })}
         </span>
       )}
       <Button

@@ -9,11 +9,12 @@ import {
   type McpMyConnection,
 } from '@/application/services/domains/mcp';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { TooltipGroupProvider } from '@/components/ui/tooltip';
 
-import { mcpClientName, mcpErrorText, RAW_INTERPOLATION } from './format';
+import { mcpClientName, mcpErrorText } from './format';
 import { McpMyConnections } from './McpMyConnections';
 import {
   EmptyState,

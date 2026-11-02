@@ -157,6 +157,18 @@ describe('McpSetupGuide', () => {
       expect(openPanels()).toEqual([]);
     });
 
+    it('titles the steps with the app’s name as written', () => {
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
+
+      toggle('windsurf');
+      const panel = screen.getByTestId('mcp-client-panel-windsurf');
+
+      // Without RAW_INTERPOLATION, i18next would show the slash as `&#x2F;`.
+      expect(document.getElementById(panel.getAttribute('aria-labelledby') ?? '')?.textContent).toBe(
+        'Set up Windsurf / Antigravity'
+      );
+    });
+
     it('opens Claude’s connectors in a new tab and shows the steps, including Team and Enterprise', () => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
 

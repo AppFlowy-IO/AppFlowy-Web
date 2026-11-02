@@ -5,6 +5,7 @@ import { MCP_SETUP_PAGE_PATH, type McpScope } from '@/application/mcp/setup';
 import type { McpClientInfo, McpMemberStatus } from '@/application/services/domains/mcp';
 import type { Workspace } from '@/application/types';
 import { McpClientAvatar } from '@/components/mcp/McpClientAvatar';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -26,7 +27,6 @@ import { type ConsentAction } from './useMcpConsent';
 
 // The client name is rendered by React inside the translated sentence; i18next only sees this marker.
 const NAME_MARKER = '\u2063';
-const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 const ACTION_BUTTON_CLASS = cn('sm:flex-1', CONSENT_FOCUS_RING);
 
 function ConsentTitle({ name }: { name: string }) {

@@ -3,14 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
 import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import { consentErrorMessageKey, type ConsentErrorReason } from './consentModel';
 import { McpConsentAccount, type McpConsentAccountProps } from './McpConsentAccount';
 import { CONSENT_FOCUS_RING, McpConsentLayout } from './McpConsentLayout';
-
-const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 
 /** "Cancel and return to …" on an error view: the server-validated `access_denied` redirect. */
 export interface McpConsentCancelProps {

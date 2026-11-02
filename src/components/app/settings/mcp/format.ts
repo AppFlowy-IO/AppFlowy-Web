@@ -13,14 +13,9 @@ import {
   type McpWorkspaceConnection,
 } from '@/application/services/domains/mcp';
 import { consentErrorMessageKey } from '@/components/mcp/consent/consentModel';
+import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 
 import type { TFunction } from 'i18next';
-
-/**
- * App names, member names and server data are raw text. React escapes what it
- * renders, so i18next must not escape them too (`Q&A` would show as `Q&amp;A`).
- */
-export const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
 
 /** "Requested by" lists this many names, then "and N more". */
 export const MAX_REQUESTER_NAMES = 3;
