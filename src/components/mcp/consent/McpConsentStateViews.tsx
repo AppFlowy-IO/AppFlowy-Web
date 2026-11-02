@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { consentErrorMessageKey, type ConsentErrorReason } from './consentModel';
 import { McpConsentAccount, type McpConsentAccountProps } from './McpConsentAccount';
 import { CONSENT_FOCUS_RING, McpConsentLayout } from './McpConsentLayout';
+import { McpConsentNotice } from './McpConsentNotice';
 
 /** "Cancel and return to …" on an error view: the server-validated `access_denied` redirect. */
 export interface McpConsentCancelProps {
@@ -19,6 +20,8 @@ export interface McpConsentCancelProps {
   onCancel: () => void;
   /** The deny request is in flight; every button waits for it. */
   busy: boolean;
+  /** Why the last Cancel failed for a transient reason; the button stays and a note says so. */
+  error?: ConsentErrorReason | null;
 }
 
 export interface McpConsentErrorViewProps {
@@ -45,6 +48,11 @@ export function McpConsentErrorView({ reason, onRetry, account, cancel }: McpCon
           {t(consentErrorMessageKey(reason))}
         </p>
       </div>
+      {cancel?.error && (
+        <McpConsentNotice tone='error' data-testid='mcp-consent-cancel-error' data-reason={cancel.error}>
+          <p role='alert'>{t(consentErrorMessageKey(cancel.error))}</p>
+        </McpConsentNotice>
+      )}
       {(onRetry || cancel) && (
         <div className='flex flex-col gap-3'>
           {onRetry && (

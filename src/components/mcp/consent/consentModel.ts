@@ -257,6 +257,16 @@ export function isRetryableConsentReason(reason: ConsentErrorReason): boolean {
   return consentReasonPolicy(reason).retryable;
 }
 
+/**
+ * How a failed Cancel (the server's deny) ends, on the consent view and the
+ * error views alike: `refused` when the request itself is wrong, so the
+ * server would refuse every retry and Cancel is not offered again;
+ * `transient` when the same deny may succeed in a moment, so Cancel stays.
+ */
+export function classifyDenyFailure(reason: ConsentErrorReason): 'refused' | 'transient' {
+  return isRetryableConsentReason(reason) ? 'transient' : 'refused';
+}
+
 /** Allowing or approving that fails with `reason` ends the flow with the error view. */
 export function isFatalConsentReason(reason: ConsentErrorReason): boolean {
   return consentReasonPolicy(reason).fatal;

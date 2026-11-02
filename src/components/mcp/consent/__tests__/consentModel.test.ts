@@ -3,6 +3,7 @@ import { MCP_ERROR_REASONS, McpApiError, type McpMemberStatus } from '@/applicat
 import { Role, type Workspace } from '@/application/types';
 
 import {
+  classifyDenyFailure,
   CONSENT_ERROR_MESSAGE_REASONS,
   consentErrorMessageKey,
   consentHostToAcknowledge,
@@ -276,6 +277,20 @@ describe('reasons', () => {
 describe('isConsentFramed', () => {
   it('is false for a top-level page', () => {
     expect(isConsentFramed()).toBe(false);
+  });
+});
+
+describe('classifyDenyFailure', () => {
+  it('lets a Cancel that failed for a transient reason be tried again', () => {
+    (['rate_limited', 'temporarily_unavailable', 'server_error', 'generic'] as const).forEach((reason) =>
+      expect(classifyDenyFailure(reason)).toBe('transient')
+    );
+  });
+
+  it('remembers a Cancel the server refused because of the request itself', () => {
+    (['invalid_redirect_uri', 'unknown_client', 'mcp_disabled', 'invalid_request'] as const).forEach((reason) =>
+      expect(classifyDenyFailure(reason)).toBe('refused')
+    );
   });
 });
 

@@ -17,9 +17,9 @@ import { getTokenParsed } from '@/application/session/token';
 import type { Workspace } from '@/application/types';
 
 import {
+  classifyDenyFailure,
   initialConsentScopes,
   isFatalConsentReason,
-  isRetryableConsentReason,
   pickDefaultWorkspaceId,
   toConsentErrorReason,
   toggleConsentScope,
@@ -48,12 +48,18 @@ export type ConsentOutcome =
   | { kind: 'cancelled'; redirectUrl: string }
   | { kind: 'request-sent' };
 
+/** A Cancel from an error view that failed, classified by `classifyDenyFailure`. */
+interface CancelFailure {
+  reason: ConsentErrorReason;
+  kind: 'refused' | 'transient';
+}
+
 /** An error that replaces the consent view. */
 export interface ConsentFailure {
   reason: ConsentErrorReason;
   /** The user can go back to the consent view (a Cancel that failed for a transient reason). */
   dismissible?: boolean;
-  /** The server refused the Cancel itself, so the error view does not offer it again. */
+  /** A Cancel from the consent view failed, so this error view does not offer it again. */
   fromDeny?: boolean;
 }
 
@@ -72,8 +78,9 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
   const [actionError, setActionError] = useState<ConsentErrorReason | null>(null);
   const [failure, setFailure] = useState<ConsentFailure | null>(null);
   const [outcome, setOutcome] = useState<ConsentOutcome | null>(null);
-  // A Cancel from an error view that the server refused is not offered again.
-  const [cancelRefused, setCancelRefused] = useState(false);
+  // A failed Cancel from an error view: a refusal holds for the rest of the
+  // flow (Cancel is not offered again), a transient failure until the next try.
+  const [cancelFailure, setCancelFailure] = useState<CancelFailure | null>(null);
   // Refs guard against a second click landing before the disabled buttons render.
   const busyRef = useRef<ConsentAction | null>(null);
   const actionControllerRef = useRef<AbortController | null>(null);
@@ -173,11 +180,17 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
 
   const reloadStatus = useCallback(() => setStatusAttempt((attempt) => attempt + 1), []);
 
+  // A transient Cancel failure's note belongs to the error view it was shown on.
+  const clearTransientCancelFailure = useCallback(
+    () => setCancelFailure((current) => (current?.kind === 'refused' ? current : null)),
+    []
+  );
+
   const handleActionError = useCallback(
     (action: ConsentAction, reason: ConsentErrorReason) => {
       if (action === 'deny') {
         // Never fall back to the raw redirect_uri: only the server can vouch for it.
-        setFailure({ reason, dismissible: isRetryableConsentReason(reason), fromDeny: true });
+        setFailure({ reason, dismissible: classifyDenyFailure(reason) === 'transient', fromDeny: true });
         return;
       }
 
@@ -213,6 +226,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
       actionControllerRef.current = controller;
       setBusy(action);
       setActionError(null);
+      clearTransientCancelFailure();
 
       try {
         await task(controller.signal);
@@ -225,7 +239,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
         setBusy(null);
       }
     },
-    [handleActionError]
+    [clearTransientCancelFailure, handleActionError]
   );
 
   const authorize = useCallback(
@@ -302,13 +316,17 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
 
   /**
    * Cancel from an error view, so the app stops waiting. If the server refuses
-   * the deny, the error view keeps its message and loses the button.
+   * the deny, the error view keeps its message and loses the button; if the
+   * deny fails for a transient reason, the button stays with a note.
    */
   const cancelFromError = useCallback(() => {
     void run('deny', async (signal) => {
       const result = await requestDeny(signal).catch((error: unknown) => {
         if (signal.aborted || isMcpAbortError(error)) throw error;
-        setCancelRefused(true);
+
+        const reason = toConsentErrorReason(error);
+
+        setCancelFailure({ reason, kind: classifyDenyFailure(reason) });
         return null;
       });
 
@@ -328,10 +346,14 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
 
   const reload = useCallback(() => {
     setFailure(null);
+    clearTransientCancelFailure();
     setLoadAttempt((attempt) => attempt + 1);
-  }, []);
+  }, [clearTransientCancelFailure]);
 
-  const dismissFailure = useCallback(() => setFailure(null), []);
+  const dismissFailure = useCallback(() => {
+    setFailure(null);
+    clearTransientCancelFailure();
+  }, [clearTransientCancelFailure]);
 
   const current = statusState?.workspaceId === workspaceId ? statusState : undefined;
 
@@ -357,7 +379,9 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
     requestApproval,
     deny,
     /** Error views may offer Cancel until the server refuses one. */
-    canCancelFromError: !cancelRefused,
+    canCancelFromError: cancelFailure?.kind !== 'refused',
+    /** Why the last Cancel from an error view failed for a transient reason; the button stays. */
+    cancelError: cancelFailure?.kind === 'transient' ? cancelFailure.reason : null,
     cancelFromError,
   };
 }

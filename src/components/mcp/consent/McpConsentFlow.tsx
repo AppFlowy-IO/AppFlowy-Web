@@ -57,7 +57,12 @@ export function McpConsentFlow({ request, onLoginRequired }: McpConsentFlowProps
       account={isAccountConsentReason(reason) ? { email, onSwitch: switchAccount } : undefined}
       cancel={
         offerCancel && consent.canCancelFromError && isCancellableConsentReason(reason)
-          ? { name: clientName, onCancel: consent.cancelFromError, busy: consent.busy === 'deny' }
+          ? {
+              name: clientName,
+              onCancel: consent.cancelFromError,
+              busy: consent.busy === 'deny',
+              error: consent.cancelError,
+            }
           : undefined
       }
     />

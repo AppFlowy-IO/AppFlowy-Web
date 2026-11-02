@@ -1294,6 +1294,45 @@ describe('McpAuthorizePage cancel from error views', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
+  it('keeps the button with a note when the deny fails for a transient reason, and tries again', async () => {
+    mocked.status.mockResolvedValue(memberStatus({ eligible: false, ineligible_reason: 'email_not_allowed' }));
+    mocked.deny.mockRejectedValueOnce(new McpApiError({ status: 0, error: 'network_error' }));
+    renderPage();
+
+    fireEvent.click(await screen.findByTestId('mcp-consent-error-cancel'));
+
+    expect((await screen.findByTestId('mcp-consent-cancel-error')).textContent).toBe(
+      'AppFlowy is temporarily unavailable. Try again.'
+    );
+    expect(byTestId('mcp-consent-error').getAttribute('data-reason')).toBe('email_not_allowed');
+    expect(byTestId<HTMLButtonElement>('mcp-consent-error-cancel').disabled).toBe(false);
+    expect(assign).not.toHaveBeenCalled();
+
+    fireEvent.click(byTestId('mcp-consent-error-cancel'));
+
+    expect(await screen.findByTestId('mcp-consent-cancelled')).toBeTruthy();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(DENY_REDIRECT));
+    expect(mocked.deny).toHaveBeenCalledTimes(2);
+  });
+
+  it('still offers Cancel on a later error view after a transient deny failure', async () => {
+    mocked.clientInfo.mockRejectedValueOnce(new McpApiError({ status: 0, error: 'timeout' }));
+    mocked.deny.mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'temporarily_unavailable' }));
+    mocked.code.mockRejectedValue(new McpApiError({ status: 400, reason: 'invalid_scope' }));
+    renderPage();
+
+    fireEvent.click(await screen.findByTestId('mcp-consent-error-cancel'));
+    expect(await screen.findByTestId('mcp-consent-cancel-error')).toBeTruthy();
+    fireEvent.click(byTestId('mcp-consent-error-retry'));
+    await screen.findByTestId('mcp-consent-page');
+    await waitFor(() => expect(screen.queryByTestId('mcp-consent-status-loading')).toBeNull());
+    fireEvent.click(byTestId('mcp-consent-allow'));
+
+    expect((await screen.findByTestId('mcp-consent-error')).getAttribute('data-reason')).toBe('invalid_scope');
+    expect(byTestId('mcp-consent-error-cancel')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-consent-cancel-error')).toBeNull();
+  });
+
   it.each([
     ['an unknown client', memberStatus({}, { known: false }), 'unknown_client'],
     ['an unregistered redirect', undefined, 'invalid_redirect_uri'],

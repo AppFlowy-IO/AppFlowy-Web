@@ -115,12 +115,14 @@ Error views of a request that parsed (for example `email_not_allowed`, `guest_no
 `not_workspace_member`, `no_workspace`, `client_blocked`, `invalid_scope`, `invalid_target`, or a
 load failure) also offer **Cancel and return to {app}** (`mcp-consent-error-cancel`; just "Cancel"
 when the app's name is unknown). It posts the same server-validated deny as the consent view's
-Cancel and follows the returned `access_denied` redirect, so the AI app stops waiting instead of
-timing out. It is not offered for `unknown_client` and `invalid_redirect_uri` (the deny refuses
-both), for `mcp_disabled` (while AI app connections are off the server refuses the deny too),
-without an MCP service, or on the error of a refused Cancel. If the server refuses the deny,
-the button disappears and the message stays (`isCancellableConsentReason`,
-`useMcpConsent.cancelFromError`).
+Cancel, shows **Request cancelled** and follows the returned `access_denied` redirect, so the AI
+app stops waiting instead of timing out. It is not offered for `unknown_client` and
+`invalid_redirect_uri` (the deny refuses both), for `mcp_disabled` (while AI app connections are
+off the server refuses the deny too), without an MCP service, or on the error of a failed Cancel
+from the consent view. If the server refuses the deny because of the request itself, the button
+disappears for the rest of the flow and the message stays; a transient failure (`rate_limited`,
+`temporarily_unavailable`, `server_error`, generic) keeps the button with a note
+(`classifyDenyFailure`, `isCancellableConsentReason`, `useMcpConsent.cancelFromError`).
 
 The page is split into `src/pages/McpAuthorizePage.tsx` (framing, request parsing, configuration,
 sign-in, the expired view), `src/application/mcp/consentUrl.ts` (the consent path and the expired
