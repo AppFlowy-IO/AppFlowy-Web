@@ -16,12 +16,38 @@ import { insertDataAfterBlock } from '@/components/ai-chat/utils';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { AIAssistantProvider, ContextPlaceholder, PromptModalProvider } from '@/components/chat';
 import { WriterRequest } from '@/components/chat/request/writer-request';
+import { useWriterContext } from '@/components/chat/writer/context';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { getScrollParent } from '@/components/global-comment/utils';
 
 
 import Panels from './components/panels';
 import Toolbars from './components/toolbar';
+
+/**
+ * The AI writer preview is portaled into the selected block, inside Slate's
+ * contenteditable. Render it only while the writer is open, and never as
+ * editable content: Slate cannot map a caret inside it (Firefox puts the caret
+ * there on a click below an empty line), so the browser would insert typed text
+ * into this node natively and it would never reach the document.
+ */
+function WriterPlaceholder({ container, offset }: { container: HTMLElement | null; offset: number }) {
+  const { assistantType } = useWriterContext();
+
+  if (!assistantType) return null;
+
+  return (
+    <Portal container={container}>
+      <div
+        contentEditable={false}
+        style={offset ? { transform: `translateY(-${offset}px)` } : undefined}
+        className={'flex w-full'}
+      >
+        <ContextPlaceholder />
+      </div>
+    </Portal>
+  );
+}
 
 function EditorOverlay({ viewId, workspaceId }: { viewId: string; workspaceId: string }) {
   const { requestInstance, loadDatabasePrompts, testDatabasePromptConfig } = useEditorContext();
@@ -199,20 +225,7 @@ function EditorOverlay({ viewId, workspaceId }: { viewId: string; workspaceId: s
         >
           <Toolbars />
           <Panels />
-          <Portal container={container}>
-            {absoluteHeight ? (
-              <div
-                style={{
-                  transform: 'translateY(-' + absoluteHeight + 'px)',
-                }}
-                className={'flex w-full'}
-              >
-                <ContextPlaceholder />
-              </div>
-            ) : (
-              <ContextPlaceholder />
-            )}
-          </Portal>
+          <WriterPlaceholder container={container} offset={absoluteHeight} />
         </AIAssistantProvider>
       </PromptModalProvider>
     </ErrorBoundary>
