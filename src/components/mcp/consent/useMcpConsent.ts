@@ -10,11 +10,13 @@ import {
   getMcpClientInfo,
   getMcpMemberStatus,
   isMcpAbortError,
+  isMcpApiError,
   type McpClientInfo,
   type McpMemberStatus,
 } from '@/application/services/domains/mcp';
 import { getTokenParsed } from '@/application/session/token';
 import type { Workspace } from '@/application/types';
+import { Log } from '@/utils/log';
 
 import {
   classifyDenyFailure,
@@ -61,6 +63,16 @@ export interface ConsentFailure {
   dismissible?: boolean;
   /** A Cancel from the consent view failed, so this error view does not offer it again. */
   fromDeny?: boolean;
+}
+
+/**
+ * The reason behind a failure that is not an abort. The MCP client logs its
+ * own failures; anything else (a Cloud call, a bug on this page) would end
+ * up as a bare "generic", so it is logged here with its stack.
+ */
+function failureReason(error: unknown): ConsentErrorReason {
+  if (!isMcpApiError(error)) Log.error('[MCP] Consent step failed', error);
+  return toConsentErrorReason(error);
 }
 
 /**
@@ -135,7 +147,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
       (error: unknown) => {
         if (controller.signal.aborted || isMcpAbortError(error)) return;
 
-        const reason = toConsentErrorReason(error);
+        const reason = failureReason(error);
 
         if (reason === 'invalid_session') handleSessionExpired();
         else setLoad({ kind: 'failed', reason });
@@ -158,7 +170,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
       (error: unknown) => {
         if (controller.signal.aborted || isMcpAbortError(error)) return;
 
-        const reason = toConsentErrorReason(error);
+        const reason = failureReason(error);
 
         if (reason === 'invalid_session') handleSessionExpired();
         else if (isFatalConsentReason(reason)) setFailure({ reason });
@@ -232,7 +244,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
         await task(controller.signal);
       } catch (error) {
         if (!controller.signal.aborted && !isMcpAbortError(error)) {
-          handleActionError(action, toConsentErrorReason(error));
+          handleActionError(action, failureReason(error));
         }
       } finally {
         busyRef.current = null;
@@ -324,7 +336,7 @@ export function useMcpConsent(request: McpConsentRequest, onLoginRequired: () =>
       const result = await requestDeny(signal).catch((error: unknown) => {
         if (signal.aborted || isMcpAbortError(error)) throw error;
 
-        const reason = toConsentErrorReason(error);
+        const reason = failureReason(error);
 
         setCancelFailure({ reason, kind: classifyDenyFailure(reason) });
         return null;

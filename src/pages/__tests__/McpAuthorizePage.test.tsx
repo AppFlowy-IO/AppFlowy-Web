@@ -18,6 +18,7 @@ import { resetMcpConfigurationForTests } from '@/application/services/js-service
 import { signOutCurrentUser } from '@/application/session/sign-out';
 import { getTokenParsed } from '@/application/session/token';
 import { Role, type Workspace } from '@/application/types';
+import { Log } from '@/utils/log';
 
 import McpAuthorizePage from '../McpAuthorizePage';
 
@@ -1007,6 +1008,41 @@ describe('McpAuthorizePage reasons', () => {
     fireEvent.click(byTestId('mcp-consent-error-retry'));
     expect(await screen.findByTestId('mcp-consent-page')).toBeTruthy();
     expect(mocked.clientInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs a failure that is not an MCP answer, with its stack, behind the generic message', async () => {
+    const logError = jest.spyOn(Log, 'error').mockImplementation(() => undefined);
+    const bug = new TypeError("Cannot read properties of undefined (reading 'redirect_url')");
+    const cloudDown = new Error('Cloud API unavailable');
+
+    mocked.workspaces.mockRejectedValueOnce(cloudDown);
+    renderPage();
+
+    expect((await screen.findByTestId('mcp-consent-error')).getAttribute('data-reason')).toBe('generic');
+    expect(logError).toHaveBeenCalledWith('[MCP] Consent step failed', cloudDown);
+
+    mocked.code.mockRejectedValueOnce(bug);
+    fireEvent.click(byTestId('mcp-consent-error-retry'));
+    await screen.findByTestId('mcp-consent-page');
+    await waitFor(() => expect(screen.queryByTestId('mcp-consent-status-loading')).toBeNull());
+    fireEvent.click(byTestId('mcp-consent-allow'));
+
+    expect((await screen.findByTestId('mcp-consent-inline-error')).getAttribute('data-reason')).toBe('generic');
+    expect(logError).toHaveBeenCalledTimes(2);
+    expect(logError).toHaveBeenLastCalledWith('[MCP] Consent step failed', bug);
+    logError.mockRestore();
+  });
+
+  it('leaves MCP failures to the MCP client, which logs them itself', async () => {
+    const logError = jest.spyOn(Log, 'error').mockImplementation(() => undefined);
+
+    mocked.code.mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'temporarily_unavailable' }));
+    await renderConsent();
+    fireEvent.click(byTestId('mcp-consent-allow'));
+
+    expect(await screen.findByTestId('mcp-consent-inline-error')).toBeTruthy();
+    expect(logError).not.toHaveBeenCalled();
+    logError.mockRestore();
   });
 
   it('keeps the consent view with a retry when the status fails transiently', async () => {

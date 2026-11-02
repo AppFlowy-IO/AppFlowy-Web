@@ -1,4 +1,5 @@
 import { captureTokenSession, getTokenParsed, invalidTokenForSession } from '@/application/session/token';
+import { Log } from '@/utils/log';
 import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
 import { isAuthRefreshFailure } from '../auth-refresh-error';
@@ -131,6 +132,8 @@ const mockedGetToken = jest.mocked(getTokenParsed);
 const mockedRefresh = jest.mocked(refreshToken);
 const mockedIsAuthRefreshFailure = jest.mocked(isAuthRefreshFailure);
 let storedToken: StoredToken | null;
+// Every failed request is logged; quiet here, asserted in "MCP failure log".
+let logWarn: jest.SpyInstance;
 
 function call(index = 0) {
   const [url, init] = fetchMock.mock.calls[index];
@@ -157,6 +160,7 @@ beforeEach(() => {
     return storedToken;
   });
   global.fetch = fetchMock as unknown as typeof fetch;
+  logWarn = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
 });
 
 describe('MCP configuration', () => {
@@ -953,6 +957,95 @@ describe('MCP errors', () => {
 
     expect(isMcpAbortError(await pending.catch((e: unknown) => e))).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('MCP failure log', () => {
+  it('logs a refusal once with the raw reason and description, but no request secrets', async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(400, {
+        error: 'invalid_request',
+        error_description: 'redirect_uri is not registered for this client',
+        reason: 'brand_new_reason',
+      })
+    );
+
+    const error = await createMcpAuthorizationCode({
+      client_id: CIMD_CLIENT,
+      redirect_uri: 'https://claude.ai/api/mcp/auth_callback',
+      code_challenge: 'challenge-secret',
+      code_challenge_method: 'S256',
+      workspace_id: WS,
+      state: 'state-secret',
+    }).catch((e: unknown) => e);
+
+    // The error drops a reason this Web does not know; the log keeps it.
+    expect(error).toMatchObject({ status: 400, reason: undefined });
+    expect(logWarn).toHaveBeenCalledTimes(1);
+    expect(logWarn).toHaveBeenCalledWith('[MCP] POST /api/mcp/authorize/code failed', {
+      status: 400,
+      error: 'invalid_request',
+      reason: 'brand_new_reason',
+      description: 'redirect_uri is not registered for this client',
+    });
+
+    const logged = JSON.stringify(logWarn.mock.calls);
+
+    ['state-secret', 'challenge-secret', 'auth_callback', CIMD_CLIENT, 'access-1'].forEach((secret) =>
+      expect(logged).not.toContain(secret)
+    );
+  });
+
+  it('logs the path without its query', async () => {
+    fetchMock.mockResolvedValueOnce(response(404, { error: 'invalid_client', reason: 'unknown_client' }));
+
+    await getMcpClientInfo(CIMD_CLIENT).catch(() => undefined);
+
+    expect(logWarn).toHaveBeenCalledWith('[MCP] GET /api/mcp/clients failed', {
+      status: 404,
+      error: 'invalid_client',
+      reason: 'unknown_client',
+      description: undefined,
+    });
+    expect(JSON.stringify(logWarn.mock.calls)).not.toContain('claude.ai');
+  });
+
+  it('logs an unreadable success answer and a request that got no answer', async () => {
+    fetchMock.mockResolvedValueOnce(response(200, {})).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await listMyMcpConnections(WS).catch(() => undefined);
+    await listMyMcpConnections(WS).catch(() => undefined);
+
+    expect(logWarn).toHaveBeenCalledTimes(2);
+    expect(logWarn.mock.calls[0][1]).toMatchObject({ status: 200, error: 'invalid_response', reason: 'server_error' });
+    expect(logWarn.mock.calls[1][1]).toEqual({
+      status: 0,
+      error: 'network_error',
+      description: 'Could not reach the MCP service',
+    });
+  });
+
+  it('logs nothing for a success or a request the caller aborted', async () => {
+    const controller = new AbortController();
+
+    fetchMock
+      .mockResolvedValueOnce(response(200, { connections: [] }))
+      .mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+          })
+      );
+
+    await listMyMcpConnections(WS);
+
+    const pending = listMyMcpConnections(WS, { signal: controller.signal }).catch((e: unknown) => e);
+
+    await Promise.resolve();
+    controller.abort();
+
+    expect(isMcpAbortError(await pending)).toBe(true);
+    expect(logWarn).not.toHaveBeenCalled();
   });
 });
 

@@ -12,7 +12,8 @@
  * access token as a bearer, refreshing it first when it expires within 30
  * seconds, and refresh once more and retry once on `invalid_session`, only
  * as the user who sent the first attempt. The GoTrue refresh token never
- * leaves the browser. See doc/MCP.md.
+ * leaves the browser. Every failed request is logged once (`logMcpFailure`).
+ * See doc/MCP.md.
  */
 import { isSafeMcpRedirectUrl, trustedCatalogAppId } from '@/application/mcp/setup';
 import {
@@ -21,6 +22,7 @@ import {
   type GoTrueAuthToken,
   invalidTokenForSession,
 } from '@/application/session/token';
+import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 import { getServerInfoSnapshot, type ServerInfoState } from '@/utils/server-info';
 
@@ -674,9 +676,35 @@ interface McpRequest {
 }
 
 interface McpResponse {
+  /** What was asked, for the failure log; never the query or body. */
+  request: Pick<McpRequest, 'method' | 'path'>;
   ok: boolean;
   status: number;
   body: unknown;
+}
+
+/**
+ * Logs a failed MCP request once, for support: method, path without its query,
+ * status, error code, the server's raw reason (also one this Web does not
+ * know, which `McpApiError.reason` drops) and description. Never the query or
+ * a body, so no client_id, state, code challenge, redirect URL or token.
+ */
+function logMcpFailure(
+  request: Pick<McpRequest, 'method' | 'path'>,
+  failure: { status: number; error?: string; reason?: string; description?: string }
+) {
+  Log.warn(`[MCP] ${request.method} ${request.path} failed`, failure);
+}
+
+/** The error for a request that got `response`, logged once. */
+function responseFailure(response: McpResponse, init: Omit<McpApiErrorInit, 'status'>, rawReason?: string) {
+  logMcpFailure(response.request, {
+    status: response.status,
+    error: init.error,
+    reason: rawReason ?? init.reason,
+    description: init.description,
+  });
+  return new McpApiError({ ...init, status: response.status });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -745,18 +773,22 @@ async function send(request: McpRequest, accessToken?: string): Promise<McpRespo
     const text = await response.text();
 
     return {
+      request: { method: request.method, path: request.path },
       ok: response.ok,
       status: response.status,
       body: parseBody(text),
     };
   } catch (error) {
     if (callerSignal?.aborted) throw error;
-    throw new McpApiError({
+
+    const failure = {
       status: 0,
       error: timedOut ? 'timeout' : 'network_error',
       description: timedOut ? 'The MCP service did not respond in time' : 'Could not reach the MCP service',
-      cause: error,
-    });
+    };
+
+    logMcpFailure(request, failure);
+    throw new McpApiError({ ...failure, cause: error });
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener('abort', abortFromCaller);
@@ -786,17 +818,16 @@ function responseError(response: McpResponse): McpApiError {
       ? body.message
       : undefined;
 
-  return new McpApiError({
-    status: response.status,
-    error,
-    reason: isMcpErrorReason(body.reason) ? body.reason : impliedReason(response.status, error),
-    description,
-  });
+  return responseFailure(
+    response,
+    { error, reason: isMcpErrorReason(body.reason) ? body.reason : impliedReason(response.status, error), description },
+    typeof body.reason === 'string' ? body.reason : undefined
+  );
 }
 
 /** A success response the Web cannot read: a failure, never an empty or default answer. */
 function invalidResponse(response: McpResponse, description: string): McpApiError {
-  return new McpApiError({ status: response.status, error: 'invalid_response', reason: 'server_error', description });
+  return responseFailure(response, { error: 'invalid_response', reason: 'server_error', description });
 }
 
 function parseObject<T>(response: McpResponse): T {
@@ -847,8 +878,7 @@ function parseRedirect(response: McpResponse): McpRedirectResponse {
   // A client ID metadata document may register any redirect URI; never navigate
   // to one that would run script in this origin.
   if (!isSafeMcpRedirectUrl(redirectUrl)) {
-    throw new McpApiError({
-      status: response.status,
+    throw responseFailure(response, {
       error: 'invalid_response',
       reason: 'invalid_redirect_uri',
       description: 'The MCP service returned an unsafe redirect URL',
