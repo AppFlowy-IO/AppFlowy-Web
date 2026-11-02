@@ -124,8 +124,8 @@ export function isMcpDisabledError(error: unknown): boolean {
 
 /**
  * The MCP service gave no usable answer: unknown, unreachable, timed out,
- * failing (5xx) or missing the endpoint (a 404 without a reason, from a server
- * that predates it). Settings shows "unavailable" with Retry for these. A
+ * failing (5xx) or missing the endpoint (a 404 without a reason, from an MCP
+ * service without it). Settings shows "unavailable" with Retry for these. A
  * server that turned AI app connections off (`isMcpDisabledError`) did answer,
  * and a failed AppFlowy session refresh (`session_refresh_failed`) never
  * reached the MCP service, so neither is one.
@@ -144,23 +144,20 @@ export function isMcpServiceUnavailable(error: unknown): boolean {
 // Wire types (snake_case, as the MCP service sends them)
 // ---------------------------------------------------------------------------
 
-/** Unix seconds (connections, access requests) or an RFC 3339 string (approvals, settings). */
+/**
+ * A timestamp field of the MCP service. Each field has one form: Unix seconds
+ * (`number`: connections, access requests) or RFC 3339 (`string`: approvals,
+ * settings).
+ */
 export type McpTimestamp = number | string;
 
 /** A timestamp from the MCP service as a Date; null when absent or invalid. */
 export function mcpTimestampToDate(value?: McpTimestamp | null): Date | null {
   if (value === undefined || value === null || value === '') return null;
 
-  let ms: number;
+  const date = new Date(typeof value === 'number' ? value * 1000 : value);
 
-  if (typeof value === 'number') {
-    // Seconds stay below 1e11 until the year 5138; larger values are already milliseconds.
-    ms = value > 1e11 ? value : value * 1000;
-  } else {
-    ms = /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value);
-  }
-
-  return Number.isFinite(ms) ? new Date(ms) : null;
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export type McpClientKind = 'cimd' | 'dcr';
@@ -189,23 +186,22 @@ export interface McpClientSummary {
    * the client's CIMD client ID is one the catalog lists, or every redirect it
    * registered is https on that entry's hosts (apps that run on the user's
    * computer, like Cursor, may add loopback ones). Null for other clients
-   * (loopback-only registrations are never recognized); absent from servers
-   * without the catalog.
+   * (loopback-only registrations are never recognized).
    */
-  app_id?: string | null;
+  app_id: string | null;
   /** The catalog's name for a recognized app ("Cursor"). Unlike `client_name` it is not self-asserted. */
-  app_name?: string | null;
-  /** The catalog recognizes this client (`app_id` is set). Absent from servers without the catalog. */
-  verified_app?: boolean;
+  app_name: string | null;
+  /** The catalog recognizes this client (`app_id` is set). */
+  verified_app: boolean;
   /**
    * `verified_app`, and recognizing the client also proves which app it is: a
    * web app (Claude, ChatGPT, Perplexity) whose sign-ins only ever return to
    * its publisher's own website. Only these get the "Verified app" badge and
    * connect without approval under `verified_and_approved`. False for catalog
    * apps that run on the user's computer (Claude Code, Codex, Cursor, VS Code,
-   * Raycast): any program there can use their identity. Absent means false.
+   * Raycast): any program there can use their identity.
    */
-  identity_verified?: boolean;
+  identity_verified: boolean;
 }
 
 /**
@@ -232,9 +228,10 @@ export function isMcpAppApprovalKey(key: string | null | undefined): boolean {
 }
 
 /**
- * The key approvals and access requests use for a client: the server's
- * `approval_key` when it sent one, else `app:<app_id>` for an app the catalog
- * recognizes, else the client ID itself.
+ * The key approvals and access requests use for a client: its `approval_key`
+ * when it has one (approvals and requests always do), else `app:<app_id>` for
+ * an app the catalog recognizes, else the client ID itself. Connections carry
+ * no `approval_key`, so theirs is derived.
  */
 export function mcpApprovalKey(
   client: Pick<McpClientSummary, 'client_id' | 'app_id' | 'verified_app'> & { approval_key?: string | null }
@@ -283,10 +280,9 @@ export interface McpMemberStatus {
   /**
    * AI app connections are on for this server. False while an administrator
    * has turned them off (Admin → AI apps (MCP), or the deployment): nothing
-   * can connect, and only disconnecting works. `getMcpMemberStatus` reads a
-   * missing value, from servers that predate the switch, as true.
+   * can connect, and only disconnecting works.
    */
-  enabled?: boolean;
+  enabled: boolean;
   /** Canonical server URL (`<public base>/mcp`): the only URL users should paste. */
   endpoint: string;
   role: McpWorkspaceRole;
@@ -294,14 +290,11 @@ export interface McpMemberStatus {
   ineligible_reason: McpIneligibleReason | null;
   /** Some apps need an owner's approval here (any policy but `any`). */
   requires_approval: boolean;
-  /** The workspace's approval policy. Absent from servers that predate it, or when it is not one this Web knows. */
+  /** The workspace's approval policy; undefined when it is not one this Web knows (a newer server's). */
   approval_mode?: McpApprovalMode;
   client: McpMemberClientStatus | null;
-  /**
-   * The apps owners approved for this workspace, so members can see what
-   * connects without a request. Absent from servers that predate it.
-   */
-  approved_apps?: McpApprovedApp[];
+  /** The apps owners approved for this workspace, so members can see what connects without a request. */
+  approved_apps: McpApprovedApp[];
 }
 
 /** What every listed connection carries besides its client. */
@@ -313,14 +306,16 @@ export interface McpConnectionDetails {
   /**
    * The connection's token family. Each authorization starts one, so every
    * device (or account) signed in to the same app is its own connection. Null
-   * for connections recorded before families were listed; absent from servers
-   * that predate it.
+   * for connections recorded before families were.
    */
-  family_id?: string | null;
+  family_id: string | null;
   /** The app and device as its sign-in request described them ("Claude Code 2.1 · macOS"); null when unknown. */
   device_label?: string | null;
-  /** The connection's last MCP request or token refresh, updated at most every 5 minutes; null before one. */
-  last_used_at?: McpTimestamp | null;
+  /**
+   * The connection's last MCP request or token refresh in Unix seconds,
+   * updated at most every 5 minutes; null before one.
+   */
+  last_used_at: number | null;
 }
 
 /** One of the caller's own connections. */
@@ -351,7 +346,8 @@ export interface McpAccessRequester {
   user_uuid: string;
   name?: string | null;
   email?: string | null;
-  requested_at: McpTimestamp;
+  /** Unix seconds. */
+  requested_at: number;
 }
 
 /**
@@ -360,12 +356,14 @@ export interface McpAccessRequester {
  * of its registrations.
  */
 export interface McpAccessRequest extends McpClientSummary {
-  /** The key the request is filed under, when the server sends it (see `mcpApprovalKey`). */
-  approval_key?: string;
+  /** What approving or dismissing the request takes: `app:<app_id>` for a recognized app, else the client ID. */
+  approval_key: string;
   /** Newest first, at most 20. */
   requesters: McpAccessRequester[];
-  first_requested_at: McpTimestamp;
-  last_requested_at: McpTimestamp;
+  /** Unix seconds. */
+  first_requested_at: number;
+  /** Unix seconds. */
+  last_requested_at: number;
 }
 
 export interface McpAccessRequestResponse {
@@ -381,28 +379,24 @@ export interface McpApprovedClient extends McpClientSummary {
   /**
    * What the approval covers, and what revoking it takes: `app:<app_id>`
    * approves every registration of a recognized app ("All Cursor installs"),
-   * anything else is one client ID. Servers that predate app-level approvals
-   * send none; it then reads as the client ID.
+   * anything else is one client ID.
    */
   approval_key: string;
   /** User UUID of the owner who approved it. */
   approved_by: string;
   approved_by_name?: string | null;
   approved_by_email?: string | null;
-  approved_at: McpTimestamp;
+  /** RFC 3339. */
+  approved_at: string;
 }
 
 /** `GET|PUT /api/mcp/admin/workspaces/{workspace_id}/settings`. */
 export interface McpWorkspaceSettings {
   workspace_id: string;
-  /** `approval_mode === 'any'`, kept for older callers. */
-  allow_unapproved_clients: boolean;
-  /**
-   * The effective approval policy. Servers that predate it send none; it then
-   * reads `any` or `approved_only` from `allow_unapproved_clients`.
-   */
-  approval_mode: McpApprovalMode;
+  /** The effective approval policy; undefined when it is not one this Web knows (a newer server's). */
+  approval_mode?: McpApprovalMode;
   updated_by?: string | null;
+  /** RFC 3339. */
   updated_at?: string | null;
   approved_clients: McpApprovedClient[];
 }
@@ -412,9 +406,9 @@ export interface McpWorkspaceSettingsUpdate extends McpWorkspaceSettings {
   /**
    * Apps members were connected to that the new, stricter policy would have
    * refused: the server approved them (by the acting owner) so those members
-   * keep working. Empty otherwise, and from servers that predate it.
+   * keep working. Empty otherwise.
    */
-  auto_approved_clients: McpClientSummary[];
+  auto_approved_clients: McpApprovedApp[];
 }
 
 export interface McpDisconnectResponse {
@@ -800,49 +794,46 @@ function responseError(response: McpResponse): McpApiError {
   });
 }
 
+/** A success response the Web cannot read: a failure, never an empty or default answer. */
+function invalidResponse(response: McpResponse, description: string): McpApiError {
+  return new McpApiError({ status: response.status, error: 'invalid_response', reason: 'server_error', description });
+}
+
 function parseObject<T>(response: McpResponse): T {
   if (!response.ok) throw responseError(response);
-  if (!isRecord(response.body)) {
-    throw new McpApiError({
-      status: response.status,
-      error: 'invalid_response',
-      reason: 'server_error',
-      description: 'The MCP service returned an unexpected response',
-    });
-  }
+  if (!isRecord(response.body)) throw invalidResponse(response, 'The MCP service returned an unexpected response');
 
   return response.body as T;
 }
 
+/** The list at `key` of a parsed body; a missing or malformed one fails like an unreadable body. */
+function listIn<T>(response: McpResponse, body: object, key: string): T[] {
+  const value = (body as Record<string, unknown>)[key];
+
+  if (!Array.isArray(value)) throw invalidResponse(response, `The MCP service returned no ${key} list`);
+  return value as T[];
+}
+
 function parseList<T>(response: McpResponse, key: string): T[] {
-  return asList<T>(parseObject<Record<string, unknown>>(response)[key]);
+  return listIn<T>(response, parseObject<object>(response), key);
 }
 
-function asList<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
+/**
+ * The approval policy as this Web knows it. A policy a newer server added
+ * reads as undefined, never as one of the known ones, in the member status
+ * and the owner settings alike.
+ */
+function knownApprovalMode(value: unknown): McpApprovalMode | undefined {
+  return isMcpApprovalMode(value) ? value : undefined;
 }
 
-/** An approval as listed, with `approval_key` read as the client ID when an older server sent none. */
-function withApprovalKey<T extends McpClientSummary & { approval_key?: unknown }>(
-  approval: T
-): T & { approval_key: string } {
-  const approvalKey = typeof approval.approval_key === 'string' ? approval.approval_key.trim() : '';
-
-  return { ...approval, approval_key: approvalKey || approval.client_id };
-}
-
-/** Settings with defaults for what older servers leave out (approval mode, approval keys). */
-function normalizeSettings<T extends McpWorkspaceSettings>(settings: T): T {
-  const approvalMode = isMcpApprovalMode(settings.approval_mode)
-    ? settings.approval_mode
-    : settings.allow_unapproved_clients
-    ? 'any'
-    : 'approved_only';
+function parseSettings<T extends McpWorkspaceSettings>(response: McpResponse): T {
+  const settings = parseObject<T>(response);
 
   return {
     ...settings,
-    approval_mode: approvalMode,
-    approved_clients: asList<McpApprovedClient>(settings.approved_clients).map(withApprovalKey),
+    approval_mode: knownApprovalMode(settings.approval_mode),
+    approved_clients: listIn<McpApprovedClient>(response, settings, 'approved_clients'),
   };
 }
 
@@ -850,12 +841,7 @@ function parseRedirect(response: McpResponse): McpRedirectResponse {
   const redirectUrl = parseObject<Partial<McpRedirectResponse>>(response).redirect_url;
 
   if (typeof redirectUrl !== 'string' || !redirectUrl) {
-    throw new McpApiError({
-      status: response.status,
-      error: 'invalid_response',
-      reason: 'server_error',
-      description: 'The MCP service returned no redirect URL',
-    });
+    throw invalidResponse(response, 'The MCP service returned no redirect URL');
   }
 
   // A client ID metadata document may register any redirect URI; never navigate
@@ -1048,15 +1034,11 @@ export async function getMcpMemberStatus(
     signal: options.signal,
   });
   const status = parseObject<McpMemberStatus>(response);
-  const approvalMode = isMcpApprovalMode(status.approval_mode) ? status.approval_mode : undefined;
 
   return {
     ...status,
-    // Only an explicit `false` turns AI apps off; servers before the switch send nothing.
-    enabled: status.enabled !== false,
-    approval_mode: approvalMode,
-    // Absent (not empty) from servers that predate it, so the panel can tell "none approved" apart.
-    approved_apps: Array.isArray(status.approved_apps) ? status.approved_apps.map(withApprovalKey) : undefined,
+    approval_mode: knownApprovalMode(status.approval_mode),
+    approved_apps: listIn<McpApprovedApp>(response, status, 'approved_apps'),
   };
 }
 
@@ -1076,21 +1058,18 @@ export async function listMyMcpConnections(
 
 /**
  * The caller's live connections in every workspace they still belong to, for
- * "N apps across M workspaces". Missing counts are derived from the list.
+ * "N apps across M workspaces".
  */
 export async function listMyMcpConnectionsAcrossWorkspaces(
   options: McpRequestOptions = {}
 ): Promise<McpMyConnectionsAcrossWorkspaces> {
   const response = await authorizedSend({ method: 'GET', path: '/api/mcp/me/connections', signal: options.signal });
-  const body = parseObject<Partial<McpMyConnectionsAcrossWorkspaces>>(response);
-  const connections = asList<McpMyWorkspaceConnection>(body.connections);
-  const count = (value: unknown, fallback: number) =>
-    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+  const body = parseObject<McpMyConnectionsAcrossWorkspaces>(response);
 
   return {
-    connections,
-    workspace_count: count(body.workspace_count, new Set(connections.map(({ workspace_id }) => workspace_id)).size),
-    connection_count: count(body.connection_count, connections.length),
+    connections: listIn<McpMyWorkspaceConnection>(response, body, 'connections'),
+    workspace_count: body.workspace_count,
+    connection_count: body.connection_count,
   };
 }
 
@@ -1143,15 +1122,13 @@ export async function getMcpWorkspaceSettings(
     signal: options.signal,
   });
 
-  return normalizeSettings(parseObject<McpWorkspaceSettings>(response));
+  return parseSettings<McpWorkspaceSettings>(response);
 }
 
 /**
  * Sets the workspace's approval policy. Moving to a stricter policy makes the
  * server approve the apps members are connected to that it would now refuse
- * (`auto_approved_clients`), so they keep working. The body also carries
- * `allow_unapproved_clients` for servers that predate `approval_mode`, which
- * then read anything but `any` as "approved apps only".
+ * (`auto_approved_clients`), so they keep working.
  */
 export async function updateMcpWorkspaceSettings(
   workspaceId: string,
@@ -1161,12 +1138,12 @@ export async function updateMcpWorkspaceSettings(
   const response = await authorizedSend({
     method: 'PUT',
     path: workspacePath('admin', workspaceId, '/settings'),
-    body: { approval_mode: approvalMode, allow_unapproved_clients: approvalMode === 'any' },
+    body: { approval_mode: approvalMode },
     signal: options.signal,
   });
-  const settings = normalizeSettings(parseObject<McpWorkspaceSettingsUpdate>(response));
+  const settings = parseSettings<McpWorkspaceSettingsUpdate>(response);
 
-  return { ...settings, auto_approved_clients: asList<McpClientSummary>(settings.auto_approved_clients) };
+  return { ...settings, auto_approved_clients: listIn<McpApprovedApp>(response, settings, 'auto_approved_clients') };
 }
 
 /**

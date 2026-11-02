@@ -27,6 +27,7 @@ import {
   listMcpWorkspaceConnections,
   listMyMcpConnections,
   listMyMcpConnectionsAcrossWorkspaces,
+  MCP_APPROVAL_MODES,
   McpApiError,
   mcpApprovalKey,
   McpAuthorizationCodeRequest,
@@ -74,6 +75,55 @@ function response(status: number, body?: unknown, headers: Record<string, string
     headers: { get: (name: string) => headers[name] ?? null },
     text: async () => text,
   } as unknown as Response;
+}
+
+/** A client as the MCP service serializes it (`McpClientSummary`: every field, nulls included). */
+function clientSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    client_id: 'dcr-client-1',
+    client_name: null,
+    client_uri: null,
+    logo_uri: null,
+    client_kind: 'dcr',
+    client_host: 'localhost',
+    redirect_hosts: ['localhost'],
+    loopback_only: true,
+    app_id: null,
+    app_name: null,
+    verified_app: false,
+    identity_verified: false,
+    ...overrides,
+  };
+}
+
+/** A member status as the MCP service serializes it (`MemberStatusResponse`). */
+function memberStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    workspace_id: WS,
+    enabled: true,
+    endpoint: `${BASE}/mcp`,
+    role: 'member',
+    eligible: true,
+    ineligible_reason: null,
+    requires_approval: true,
+    approval_mode: 'verified_and_approved',
+    client: null,
+    approved_apps: [],
+    ...overrides,
+  };
+}
+
+/** Workspace settings as the MCP service serializes them (`WorkspaceSettingsView`). */
+function workspaceSettings(overrides: Record<string, unknown> = {}) {
+  return {
+    workspace_id: WS,
+    allow_unapproved_clients: false,
+    approval_mode: 'verified_and_approved',
+    updated_by: null,
+    updated_at: null,
+    approved_clients: [],
+    ...overrides,
+  };
 }
 
 const fetchMock = jest.fn<Promise<Response>, [string, RequestInit]>();
@@ -186,7 +236,7 @@ describe('MCP configuration discovery', () => {
     });
     expect(getMcpServerUrl()).toBe('https://mcp.discovered.example.com/mcp');
 
-    fetchMock.mockResolvedValueOnce(response(200, { workspace_id: WS, role: 'member', eligible: true }));
+    fetchMock.mockResolvedValueOnce(response(200, memberStatus()));
     await getMcpMemberStatus(WS);
     expect(call().url.origin).toBe('https://mcp.discovered.example.com');
   });
@@ -294,7 +344,7 @@ describe('MCP configuration discovery', () => {
 
 describe('MCP requests', () => {
   it('sends the current access token as a bearer and the client id as a query parameter', async () => {
-    fetchMock.mockResolvedValueOnce(response(200, { workspace_id: WS, role: 'member', eligible: true }));
+    fetchMock.mockResolvedValueOnce(response(200, memberStatus()));
 
     await expect(getMcpMemberStatus(WS, CIMD_CLIENT)).resolves.toMatchObject({ role: 'member' });
 
@@ -308,35 +358,30 @@ describe('MCP requests', () => {
   });
 
   it('omits client_id from the member status when none is given', async () => {
-    fetchMock.mockResolvedValueOnce(response(200, { workspace_id: WS }));
+    fetchMock.mockResolvedValueOnce(response(200, memberStatus()));
 
     await getMcpMemberStatus(WS);
     expect(call().url.href).toBe(`${BASE}/api/mcp/me/workspaces/${WS}`);
   });
 
-  it('reads the approval policy from the member status, and none from servers that do not send a known one', async () => {
-    fetchMock
-      .mockResolvedValueOnce(response(200, { workspace_id: WS, approval_mode: 'verified_and_approved' }))
-      .mockResolvedValueOnce(response(200, { workspace_id: WS, approval_mode: 'everyone' }))
-      .mockResolvedValueOnce(response(200, { workspace_id: WS }));
+  it('reads the member status as the server sends it', async () => {
+    const body = memberStatus({ approval_mode: 'approved_only', enabled: false });
 
-    await expect(getMcpMemberStatus(WS)).resolves.toMatchObject({ approval_mode: 'verified_and_approved' });
-    await expect(getMcpMemberStatus(WS)).resolves.toMatchObject({ approval_mode: undefined });
-    await expect(getMcpMemberStatus(WS)).resolves.toMatchObject({
-      approval_mode: undefined,
-      approved_apps: undefined,
-    });
+    fetchMock.mockResolvedValueOnce(response(200, body));
+
+    await expect(getMcpMemberStatus(WS)).resolves.toEqual(body);
   });
 
-  it('reads whether AI app connections are turned on, and on from servers that predate the switch', async () => {
+  // A newer server's policy reads as unknown, never as a known one, in both places.
+  it('reads an approval policy this Web does not know as undefined in the member status and the settings', async () => {
     fetchMock
-      .mockResolvedValueOnce(response(200, { workspace_id: WS, enabled: false }))
-      .mockResolvedValueOnce(response(200, { workspace_id: WS, enabled: true }))
-      .mockResolvedValueOnce(response(200, { workspace_id: WS }));
+      .mockResolvedValueOnce(response(200, memberStatus({ approval_mode: 'everyone' })))
+      .mockResolvedValueOnce(
+        response(200, workspaceSettings({ approval_mode: 'everyone', allow_unapproved_clients: true }))
+      );
 
-    await expect(getMcpMemberStatus(WS)).resolves.toMatchObject({ enabled: false });
-    await expect(getMcpMemberStatus(WS)).resolves.toMatchObject({ enabled: true });
-    await expect(getMcpMemberStatus(WS)).resolves.toMatchObject({ enabled: true });
+    expect((await getMcpMemberStatus(WS)).approval_mode).toBeUndefined();
+    expect((await getMcpWorkspaceSettings(WS)).approval_mode).toBeUndefined();
   });
 
   it('looks clients up publicly with the query form and no credentials', async () => {
@@ -439,7 +484,12 @@ describe('MCP requests', () => {
 
   it('never sends the refresh token in any request body or header', async () => {
     fetchMock.mockImplementation(async () =>
-      response(200, { redirect_url: 'https://claude.ai/cb', requested: true, connections: [], requests: [] })
+      response(200, {
+        ...workspaceSettings({ auto_approved_clients: [] }),
+        redirect_url: 'https://claude.ai/cb',
+        requested: true,
+        connections: [],
+      })
     );
     storedToken = makeToken({ expires_at: nowSeconds() - 10 });
 
@@ -540,22 +590,19 @@ describe('MCP owner disconnect', () => {
 });
 
 describe('MCP owner reads', () => {
-  it('unwraps lists and defaults missing arrays', async () => {
-    fetchMock
-      .mockResolvedValueOnce(response(200, { connections: [{ client_id: 'a', user_uuid: 'u' }] }))
-      .mockResolvedValueOnce(response(200, { requests: [{ client_id: 'b' }] }))
-      .mockResolvedValueOnce(response(200, { workspace_id: WS, allow_unapproved_clients: false }))
-      .mockResolvedValueOnce(response(200, {}));
+  it('unwraps lists', async () => {
+    const connection = { ...clientSummary(), user_uuid: 'u', workspace_id: WS, connected_at: 1, family_id: null };
+    const request = { ...clientSummary({ client_id: 'b' }), approval_key: 'b', requesters: [] };
 
-    await expect(listMcpWorkspaceConnections(WS)).resolves.toEqual([{ client_id: 'a', user_uuid: 'u' }]);
-    await expect(listMcpAccessRequests(WS)).resolves.toEqual([{ client_id: 'b' }]);
-    await expect(getMcpWorkspaceSettings(WS)).resolves.toEqual({
-      workspace_id: WS,
-      allow_unapproved_clients: false,
-      // A server without approval_mode: "require approval" read as approved apps only.
-      approval_mode: 'approved_only',
-      approved_clients: [],
-    });
+    fetchMock
+      .mockResolvedValueOnce(response(200, { connections: [connection] }))
+      .mockResolvedValueOnce(response(200, { requests: [request] }))
+      .mockResolvedValueOnce(response(200, workspaceSettings()))
+      .mockResolvedValueOnce(response(200, { connections: [] }));
+
+    await expect(listMcpWorkspaceConnections(WS)).resolves.toEqual([connection]);
+    await expect(listMcpAccessRequests(WS)).resolves.toEqual([request]);
+    await expect(getMcpWorkspaceSettings(WS)).resolves.toEqual(workspaceSettings());
     await expect(listMyMcpConnections(WS)).resolves.toEqual([]);
     expect(call(0).url.pathname).toBe(`/api/mcp/admin/workspaces/${WS}/connections`);
     expect(call(1).url.pathname).toBe(`/api/mcp/admin/workspaces/${WS}/access-requests`);
@@ -563,76 +610,89 @@ describe('MCP owner reads', () => {
     expect(call(3).url.pathname).toBe(`/api/mcp/me/workspaces/${WS}/connections`);
   });
 
-  it('sets the approval policy, with the old flag for servers that predate it', async () => {
+  // A proxy answering 200 {} must not read as "no connections" in the owner's revocation list.
+  it.each([
+    ['member connections', () => listMcpWorkspaceConnections(WS), {}],
+    ['access requests', () => listMcpAccessRequests(WS), { requests: null }],
+    ['my connections', () => listMyMcpConnections(WS), { connections: 'none' }],
+    ['my connections everywhere', () => listMyMcpConnectionsAcrossWorkspaces(), {}],
+    ['settings', () => getMcpWorkspaceSettings(WS), workspaceSettings({ approved_clients: undefined })],
+    ['member status', () => getMcpMemberStatus(WS), memberStatus({ approved_apps: undefined })],
+  ])('rejects %s without their list as an invalid response', async (_name, run, body) => {
+    fetchMock.mockResolvedValueOnce(response(200, body));
+
+    const error = await run().catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ status: 200, error: 'invalid_response', reason: 'server_error' });
+    expect(isMcpServiceUnavailable(error)).toBe(false);
+  });
+
+  it.each(MCP_APPROVAL_MODES)('sets the approval policy %s with approval_mode alone', async (mode) => {
     fetchMock.mockResolvedValueOnce(
-      response(200, { workspace_id: WS, allow_unapproved_clients: true, approval_mode: 'any', approved_clients: [] })
+      response(200, workspaceSettings({ approval_mode: mode, auto_approved_clients: [] }))
     );
 
-    await expect(updateMcpWorkspaceSettings(WS, 'any')).resolves.toMatchObject({
-      approval_mode: 'any',
+    await expect(updateMcpWorkspaceSettings(WS, mode)).resolves.toMatchObject({
+      approval_mode: mode,
       auto_approved_clients: [],
     });
     expect(call().method).toBe('PUT');
-    expect(call().body).toEqual({ approval_mode: 'any', allow_unapproved_clients: true });
-  });
-
-  it.each([
-    ['verified_and_approved', false],
-    ['approved_only', false],
-  ] as const)('sends %s with allow_unapproved_clients %s', async (mode, allow) => {
-    fetchMock.mockResolvedValueOnce(response(200, { workspace_id: WS, allow_unapproved_clients: allow }));
-
-    await updateMcpWorkspaceSettings(WS, mode);
-    expect(call().body).toEqual({ approval_mode: mode, allow_unapproved_clients: allow });
+    expect(call().body).toEqual({ approval_mode: mode });
   });
 
   it('returns the apps approved because the policy became stricter', async () => {
-    const claude = { client_id: 'https://claude.ai/meta', client_name: 'Claude', client_kind: 'cimd' };
+    const claude = {
+      ...clientSummary({ client_id: 'https://claude.ai/meta', client_name: 'Claude', client_kind: 'cimd' }),
+      approval_key: 'https://claude.ai/meta',
+    };
+    const approval = { ...claude, approved_by: 'owner-1', approved_at: '2026-10-01T10:00:00Z' };
 
     fetchMock.mockResolvedValueOnce(
-      response(200, {
-        workspace_id: WS,
-        allow_unapproved_clients: false,
-        approval_mode: 'approved_only',
-        approved_clients: [claude],
-        auto_approved_clients: [claude],
-      })
+      response(
+        200,
+        workspaceSettings({
+          approval_mode: 'approved_only',
+          approved_clients: [approval],
+          auto_approved_clients: [claude],
+        })
+      )
     );
 
     await expect(updateMcpWorkspaceSettings(WS, 'approved_only')).resolves.toMatchObject({
-      allow_unapproved_clients: false,
       approval_mode: 'approved_only',
-      // An approval without approval_key covers its own client ID.
-      approved_clients: [{ ...claude, approval_key: claude.client_id }],
+      approved_clients: [approval],
       auto_approved_clients: [claude],
     });
-    expect(call().body).toEqual({ approval_mode: 'approved_only', allow_unapproved_clients: false });
+  });
+
+  it('rejects a settings update without its auto-approved list', async () => {
+    fetchMock.mockResolvedValueOnce(response(200, workspaceSettings()));
+
+    await expect(updateMcpWorkspaceSettings(WS, 'approved_only')).rejects.toMatchObject({ error: 'invalid_response' });
   });
 
   it('reads the approval policy and app-level approval keys', async () => {
-    const cursor = { client_id: 'dcr-cursor-1', client_kind: 'dcr', app_id: 'cursor', verified_app: true };
+    const cursor = clientSummary({
+      client_id: 'dcr-cursor-1',
+      app_id: 'cursor',
+      app_name: 'Cursor',
+      verified_app: true,
+    });
 
-    fetchMock
-      .mockResolvedValueOnce(
-        response(200, {
-          workspace_id: WS,
-          allow_unapproved_clients: false,
+    fetchMock.mockResolvedValueOnce(
+      response(
+        200,
+        workspaceSettings({
           approval_mode: 'verified_and_approved',
-          approved_clients: [{ ...cursor, approval_key: 'app:cursor' }],
+          approved_clients: [{ ...cursor, approval_key: 'app:cursor', approved_by: 'owner-1', approved_at: '' }],
         })
       )
-      .mockResolvedValueOnce(response(200, { workspace_id: WS, allow_unapproved_clients: true }))
-      .mockResolvedValueOnce(
-        response(200, { workspace_id: WS, allow_unapproved_clients: false, approval_mode: 'sometimes' })
-      );
+    );
 
     await expect(getMcpWorkspaceSettings(WS)).resolves.toMatchObject({
       approval_mode: 'verified_and_approved',
       approved_clients: [{ client_id: 'dcr-cursor-1', approval_key: 'app:cursor' }],
     });
-    await expect(getMcpWorkspaceSettings(WS)).resolves.toMatchObject({ approval_mode: 'any' });
-    // An unknown mode falls back to the flag.
-    await expect(getMcpWorkspaceSettings(WS)).resolves.toMatchObject({ approval_mode: 'approved_only' });
   });
 });
 
@@ -693,15 +753,18 @@ describe('MCP connections per device', () => {
   });
 
   it('lists my connections across workspaces with their counts', async () => {
-    const connection = { client_id: 'a', workspace_id: WS, family_id: 'f1', device_label: 'Cursor · macOS' };
+    const connection = {
+      ...clientSummary({ client_id: 'a' }),
+      workspace_id: WS,
+      family_id: 'f1',
+      device_label: 'Cursor · macOS',
+      connected_at: 1,
+      last_used_at: null,
+    };
 
-    fetchMock
-      .mockResolvedValueOnce(response(200, { connections: [connection], workspace_count: 1, connection_count: 1 }))
-      .mockResolvedValueOnce(
-        response(200, {
-          connections: [connection, { ...connection, family_id: 'f2' }, { ...connection, workspace_id: 'ws-2' }],
-        })
-      );
+    fetchMock.mockResolvedValueOnce(
+      response(200, { connections: [connection], workspace_count: 1, connection_count: 1 })
+    );
 
     await expect(listMyMcpConnectionsAcrossWorkspaces()).resolves.toEqual({
       connections: [connection],
@@ -711,30 +774,20 @@ describe('MCP connections per device', () => {
     expect(call().method).toBe('GET');
     expect(call().url.href).toBe(`${BASE}/api/mcp/me/connections`);
     expect(call().headers.Authorization).toBe('Bearer access-1');
-    // Missing counts come from the list.
-    await expect(listMyMcpConnectionsAcrossWorkspaces()).resolves.toMatchObject({
-      workspace_count: 2,
-      connection_count: 3,
-    });
   });
 
-  it('keeps approved_apps absent for servers without it and keys each approved app', async () => {
-    fetchMock.mockResolvedValueOnce(response(200, { workspace_id: WS, role: 'member' })).mockResolvedValueOnce(
-      response(200, {
-        workspace_id: WS,
-        role: 'member',
-        approved_apps: [
-          { client_id: 'dcr-cursor', app_id: 'cursor', verified_app: true, approval_key: 'app:cursor' },
-          { client_id: 'dcr-tool' },
-        ],
-      })
-    );
+  it('reads the approved apps with their approval keys', async () => {
+    const approvedApps = [
+      {
+        ...clientSummary({ client_id: 'dcr-cursor', app_id: 'cursor', app_name: 'Cursor', verified_app: true }),
+        approval_key: 'app:cursor',
+      },
+      { ...clientSummary({ client_id: 'dcr-tool' }), approval_key: 'dcr-tool' },
+    ];
 
-    expect((await getMcpMemberStatus(WS)).approved_apps).toBeUndefined();
-    expect((await getMcpMemberStatus(WS)).approved_apps).toEqual([
-      { client_id: 'dcr-cursor', app_id: 'cursor', verified_app: true, approval_key: 'app:cursor' },
-      { client_id: 'dcr-tool', approval_key: 'dcr-tool' },
-    ]);
+    fetchMock.mockResolvedValueOnce(response(200, memberStatus({ approved_apps: approvedApps })));
+
+    expect((await getMcpMemberStatus(WS)).approved_apps).toEqual(approvedApps);
   });
 });
 
@@ -1014,15 +1067,15 @@ describe('MCP session handling', () => {
 
 describe('mcpTimestampToDate', () => {
   it.each([
+    // Unix seconds (connections, access requests).
     [1_767_225_600, '2026-01-01T00:00:00.000Z'],
-    [1_767_225_600_000, '2026-01-01T00:00:00.000Z'],
-    ['1767225600', '2026-01-01T00:00:00.000Z'],
+    // RFC 3339 (approvals, settings).
     ['2026-01-01T00:00:00Z', '2026-01-01T00:00:00.000Z'],
   ])('converts %p', (value, iso) => {
     expect(mcpTimestampToDate(value)?.toISOString()).toBe(iso);
   });
 
-  it.each([undefined, null, '', 'not a date'])('returns null for %p', (value) => {
+  it.each([undefined, null, '', 'not a date', 1e20, Number.NaN])('returns null for %p', (value) => {
     expect(mcpTimestampToDate(value)).toBeNull();
   });
 });

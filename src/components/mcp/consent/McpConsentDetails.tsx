@@ -48,6 +48,7 @@ export function McpConsentDetails({ client, redirectUri }: McpConsentDetailsProp
               client_kind: client.client_kind,
               loopback_only: false,
               logo_uri: null,
+              app_name: null,
               verified_app: client.verified_app === true && client.identity_verified === true,
               identity_verified: client.identity_verified,
             }}
