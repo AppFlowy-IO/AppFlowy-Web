@@ -17,6 +17,7 @@ import crypto from 'node:crypto';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { exchangeAuthorizationCode, getJson, pkcePair, startCallbackServer } from '../../support/mcp-oauth-helpers';
+import { PageSelectors } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const CLIENT_NAME = 'Playwright AI app';
@@ -116,7 +117,12 @@ async function discover(request: APIRequestContext, serverUrl: string): Promise<
 /** Read the MCP server URL the way a user takes it: from Settings → MCP, through Copy. */
 async function copyServerUrlFromSettings(page: Page): Promise<string> {
   await page.goto('/app?setting=AI_APPS', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('mcp-panel')).toBeVisible({ timeout: 30000 });
+  await expect(
+    page.getByTestId('mcp-panel'),
+    'Settings → MCP is hidden: AppFlowy Web must know the MCP origin (server-info mcp_url, or APPFLOWY_MCP_BASE_URL)'
+  ).toBeVisible({ timeout: 30000 });
+  // The panel shows a spinner until the member status says whether AI apps are on.
+  await expect(page.getByTestId('mcp-panel-loading')).toHaveCount(0, { timeout: 30000 });
   await expect(
     page.getByTestId('mcp-panel-disabled'),
     'AI apps are turned off on this server: turn them on in Admin → AI apps (MCP), or set APPFLOWY_MCP_ENABLED=true'
@@ -230,10 +236,13 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
       );
 
       expect(initialize.status, JSON.stringify(initialize.body)).toBe(200);
+      const initializeResult = initialize.body?.result as { protocolVersion: string } | undefined;
+
+      expect(initializeResult?.protocolVersion, JSON.stringify(initialize.body)).toBeTruthy();
       const session = {
         accessToken: tokens.access_token,
         sessionId: initialize.sessionId,
-        protocolVersion: (initialize.body?.result as { protocolVersion: string }).protocolVersion,
+        protocolVersion: initializeResult?.protocolVersion,
       };
       const initialized = await mcpRpc(
         request,
@@ -244,9 +253,11 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
 
       expect(initialized.status).toBeLessThan(300);
       const tools = await mcpRpc(request, serverUrl, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, session);
-      const toolNames = ((tools.body?.result as { tools: { name: string }[] }).tools ?? []).map((tool) => tool.name);
+      const toolsResult = tools.body?.result as { tools?: { name: string }[] } | undefined;
 
-      expect(toolNames).toContain('create-pages');
+      expect(tools.status, JSON.stringify(tools.body)).toBe(200);
+      expect(toolsResult?.tools, JSON.stringify(tools.body)).toBeDefined();
+      expect(toolsResult?.tools?.map((tool) => tool.name)).toContain('create-pages');
 
       const created = await mcpRpc(
         request,
@@ -286,8 +297,14 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
       // The pages are in AppFlowy Web: the document opens with its content, both are in the sidebar.
       await page.goto(`/app/${workspaceId}/${results[0].view_id}`, { waitUntil: 'domcontentloaded' });
       await expect(page.getByText('Collect beta feedback').first()).toBeVisible({ timeout: 60000 });
-      await expect(page.getByText(documentName).first()).toBeVisible({ timeout: 30000 });
-      await expect(page.getByText(gridName).first()).toBeVisible({ timeout: 30000 });
+      // Sidebar rows by view ID: the document's name also shows in its title and breadcrumb.
+      const sidebarDocument = PageSelectors.pageByViewId(page, results[0].view_id);
+      const sidebarGrid = PageSelectors.pageByViewId(page, results[1].view_id);
+
+      await expect(sidebarDocument).toBeVisible({ timeout: 30000 });
+      await expect(sidebarDocument).toContainText(documentName);
+      await expect(sidebarGrid).toBeVisible({ timeout: 30000 });
+      await expect(sidebarGrid).toContainText(gridName);
 
       // And the AI app is listed as the user's connection.
       await page.goto('/app?setting=AI_APPS', { waitUntil: 'domcontentloaded' });
