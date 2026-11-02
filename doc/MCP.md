@@ -45,7 +45,7 @@ At a glance (details in the sections below):
 3. Signed-out users sign in through a flow-bound continuation (see
    [Sign-in continuation](#sign-in-continuation)): the login URL carries only an opaque flow ID,
    and password, magic link, SSO, OIDC, SAML and LDAP sign-in return to the consent request while
-   it is still valid (10 minutes), or land on an "expired" view after that.
+   is within the Web's 10-minute sign-in window, or land on an "expired" view after that.
 4. The page loads the public client description (`GET /api/mcp/clients?client_id=`), the user's
    workspaces with their roles (`UserService.getWorkspaceInfo`, as the app shell does), and for the
    chosen workspace the member status (`GET /api/mcp/me/workspaces/{id}?client_id=`): whether AI app
@@ -123,7 +123,9 @@ the button disappears and the message stays (`isCancellableConsentReason`,
 `useMcpConsent.cancelFromError`).
 
 The page is split into `src/pages/McpAuthorizePage.tsx` (framing, request parsing, configuration,
-sign-in, the expired view) and `src/components/mcp/consent/`: `consentModel.ts` (pure rules),
+sign-in, the expired view), `src/application/mcp/consentUrl.ts` (the consent path and the expired
+view's URL, built by the sign-in continuation and parsed by the page) and
+`src/components/mcp/consent/`: `consentModel.ts` (pure rules),
 `useMcpConsent.ts` (loading, one action at a time, the done view before `window.location.assign`)
 and the views.
 
@@ -136,7 +138,9 @@ destinations (`AuthContinuationKind`: public Form links and MCP consent requests
 
 - `saveMcpConsentRedirectTo(consentUrl)` keeps the whole consent URL in this tab's
   `sessionStorage` (`mcpConsentAuthContinuation`) behind a random 128-bit flow ID, for
-  `MCP_CONSENT_AUTH_CONTINUATION_TTL_MS` (10 minutes, the MCP service's `AUTH_REQUEST_TTL_SECS`).
+  `MCP_CONSENT_AUTH_CONTINUATION_TTL_MS` (10 minutes). That bound is the Web's own: the MCP service
+  keeps nothing for a request on its way to the consent page (Allow revalidates every parameter),
+  so the TTL only guesses when the AI app has given up on its authorization.
   `buildLoginUrl({ redirectTo: consentUrl })` then yields `/login?force=true&mcpAuth=<flowId>`:
   the OAuth parameters stay out of login and auth callback URLs (history, access logs, referrers).
   `force` keeps the login form up for a cached session, as when switching accounts.
@@ -331,8 +335,7 @@ return to its publisher's own website (Claude, ChatGPT, Perplexity) has `identit
 `McpClientIdentity` shows **Verified app** (with a tooltip) only for those. A recognized app that
 runs on the computer keeps its catalog name but shows **Runs on your computer** with a tooltip
 (`mcp-client-native-app-badge`, `settings.mcp.nativeAppTooltip`) instead, and policy previews
-(`mcpModeAdmitsWithoutApproval`) treat it like any other app needing approval. Summaries without
-these fields (older servers) read as unrecognized, and a missing `identity_verified` as unproven.
+(`mcpModeAdmitsWithoutApproval`) treat it like any other app needing approval.
 
 ## Configuration
 
@@ -436,8 +439,7 @@ While it is off:
   turned-off states: the consent page's `mcp_disabled` error view (see the reasons table above) and
   the Settings notice with Your connections (see [Settings → MCP](#settings--mcp)).
 
-The Web reads the state from the member status's `enabled` (absent from servers that predate the
-switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reason
+The Web reads the state from the member status's `enabled` and from the `mcp_disabled` reason
 (`isMcpDisabledError`), never from the description text.
 
 ## HTTP client
@@ -450,7 +452,14 @@ switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reas
   (`reason: "invalid_session"`) and refuses with other 4xx/5xx statuses and a machine `reason`.
 - Sends `Authorization: Bearer <GoTrue access token>`, refreshing the session first when the token
   expires within 30 seconds, and refreshes once more and retries once on 401 `invalid_session`.
-  A confirmed refresh-token rejection ends the session like the axios interceptor does.
+  Every token it sends must belong to the user who sent the first attempt: the token store is
+  shared between tabs, so after another tab signs in as someone else the call fails with
+  `invalid_session` instead of acting as them. A confirmed refresh-token rejection ends the session
+  like the axios interceptor does.
+- Reads responses as the MCP service serializes them (the wire types mirror its structs): a
+  missing or malformed list is an `invalid_response` failure, never an empty list, and an approval
+  policy this Web does not know reads as undefined. Timestamps have one form per field, Unix
+  seconds or RFC 3339 (`mcpTimestampToDate`).
 - Never sends the GoTrue refresh token. (Earlier prototypes forwarded it; MCP refreshing the same
   rotating token triggers GoTrue reuse detection and logs the user out of the Web app.)
 - Client IDs travel in the query string (`?client_id=`), never in a path segment: CIMD client IDs are
@@ -472,11 +481,11 @@ switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reas
 | `getMcpClientInfo` | `GET /api/mcp/clients?client_id=` (public) |
 | `createMcpAuthorizationCode` | `POST /api/mcp/authorize/code` |
 | `denyMcpAuthorization` | `POST /api/mcp/authorize/deny` (public) |
-| `getMcpMemberStatus` | `GET /api/mcp/me/workspaces/{id}[?client_id=]` (`enabled` reads `true` unless the server sends `false`; `approved_apps` stays undefined when the server sends none) |
+| `getMcpMemberStatus` | `GET /api/mcp/me/workspaces/{id}[?client_id=]` |
 | `listMyMcpConnections`, `disconnectMyMcpConnection` | `GET`, `DELETE /api/mcp/me/workspaces/{id}/connections[?client_id=&family_id=]` (`{ familyId }` disconnects one device) |
-| `listMyMcpConnectionsAcrossWorkspaces` | `GET /api/mcp/me/connections` → `{ connections (+ workspace_id), workspace_count, connection_count }` (missing counts derived from the list) |
+| `listMyMcpConnectionsAcrossWorkspaces` | `GET /api/mcp/me/connections` → `{ connections (+ workspace_id), workspace_count, connection_count }` |
 | `createMcpAccessRequest` | `POST /api/mcp/me/workspaces/{id}/access-requests` |
-| `getMcpWorkspaceSettings`, `updateMcpWorkspaceSettings` | `GET`, `PUT /api/mcp/admin/workspaces/{id}/settings`. The PUT sends `{ approval_mode, allow_unapproved_clients: mode === 'any' }` and also returns `auto_approved_clients` (`[]` when absent); a missing `approval_mode` reads `any` or `approved_only` from the flag, a missing `approval_key` as the client ID |
+| `getMcpWorkspaceSettings`, `updateMcpWorkspaceSettings` | `GET`, `PUT /api/mcp/admin/workspaces/{id}/settings`. The PUT sends `{ approval_mode }` alone and also returns `auto_approved_clients`, with their approval keys |
 | `approveMcpClient`, `revokeMcpClientApproval` | `PUT`, `DELETE /api/mcp/admin/workspaces/{id}/approvals?client_id=` (approve takes the request's `client_id`, or its app-level `approval_key` `app:<app_id>`; revoke takes the entry's `approval_key`, e.g. `app:cursor`) |
 | `listMcpWorkspaceConnections`, `disconnectMcpWorkspaceConnections` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/connections[?client_id=&user_uuid=&family_id=]` (refuses to send without `client_id` or `user_uuid`) |
 | `disconnectAllMcpWorkspaceConnections` | `DELETE /api/mcp/admin/workspaces/{id}/connections?all=true` |
@@ -548,7 +557,7 @@ pnpm exec jest --runInBand --no-coverage \
 | --- | --- |
 | `src/application/mcp/__tests__/setup.test.ts` | Install links, commands and configs (exact strings, TOML escaping, Cursor's `appflowy` name), scopes, URL helpers |
 | `setupApps.test.ts`, `setupPrompt.test.ts` | Card order and catalog mapping; connected apps counted per app, never matched by a self-asserted name; the setup prompt's version, commands, browser steps, `get-self` check and setup page link |
-| `mcp-api.test.ts` | Bearer header, no refresh token in any body, query-form client IDs, error mapping, refresh and retry once on 401, owner disconnect refusing an empty filter, URL resolution order (override, server-info `mcp_url`, not configured), loading, keeping the answer through failed refreshes, `auto_approved_clients`, approval policy body and fallbacks, `approval_key` defaults, per-device (`family_id`) and `all=true` disconnects, app-level keys, connections across workspaces, `approved_apps`, `mcpApprovalKey`, `mcp_disabled` (from the reason or the error code) kept apart from outages, `enabled` read as on when absent |
+| `mcp-api.test.ts` | Bearer header, no refresh token in any body, query-form client IDs, error mapping, refresh and retry once on 401, owner disconnect refusing an empty filter, URL resolution order (override, server-info `mcp_url`, not configured), loading, keeping the answer through failed refreshes, `auto_approved_clients`, the approval policy body (`approval_mode` alone), server-shaped fixtures, a missing list rejected as `invalid_response`, an unknown approval policy read as undefined in the member status and the settings, retries bound to the same user, per-device (`family_id`) and `all=true` disconnects, app-level keys (approve, revoke, dismiss), connections across workspaces, `approved_apps`, `mcpApprovalKey`, `mcp_disabled` (from the reason or the error code) kept apart from outages |
 | `src/application/session/__tests__/sign_in.test.ts` | Form and MCP consent continuations: OAuth parameters kept out of login and callback URLs, return within the TTL, expired view after it, unrelated later login, cross-tab magic link, password recovery, legacy cleanup |
 | `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges and "Connected apps (N)", setup prompt, Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
 | `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
