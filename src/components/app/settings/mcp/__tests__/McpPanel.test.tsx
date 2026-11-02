@@ -232,7 +232,8 @@ describe('McpPanel', () => {
   let clock: jest.SpyInstance<number, []>;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Not clearAllMocks: a test that fails early must not leave its queued answers (…Once) to the next.
+    jest.resetAllMocks();
     clock = jest.spyOn(Date, 'now').mockReturnValue(NOW);
     resetMcpPendingRequestCountsForTests();
     api.getMcpMemberStatus.mockResolvedValue(memberStatus());
