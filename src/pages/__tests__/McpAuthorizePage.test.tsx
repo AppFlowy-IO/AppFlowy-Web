@@ -206,7 +206,7 @@ async function loginContinuation() {
   const stored = JSON.parse(window.sessionStorage.getItem('mcpConsentAuthContinuation') ?? 'null');
 
   expect(stored?.flowId).toBe(url.searchParams.get('mcpAuth'));
-  // The MCP service keeps an authorization request for 10 minutes.
+  // The Web's own sign-in window (MCP_CONSENT_AUTH_CONTINUATION_TTL_MS), 10 minutes.
   expect(stored.expiresAt - Date.now()).toBeGreaterThan(9 * 60_000);
   expect(stored.expiresAt - Date.now()).toBeLessThanOrEqual(10 * 60_000);
   return stored.redirectTo as string;

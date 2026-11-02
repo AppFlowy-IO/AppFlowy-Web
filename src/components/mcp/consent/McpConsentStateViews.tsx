@@ -115,9 +115,9 @@ export function McpConsentRequestSentView({ name }: { name: string }) {
 }
 
 /**
- * Sign-in took longer than the AI app's authorization request lives (see
- * `MCP_CONSENT_AUTH_CONTINUATION_TTL_MS`): the app has to start again.
- * Nothing on it redirects.
+ * Sign-in took longer than the Web waits for a consent request
+ * (`MCP_CONSENT_AUTH_CONTINUATION_TTL_MS`), so the AI app has most likely
+ * given up and has to start again. Nothing on it redirects.
  */
 export function McpConsentExpiredView({ name }: { name?: string }) {
   const { t } = useTranslation();

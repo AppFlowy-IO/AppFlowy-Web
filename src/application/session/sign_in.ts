@@ -15,9 +15,11 @@ export const PUBLIC_FORM_AUTH_CONTINUATION_TTL_MS = 15 * 60 * 1000;
 const MCP_CONSENT_AUTH_FLOW_PARAM = 'mcpAuth';
 
 /**
- * An MCP consent request survives sign-in only while the MCP service keeps
- * the authorization request (`AUTH_REQUEST_TTL_SECS`, 10 minutes). After
- * that the AI app has given up on it.
+ * How long an MCP consent request waits for sign-in. A Web policy, not a
+ * server deadline: the MCP service stores nothing for a request on its way to
+ * the consent page (Allow revalidates every parameter). Past this the AI app
+ * has most likely given up on its authorization, so the sign-in lands on the
+ * expired view instead of resuming the request.
  */
 export const MCP_CONSENT_AUTH_CONTINUATION_TTL_MS = 10 * 60 * 1000;
 
