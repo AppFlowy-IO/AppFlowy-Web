@@ -82,6 +82,32 @@ Web development/test mode bypasses this client check. To test creation without P
 debug Cloud server (`debug_assertions` enabled); a release Cloud server still enforces Pro.
 Production-policy tests explicitly disable the development bypass.
 
+### React subscriptions and request ownership
+
+Yjs handles keep their identity when their contents change. Database field readers should use
+`useDatabaseSelector` for primitive values or stable handles, and `useFieldSelector`'s `clock`
+when memoizing a field's contents. Keep `useDatabase` for consumers that need the whole database's
+deep revision. Test hydration, handle replacement, nested edits, and mutations between render
+and subscription; memoizing a Y.Map handle alone can leave derived values stale.
+
+Feed and Gallery search index hydrated row text separately from the query. Query changes should
+filter the index without decoding every row again. Row/schema changes still invalidate the
+relevant text, and Gallery applies its normal card budget to search matches (50 initially,
+then 30 per page), resetting the budget for a new query.
+
+Associate asynchronous document results with their source and loader before rendering or
+inserting content. Clearing state in an effect alone does not prevent a previous document from
+rendering with the next source's metadata. A chat answer stream belongs to both its provider's
+workspace/chat and the mounted assistant request. Teardown cancels transport and ignores late
+callbacks, including cancellation handles that arrive after teardown. Manual Stop can persist
+the final partial answer. Exercise the real consumer under Strict Mode so effect replay starts
+a replacement request instead of leaving a canceled answer on screen.
+
+Optimistic reaction intent must be computed outside React state updaters. Serialize changes to
+the same reaction and rebase pending intent on the initial server read so rapid toggles retain
+their order. Remote cursor geometry also needs local content and layout invalidation; peer
+awareness events alone cannot track an image loading or a local edit moving a cursor.
+
 
 ## 🚀 Production Mode Setup
 

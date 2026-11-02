@@ -1,7 +1,7 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
-import { useDatabaseFields } from '@/application/database-yjs/context';
-import type { YDatabaseFields } from '@/application/types';
+import { useDatabaseSelector } from '@/application/database-yjs/context';
+import { YDatabaseFields, YjsDatabaseKey } from '@/application/types';
 
 type FieldsVersionStore = {
   getSnapshot: () => number;
@@ -73,7 +73,9 @@ function getFieldsVersionStore(fields: YDatabaseFields | undefined): FieldsVersi
  * subscribe nor re-render on unrelated field edits and read 0.
  */
 export function useDatabaseFieldsVersion(enabled = true): number {
-  const fields = useDatabaseFields();
+  const fields = useDatabaseSelector(
+    useCallback((database) => (enabled ? database?.get(YjsDatabaseKey.fields) : undefined), [enabled])
+  );
   const store = enabled ? getFieldsVersionStore(fields) : EMPTY_STORE;
 
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);

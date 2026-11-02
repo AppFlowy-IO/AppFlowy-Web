@@ -1,241 +1,226 @@
-import { expect, describe, it, beforeEach, afterEach } from '@jest/globals';
-import { render, screen, waitFor } from '@testing-library/react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { act, render, screen } from '@testing-library/react';
 
-// Mock dependencies to avoid import.meta issues
-jest.mock('@/utils/runtime-config', () => ({
-  getConfigValue: jest.fn((key: string, defaultValue: string) => defaultValue),
-}));
+import type { YjsEditor } from '@/application/slate-yjs';
+import type { LoadView, ViewMetaProps, YDoc } from '@/application/types';
+import DrawerContent from '@/components/ai-chat/DrawerContent';
 
-// Create a simplified AIChatContext for testing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AIChatContext = React.createContext<any>(undefined);
-
-// Mock functions
-const mockLoadView = jest.fn();
+const mockLoadView = jest.fn<ReturnType<LoadView>, Parameters<LoadView>>();
+const mockBindViewSync = jest.fn();
 const mockInsertDataToDoc = jest.fn();
+const mockGetInsertData = jest.fn();
+const mockClearInsertData = jest.fn();
+let mockWorkspaceId = 'workspace-A';
 
-// Mock implementation of DrawerContent for testing
-function DrawerContent({ openViewId }: { openViewId: string }) {
-  const { getInsertData, clearInsertData, drawerOpen } = React.useContext(AIChatContext);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [doc, setDoc] = useState<{ id: string; doc: any } | undefined>(undefined);
-  const [notFound, setNotFound] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [editor, setEditor] = useState<any>(undefined);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const loadPageDoc = useCallback(async (id: string) => {
-    setNotFound(false);
-    setDoc(undefined);
-
-    try {
-      const loadedDoc = await mockLoadView(id);
-
-      setDoc({ doc: loadedDoc, id });
-      // Simulate editor connection
-      setEditor({ deselect: jest.fn() });
-    } catch (e) {
-      setNotFound(true);
-      console.error(e);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (openViewId) {
-      void loadPageDoc(openViewId);
-    } else {
-      setDoc(undefined);
-    }
-  }, [openViewId, loadPageDoc]);
-
-  useEffect(() => {
-    const insertData = getInsertData(openViewId);
-
-    if (!doc || !insertData || !drawerOpen || doc.id !== openViewId || editor === undefined) {
-      return;
-    }
-
-    try {
-      editor.deselect();
-      mockInsertDataToDoc(doc.doc, insertData);
-      clearInsertData(openViewId);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [editor, clearInsertData, doc, getInsertData, openViewId, drawerOpen]);
-
-  if (notFound) {
-    return <div data-testid="record-not-found">Not found: {openViewId}</div>;
-  }
-
-  return (
-    <div ref={containerRef} className={'h-fit w-full relative ai-chat-view'}>
-      {doc && (
-        <div data-testid="document">Document for {openViewId}</div>
-      )}
-    </div>
-  );
+interface DocumentProps {
+  doc: YDoc;
+  viewMeta: ViewMetaProps;
+  onEditorConnected: (editor: YjsEditor) => void;
 }
 
-describe('DrawerContent', () => {
-  const mockGetInsertData = jest.fn();
-  const mockClearInsertData = jest.fn();
+const mockDocument = jest.fn(({ doc, viewMeta }: DocumentProps) => (
+  <output data-testid='document'>
+    {JSON.stringify({ documentId: (doc as YDoc & { view_id: string }).view_id, viewId: viewMeta.viewId })}
+  </output>
+));
+const mockOperations = { loadView: mockLoadView, bindViewSync: mockBindViewSync };
+const mockChatContext = {
+  getInsertData: mockGetInsertData,
+  clearInsertData: mockClearInsertData,
+  drawerOpen: true,
+};
 
-  const createContextValue = (overrides = {}) => ({
-    chatId: 'test-chat-id',
-    selectionMode: false,
-    onOpenSelectionMode: jest.fn(),
-    onCloseSelectionMode: jest.fn(),
-    openViewId: 'view-123',
-    onOpenView: jest.fn(),
-    onCloseView: jest.fn(),
-    drawerWidth: 600,
-    onSetDrawerWidth: jest.fn(),
-    getInsertData: mockGetInsertData,
-    clearInsertData: mockClearInsertData,
-    setDrawerOpen: jest.fn(),
-    drawerOpen: true,
-    ...overrides,
+jest.mock('@/components/app/app.hooks', () => ({
+  useAppOperations: () => mockOperations,
+  useOpenPageModal: () => undefined,
+  useLoadViews: () => undefined,
+  useAppView: (id: string) => ({ view_id: id, name: id, layout: 0 }),
+  useCurrentWorkspaceId: () => mockWorkspaceId,
+}));
+jest.mock('@/components/ai-chat/AIChatProvider', () => ({ useAIChatContext: () => mockChatContext }));
+jest.mock('@/components/ai-chat/utils', () => ({
+  insertDataToDoc: (...args: unknown[]) => mockInsertDataToDoc(...args),
+}));
+jest.mock('@/application/slate-yjs', () => ({}));
+jest.mock('@/application/services/js-services/http', () => ({ getAxiosInstance: () => undefined }));
+jest.mock('@/components/document', () => ({ Document: (props: DocumentProps) => mockDocument(props) }));
+jest.mock('@/components/error/RecordNotFound', () => ({
+  __esModule: true,
+  default: ({ viewId }: { viewId: string }) => <output data-testid='not-found'>{viewId}</output>,
+}));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
   });
 
-  const renderWithContext = (openViewId: string, contextOverrides = {}) => {
-    const contextValue = createContextValue(contextOverrides);
+  return { promise, resolve, reject };
+}
 
-    return render(
-      <AIChatContext.Provider value={contextValue}>
-        <DrawerContent openViewId={openViewId} />
-      </AIChatContext.Provider>
-    );
-  };
+function documentFor(viewId: string): YDoc {
+  return { view_id: viewId } as unknown as YDoc;
+}
 
+function latestDocumentProps() {
+  return mockDocument.mock.calls[mockDocument.mock.calls.length - 1][0];
+}
+
+describe('DrawerContent source ownership', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockLoadView.mockResolvedValue({ /* mock YDoc */ });
+    mockWorkspaceId = 'workspace-A';
+    mockLoadView.mockImplementation(async (id: string) => documentFor(id));
+    mockBindViewSync.mockReturnValue({});
     mockGetInsertData.mockReturnValue(undefined);
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
+  it('loads, binds and renders the active source', async () => {
+    render(<DrawerContent openViewId='A' />);
+    await act(async () => undefined);
+
+    expect(mockLoadView).toHaveBeenCalledWith('A', false, false, { signal: expect.any(AbortSignal) });
+    expect(mockBindViewSync).toHaveBeenCalledWith(documentFor('A'));
+    expect(screen.getByTestId('document').textContent).toBe(JSON.stringify({ documentId: 'A', viewId: 'A' }));
   });
 
-  describe('Document Loading', () => {
-    it('should load document when openViewId is provided', async () => {
-      renderWithContext('view-123');
+  it('ignores an old source response after the next source has loaded', async () => {
+    const first = deferred<YDoc>();
+    const second = deferred<YDoc>();
 
-      await waitFor(() => {
-        expect(mockLoadView).toHaveBeenCalledWith('view-123');
-      });
-    });
+    mockLoadView.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const view = render(<DrawerContent openViewId='A' />);
 
-    it('should reload document when openViewId changes', async () => {
-      const { rerender } = renderWithContext('view-123');
+    view.rerender(<DrawerContent openViewId='B' />);
+    expect(mockLoadView.mock.calls[0][3]?.signal?.aborted).toBe(true);
+    await act(async () => second.resolve(documentFor('B')));
+    await act(async () => first.resolve(documentFor('A')));
 
-      await waitFor(() => {
-        expect(mockLoadView).toHaveBeenCalledWith('view-123');
-      });
-
-      mockLoadView.mockClear();
-
-      rerender(
-        <AIChatContext.Provider value={createContextValue()}>
-          <DrawerContent openViewId="view-456" />
-        </AIChatContext.Provider>
-      );
-
-      await waitFor(() => {
-        expect(mockLoadView).toHaveBeenCalledWith('view-456');
-      });
-    });
-
-    it('should render Document when doc is loaded', async () => {
-      mockLoadView.mockResolvedValue({ /* mock YDoc */ });
-
-      renderWithContext('view-123');
-
-      await waitFor(() => {
-        expect(screen.getByTestId('document')).toBeTruthy();
-      });
-    });
+    expect(screen.getByTestId('document').textContent).toBe(JSON.stringify({ documentId: 'B', viewId: 'B' }));
+    expect(mockBindViewSync).not.toHaveBeenCalledWith(documentFor('A'));
   });
 
-  describe('Error Handling', () => {
-    it('should show RecordNotFound when document fails to load', async () => {
-      mockLoadView.mockRejectedValue(new Error('Not found'));
+  it('ignores an obsolete failure instead of hiding the next document', async () => {
+    const first = deferred<YDoc>();
+    const second = deferred<YDoc>();
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      // Suppress console.error for this test
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => { /* suppress */ });
+    mockLoadView.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const view = render(<DrawerContent openViewId='A' />);
 
-      renderWithContext('view-123');
+    view.rerender(<DrawerContent openViewId='B' />);
+    await act(async () => second.resolve(documentFor('B')));
+    await act(async () => first.reject(new Error('A unavailable')));
 
-      await waitFor(() => {
-        expect(screen.getByTestId('record-not-found')).toBeTruthy();
-      });
-
-      consoleSpy.mockRestore();
-    });
+    expect(screen.queryByTestId('not-found')).toBeNull();
+    expect(screen.getByTestId('document').textContent).toBe(JSON.stringify({ documentId: 'B', viewId: 'B' }));
+    errorLog.mockRestore();
   });
 
-  describe('Insert Data Handling', () => {
-    it('should call clearInsertData after inserting data', async () => {
-      const mockInsertData = [{ type: 'paragraph', data: {}, children: [] }];
+  it('reloads the same source for a new workspace and ignores the old workspace response', async () => {
+    const first = deferred<YDoc>();
+    const second = deferred<YDoc>();
+    const oldDoc = documentFor('source');
+    const newDoc = documentFor('source');
 
-      mockGetInsertData.mockReturnValue(mockInsertData);
+    mockLoadView.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const view = render(<DrawerContent openViewId='source' />);
 
-      renderWithContext('view-123', { drawerOpen: true });
+    mockWorkspaceId = 'workspace-B';
+    view.rerender(<DrawerContent openViewId='source' />);
+    await act(async () => second.resolve(newDoc));
+    await act(async () => first.resolve(oldDoc));
 
-      await waitFor(() => {
-        expect(mockClearInsertData).toHaveBeenCalledWith('view-123');
-      });
-    });
-
-    it('should not insert data when drawer is closed', async () => {
-      const mockInsertData = [{ type: 'paragraph', data: {}, children: [] }];
-
-      mockGetInsertData.mockReturnValue(mockInsertData);
-
-      renderWithContext('view-123', { drawerOpen: false });
-
-      await waitFor(() => {
-        expect(mockLoadView).toHaveBeenCalled();
-      });
-
-      // insertDataToDoc should not be called when drawer is closed
-      expect(mockInsertDataToDoc).not.toHaveBeenCalled();
-    });
+    expect(mockLoadView).toHaveBeenCalledTimes(2);
+    expect(latestDocumentProps().doc).toBe(newDoc);
+    expect(mockBindViewSync.mock.calls.every(([doc]) => doc !== oldDoc)).toBe(true);
   });
 
-  describe('Container Ref', () => {
-    it('should attach ref to container element', async () => {
-      const { container } = renderWithContext('view-123');
+  it('does not reuse the previous document while the same source loads in a new workspace', async () => {
+    const next = deferred<YDoc>();
+    const view = render(<DrawerContent openViewId='source' />);
 
-      await waitFor(() => {
-        expect(mockLoadView).toHaveBeenCalled();
-      });
+    await act(async () => undefined);
+    mockLoadView.mockReturnValue(next.promise);
+    mockWorkspaceId = 'workspace-B';
+    view.rerender(<DrawerContent openViewId='source' />);
 
-      const contentContainer = container.querySelector('.ai-chat-view');
-
-      expect(contentContainer).toBeTruthy();
-    });
+    expect(screen.queryByTestId('document')).toBeNull();
+    await act(async () => next.resolve(documentFor('source')));
   });
 
-  describe('Component Rendering', () => {
-    it('should render document when loaded', async () => {
-      renderWithContext('view-123');
+  it('does not accept the first visit to A after navigating A to B to A', async () => {
+    const oldA = deferred<YDoc>();
+    const b = deferred<YDoc>();
+    const newA = deferred<YDoc>();
 
-      await waitFor(() => {
-        expect(screen.getByTestId('document')).toBeTruthy();
-      });
-    });
+    mockLoadView.mockReturnValueOnce(oldA.promise).mockReturnValueOnce(b.promise).mockReturnValueOnce(newA.promise);
+    const view = render(<DrawerContent openViewId='A' />);
+
+    view.rerender(<DrawerContent openViewId='B' />);
+    view.rerender(<DrawerContent openViewId='A' />);
+    await act(async () => oldA.resolve(documentFor('A')));
+    expect(screen.queryByTestId('document')).toBeNull();
+    await act(async () => newA.resolve(documentFor('A')));
+    await act(async () => b.resolve(documentFor('B')));
+    expect(screen.getByTestId('document').textContent).toBe(JSON.stringify({ documentId: 'A', viewId: 'A' }));
   });
 
-  describe('View Meta', () => {
-    it('should pass correct viewMeta to Document', async () => {
-      renderWithContext('view-123');
+  it('waits for the new document editor before inserting generated content', async () => {
+    const view = render(<DrawerContent openViewId='A' />);
 
-      await waitFor(() => {
-        expect(screen.getByText('Document for view-123')).toBeTruthy();
-      });
-    });
+    await act(async () => undefined);
+    const oldConnected = latestDocumentProps().onEditorConnected;
+    const oldEditor = { deselect: jest.fn() } as unknown as YjsEditor;
+
+    await act(async () => oldConnected(oldEditor));
+    mockGetInsertData.mockImplementation((id: string) => (id === 'B' ? [{ type: 'paragraph' }] : undefined));
+    view.rerender(<DrawerContent openViewId='B' />);
+    await act(async () => undefined);
+    await act(async () => oldConnected(oldEditor));
+
+    expect(mockInsertDataToDoc).not.toHaveBeenCalled();
+    const newEditor = { deselect: jest.fn() } as unknown as YjsEditor;
+
+    await act(async () => latestDocumentProps().onEditorConnected(newEditor));
+    await act(async () => oldConnected(oldEditor));
+    expect(oldEditor.deselect).not.toHaveBeenCalled();
+    expect(newEditor.deselect).toHaveBeenCalledTimes(1);
+    expect(mockInsertDataToDoc).toHaveBeenCalledWith(latestDocumentProps().doc, [{ type: 'paragraph' }]);
+    expect(mockClearInsertData).toHaveBeenCalledWith('B');
+  });
+
+  it('does not render or bind a document whose routing identity differs from its metadata', async () => {
+    mockLoadView.mockResolvedValue(documentFor('different-source'));
+    render(<DrawerContent openViewId='A' />);
+    await act(async () => undefined);
+
+    expect(screen.queryByTestId('document')).toBeNull();
+    expect(mockBindViewSync).not.toHaveBeenCalled();
+  });
+
+  it('shows failures belonging to the current source', async () => {
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockLoadView.mockRejectedValue(new Error('Current source unavailable'));
+    render(<DrawerContent openViewId='A' />);
+    await act(async () => undefined);
+
+    expect(screen.getByTestId('not-found').textContent).toBe('A');
+    errorLog.mockRestore();
+  });
+
+  it('does not bind or insert a source that finishes loading after unmount', async () => {
+    const pending = deferred<YDoc>();
+
+    mockLoadView.mockReturnValue(pending.promise);
+    const view = render(<DrawerContent openViewId='A' />);
+
+    view.unmount();
+    expect(mockLoadView.mock.calls[0][3]?.signal?.aborted).toBe(true);
+    await act(async () => pending.resolve(documentFor('A')));
+    expect(mockBindViewSync).not.toHaveBeenCalled();
+    expect(mockInsertDataToDoc).not.toHaveBeenCalled();
   });
 });
