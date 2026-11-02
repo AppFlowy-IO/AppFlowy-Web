@@ -9,6 +9,18 @@
 /** The MCP OAuth consent page (`src/pages/McpAuthorizePage.tsx`). */
 export const MCP_CONSENT_PATH = '/oauth/mcp/authorize';
 
+/**
+ * Whether the consent page renders at this undecoded pathname: exactly
+ * `MCP_CONSENT_PATH`, with the trailing slashes React Router ignores. React
+ * Router also matches a percent-encoded spelling such as `/%6Fauth/...`, but a
+ * host's header rule may not (vercel.json matches `/oauth/(.*)`), so the page
+ * renders NotFound there, and sign-in does not treat it as a consent request.
+ * The MCP service always redirects to the canonical path.
+ */
+export function isMcpConsentPathname(pathname: string): boolean {
+  return pathname.replace(/\/+$/, '') === MCP_CONSENT_PATH;
+}
+
 /** Query parameter of the consent page's "request expired" view (`?expired=1[&client_id=…]`). */
 const MCP_CONSENT_EXPIRED_PARAM = 'expired';
 

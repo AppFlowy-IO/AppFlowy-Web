@@ -51,9 +51,11 @@ const decodePathSegments = (pathname: string) => {
 };
 
 // Whether the SPA may render a FRAME_DENY_PATHS page at `pathname`. Matched
-// after decoding, like the SPA: `/%6Fauth/mcp/authorize` renders the consent
-// page too. Case variants such as `/OAuth/...` never do: those routes are
-// `caseSensitive` (src/components/main/MainAppRoutes.tsx).
+// after decoding, like the SPA's router: `/%6fauth/mcp/setup` renders the setup
+// page too. The consent page itself renders NotFound at any spelling but its
+// own (`isMcpConsentPathname` in src/application/mcp/consentUrl.ts), so it does
+// not rely on this. Case variants such as `/OAuth/...` never match: those
+// routes are `caseSensitive` (src/components/main/MainAppRoutes.tsx).
 export const isFrameDenyPath = (pathname: string) => {
   const decoded = decodePathSegments(pathname);
 

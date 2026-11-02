@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { parseMcpConsentExpired } from '@/application/mcp/consentUrl';
+import { isMcpConsentPathname, parseMcpConsentExpired } from '@/application/mcp/consentUrl';
 import { getMcpClientDisplayName } from '@/application/mcp/setup';
 import { getMcpClientInfo, type McpConfiguration } from '@/application/services/domains/mcp';
 import { buildLoginUrl, saveMcpConsentRedirectTo } from '@/application/session/sign_in';
+import NotFound from '@/components/error/NotFound';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { isConsentFramed, parseMcpConsentRequest } from '@/components/mcp/consent/consentModel';
 import { McpConsentFlow } from '@/components/mcp/consent/McpConsentFlow';
@@ -25,9 +26,14 @@ import { Log } from '@/utils/log';
  * doc/MCP.md and AppFlowy Cloud's doc/context/integrations/mcp_context.md.
  */
 export default function McpAuthorizePage() {
+  // Undecoded, as the browser requested it (BrowserRouter reads window.location.pathname).
+  const { pathname } = useLocation();
   // Decided once: a framed page loads nothing and never redirects.
   const [framed] = useState(isConsentFramed);
 
+  // The route also matches a percent-encoded spelling (/%6Fauth/...), which a host's
+  // anti-framing header rule may not cover.
+  if (!isMcpConsentPathname(pathname)) return <NotFound />;
   if (framed) return <McpConsentFramedView />;
   return <McpAuthorizeRequest />;
 }

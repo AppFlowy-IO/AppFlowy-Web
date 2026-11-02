@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
+import { MCP_CONSENT_PATH } from '@/application/mcp/consentUrl';
 import { AuthService, UserService } from '@/application/services/domains';
 import {
   approveMcpClient,
@@ -66,6 +67,8 @@ jest.mock('@/components/main/app.hooks', () => ({
   useIsAuthenticatedOptional: () => mockAuthenticated,
   useCurrentUserOptional: () => mockCurrentUser,
 }));
+// The real NotFound's footer reads app hooks this file leaves out; these tests only check which page renders.
+jest.mock('@/components/error/NotFound', () => ({ __esModule: true, default: () => <div data-testid='not-found' /> }));
 
 const CLIENT_ID = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
 const REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback';
@@ -391,6 +394,29 @@ describe('McpAuthorizePage request checks', () => {
 
     expect(mocked.serverInfo).toHaveBeenCalledTimes(1);
     expect(mocked.clientInfo).toHaveBeenCalledWith(CLIENT_ID, expect.anything());
+  });
+
+  // React Router decodes each segment before it matches, so this route also matches these
+  // spellings; a host's anti-framing rule for /oauth/ may not (vercel.json).
+  it.each(['/%6Fauth/mcp/authorize', '/oauth/%6Dcp/authorize', '/oauth/mcp/%61uthorize/'])(
+    'renders NotFound at the percent-encoded spelling %s and loads nothing',
+    (pathname) => {
+      mockAuthenticated = false;
+      renderPage(authorizePath().replace(MCP_CONSENT_PATH, pathname));
+
+      expect(byTestId('not-found')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-consent-page')).toBeNull();
+      expect(screen.queryByTestId('location')).toBeNull();
+      expect(window.sessionStorage.getItem('mcpConsentAuthContinuation')).toBeNull();
+      expect(mocked.clientInfo).not.toHaveBeenCalled();
+      expect(mocked.serverInfo).not.toHaveBeenCalled();
+    }
+  );
+
+  it('serves the consent request with the trailing slash React Router ignores', async () => {
+    await renderConsent(authorizePath().replace(MCP_CONSENT_PATH, `${MCP_CONSENT_PATH}/`));
+
+    expect(byTestId('mcp-consent-client-name').textContent).toBe('Claude');
   });
 
   it('renders only the framed message inside a frame', () => {
