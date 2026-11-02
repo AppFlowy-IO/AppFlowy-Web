@@ -1,5 +1,5 @@
 import CircularProgress from '@mui/material/CircularProgress';
-import React, { useEffect } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
@@ -26,6 +26,7 @@ function ViewList({
   hasMore,
   header,
   query,
+  selectionKey = query,
   onLoadMore,
 }: {
   title: string;
@@ -35,15 +36,17 @@ function ViewList({
   loading: boolean;
   loadingMore?: boolean;
   hasMore?: boolean;
-  header?: React.ReactNode;
+  header?: ReactNode;
   query?: string;
+  /** Identifies a search session when the same query can belong to different workspaces. */
+  selectionKey?: string;
   onLoadMore?: () => void;
 }) {
   const { t } = useTranslation();
-  const [selectedItemId, setSelectedItemId] = React.useState<string>('');
+  const [selection, setSelection] = useState<{ key?: string; id: string }>();
   const navigateToView = useToView();
-  const ref = React.useRef<HTMLDivElement>(null);
-  const listItems = React.useMemo<SearchViewListItem[] | undefined>(() => {
+  const ref = useRef<HTMLDivElement>(null);
+  const listItems = useMemo<SearchViewListItem[] | undefined>(() => {
     if (items) return items;
 
     return views?.map((view) => ({
@@ -52,11 +55,16 @@ function ViewList({
     }));
   }, [items, views]);
 
-  useEffect(() => {
-    setSelectedItemId('');
-  }, [listItems]);
+  const selectedItemId =
+    selection?.key === selectionKey && listItems?.some((item) => item.id === selection?.id) ? selection?.id : '';
 
-  useEffect(() => {
+  // A snapshot can change rank without changing the target. Forget removed targets
+  // immediately so a later snapshot cannot restore an obsolete keyboard selection.
+  if (selection && !selectedItemId) {
+    setSelection(undefined);
+  }
+
+  useLayoutEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!listItems?.length) return;
       if (createHotkey(HOT_KEY_NAME.ENTER)(e) && selectedItemId) {
@@ -66,9 +74,8 @@ function ViewList({
 
         if (selectedItem) {
           void navigateToView(selectedItem.view.view_id, selectedItem.rowId || undefined);
+          onClose();
         }
-
-        onClose();
       } else if (
         createHotkey(HOT_KEY_NAME.DOWN)(e) ||
         createHotkey(HOT_KEY_NAME.UP)(e) ||
@@ -88,7 +95,7 @@ function ViewList({
           }
         }
 
-        setSelectedItemId(nextItemId);
+        setSelection({ key: selectionKey, id: nextItemId });
         const el = ref.current?.querySelector(`[data-item-id="${nextItemId}"]`);
 
         if (el) {
@@ -105,7 +112,7 @@ function ViewList({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [navigateToView, onClose, listItems, selectedItemId]);
+  }, [navigateToView, onClose, listItems, selectedItemId, selectionKey]);
 
   return (
     <div ref={ref} className={'flex flex-col'}>
@@ -132,7 +139,7 @@ function ViewList({
             query={query}
             view={item.view}
             onClick={() => {
-              setSelectedItemId(item.id);
+              setSelection({ key: selectionKey, id: item.id });
               void navigateToView(item.view.view_id, item.rowId || undefined);
               onClose();
             }}
