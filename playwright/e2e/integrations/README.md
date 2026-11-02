@@ -68,6 +68,19 @@ instead of depending on parameter order. Route globs ending at an endpoint need 
 suffix, for example `**/api/integrations/connect/google-drive{,?**}`. Keep method, body, request-count,
 and origin assertions intact.
 
+## Editor caret
+
+`editor-caret.spec.ts` runs the document editor from the code-block fixture in Chromium, Firefox and WebKit, in the same job. It covers caret placement, which differs by browser:
+
+- Text typed after pressing ArrowDown on an empty line, or after clicking below it, is saved in the document.
+- The AI writer preview is shown over an empty line but cannot take the caret, and Keep saves its answer.
+
+Firefox moves the caret from an empty line into any editable element that isn't part of the document inside that line's block. Slate cannot map input there, so the browser inserts typed text natively: it appears over the placeholder and is never saved. Chromium and WebKit keep the caret in the line, so only the Firefox project shows this failure.
+
+```sh
+pnpm test:e2e:integrations playwright/e2e/integrations/editor-caret.spec.ts --project=firefox
+```
+
 ## Callback fixture provenance
 
 `playwright/support/fixtures/oauth_callback.html` is an unmodified copy of:
