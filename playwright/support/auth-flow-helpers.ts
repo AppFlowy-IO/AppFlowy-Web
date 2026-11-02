@@ -101,7 +101,7 @@ async function enableTestMode(page: Page): Promise<void> {
         APPFLOWY_BASE_URL,
         APPFLOWY_GOTRUE_BASE_URL,
         APPFLOWY_WS_BASE_URL,
-        // Optional override: without it the app reads the MCP URL from Cloud server-info.
+        // Optional override: without it the build's own value, else Cloud server-info's mcp_url, applies.
         ...(APPFLOWY_MCP_BASE_URL ? { APPFLOWY_MCP_BASE_URL } : {}),
       }
     );

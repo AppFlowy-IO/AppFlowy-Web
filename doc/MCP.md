@@ -577,14 +577,19 @@ with that URL alone, the way an AI app does:
 
 It then calls `create-pages` (a document with content and a grid) and finds both in Web, the
 document open with its content and both in the sidebar. Last, it checks the app is listed under
-"Your connections". It needs no `APPFLOWY_MCP_BASE_URL` of its own, but the same stack as above,
-with Web knowing the MCP origin. For one origin behind the bundled Nginx (Web, Cloud and MCP all
-on `http://localhost:18180`):
+"Your connections". The spec itself reads no `APPFLOWY_MCP_BASE_URL`: it uses whatever URL the
+Web under test shows, so it needs the same stack as above with Web knowing that stack's MCP origin.
+A stray value wins over server-info there: the runner and a Vite-served Web both read `.env`, and a
+`.env` copied from `dev.env` points at `http://localhost:8002`. Set `APPFLOWY_MCP_BASE_URL` to the
+stack's MCP origin for the run; the sign-in helper injects it at runtime, over the `.env` and build
+values. For one origin behind the bundled Nginx (Web, Cloud and MCP all on
+`http://localhost:18180`):
 
 ```bash
 BASE_URL=http://localhost:18180 APPFLOWY_BASE_URL=http://localhost:18180 \
   APPFLOWY_GOTRUE_BASE_URL=http://localhost:18180/gotrue \
   APPFLOWY_WS_BASE_URL=ws://localhost:18180/ws/v2 \
+  APPFLOWY_MCP_BASE_URL=http://localhost:18180 \
   pnpm exec playwright test playwright/e2e/mcp/connect-and-create-pages.spec.ts --workers=1
 ```
 
