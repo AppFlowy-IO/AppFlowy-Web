@@ -2,7 +2,8 @@
  * The setup guide's app gallery: its cards, and which of the caller's
  * connections each card stands for. A card is "Connected" only through the
  * server's verified app catalog (`app_id` of a client summary), never through
- * a self-asserted client name. See doc/MCP.md.
+ * a self-asserted client name. See doc/MCP.md. AppFlowy Desktop ports the
+ * cards and this grouping (mcp_setup.dart); keep the two in step.
  */
 import { getMcpClientDisplayName, type McpClientNaming, trustedCatalogAppId } from './setup';
 

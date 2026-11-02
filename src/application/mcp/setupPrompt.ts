@@ -2,7 +2,9 @@
  * "Copy setup prompt": instructions an AI agent follows to connect itself to
  * this deployment's AppFlowy MCP server. The prompt is English on purpose: a
  * model reads it, like the commands it quotes. It is versioned so a pasted
- * prompt can be traced to the Web build that wrote it. See doc/MCP.md.
+ * prompt names the text it contains. Web and AppFlowy Desktop (mcp_setup.dart,
+ * a byte-for-byte port checked against __tests__/setupGolden.test.ts's golden
+ * file) write the same text under the same version. See doc/MCP.md.
  */
 import {
   buildClaudeCodeCommand,
@@ -14,7 +16,7 @@ import {
   MCP_SERVER_NAME,
 } from './setup';
 
-/** Bump whenever the prompt's instructions change. */
+/** Bump whenever the prompt's instructions change, together with Desktop's `mcpSetupPromptVersion`. */
 export const MCP_SETUP_PROMPT_VERSION = 1;
 
 export interface McpSetupPromptOptions {

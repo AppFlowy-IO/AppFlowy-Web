@@ -4,6 +4,11 @@
  * Every builder takes the canonical server URL (`<APPFLOWY_MCP_BASE_URL>/mcp`,
  * or the `endpoint` the server reports for a workspace) and returns the exact
  * text a user pastes or the link a button opens. See doc/MCP.md.
+ *
+ * AppFlowy Desktop ports these builders byte for byte (AppFlowy-Premium
+ * frontend/appflowy_flutter/lib/features/mcp/logic/mcp_setup.dart).
+ * __tests__/setupGolden.test.ts pins their output in the golden file Desktop
+ * copies; a change here goes to both clients.
  */
 
 /** The name AI apps register the AppFlowy server under. */
