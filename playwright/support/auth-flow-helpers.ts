@@ -2,6 +2,7 @@ import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
 import { AuthSelectors, SpaceSelectors, SidebarSelectors } from './selectors';
 import { createConfirmedPasswordUser, signInTestUser } from './auth-utils';
+import { runtimeConfigFromEnv } from './test-config';
 
 /**
  * Authentication flow helpers for Playwright E2E tests
@@ -90,21 +91,12 @@ async function waitForAppReady(page: Page, waitMs: number): Promise<void> {
 async function enableTestMode(page: Page): Promise<void> {
   // Bind only this disposable browser context to explicitly supplied test services.
   // The app's saved configuration and the developer's .env remain untouched.
-  const { APPFLOWY_BASE_URL, APPFLOWY_GOTRUE_BASE_URL, APPFLOWY_WS_BASE_URL, APPFLOWY_MCP_BASE_URL } = process.env;
+  const runtime = runtimeConfigFromEnv();
 
-  if (APPFLOWY_BASE_URL && APPFLOWY_GOTRUE_BASE_URL && APPFLOWY_WS_BASE_URL) {
-    await page.context().addInitScript(
-      (config) => {
-        window.__APP_CONFIG__ = config;
-      },
-      {
-        APPFLOWY_BASE_URL,
-        APPFLOWY_GOTRUE_BASE_URL,
-        APPFLOWY_WS_BASE_URL,
-        // Optional override: without it the build's own value, else Cloud server-info's mcp_url, applies.
-        ...(APPFLOWY_MCP_BASE_URL ? { APPFLOWY_MCP_BASE_URL } : {}),
-      }
-    );
+  if ('config' in runtime) {
+    await page.context().addInitScript((config) => {
+      window.__APP_CONFIG__ = config;
+    }, runtime.config);
   }
 
   // Context-level init scripts also run in popups and newly opened tabs.

@@ -42,31 +42,51 @@ export const TestConfig = {
   adminPassword: process.env.GOTRUE_ADMIN_PASSWORD || 'password',
 } as const;
 
+/** The app's runtime config (`window.__APP_CONFIG__`) for a test run. */
+export interface RuntimeTestConfig {
+  APPFLOWY_BASE_URL: string;
+  APPFLOWY_GOTRUE_BASE_URL: string;
+  APPFLOWY_WS_BASE_URL: string;
+  APPFLOWY_MCP_BASE_URL?: string;
+}
+
+/**
+ * The runtime config that points the app at the test services named in `env`, or the first
+ * service URL `env` leaves unset. Every runtime config injector builds it here, so a new key is
+ * added once.
+ */
+export function runtimeConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): { config: RuntimeTestConfig } | { missing: keyof RuntimeTestConfig } {
+  const { APPFLOWY_BASE_URL, APPFLOWY_GOTRUE_BASE_URL, APPFLOWY_WS_BASE_URL, APPFLOWY_MCP_BASE_URL } = env;
+
+  if (!APPFLOWY_BASE_URL) return { missing: 'APPFLOWY_BASE_URL' };
+  if (!APPFLOWY_GOTRUE_BASE_URL) return { missing: 'APPFLOWY_GOTRUE_BASE_URL' };
+  if (!APPFLOWY_WS_BASE_URL) return { missing: 'APPFLOWY_WS_BASE_URL' };
+  return {
+    config: {
+      APPFLOWY_BASE_URL,
+      APPFLOWY_GOTRUE_BASE_URL,
+      APPFLOWY_WS_BASE_URL,
+      // Optional override: without it the build's own value, else Cloud server-info's mcp_url, applies.
+      ...(APPFLOWY_MCP_BASE_URL ? { APPFLOWY_MCP_BASE_URL } : {}),
+    },
+  };
+}
+
 /** Point an immutable build at a test server through the app's runtime config. */
 export async function installRuntimeTestConfig(
   context: BrowserContext,
   { required = false }: { required?: boolean } = {}
 ) {
   if (!required && process.env.APPFLOWY_TEST_RUNTIME_CONFIG !== '1') return;
-  const config = {
-    APPFLOWY_BASE_URL: process.env.APPFLOWY_BASE_URL,
-    APPFLOWY_GOTRUE_BASE_URL: process.env.APPFLOWY_GOTRUE_BASE_URL,
-    APPFLOWY_WS_BASE_URL: process.env.APPFLOWY_WS_BASE_URL,
-  };
+  const runtime = runtimeConfigFromEnv();
 
-  for (const [key, value] of Object.entries(config)) {
-    if (!value) throw new Error(`${key} must be explicit for runtime test configuration`);
-  }
+  if ('missing' in runtime) throw new Error(`${runtime.missing} must be explicit for runtime test configuration`);
 
-  // Optional override: without it the build's own value, else Cloud server-info's mcp_url, applies.
-  const mcpBaseUrl = process.env.APPFLOWY_MCP_BASE_URL;
-
-  await context.addInitScript(
-    (runtime) => {
-      window.__APP_CONFIG__ = runtime;
-    },
-    mcpBaseUrl ? { ...config, APPFLOWY_MCP_BASE_URL: mcpBaseUrl } : config
-  );
+  await context.addInitScript((config) => {
+    window.__APP_CONFIG__ = config;
+  }, runtime.config);
 }
 
 /**
