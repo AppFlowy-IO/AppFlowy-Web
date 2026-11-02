@@ -185,7 +185,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                   data-client-id={request.client_id}
                 >
                   <PanelClientIdentity client={request} className='flex-1'>
-                    {request.verified_app && request.app_id && (
+                    {isMcpAppApprovalKey(requestKey) && (
                       // Approving a recognized app approves it as an app.
                       <span className='text-xs text-text-secondary' data-testid='mcp-access-request-scope'>
                         {t('settings.mcp.approveCoversAllInstalls', {

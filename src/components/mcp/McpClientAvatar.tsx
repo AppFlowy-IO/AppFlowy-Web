@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 export type McpClientAvatarSize = 'sm' | 'md' | 'lg';
 
 export interface McpClientAvatarProps {
-  client?: Pick<McpClientSummary, 'client_name' | 'client_host' | 'logo_uri'> | null;
+  client?: Pick<McpClientSummary, 'client_name' | 'client_host' | 'app_name' | 'verified_app' | 'logo_uri'> | null;
   /** 24, 32 (default) or 48 px. */
   size?: McpClientAvatarSize;
   className?: string;

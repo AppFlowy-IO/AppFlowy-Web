@@ -12,7 +12,7 @@
  * and refresh once more and retry once on `invalid_session`. The GoTrue
  * refresh token never leaves the browser. See doc/MCP.md.
  */
-import { isSafeMcpRedirectUrl } from '@/application/mcp/setup';
+import { isSafeMcpRedirectUrl, trustedCatalogAppId } from '@/application/mcp/setup';
 import { captureTokenSession, getTokenParsed, invalidTokenForSession } from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
 import { getServerInfoSnapshot, type ServerInfoState } from '@/utils/server-info';
@@ -243,7 +243,9 @@ export function mcpApprovalKey(
   const approvalKey = client.approval_key?.trim();
 
   if (approvalKey) return approvalKey;
-  return client.verified_app && client.app_id ? `${MCP_APP_APPROVAL_KEY_PREFIX}${client.app_id}` : client.client_id;
+  const appId = trustedCatalogAppId(client);
+
+  return appId ? `${MCP_APP_APPROVAL_KEY_PREFIX}${appId}` : client.client_id;
 }
 
 /** `GET /api/mcp/clients?client_id=` (public). */

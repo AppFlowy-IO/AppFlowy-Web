@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getMcpClientOwnName } from '@/application/mcp/setup';
 import type { McpClientSummary } from '@/application/services/domains/mcp';
 import { McpClientAvatar, type McpClientAvatarSize } from '@/components/mcp/McpClientAvatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -58,7 +59,7 @@ export function McpClientIdentity({
   // Recognized, but it runs on the user's computer, where any program can claim it.
   const nativeApp = verifiedApp && !verifiedIdentity;
   // A recognized app is named by the catalog, not by its own registration.
-  const name = (verifiedApp ? client?.app_name?.trim() : undefined) || client?.client_name?.trim();
+  const name = getMcpClientOwnName(client);
   const host = client?.client_host?.trim();
   const title = name || host || t('settings.mcp.unknownApp');
 

@@ -4,7 +4,7 @@
  * server's verified app catalog (`app_id` of a client summary), never through
  * a self-asserted client name. See doc/MCP.md.
  */
-import { getMcpClientDisplayName } from './setup';
+import { getMcpClientDisplayName, type McpClientNaming, trustedCatalogAppId } from './setup';
 
 /** Cards of the setup guide, in display order. */
 export const MCP_SETUP_APPS = [
@@ -46,14 +46,8 @@ export function setupAppForCatalogApp(appId?: string | null): McpSetupAppId | un
  * What the gallery reads from one of the caller's connections (a subset of
  * `McpMyConnection`, kept structural so either connection list fits).
  */
-export interface McpSetupConnection {
+export interface McpSetupConnection extends McpClientNaming {
   client_id: string;
-  client_name?: string | null;
-  client_host?: string | null;
-  /** Verified catalog app id; null or absent for clients the catalog does not recognize. */
-  app_id?: string | null;
-  app_name?: string | null;
-  verified_app?: boolean | null;
 }
 
 /** One app among the caller's connections, for "Connected apps (N)". */
@@ -66,16 +60,6 @@ export interface McpConnectedApp {
   name?: string;
   /** Live connections (devices or registrations) with this app. */
   connectionCount: number;
-}
-
-/**
- * The catalog app id, trusted only with `verified_app: true`: the same rule as
- * `mcpApprovalKey` and `getMcpClientDisplayName`, so a chip keyed by an app
- * also carries that app's catalog name.
- */
-function catalogAppId(connection: McpSetupConnection): string | undefined {
-  if (connection.verified_app !== true) return undefined;
-  return connection.app_id?.trim() || undefined;
 }
 
 function groupKey(connection: McpSetupConnection, appId: string | undefined): string {
@@ -109,7 +93,9 @@ export function summarizeConnectedApps(connections: readonly McpSetupConnection[
   const apps = new Map<string, McpConnectedApp>();
 
   connections.forEach((connection) => {
-    const appId = catalogAppId(connection);
+    // The same rule as `mcpApprovalKey` and `getMcpClientDisplayName`, so a chip keyed by an app
+    // also carries that app's catalog name.
+    const appId = trustedCatalogAppId(connection);
     const key = groupKey(connection, appId);
     const existing = apps.get(key);
 

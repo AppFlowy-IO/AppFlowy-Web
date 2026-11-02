@@ -268,19 +268,42 @@ export function isSafeMcpRedirectUrl(url: string): boolean {
   }
 }
 
-/**
- * A client's display name: the verified app catalog's name for a recognized
- * app, else its registered name, else its host; undefined means "Unknown app".
- */
-export function getMcpClientDisplayName(
-  client?: {
-    client_name?: string | null;
-    client_host?: string | null;
-    app_name?: string | null;
-    verified_app?: boolean | null;
-  } | null
-): string | undefined {
-  const appName = client?.verified_app ? client.app_name?.trim() : undefined;
+/** The naming fields of an MCP client summary or connection. */
+export interface McpClientNaming {
+  /** Registered by the client itself (self-asserted). */
+  client_name?: string | null;
+  client_host?: string | null;
+  /** The verified app catalog's id and name; trusted only with `verified_app: true`. */
+  app_id?: string | null;
+  app_name?: string | null;
+  verified_app?: boolean | null;
+}
 
-  return appName || client?.client_name?.trim() || client?.client_host?.trim() || undefined;
+/**
+ * The catalog app id of a client the server's verified app catalog recognizes
+ * (`verified_app: true`), else undefined. Approval keys (`app:<app_id>`),
+ * gallery cards and app grouping all go through this, so a client counts as
+ * an app only when the catalog vouches for it.
+ */
+export function trustedCatalogAppId(client?: Pick<McpClientNaming, 'app_id' | 'verified_app'> | null): string | undefined {
+  return client?.verified_app === true ? client.app_id?.trim() || undefined : undefined;
+}
+
+/**
+ * A client's own name: the catalog's name for a recognized app (trusted only
+ * with `verified_app: true`), else its registered, self-asserted name.
+ */
+export function getMcpClientOwnName(
+  client?: Pick<McpClientNaming, 'client_name' | 'app_name' | 'verified_app'> | null
+): string | undefined {
+  const appName = client?.verified_app === true ? client.app_name?.trim() : undefined;
+
+  return appName || client?.client_name?.trim() || undefined;
+}
+
+/** A client's own name (`getMcpClientOwnName`), else its host; undefined means "Unknown app". */
+export function getMcpClientDisplayName(
+  client?: Pick<McpClientNaming, 'client_name' | 'client_host' | 'app_name' | 'verified_app'> | null
+): string | undefined {
+  return getMcpClientOwnName(client) || client?.client_host?.trim() || undefined;
 }

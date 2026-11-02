@@ -1,4 +1,4 @@
-import { getMcpClientDisplayName } from '@/application/mcp/setup';
+import { getMcpClientDisplayName, trustedCatalogAppId } from '@/application/mcp/setup';
 import {
   isMcpApiError,
   isMcpAppApprovalKey,
@@ -127,7 +127,7 @@ type McpApprovalCoverage = Pick<McpClientSummary, 'client_id'> & { approval_key?
 export function mcpApprovalCovers(approval: McpApprovalCoverage, client: McpAppIdentity): boolean {
   const key = approval.approval_key?.trim() || approval.client_id;
 
-  if (isMcpAppApprovalKey(key)) return Boolean(client.verified_app && client.app_id) && mcpApprovalKey(client) === key;
+  if (isMcpAppApprovalKey(key)) return Boolean(trustedCatalogAppId(client)) && mcpApprovalKey(client) === key;
   return key === client.client_id;
 }
 
@@ -149,7 +149,7 @@ export function mcpRemainingAppApproval<T extends McpApprovalCoverage>(
   approvals: readonly T[]
 ): T | undefined {
   const key = approval.approval_key?.trim() || approval.client_id;
-  const appId = approval.verified_app === true ? approval.app_id?.trim() : undefined;
+  const appId = trustedCatalogAppId(approval);
 
   if (!appId || isMcpAppApprovalKey(key)) return undefined;
   const appKey = `${MCP_APP_APPROVAL_KEY_PREFIX}${appId}`;
