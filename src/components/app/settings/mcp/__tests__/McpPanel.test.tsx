@@ -17,7 +17,12 @@ import { notify } from '@/components/_shared/notify';
 import McpPanel from '../McpPanel';
 import { resetMcpPendingRequestCountsForTests, useMcpPendingRequestCount } from '../pendingRequestCount';
 
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
+// Real i18next over en.json, so a name that loses RAW_INTERPOLATION shows escaped here as in the app.
+jest.mock('react-i18next', () => {
+  const { mcpTestT } = jest.requireActual('@/components/mcp/__tests__/mcpTestI18n');
+
+  return { useTranslation: () => ({ t: mcpTestT }) };
+});
 jest.mock('@/components/_shared/notify', () => ({ notify: { success: jest.fn(), error: jest.fn() } }));
 jest.mock('@/utils/copy', () => ({ copyTextToClipboard: jest.fn() }));
 jest.mock('@/application/services/domains/mcp', () => ({
@@ -36,24 +41,6 @@ jest.mock('@/application/services/domains/mcp', () => ({
   listMcpAccessRequests: jest.fn(),
   dismissMcpAccessRequest: jest.fn(),
 }));
-
-type Params = Record<string, unknown>;
-
-function lookup(key: string): unknown {
-  return key
-    .split('.')
-    .reduce<unknown>((value, part) => (value as Record<string, unknown> | undefined)?.[part], translations);
-}
-
-/** en.json with `{{name}}` interpolation and i18next's `_zero` / `_one` / `_other` plural keys. */
-function mockTranslate(key: string, params: Params = {}): string {
-  const { count } = params;
-  const plural = typeof count === 'number' ? [`${key}_${count === 0 ? 'zero' : count === 1 ? 'one' : 'other'}`] : [];
-  const text = [...plural, key].map(lookup).find((value): value is string => typeof value === 'string');
-
-  if (text === undefined) return key;
-  return text.replace(/{{(\w+)}}/g, (_match, name: string) => String(params[name] ?? ''));
-}
 
 const api = jest.mocked(McpService);
 const { McpApiError } = McpService;
@@ -744,6 +731,23 @@ describe('McpPanel', () => {
 
       expect(text('mcp-propagation-note')).toBe(translations.settings.mcp.propagationNote);
       expect(screen.getByTestId<HTMLButtonElement>('mcp-disconnect-all-button').disabled).toBe(false);
+    });
+
+    it('shows names as typed, not HTML-escaped, and counts an approved app nobody uses as 0', async () => {
+      api.getMcpWorkspaceSettings.mockResolvedValue({
+        ...settings,
+        approved_clients: [{ ...approval(claude), approved_by_name: 'Tom & Jerry <ops>' }],
+      });
+      api.listMcpAccessRequests.mockResolvedValue([
+        { ...cursorRequest, requesters: [{ user_uuid: 'u1', name: 'Q&A "bot"', requested_at: secondsAgo(90) }] },
+      ]);
+      // Nobody uses the approved Claude.
+      api.listMcpWorkspaceConnections.mockResolvedValue([annOnCursor]);
+      await renderOwnerPanel();
+
+      expect(text('mcp-access-request-requesters')).toBe('Requested by Q&A "bot"');
+      expect(text('mcp-approved-client-approver')).toBe('Approved by Tom & Jerry <ops>');
+      expect(text('mcp-approved-client-connections')).toBe('0 active connections');
     });
 
     it('groups each member’s devices under one header with a count', async () => {

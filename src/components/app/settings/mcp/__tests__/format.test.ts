@@ -1,5 +1,6 @@
 import translations from '@/@types/translations/en.json';
 import { McpApiError } from '@/application/services/domains/mcp';
+import { mcpTestT } from '@/components/mcp/__tests__/mcpTestI18n';
 
 import {
   formatMcpRelativeTime,
@@ -22,22 +23,7 @@ import {
   mcpRequestedBy,
 } from '../format';
 
-import type { TFunction } from 'i18next';
-
-function lookup(key: string): unknown {
-  return key
-    .split('.')
-    .reduce<unknown>((value, part) => (value as Record<string, unknown> | undefined)?.[part], translations);
-}
-
-/** en.json with `{{name}}` interpolation and i18next's plural suffixes. */
-const t = ((key: string, params: Record<string, unknown> = {}) => {
-  const { count } = params;
-  const plural = typeof count === 'number' ? [`${key}_${count === 0 ? 'zero' : count === 1 ? 'one' : 'other'}`] : [];
-  const text = [...plural, key].map(lookup).find((value): value is string => typeof value === 'string');
-
-  return text === undefined ? key : text.replace(/{{(\w+)}}/g, (_match, name: string) => String(params[name] ?? ''));
-}) as unknown as TFunction;
+const t = mcpTestT;
 
 const NOW = Date.UTC(2026, 10, 1, 12, 0, 0);
 const ago = (seconds: number) => new Date(NOW - seconds * 1000);

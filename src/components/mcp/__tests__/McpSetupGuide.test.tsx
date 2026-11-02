@@ -17,20 +17,15 @@ import { McpSetupGuide } from '../McpSetupGuide';
 const SERVER_URL = 'https://mcp.example.com/mcp';
 let mockServerUrl = SERVER_URL;
 
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
+// Real i18next over en.json, so a name that loses RAW_INTERPOLATION shows escaped here as in the app.
+jest.mock('react-i18next', () => {
+  const { mcpTestT } = jest.requireActual('@/components/mcp/__tests__/mcpTestI18n');
+
+  return { useTranslation: () => ({ t: mcpTestT }) };
+});
 jest.mock('@/application/services/domains/mcp', () => ({ getMcpServerUrl: () => mockServerUrl }));
 jest.mock('@/utils/copy', () => ({ copyTextToClipboard: jest.fn() }));
 jest.mock('@/components/_shared/notify', () => ({ notify: { success: jest.fn(), error: jest.fn() } }));
-
-/** en.json with `{{name}}` interpolation; unknown keys come back as the key. */
-function mockTranslate(key: string, params: Record<string, unknown> = {}): string {
-  const text = key
-    .split('.')
-    .reduce<unknown>((value, part) => (value as Record<string, unknown> | undefined)?.[part], translations);
-
-  if (typeof text !== 'string') return key;
-  return text.replace(/{{(\w+)}}/g, (_match, name: string) => String(params[name] ?? ''));
-}
 
 const setup = translations.mcp.setup;
 const copy = jest.mocked(copyTextToClipboard);
