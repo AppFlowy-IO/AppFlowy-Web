@@ -56,9 +56,12 @@ export interface ServerInfo {
    */
   max_slow_sync_update_bytes?: number;
   /**
-   * Public origin of the AppFlowy MCP service (no `/mcp`), from the server's
-   * `APPFLOWY_MCP_BASE_URL`. Absent when the server has no MCP service and on
-   * older servers; the Web's own `APPFLOWY_MCP_BASE_URL` overrides it.
+   * Public origin of the AppFlowy MCP service (no `/mcp`): Cloud's
+   * `APPFLOWY_MCP_BASE_URL`, else its `APPFLOWY_BASE_URL`. Cloud advertises it
+   * only while the MCP policy in force has AI apps turned on, so it is absent
+   * while they are off or before that policy loads, as well as on servers
+   * without an MCP origin and on older servers. The Web's own
+   * `APPFLOWY_MCP_BASE_URL` overrides it (see doc/MCP.md, "MCP service URL").
    */
   mcp_url?: string | null;
 }

@@ -428,7 +428,7 @@ switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reas
 
 - Uses `fetch`, not the shared axios instance, whose interceptor treats any 401 as an expired
   AppFlowy session and rotates the refresh token. The MCP service answers 401 only for a bad token
-  (`reason: "invalid_session"`) and 403 for every refusal.
+  (`reason: "invalid_session"`) and refuses with other 4xx/5xx statuses and a machine `reason`.
 - Sends `Authorization: Bearer <GoTrue access token>`, refreshing the session first when the token
   expires within 30 seconds, and refreshes once more and retries once on 401 `invalid_session`.
   A confirmed refresh-token rejection ends the session like the axios interceptor does.

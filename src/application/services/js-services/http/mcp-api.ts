@@ -7,10 +7,11 @@
  * Uses `fetch`, not the shared axios instance: that instance treats every 401
  * as an expired AppFlowy session and rotates the refresh token, while the MCP
  * service answers 401 only for a bad token (`reason: "invalid_session"`) and
- * 403 for every refusal. Authenticated calls send the current GoTrue access
- * token as a bearer, refreshing it first when it expires within 30 seconds,
- * and refresh once more and retry once on `invalid_session`. The GoTrue
- * refresh token never leaves the browser. See doc/MCP.md.
+ * refuses with other 4xx/5xx statuses and a machine `reason` (400, 403, 404,
+ * 409, 429, 503 `mcp_disabled`…). Authenticated calls send the current GoTrue
+ * access token as a bearer, refreshing it first when it expires within 30
+ * seconds, and refresh once more and retry once on `invalid_session`. The
+ * GoTrue refresh token never leaves the browser. See doc/MCP.md.
  */
 import { isSafeMcpRedirectUrl, trustedCatalogAppId } from '@/application/mcp/setup';
 import { captureTokenSession, getTokenParsed, invalidTokenForSession } from '@/application/session/token';
