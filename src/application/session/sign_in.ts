@@ -90,7 +90,8 @@ const MCP_CONSENT_CONTINUATION: AuthContinuationKind = {
   flowParam: MCP_CONSENT_AUTH_FLOW_PARAM,
   channelName: 'appflowy-mcp-consent-auth',
   ttlMs: MCP_CONSENT_AUTH_CONTINUATION_TTL_MS,
-  matches: (url) => normalizeRoutePathname(url.pathname) === MCP_CONSENT_PATH,
+  // The consent route is caseSensitive (MainAppRoutes.tsx): /OAuth/... renders NotFound.
+  matches: (url) => normalizeRoutePathname(url.pathname, { caseSensitive: true }) === MCP_CONSENT_PATH,
   logPath: MCP_CONSENT_PATH,
   expiredLanding: (continuation) => buildMcpConsentExpiredPath(continuation.redirectTo),
 };
@@ -504,7 +505,11 @@ function takePasswordResetStep(flow: AuthFlow): string | null {
 // Login-page action that shows the new-password form after a recovery code.
 export const PASSWORD_RESET_LOGIN_ACTION = 'changePassword';
 
-function normalizeRoutePathname(pathname: string): string | null {
+/**
+ * `pathname` as React Router matches it against a route: segments decoded,
+ * trailing slashes dropped, and lower-cased unless the route is caseSensitive.
+ */
+function normalizeRoutePathname(pathname: string, { caseSensitive = false } = {}): string | null {
   let decodedPathname: string;
 
   try {
@@ -518,7 +523,9 @@ function normalizeRoutePathname(pathname: string): string | null {
     return null;
   }
 
-  return decodedPathname.replace(/\/+$/, '').toLowerCase();
+  const trimmedPathname = decodedPathname.replace(/\/+$/, '');
+
+  return caseSensitive ? trimmedPathname : trimmedPathname.toLowerCase();
 }
 
 export function isAuthPath(pathname: string): boolean {

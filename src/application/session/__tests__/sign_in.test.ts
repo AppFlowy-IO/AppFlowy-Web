@@ -853,8 +853,19 @@ describe('MCP consent continuation', () => {
     '/oauth/mcp/authorize/elsewhere?client_id=a',
     '/oauth/mcp/setup',
     'https://evil.example/oauth/mcp/authorize?client_id=a',
+    // The consent route is caseSensitive, so these render NotFound, not the consent page.
+    '/OAuth/mcp/authorize?client_id=a',
+    '/oauth/MCP/Authorize?client_id=a',
   ])('does not treat %s as a consent request', (destination) => {
     expect(saveMcpConsentRedirectTo(destination, Date.now(), flowId)).toBeNull();
     expect(isFlowBoundRedirectUrl(destination)).toBe(false);
   });
+
+  // React Router decodes each segment and ignores a trailing slash before it matches the route.
+  it.each(['/%6Fauth/mcp/authorize?client_id=a', '/oauth/mcp/authorize/?client_id=a'])(
+    'treats %s, which renders the consent page, as a consent request',
+    (destination) => {
+      expect(isFlowBoundRedirectUrl(destination)).toBe(true);
+    }
+  );
 });
