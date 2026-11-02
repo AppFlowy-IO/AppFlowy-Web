@@ -5521,7 +5521,7 @@
         "description": "One-click install, then sign in",
         "install": "Install in VS Code",
         "signIn": "When VS Code asks to sign in to AppFlowy, allow it, then approve access in the AppFlowy window.",
-        "cli": "Or run:"
+        "cli": "Or run on macOS or Linux:"
       },
       "gemini": {
         "name": "Gemini CLI",

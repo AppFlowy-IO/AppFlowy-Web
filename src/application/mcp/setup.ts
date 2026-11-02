@@ -96,6 +96,12 @@ export function buildVsCodeInstallUrl(url: string): string {
   return `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: MCP_SERVER_NAME, type: 'http', url }))}`;
 }
 
+/**
+ * Adds the server with VS Code's CLI, for bash or zsh (macOS, Linux): cmd and
+ * PowerShell do not pass the single-quoted JSON through intact. The guide and
+ * the setup prompt say so; on Windows the install link or `.vscode/mcp.json`
+ * does the same.
+ */
 export function buildVsCodeCliCommand(url: string): string {
   return `code --add-mcp ${shellQuote(JSON.stringify({ name: MCP_SERVER_NAME, type: 'http', url }))}`;
 }

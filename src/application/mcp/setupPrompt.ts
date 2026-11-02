@@ -17,7 +17,7 @@ import {
 } from './setup';
 
 /** Bump whenever the prompt's instructions change, together with Desktop's `mcpSetupPromptVersion`. */
-export const MCP_SETUP_PROMPT_VERSION = 1;
+export const MCP_SETUP_PROMPT_VERSION = 2;
 
 export interface McpSetupPromptOptions {
   /** Absolute URL of this deployment's setup page, for apps the agent can't configure itself. */
@@ -37,6 +37,8 @@ export function buildMcpSetupPrompt(url: string, { setupPageUrl }: McpSetupPromp
   const codex = buildCodexCommand(url);
   const gemini = buildGeminiCommand(url);
   const vscode = buildVsCodeCliCommand(url);
+  // VS Code's own config format, for shells the CLI command's quoting does not work in.
+  const vscodeConfig = JSON.stringify({ servers: { [name]: { type: 'http', url } } });
   const bridge = buildMcpRemoteCommand(url);
   const setupPage = setupPageUrl ? `, and point me to ${setupPageUrl} for step-by-step instructions` : '';
 
@@ -52,7 +54,8 @@ export function buildMcpSetupPrompt(url: string, { setupPageUrl }: McpSetupPromp
     `   - Claude Code: run \`${claudeCode}\`. Add \`--scope user\` to make it available in every project.`,
     `   - Codex: run \`${codex}\`, then \`${buildCodexLoginCommand()}\`.`,
     `   - Gemini CLI: run \`${gemini}\`, then \`/mcp auth ${name}\`.`,
-    `   - VS Code: run \`${vscode}\`.`,
+    `   - VS Code: in bash or zsh, run \`${vscode}\`.` +
+      ` In PowerShell or cmd, add ${vscodeConfig} to .vscode/mcp.json instead.`,
     `   - Cursor: add ${config({ url })} to ~/.cursor/mcp.json.`,
     `   - Windsurf or Antigravity: add ${config({ serverUrl: url })} to the app's MCP config (mcp_config.json).`,
     '   - Another app that supports remote MCP servers: add a Streamable HTTP server with the URL above.' +

@@ -14,8 +14,8 @@ describe('buildMcpSetupPrompt', () => {
   const prompt = buildMcpSetupPrompt(URL, { setupPageUrl: SETUP_PAGE });
 
   it('names its version and this deployment’s server URL', () => {
-    expect(MCP_SETUP_PROMPT_VERSION).toBe(1);
-    expect(prompt.split('\n')[0]).toContain('(AppFlowy setup prompt v1)');
+    expect(MCP_SETUP_PROMPT_VERSION).toBe(2);
+    expect(prompt.split('\n')[0]).toContain('(AppFlowy setup prompt v2)');
     expect(prompt).toContain(`Server URL: ${URL}`);
     expect(prompt).toContain('There is no API key, and you never need my AppFlowy password.');
   });
@@ -33,6 +33,13 @@ describe('buildMcpSetupPrompt', () => {
       `{"mcpServers":{"appflowy":{"serverUrl":"${URL}"}}}`,
       '`--scope user`',
     ].forEach((text) => expect(prompt).toContain(text));
+  });
+
+  it('gives the VS Code command for the shells its quoting works in, and a config file for the others', () => {
+    expect(prompt).toContain(`VS Code: in bash or zsh, run \`${buildVsCodeCliCommand(URL)}\`.`);
+    expect(prompt).toContain(
+      `In PowerShell or cmd, add {"servers":{"appflowy":{"type":"http","url":"${URL}"}}} to .vscode/mcp.json instead.`
+    );
   });
 
   it('has the user sign in, choose a workspace and approve, and covers a required approval', () => {
