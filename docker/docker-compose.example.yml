@@ -13,9 +13,10 @@ services:
       - APPFLOWY_WS_BASE_URL=wss://your-backend.example.com/ws/v2
       # OPTIONAL override: public origin of the AppFlowy MCP service (without /mcp). Without it
       # the Web uses the mcp_url AppFlowy Cloud advertises in /api/server-info, which Cloud leaves
-      # out while AI apps are turned off; set it to keep Settings > AI apps (the turned-off notice
-      # and disconnecting) then. See doc/MCP.md.
-      # - APPFLOWY_MCP_BASE_URL=https://mcp.your-backend.example.com
+      # out while AI apps are turned off; set it to keep Settings → MCP (the turned-off notice
+      # and disconnecting) then. The bundled deployments serve MCP on the backend's own domain.
+      # See doc/MCP.md.
+      # - APPFLOWY_MCP_BASE_URL=https://your-backend.example.com
       # OPTIONAL: server-render published pages in these namespaces for crawlers.
       # Off by default; see doc/PUBLISH_SSR.md before enabling.
       # - APPFLOWY_INDEXABLE_NAMESPACES=docs,guide

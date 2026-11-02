@@ -279,7 +279,7 @@ member status:
     remaining approval of all its installs (`mcpRemainingAppApproval`: the row whose
     `approval_key` is `app:<app_id>`), which the server keeps admitting it through.
 - **Menu badge**: for owners (`Role.Owner` in the workspace list) with the MCP service known, the
-  AI apps menu item shows the pending request count (`settings-menu-ai_apps-badge`, from
+  MCP menu item shows the pending request count (`settings-menu-ai_apps-badge`, from
   `GET .../access-requests` when Settings opens). The panel publishes every request list it loads
   or changes (`pendingRequestCount.ts`), so Approve and Dismiss update the badge at once; a failed
   load shows no badge.
@@ -343,7 +343,7 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's refresh loop
    provides it, and the public consent and setup pages run the loop themselves
    (`useMcpConfiguration({ loadServerInfo: true })`).
-3. Otherwise **not configured**: Settings hides AI apps, both `/oauth/mcp/*` pages say AI app
+3. Otherwise **not configured**: Settings hides the MCP tab, both `/oauth/mcp/*` pages say AI app
    connections are not configured. A Web that relies on server-info lands here while AI app
    connections are turned off.
 
@@ -367,8 +367,10 @@ loading).
   any origin and logs a warning). The service exposes `Retry-After` to the browser.
 - Self-hosted compose and Helm deployments serve the MCP service on AppFlowy's own domain (the
   bundled nginx sends `/mcp`, `/api/mcp` and the OAuth discovery documents to `appflowy_mcp`;
-  `/oauth/*` stays on the Web), so `deploy.env` sets `APPFLOWY_MCP_BASE_URL=${APPFLOWY_BASE_URL}`
-  and users paste `https://<domain>/mcp`. See AppFlowy Cloud's deployment docs.
+  `/oauth/*` stays on the Web), so AppFlowy Cloud's `deploy.env` sets
+  `APPFLOWY_MCP_BASE_URL=${APPFLOWY_BASE_URL}` and users paste `https://<domain>/mcp`. See
+  AppFlowy Cloud's deployment docs. A separate MCP origin also works with the `APPFLOWY_WEB_URL`
+  and `APPFLOWY_CORS_ALLOWED_ORIGINS` settings above.
 - Who can use AI apps (the email gate) is set in AppFlowy-Admin → AI apps (MCP): **Everyone** or
   **Only these domains and people** (allowed email domains and exact emails). Until an admin saves
   it there, `APPFLOWY_MCP_ALLOWED_EMAIL_DOMAINS` and `APPFLOWY_MCP_ALLOWED_EMAILS` bootstrap it; with
@@ -455,7 +457,7 @@ switch, which `getMcpMemberStatus` reads as on) and from the `mcp_disabled` reas
 | `listMyMcpConnectionsAcrossWorkspaces` | `GET /api/mcp/me/connections` → `{ connections (+ workspace_id), workspace_count, connection_count }` (missing counts derived from the list) |
 | `createMcpAccessRequest` | `POST /api/mcp/me/workspaces/{id}/access-requests` |
 | `getMcpWorkspaceSettings`, `updateMcpWorkspaceSettings` | `GET`, `PUT /api/mcp/admin/workspaces/{id}/settings`. The PUT sends `{ approval_mode, allow_unapproved_clients: mode === 'any' }` and also returns `auto_approved_clients` (`[]` when absent); a missing `approval_mode` reads `any` or `approved_only` from the flag, a missing `approval_key` as the client ID |
-| `approveMcpClient`, `revokeMcpClientApproval` | `PUT`, `DELETE /api/mcp/admin/workspaces/{id}/approvals?client_id=` (approve takes a real client ID; revoke takes the entry's `approval_key`, e.g. `app:cursor`) |
+| `approveMcpClient`, `revokeMcpClientApproval` | `PUT`, `DELETE /api/mcp/admin/workspaces/{id}/approvals?client_id=` (approve takes the request's `client_id`, or its app-level `approval_key` `app:<app_id>`; revoke takes the entry's `approval_key`, e.g. `app:cursor`) |
 | `listMcpWorkspaceConnections`, `disconnectMcpWorkspaceConnections` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/connections[?client_id=&user_uuid=&family_id=]` (refuses to send without `client_id` or `user_uuid`) |
 | `disconnectAllMcpWorkspaceConnections` | `DELETE /api/mcp/admin/workspaces/{id}/connections?all=true` |
 | `listMcpAccessRequests`, `dismissMcpAccessRequest` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/access-requests[?client_id=]` (dismiss takes the request's `mcpApprovalKey`) |
@@ -591,10 +593,10 @@ CI does not run these: `playwright/e2e/mcp` is in none of the groups in
 
 ## Not in v1
 
-Desktop and mobile UI; inbox or email notifications for approval requests (owners get the Settings
-menu badge); audit events for consent and workspace governance (changes to the server-wide MCP
-policy are recorded by Cloud and shown in AppFlowy-Admin); approvals by publisher domain for apps
-outside the verified catalog; renaming apps; sorting member connections by last use; owners'
-member connections and approvals in Settings while AI app connections are turned off (the server
-still lets owners list and disconnect member connections and revoke approvals then, but the panel
-shows only the caller's own connections).
+Mobile UI (Desktop has Settings → MCP in AppFlowy-Premium #1555); inbox or email notifications for
+approval requests (owners get the Settings menu badge); audit events for consent and workspace
+governance (changes to the server-wide MCP policy are recorded by Cloud and shown in
+AppFlowy-Admin); approvals by publisher domain for apps outside the verified catalog; renaming apps;
+sorting member connections by last use; owners' member connections and approvals in Settings while
+AI app connections are turned off (the server still lets owners list and disconnect member
+connections and revoke approvals then, but the panel shows only the caller's own connections).
