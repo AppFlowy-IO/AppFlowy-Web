@@ -102,6 +102,9 @@ describe('parseMcpConsentRequest', () => {
 
   it.each([
     ['client_id', ''],
+    // Lookups would trim it while the code and deny requests send it as is.
+    ['client_id', ` ${VALID.client_id}`],
+    ['client_id', `${VALID.client_id}\n`],
     ['redirect_uri', ''],
     ['redirect_uri', 'data:text/html,hi'],
     ['redirect_uri', '/relative'],

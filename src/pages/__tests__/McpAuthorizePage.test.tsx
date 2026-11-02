@@ -260,6 +260,7 @@ describe('McpAuthorizePage request checks', () => {
   it.each([
     ['a missing code_challenge', { code_challenge: null }],
     ['an empty client_id', { client_id: '' }],
+    ['a client_id with surrounding whitespace', { client_id: ` ${CLIENT_ID}` }],
     ['a non-code response_type', { response_type: 'token' }],
     ['plain PKCE', { code_challenge_method: 'plain' }],
     ['a script redirect_uri', { redirect_uri: 'javascript:alert(1)' }],

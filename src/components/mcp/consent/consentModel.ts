@@ -41,24 +41,30 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /**
  * The consent request in `search`, or null when it is malformed: a required
  * parameter is missing or empty, a parameter is repeated (RFC 6749 §3.1),
- * `response_type` is not `code`, PKCE is not S256, or `redirect_uri` is not a
- * URL the browser may navigate to. A malformed request never redirects
- * anywhere: its `redirect_uri` has not been validated by the server.
+ * `client_id` has surrounding whitespace, `response_type` is not `code`, PKCE
+ * is not S256, or `redirect_uri` is not a URL the browser may navigate to. A
+ * malformed request never redirects anywhere: its `redirect_uri` has not been
+ * validated by the server.
  */
 export function parseMcpConsentRequest(search: URLSearchParams): McpConsentRequest | null {
   if (SINGLE_VALUE_PARAMS.some((name) => search.getAll(name).length > 1)) return null;
   if (REQUIRED_PARAMS.some((name) => !search.get(name)?.trim())) return null;
   if (search.get('response_type') !== 'code' || search.get('code_challenge_method') !== 'S256') return null;
 
+  const clientId = search.get('client_id') as string;
   const redirectUri = search.get('redirect_uri') as string;
 
+  // The server and the token exchange compare client_id byte for byte, so the
+  // client this page describes and approves must be the one it authorizes:
+  // a padded id is refused, never trimmed.
+  if (clientId !== clientId.trim()) return null;
   if (!isSafeMcpRedirectUrl(redirectUri)) return null;
 
   const workspaceId = search.get('workspace_id')?.trim();
   const resource = search.get('resource')?.trim();
 
   return {
-    clientId: search.get('client_id') as string,
+    clientId,
     redirectUri,
     codeChallenge: search.get('code_challenge') as string,
     codeChallengeMethod: 'S256',

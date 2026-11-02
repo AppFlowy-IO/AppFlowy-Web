@@ -941,6 +941,11 @@ function workspacePath(scope: 'me' | 'admin', workspaceId: string, suffix = ''):
   return `/api/mcp/${scope}/workspaces/${encodeURIComponent(workspaceId)}${suffix}`;
 }
 
+/**
+ * `clientId` trimmed, refusing an empty one before sending. The trim is a
+ * defence for ids from server answers; the consent page refuses a padded
+ * `client_id` up front (`parseMcpConsentRequest`) and never relies on it.
+ */
 function requireClientId(clientId: string): string {
   const trimmed = clientId.trim();
 
