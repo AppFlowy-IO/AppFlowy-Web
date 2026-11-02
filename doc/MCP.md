@@ -589,7 +589,9 @@ BASE_URL=http://localhost:18180 APPFLOWY_BASE_URL=http://localhost:18180 \
 ```
 
 CI does not run these: `playwright/e2e/mcp` is in none of the groups in
-`.github/playwright-groups.json`, and the CI backend has no MCP service.
+`.github/playwright-groups.json`, and the CI backend has no MCP service. Both specs take the
+client side of OAuth (loopback callback, PKCE, metadata reads that fail unless served, code
+exchange) from `playwright/support/mcp-oauth-helpers.ts`, whose Jest test does run in CI.
 
 ## Not in v1
 

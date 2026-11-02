@@ -11,116 +11,33 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import crypto from 'node:crypto';
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { exchangeAuthorizationCode, getJson, pkcePair, startCallbackServer } from '../../support/mcp-oauth-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const MCP_BASE_URL = (process.env.APPFLOWY_MCP_BASE_URL || 'http://localhost:8002').replace(/\/+$/, '');
 const CLIENT_NAME = 'Playwright MCP Client';
 
-interface CallbackResult {
-  code: string | null;
-  error: string | null;
-  state: string | null;
-  iss: string | null;
-}
-
-interface CallbackServer {
-  redirectUri: string;
-  waitForCallback: Promise<CallbackResult>;
-  close: () => Promise<void>;
-}
-
 interface ServerMetadata {
   /** Canonical MCP server URL from the protected-resource metadata (RFC 9728). */
-  resource?: string;
+  resource: string;
   /** Authorization server issuer (RFC 8414), echoed as `iss` on redirects (RFC 9207). */
-  issuer?: string;
+  issuer: string;
 }
 
-function pkcePair(): { verifier: string; challenge: string } {
-  const verifier = `verifier-${crypto.randomBytes(48).toString('base64url')}`;
-  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-
-  return { verifier, challenge };
-}
-
-/** A loopback redirect URI, like the ones local AI apps (Claude Code, Codex, VS Code) register. */
-async function startCallbackServer(): Promise<CallbackServer> {
-  let resolveCallback!: (result: CallbackResult) => void;
-  const waitForCallback = new Promise<CallbackResult>((resolve) => {
-    resolveCallback = resolve;
-  });
-
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
-
-    if (url.pathname === '/callback') {
-      resolveCallback({
-        code: url.searchParams.get('code'),
-        error: url.searchParams.get('error'),
-        state: url.searchParams.get('state'),
-        iss: url.searchParams.get('iss'),
-      });
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end('<!doctype html><title>Callback</title><p>Callback received</p>');
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject);
-      resolve();
-    });
-  });
-
-  const { port } = server.address() as AddressInfo;
-
-  return {
-    redirectUri: `http://127.0.0.1:${port}/callback`,
-    waitForCallback,
-    close: () =>
-      new Promise((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      }),
-  };
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timer: NodeJS.Timeout;
-
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timer));
-}
-
-async function readJson(request: APIRequestContext, url: string): Promise<Record<string, unknown> | undefined> {
-  const response = await request.get(url, { failOnStatusCode: false });
-
-  return response.ok() ? ((await response.json()) as Record<string, unknown>) : undefined;
-}
-
-/** What a real client discovers before authorizing. */
+/** What a real client discovers before authorizing; both documents must be served. */
 async function discoverServer(request: APIRequestContext): Promise<ServerMetadata> {
   const [resourceMetadata, serverMetadata] = await Promise.all([
-    readJson(request, `${MCP_BASE_URL}/.well-known/oauth-protected-resource`),
-    readJson(request, `${MCP_BASE_URL}/.well-known/oauth-authorization-server`),
+    getJson(request, `${MCP_BASE_URL}/.well-known/oauth-protected-resource`),
+    getJson(request, `${MCP_BASE_URL}/.well-known/oauth-authorization-server`),
   ]);
+  const { resource } = resourceMetadata;
+  const { issuer } = serverMetadata;
 
-  return {
-    resource: typeof resourceMetadata?.resource === 'string' ? resourceMetadata.resource : undefined,
-    issuer: typeof serverMetadata?.issuer === 'string' ? serverMetadata.issuer : undefined,
-  };
+  expect(typeof resource, JSON.stringify(resourceMetadata)).toBe('string');
+  expect(typeof issuer, JSON.stringify(serverMetadata)).toBe('string');
+  return { resource: resource as string, issuer: issuer as string };
 }
 
 async function registerClient(request: APIRequestContext, redirectUri: string): Promise<string> {
@@ -140,7 +57,7 @@ async function registerClient(request: APIRequestContext, redirectUri: string): 
 /** Starts authorization the way an AI app does; the MCP service hands the browser to the Web consent page. */
 async function openConsent(
   page: Page,
-  params: { clientId: string; redirectUri: string; challenge: string; state: string; resource?: string }
+  params: { clientId: string; redirectUri: string; challenge: string; state: string; resource: string }
 ): Promise<void> {
   const query = new URLSearchParams({
     client_id: params.clientId,
@@ -150,9 +67,8 @@ async function openConsent(
     code_challenge_method: 'S256',
     state: params.state,
     scope: 'read write',
+    resource: params.resource,
   });
-
-  if (params.resource) query.set('resource', params.resource);
 
   await page.goto(`${MCP_BASE_URL}/api/mcp/authorize?${query.toString()}`, { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/oauth\/mcp\/authorize/);
@@ -212,35 +128,28 @@ test.describe('MCP OAuth consent', () => {
       await expect(page.getByTestId('mcp-consent-allow')).toHaveCount(0);
       await page.getByTestId('mcp-consent-approve-and-allow').click();
 
-      const result = await withTimeout(callback.waitForCallback, 15000, 'Timed out waiting for the MCP OAuth callback');
+      const result = await callback.waitForCallback(15000);
 
       expect(result.error).toBeNull();
       expect(result.state).toBe(state);
       expect(result.code).toBeTruthy();
-      expect(result.iss).toBeTruthy();
-      if (server.issuer) expect(result.iss).toBe(server.issuer);
+      expect(result.iss).toBe(server.issuer);
 
-      const tokenResponse = await request.post(`${MCP_BASE_URL}/api/mcp/token`, {
-        form: {
-          grant_type: 'authorization_code',
-          code: result.code as string,
-          code_verifier: verifier,
-          client_id: clientId,
-          redirect_uri: callback.redirectUri,
-          ...(server.resource ? { resource: server.resource } : {}),
-        },
-        failOnStatusCode: false,
+      const tokens = await exchangeAuthorizationCode(request, `${MCP_BASE_URL}/api/mcp/token`, {
+        code: result.code as string,
+        verifier,
+        clientId,
+        redirectUri: callback.redirectUri,
+        resource: server.resource,
       });
-
-      expect(tokenResponse.status()).toBe(200);
-      const tokens = (await tokenResponse.json()) as Record<string, unknown>;
 
       expect(tokens.token_type).toBe('Bearer');
       expect(tokens.access_token).toBeTruthy();
       expect(tokens.refresh_token).toBeTruthy();
-      if (typeof tokens.scope === 'string') expect(tokens.scope).toBe('read');
+      // Unticking write on the consent page narrowed the grant.
+      expect(tokens.scope).toBe('read');
 
-      const accessToken = tokens.access_token as string;
+      const accessToken = tokens.access_token;
       const toolsResponse = await listTools(request, accessToken);
 
       expect(toolsResponse.status()).toBe(200);
@@ -294,13 +203,12 @@ test.describe('MCP OAuth consent', () => {
       });
       await page.getByTestId('mcp-consent-deny').click();
 
-      const result = await withTimeout(callback.waitForCallback, 15000, 'Timed out waiting for the MCP OAuth callback');
+      const result = await callback.waitForCallback(15000);
 
       expect(result.error).toBe('access_denied');
       expect(result.code).toBeNull();
       expect(result.state).toBe(state);
-      expect(result.iss).toBeTruthy();
-      if (server.issuer) expect(result.iss).toBe(server.issuer);
+      expect(result.iss).toBe(server.issuer);
     } finally {
       await callback.close();
     }

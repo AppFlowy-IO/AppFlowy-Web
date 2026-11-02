@@ -14,10 +14,9 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import crypto from 'node:crypto';
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { exchangeAuthorizationCode, getJson, pkcePair, startCallbackServer } from '../../support/mcp-oauth-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const CLIENT_NAME = 'Playwright AI app';
@@ -32,68 +31,10 @@ interface Discovered {
   registrationEndpoint: string;
 }
 
-interface CallbackResult {
-  code: string | null;
-  error: string | null;
-  state: string | null;
-  iss: string | null;
-}
-
 interface JsonRpcReply {
   status: number;
   sessionId?: string;
   body: Record<string, unknown> | undefined;
-}
-
-/** A loopback redirect URI, like the ones local AI apps (Claude Code, Codex, Cursor) register. */
-async function startCallbackServer() {
-  let resolveCallback!: (result: CallbackResult) => void;
-  const waitForCallback = new Promise<CallbackResult>((resolve) => {
-    resolveCallback = resolve;
-  });
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
-
-    if (url.pathname !== '/callback') {
-      res.writeHead(404);
-      res.end();
-      return;
-    }
-
-    resolveCallback({
-      code: url.searchParams.get('code'),
-      error: url.searchParams.get('error'),
-      state: url.searchParams.get('state'),
-      iss: url.searchParams.get('iss'),
-    });
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end('<!doctype html><title>Callback</title><p>The AI app received the authorization.</p>');
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve());
-  });
-  const { port } = server.address() as AddressInfo;
-
-  return {
-    redirectUri: `http://127.0.0.1:${port}/callback`,
-    waitForCallback: (timeoutMs: number) =>
-      Promise.race([
-        waitForCallback,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Timed out waiting for the OAuth callback')), timeoutMs)
-        ),
-      ]),
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
-}
-
-async function getJson(request: APIRequestContext, url: string): Promise<Record<string, unknown>> {
-  const response = await request.get(url, { failOnStatusCode: false });
-
-  expect(response.status(), `GET ${url}`).toBe(200);
-  return (await response.json()) as Record<string, unknown>;
 }
 
 /** RFC 8414 §3: the issuer's path, if any, goes after the well-known prefix. */
@@ -230,7 +171,7 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
 
       expect(registration.status()).toBe(201);
       const clientId = ((await registration.json()) as { client_id: string }).client_id;
-      const verifier = crypto.randomBytes(48).toString('base64url');
+      const { verifier, challenge } = pkcePair();
       const state = crypto.randomUUID();
       const authorize = new URL(discovered.authorizationEndpoint);
 
@@ -238,7 +179,7 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
         response_type: 'code',
         client_id: clientId,
         redirect_uri: callback.redirectUri,
-        code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+        code_challenge: challenge,
         code_challenge_method: 'S256',
         state,
         scope: 'read write',
@@ -260,20 +201,13 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
       expect(result.state).toBe(state);
       expect(result.iss).toBe(discovered.issuer);
 
-      const tokenResponse = await request.post(discovered.tokenEndpoint, {
-        form: {
-          grant_type: 'authorization_code',
-          code: result.code as string,
-          code_verifier: verifier,
-          client_id: clientId,
-          redirect_uri: callback.redirectUri,
-          resource: discovered.resource,
-        },
-        failOnStatusCode: false,
+      const tokens = await exchangeAuthorizationCode(request, discovered.tokenEndpoint, {
+        code: result.code as string,
+        verifier,
+        clientId,
+        redirectUri: callback.redirectUri,
+        resource: discovered.resource,
       });
-
-      expect(tokenResponse.status()).toBe(200);
-      const tokens = (await tokenResponse.json()) as Record<string, string>;
 
       expect(tokens.scope).toBe('read write');
       const workspaceId = tokens.workspace_id;
