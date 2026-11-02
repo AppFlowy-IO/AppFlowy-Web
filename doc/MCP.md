@@ -558,6 +558,10 @@ pnpm exec jest --runInBand --no-coverage \
   deploy/routes.test.ts deploy/publish-ssr.test.ts
 ```
 
+Jest only transpiles test files, and `pnpm type-check` leaves them out, so `pnpm
+type-check:mcp-tests` (`tsconfig.mcp-tests.json`, also run by Web-CI) type-checks the MCP test files
+against the wire types: a fixture missing a field the server always sends fails there.
+
 | Suite | Covers |
 | --- | --- |
 | `src/application/mcp/__tests__/setup.test.ts` | Install links, commands and configs (exact strings, TOML escaping, Cursor's `appflowy` name), scopes, URL helpers |
@@ -569,7 +573,7 @@ pnpm exec jest --runInBand --no-coverage \
 | `src/components/app/settings/mcp/**` | Panel states, member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted like "Connected apps (N)"), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared) |
 | `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count), deep links that wait for server-info, routes |
 | `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
-| `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers |
+| `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers (Web-CI's docker-runtime-test also fetches `/oauth/mcp/authorize` from both images and checks them) |
 
 `jest.config.cjs` ignores test paths containing `/.claude/`; when running from a checkout under such
 a directory (an agent worktree), add `--testPathIgnorePatterns '/node_modules/'` after the test
