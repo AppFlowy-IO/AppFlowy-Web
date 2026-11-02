@@ -490,7 +490,7 @@ export type McpConfiguration =
 const MCP_CONFIGURATION_LOADING: McpConfiguration = { status: 'loading' };
 const MCP_NOT_CONFIGURED: McpConfiguration = { status: 'not_configured' };
 
-const warnedInvalidMcpUrls = new Set<string>();
+const warnedMcpUrls = new Set<string>();
 
 /**
  * Why `value` cannot be the MCP service's origin, or undefined when it can.
@@ -532,8 +532,8 @@ function normalizeMcpBaseUrl(value: string | null | undefined, origin: string): 
 
   if (!problem) return trimmed;
 
-  if (!warnedInvalidMcpUrls.has(`${origin}=${trimmed}`)) {
-    warnedInvalidMcpUrls.add(`${origin}=${trimmed}`);
+  if (!warnedMcpUrls.has(`${origin}=${trimmed}`)) {
+    warnedMcpUrls.add(`${origin}=${trimmed}`);
     console.warn(
       `[MCP] Ignoring ${origin}: ${problem}. Set it to the public origin of the MCP service, such as https://mcp.example.com.`
     );
@@ -553,13 +553,40 @@ export function getMcpBaseUrlOverride(): string {
  * configured. A server without `/api/server-info` cannot advertise one.
  */
 function resolveMcpConfiguration(serverInfo: ServerInfoState, override: string): McpConfiguration {
-  if (override) return { status: 'configured', baseUrl: override, source: 'config' };
+  if (override) {
+    warnIfServerInfoDisagrees(serverInfo, override);
+    return { status: 'configured', baseUrl: override, source: 'config' };
+  }
+
   if (serverInfo.status === 'unsupported') return MCP_NOT_CONFIGURED;
   if (serverInfo.status !== 'available') return MCP_CONFIGURATION_LOADING;
 
   const baseUrl = normalizeMcpBaseUrl(serverInfo.info.mcp_url, 'server-info mcp_url');
 
   return baseUrl ? { status: 'configured', baseUrl, source: 'server_info' } : MCP_NOT_CONFIGURED;
+}
+
+/**
+ * The override wins over server-info without asking it, so an override left
+ * behind after the MCP service moved would keep sending users to the old
+ * origin. When server-info advertises a different origin, say so once. Its
+ * absence is no mismatch: Cloud leaves `mcp_url` out while AI apps are off.
+ */
+function warnIfServerInfoDisagrees(serverInfo: ServerInfoState, override: string) {
+  if (serverInfo.status !== 'available') return;
+
+  const advertised = normalizeMcpBaseUrl(serverInfo.info.mcp_url, 'server-info mcp_url');
+
+  // Both are validated origins, so `URL.origin` compares them without case or default-port noise.
+  if (!advertised || new URL(advertised).origin === new URL(override).origin) return;
+
+  const key = `mismatch=${override}=${advertised}`;
+
+  if (warnedMcpUrls.has(key)) return;
+  warnedMcpUrls.add(key);
+  console.warn(
+    `[MCP] APPFLOWY_MCP_BASE_URL (${override}) differs from the MCP origin AppFlowy Cloud advertises in server-info (${advertised}). Using APPFLOWY_MCP_BASE_URL; set both to the MCP service's public origin.`
+  );
 }
 
 function sameMcpConfiguration(a: McpConfiguration, b: McpConfiguration): boolean {
@@ -602,7 +629,7 @@ export function getMcpConfiguration(): McpConfiguration {
 export function resetMcpConfigurationForTests() {
   confirmedMcpConfiguration = undefined;
   mcpConfigurationSnapshot = undefined;
-  warnedInvalidMcpUrls.clear();
+  warnedMcpUrls.clear();
 }
 
 /** The MCP service's origin without a trailing slash, or '' while unknown or not configured. */

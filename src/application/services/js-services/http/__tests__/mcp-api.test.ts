@@ -192,11 +192,35 @@ describe('MCP configuration discovery', () => {
   });
 
   it('prefers the APPFLOWY_MCP_BASE_URL override without waiting for server-info', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
     mockConfig = { APPFLOWY_BASE_URL: CLOUD, APPFLOWY_MCP_BASE_URL: `${BASE}/` };
 
     expect(getMcpConfiguration()).toEqual({ status: 'configured', baseUrl: BASE, source: 'config' });
-    updateServerInfo(CLOUD, available('https://mcp.discovered.example.com'));
+    // Cloud leaves mcp_url out while AI apps are off: that is why the override exists, not a mismatch.
+    updateServerInfo(CLOUD, available());
     expect(getMcpBaseUrl()).toBe(BASE);
+    // The same origin, spelled differently.
+    updateServerInfo(CLOUD, available('HTTPS://MCP.example.com:443/'));
+    expect(getMcpBaseUrl()).toBe(BASE);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('keeps the override but warns once when server-info advertises another origin', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    mockConfig = { APPFLOWY_BASE_URL: CLOUD, APPFLOWY_MCP_BASE_URL: BASE };
+    updateServerInfo(CLOUD, available('https://mcp.moved.example.com'));
+
+    expect(getMcpConfiguration()).toEqual({ status: 'configured', baseUrl: BASE, source: 'config' });
+    // The periodic refresh brings the same answer again.
+    updateServerInfo(CLOUD, available('https://mcp.moved.example.com'));
+    expect(getMcpBaseUrl()).toBe(BASE);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain(BASE);
+    expect(warn.mock.calls[0][0]).toContain('https://mcp.moved.example.com');
+    warn.mockRestore();
   });
 
   it.each([

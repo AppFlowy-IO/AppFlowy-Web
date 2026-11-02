@@ -15,7 +15,8 @@ services:
       # the Web uses the mcp_url AppFlowy Cloud advertises in /api/server-info, which Cloud leaves
       # out while AI apps are turned off; set it to keep Settings → MCP (the turned-off notice
       # and disconnecting) then. The bundled deployments serve MCP on the backend's own domain.
-      # See doc/MCP.md.
+      # Keep it equal to AppFlowy Cloud's APPFLOWY_MCP_BASE_URL: it wins over server-info, and
+      # the browser console warns when Cloud advertises a different origin. See doc/MCP.md.
       # - APPFLOWY_MCP_BASE_URL=https://your-backend.example.com
       # OPTIONAL: server-render published pages in these namespaces for crawlers.
       # Off by default; see doc/PUBLISH_SSR.md before enabling.

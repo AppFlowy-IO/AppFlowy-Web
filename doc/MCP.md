@@ -338,14 +338,17 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    Helm (`appflowy-web`) deployments set it to the MCP origin, because server-info has no `mcp_url`
    while AI app connections are turned off and Settings → MCP must still show that and let
    members disconnect. Set it in any other deployment that runs the MCP service for the same reason.
+   It must name the origin Cloud advertises: the override wins without asking server-info, and when
+   server-info is loaded anyway (inside `/app`) and names a different origin, the Web keeps the
+   override and logs a console warning naming both.
 2. **`mcp_url` from AppFlowy Cloud's `/api/server-info`** (web projection), set from Cloud's
    `APPFLOWY_MCP_BASE_URL`, the same variable the MCP service reads, so one compose `.env` serves
    both; when it is unset, Cloud advertises its own `APPFLOWY_BASE_URL` (the same-domain default).
    Cloud advertises it only while AI app connections are turned on
-   ([Enable MCP switch](#enable-mcp-switch)). This is auto-discovery like `web_url`: a deployment
-   only configures the MCP URL once, on the server. The value is read through the shared
-   server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's refresh loop
-   provides it, and the public consent and setup pages run the loop themselves
+   ([Enable MCP switch](#enable-mcp-switch)), so it is auto-discovery like `web_url` only while
+   they are on; that is why deployments also set the override above. The value is read through
+   the shared server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's
+   refresh loop provides it, and the public consent and setup pages run the loop themselves
    (`useMcpConfiguration({ loadServerInfo: true })`).
 3. Otherwise **not configured**: Settings hides the MCP tab, both `/oauth/mcp/*` pages say AI app
    connections are not configured. A Web that relies on server-info lands here while AI app
