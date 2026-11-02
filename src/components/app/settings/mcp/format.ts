@@ -7,6 +7,7 @@ import {
   mcpTimestampToDate,
   type McpAccessRequester,
   type McpApprovalMode,
+  type McpApprovedClient,
   type McpClientSummary,
   type McpConnectionDetails,
   type McpTimestamp,
@@ -118,17 +119,15 @@ export function mcpClientNames(clients: readonly McpClientNames[], t: TFunction)
 
 type McpAppIdentity = Pick<McpClientSummary, 'client_id' | 'app_id' | 'verified_app'>;
 
-/** An approval as the panel matches it: what it covers (`approval_key`, else the client ID). */
-type McpApprovalCoverage = Pick<McpClientSummary, 'client_id'> & { approval_key?: string | null };
+/** An approval as the panel matches it: what it covers is its `approval_key`. */
+type McpApprovalCoverage = Pick<McpApprovedClient, 'client_id' | 'approval_key'>;
 
 /**
  * Whether an approval covers `client`: an app-level approval (`app:<app_id>`)
  * covers every registration the catalog recognizes as that app, any other
  * approval only its own client ID.
  */
-export function mcpApprovalCovers(approval: McpApprovalCoverage, client: McpAppIdentity): boolean {
-  const key = approval.approval_key?.trim() || approval.client_id;
-
+export function mcpApprovalCovers({ approval_key: key }: McpApprovalCoverage, client: McpAppIdentity): boolean {
   if (isMcpAppApprovalKey(key)) return Boolean(trustedCatalogAppId(client)) && mcpApprovalKey(client) === key;
   return key === client.client_id;
 }
@@ -150,13 +149,12 @@ export function mcpRemainingAppApproval<T extends McpApprovalCoverage>(
   approval: McpApprovalCoverage & Pick<McpClientSummary, 'app_id' | 'verified_app'>,
   approvals: readonly T[]
 ): T | undefined {
-  const key = approval.approval_key?.trim() || approval.client_id;
   const appId = trustedCatalogAppId(approval);
 
-  if (!appId || isMcpAppApprovalKey(key)) return undefined;
+  if (!appId || isMcpAppApprovalKey(approval.approval_key)) return undefined;
   const appKey = `${MCP_APP_APPROVAL_KEY_PREFIX}${appId}`;
 
-  return approvals.find((other) => (other.approval_key?.trim() || other.client_id) === appKey);
+  return approvals.find((other) => other.approval_key === appKey);
 }
 
 /*
@@ -184,10 +182,7 @@ type McpVerifiedIdentity = Pick<McpClientSummary, 'verified_app' | 'identity_ver
  * `McpApprovalMode::admits` with `approved: false`.
  */
 export function mcpModeAdmitsWithoutApproval(mode: McpApprovalMode, client: McpVerifiedIdentity) {
-  return (
-    mode === 'any' ||
-    (mode === 'verified_and_approved' && client.verified_app === true && client.identity_verified === true)
-  );
+  return mode === 'any' || (mode === 'verified_and_approved' && client.verified_app && client.identity_verified);
 }
 
 /**

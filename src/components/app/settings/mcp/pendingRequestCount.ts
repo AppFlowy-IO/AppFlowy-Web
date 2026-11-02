@@ -31,7 +31,7 @@ function subscribe(listener: () => void) {
  * gate admits. The panel shows its owner section, and the menu its badge, only then.
  */
 export function mcpManagesApprovals(status: McpMemberStatus | undefined): boolean {
-  return status !== undefined && status.enabled !== false && status.eligible && status.role === 'owner';
+  return status !== undefined && status.enabled && status.eligible && status.role === 'owner';
 }
 
 /** Records the workspace's pending request count; undefined forgets it (no badge). */

@@ -173,7 +173,7 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
         </PanelSection>
         <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} overview={overview} />
         {/* Owners manage approvals below; members see what connects without a request. */}
-        {!isOwner && status.requires_approval && status.approved_apps && (
+        {!isOwner && status.requires_approval && (
           <ApprovedForWorkspace apps={status.approved_apps} mode={status.approval_mode} />
         )}
         {isOwner && <McpWorkspaceAccess governance={governance} />}

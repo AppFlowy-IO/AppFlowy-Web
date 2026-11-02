@@ -306,7 +306,7 @@ export function toConsentErrorReason(error: unknown): ConsentErrorReason {
  * or workspace could connect then.
  */
 export function consentStatusBlocker(status: McpMemberStatus): ConsentErrorReason | null {
-  if (status.enabled === false) return 'mcp_disabled';
+  if (!status.enabled) return 'mcp_disabled';
   if (!status.eligible) return status.ineligible_reason ?? 'generic';
   if (status.client?.blocked) return 'client_blocked';
   if (status.client && !status.client.known) return 'unknown_client';

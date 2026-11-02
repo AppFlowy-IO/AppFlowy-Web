@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import {
   isMcpAppApprovalKey,
   MCP_APPROVAL_MODES,
-  mcpApprovalKey,
   type McpApprovalMode,
   type McpApprovedClient,
   type McpClientSummary,
@@ -172,7 +171,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
           <RowList>
             {requests.data.map((request, index) => {
               const requestedBy = mcpRequestedBy(request.requesters, t);
-              const requestKey = mcpApprovalKey(request);
+              const requestKey = request.approval_key;
               // A merged app request is approved by its app key, which needs no lookup of the
               // registration that asked last (a CIMD document can be unreachable by then).
               const approveTarget = isMcpAppApprovalKey(requestKey) ? requestKey : request.client_id;

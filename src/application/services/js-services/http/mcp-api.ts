@@ -230,17 +230,12 @@ export function isMcpAppApprovalKey(key: string | null | undefined): boolean {
 }
 
 /**
- * The key approvals and access requests use for a client: its `approval_key`
- * when it has one (approvals and requests always do), else `app:<app_id>` for
- * an app the catalog recognizes, else the client ID itself. Connections carry
- * no `approval_key`, so theirs is derived.
+ * The key an approval of `client` is filed under: `app:<app_id>` for an app
+ * the catalog recognizes, else the client ID itself. Only for what carries no
+ * `approval_key`, such as a connection: approvals and access requests send
+ * theirs, and a per-client approval of a recognized app keeps its client ID.
  */
-export function mcpApprovalKey(
-  client: Pick<McpClientSummary, 'client_id' | 'app_id' | 'verified_app'> & { approval_key?: string | null }
-): string {
-  const approvalKey = client.approval_key?.trim();
-
-  if (approvalKey) return approvalKey;
+export function mcpApprovalKey(client: Pick<McpClientSummary, 'client_id' | 'app_id' | 'verified_app'>): string {
   const appId = trustedCatalogAppId(client);
 
   return appId ? `${MCP_APP_APPROVAL_KEY_PREFIX}${appId}` : client.client_id;
@@ -1185,7 +1180,7 @@ export async function updateMcpWorkspaceSettings(
  * Approves `target` for the workspace and clears its pending access request.
  * `target` is a client ID, which the server approves as its app
  * (`app:<app_id>`) when the catalog recognizes it, or an `app:<app_id>`
- * approval key (a merged request's `mcpApprovalKey`), which approves every
+ * approval key (a merged request's `approval_key`), which approves every
  * registration of that app without looking any of them up.
  */
 export async function approveMcpClient(
@@ -1303,7 +1298,7 @@ export async function listMcpAccessRequests(
 
 /**
  * Dismisses a pending request without approving it. `requestKey` is the
- * request's `mcpApprovalKey`: requests for a recognized app are merged under
+ * request's `approval_key`: requests for a recognized app are merged under
  * `app:<app_id>`, others are keyed by client ID.
  */
 export async function dismissMcpAccessRequest(

@@ -284,7 +284,7 @@ member status:
     "Approving covers all {app} installs." Approve sends the request's `approval_key` when it is an
     app key (`app:<app_id>`, which the server approves without looking up the registration that
     asked last, so an unreachable CIMD document cannot block it), else the request's `client_id`;
-    Dismiss and Revoke send the `approval_key` (`mcpApprovalKey`). Revoking an app-level approval
+    Dismiss and Revoke send the `approval_key` the server listed. Revoking an app-level approval
     disconnects every registration of the app. The Revoke confirmation says when members can still
     connect the app: through the policy (any app, or an `identity_verified` app under
     `verified_and_approved`), or, for a per-client approval of a recognized app, through a
@@ -325,10 +325,11 @@ entry's hosts (an app that runs on the user's computer, like Cursor, may add loo
 a web app's callback a loopback redirect means some local program, which is never recognized);
 loopback-only registrations never are. The Web trusts `app_name` and `app_id` only with
 `verified_app: true`, everywhere: the display name (`getMcpClientDisplayName`, `McpClientIdentity`),
-the approval key (`mcpApprovalKey`) and the setup guide's Connected badges and app grouping
-(`summarizeConnectedApps`). Approvals and access requests of a recognized app use the key
-`app:<app_id>` (`mcpApprovalKey`, `isMcpAppApprovalKey`); every other client keeps its client ID as
-the key.
+the approval key derived for a connection (`mcpApprovalKey`) and the setup guide's Connected badges
+and app grouping (`summarizeConnectedApps`). Approvals and access requests of a recognized app use
+the key `app:<app_id>` (`isMcpAppApprovalKey`); every other client keeps its client ID as the key.
+Approvals and requests carry their `approval_key`, which the panel reads as sent; connections carry
+none, so `mcpApprovalKey` derives theirs.
 
 Recognition alone does not prove who is asking. Claude Code, Codex, Cursor, VS Code and Raycast run
 on the user's computer and receive their sign-in there (loopback or custom-scheme redirects), so any
@@ -491,7 +492,7 @@ The Web reads the state from the member status's `enabled` and from the `mcp_dis
 | `approveMcpClient`, `revokeMcpClientApproval` | `PUT`, `DELETE /api/mcp/admin/workspaces/{id}/approvals?client_id=` (approve takes the request's `client_id`, or its app-level `approval_key` `app:<app_id>`; revoke takes the entry's `approval_key`, e.g. `app:cursor`) |
 | `listMcpWorkspaceConnections`, `disconnectMcpWorkspaceConnections` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/connections[?client_id=&user_uuid=&family_id=]` (refuses to send without `client_id` or `user_uuid`) |
 | `disconnectAllMcpWorkspaceConnections` | `DELETE /api/mcp/admin/workspaces/{id}/connections?all=true` |
-| `listMcpAccessRequests`, `dismissMcpAccessRequest` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/access-requests[?client_id=]` (dismiss takes the request's `mcpApprovalKey`) |
+| `listMcpAccessRequests`, `dismissMcpAccessRequest` | `GET`, `DELETE /api/mcp/admin/workspaces/{id}/access-requests[?client_id=]` (dismiss takes the request's `approval_key`) |
 
 Pure helpers live in `src/application/mcp/setup.ts`: install links, commands and configs per client,
 scope parsing (`parseScopes`, `scopeLevel`), `safeHttpUrl`, `describeRedirectUri`,

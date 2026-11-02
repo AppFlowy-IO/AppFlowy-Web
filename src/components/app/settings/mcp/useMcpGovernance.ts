@@ -18,8 +18,8 @@ import { type McpResource, useMcpAction, useMcpResource } from './useMcpRequest'
 
 /**
  * The owner action in flight. `id` names its target: the approval mode, the
- * client ID being approved, a request's or an approval's key, or a member
- * connection (`mcpMemberConnectionId`).
+ * client ID or app key being approved, a request's or an approval's key, or a
+ * member connection (`mcpMemberConnectionId`).
  */
 export type McpGovernanceAction =
   | { kind: 'settings'; id: McpApprovalMode }
@@ -55,11 +55,13 @@ export interface McpGovernanceState {
    */
   setApprovalMode: (mode: McpApprovalMode) => Promise<boolean>;
   /**
-   * Approves a client (as its app when the catalog recognizes it); this also
-   * clears its pending request, `requestKey` when approving from one.
+   * Approves `target`: a client ID (as its app when the catalog recognizes
+   * it), or an `app:<app_id>` key that approves every registration of the
+   * app. This also clears its pending request, `requestKey` when approving
+   * from one.
    */
-  approve: (clientId: string, requestKey?: string) => Promise<boolean>;
-  /** Dismisses the request with this `mcpApprovalKey`. */
+  approve: (target: string, requestKey?: string) => Promise<boolean>;
+  /** Dismisses the request with this `approval_key`. */
   dismiss: (requestKey: string) => Promise<boolean>;
   /** Revokes an approval, which disconnects every member using what it covered. */
   revoke: (approval: McpApprovedClient) => Promise<boolean>;
@@ -149,17 +151,15 @@ export function useMcpGovernance(
   );
 
   const approve = useCallback(
-    (clientId: string, requestKey?: string) =>
+    (target: string, requestKey?: string) =>
       run(
-        { kind: 'approve', id: clientId },
-        (signal) => McpService.approveMcpClient(workspaceId, clientId, { signal }),
+        { kind: 'approve', id: target },
+        (signal) => McpService.approveMcpClient(workspaceId, target, { signal }),
         () => {
           notify.success(t('settings.mcp.approved'));
+          // The request filed under the approved key; a typed client ID also clears its own request.
           updateRequests((current) =>
-            current?.filter(
-              (request) =>
-                request.client_id !== clientId && (!requestKey || McpService.mcpApprovalKey(request) !== requestKey)
-            )
+            current?.filter((request) => request.approval_key !== (requestKey ?? target) && request.client_id !== target)
           );
           void reloadSettings();
           void reloadRequests();
@@ -175,7 +175,7 @@ export function useMcpGovernance(
         { kind: 'dismiss', id: requestKey },
         (signal) => McpService.dismissMcpAccessRequest(workspaceId, requestKey, { signal }),
         () => {
-          updateRequests((current) => current?.filter((request) => McpService.mcpApprovalKey(request) !== requestKey));
+          updateRequests((current) => current?.filter((request) => request.approval_key !== requestKey));
           void reloadRequests();
         },
         onError
