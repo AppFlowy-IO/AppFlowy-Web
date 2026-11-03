@@ -145,7 +145,8 @@ it('opens compact AI ppt settings on the authorized page and closes back to the 
   fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
   await screen.findByRole('region', { name: 'Create presentation settings' }, { timeout: 5000 });
   expect(mockLoadView).not.toHaveBeenCalled();
-  expect(mockRequest).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/presentation/workspace/sources', method: 'POST', data: expect.objectContaining({ sources: [{ pageId: 'document' }] }) }));
+  expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/api/presentation/workspace/sources' }));
+  expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/api/presentation/workspace/slides/assess' }));
   expect(screen.queryByLabelText('Test scenario')).toBeNull();
   expect(screen.queryByText('Q3 Product Review')).toBeNull();
   expect(screen.getByText('Live document')).toBeTruthy();
@@ -366,9 +367,13 @@ it('cancels old-actor source reads and never renders their late content after id
   const rendered = render(<PresentEntry viewId='document' slidesOnly />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await waitFor(() => expect(finishOld).toBeDefined());
   mockUserId = 'new-user';
   rendered.rerender(<PresentEntry viewId='document' slidesOnly />);
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   expect(await screen.findByText('New actor source')).toBeTruthy();
   expect(oldSignal?.aborted).toBe(true);
   await act(async () => { finishOld?.({ status: 200, data: { code: 0, data: { ...mockSource(), title: 'Old private actor content' } }, headers: {} }); });

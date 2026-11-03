@@ -35,7 +35,7 @@ jest.mock('../ui', () => ({
   Notice: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-test('failed server assessment disables generation and surfaces retry without a heuristic substitute', async () => {
+test('failed server assessment prevents submission and offers an explicit retry without a heuristic substitute', async () => {
   jest.useFakeTimers();
   (assessPresentation as jest.Mock).mockRejectedValue(new Error('Analysis unavailable'));
   const options = {
@@ -72,11 +72,12 @@ test('failed server assessment disables generation and surfaces retry without a 
   } as unknown as SlidesWorkflowProps;
 
   render(<SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(400);
   });
   expect(screen.getByText('Analysis unavailable')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Generate presentation' }).disabled).toBe(true);
+  expect(screen.getByRole('button', { name: 'Generate presentation' }).disabled).toBe(false);
   expect(screen.queryByText('Add some document content before generating.')).toBeNull();
   expect(onGenerate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Retry analysis'));
@@ -297,6 +298,7 @@ test('completed assessment survives setup remount and busy transitions, but chan
   const scope = { workspaceId: 'workspace', pageId: 'page' };
   const view = render(<SlideGenerationSetup props={props} scope={scope} />);
 
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(500);
   });
@@ -308,6 +310,7 @@ test('completed assessment survives setup remount and busy transitions, but chan
   view.unmount();
   const reopened = render(<SlideGenerationSetup props={props} scope={scope} />);
 
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(500);
   });
@@ -315,6 +318,7 @@ test('completed assessment survives setup remount and busy transitions, but chan
   reopened.rerender(
     <SlideGenerationSetup props={{ ...props, snapshot: { ...props.snapshot, revision: 'edited' } }} scope={scope} />
   );
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(500);
   });
@@ -322,6 +326,7 @@ test('completed assessment survives setup remount and busy transitions, but chan
   reopened.rerender(
     <SlideGenerationSetup props={{ ...props, options: { ...props.options, includeProperties: true } }} scope={scope} />
   );
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(500);
   });
@@ -337,6 +342,7 @@ test('status refresh updates allowances without repeating completed source analy
   const view = render(<SlideGenerationSetup props={props} scope={scope} />);
 
   try {
+    fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
     await act(async () => { jest.advanceTimersByTime(500); });
     expect(assessPresentation).toHaveBeenCalledTimes(1);
     view.rerender(<SlideGenerationSetup props={{ ...props, isPro: false, maxSlides: 0, remainingSlides: 0, canAssess: false, canGenerate: false }} scope={scope} />);
@@ -376,6 +382,7 @@ test('a saved deck reuses its analysis across theme and count changes without an
         scope={scope}
       />
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
     await act(async () => {
       jest.advanceTimersByTime(500);
     });
@@ -393,6 +400,7 @@ test('a saved deck reuses its analysis across theme and count changes without an
   jest
     .mocked(assessPresentation)
     .mockResolvedValue({ assessment: { condition: 'concise', recommendedSlideCount: 6 } } as never);
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(500);
   });
@@ -400,7 +408,27 @@ test('a saved deck reuses its analysis across theme and count changes without an
   jest.useRealTimers();
 });
 
-test('a cosmetic change keeps an in-flight analysis instead of aborting it during the reuse check', async () => {
+test('a saved ambiguous assessment asks for a purpose on Generate without blocking the first click', async () => {
+  const props = setupProps();
+
+  props.activeDeck = {
+    sourceRevision: props.snapshot.revision, options: props.options, style: props.style,
+    assessment: { promptBundleVersion: props.promptBundleVersion,
+      value: { condition: 'ambiguous', question: 'What should the audience decide?', recommendedSlideCount: 4 } },
+  } as SavedDeck;
+  jest.mocked(assessPresentation).mockClear();
+  render(<SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
+  const generate = screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' });
+
+  expect(generate.disabled).toBe(false);
+  await act(async () => { fireEvent.click(generate); });
+  expect(screen.getByLabelText('Presentation purpose')).toBeTruthy();
+  expect(generate.disabled).toBe(true);
+  expect(assessPresentation).not.toHaveBeenCalled();
+  expect(props.onGenerate).not.toHaveBeenCalled();
+});
+
+test('changing a submitted selection cancels its analysis and ignores the late response', async () => {
   jest.useFakeTimers();
   let finish!: (value: unknown) => void;
 
@@ -416,6 +444,7 @@ test('a cosmetic change keeps an in-flight analysis instead of aborting it durin
   const scope = { workspaceId: 'workspace', pageId: 'page' };
   const view = render(<SlideGenerationSetup props={props} scope={scope} />);
 
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await act(async () => {
     jest.advanceTimersByTime(500);
   });
@@ -432,7 +461,7 @@ test('a cosmetic change keeps an in-flight analysis instead of aborting it durin
       scope={scope}
     />
   );
-  expect(signal.aborted).toBe(false);
+  expect(signal.aborted).toBe(true);
   await act(async () => {
     finish({ assessment: { condition: 'concise', recommendedSlideCount: 4 } });
   });
@@ -441,5 +470,7 @@ test('a cosmetic change keeps an in-flight analysis instead of aborting it durin
     jest.advanceTimersByTime(500);
   });
   expect(assessPresentation).toHaveBeenCalledTimes(1);
+  expect(props.onGenerate).not.toHaveBeenCalled();
+  expect(props.assessmentCache?.size).toBe(0);
   jest.useRealTimers();
 });

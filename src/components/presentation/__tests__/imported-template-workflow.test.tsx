@@ -120,6 +120,9 @@ test('selects a saved reviewed template without uploading or reviewing it again'
   choose(saved.id);
   await settle();
   expect(selected).toHaveBeenLastCalledWith(saved);
+  expect(assessPresentation).not.toHaveBeenCalled();
+  fireEvent.click(generate());
+  await settle();
   expect(assessPresentation).toHaveBeenCalledWith(expect.objectContaining({ style: saved }), expect.any(AbortSignal));
   expect(reviewPresentationTemplate).not.toHaveBeenCalled();
   expect(generate().disabled).toBe(false);
@@ -165,6 +168,9 @@ test('switching from a saved template to a built-in design clears its reference'
   fireEvent.click(screen.getByRole('button', { name: 'AppFlowy themes' }));
   await settle();
   expect(selected).toHaveBeenLastCalledWith(builtin);
+  expect(assessPresentation).not.toHaveBeenCalled();
+  fireEvent.click(generate());
+  await settle();
   expect(assessPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ style: builtin }), expect.any(AbortSignal));
 });
 
