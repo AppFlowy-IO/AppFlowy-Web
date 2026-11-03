@@ -49,6 +49,15 @@ Feature: Export a database to PDF with readable paper settings
     Then the PDF export targets the Grid tab
     And the exported PDF has every column of the grid
 
+  # The server names the file after the exported tab ("Grid"); a page whose
+  # title was cleared must still download as the "Untitled" page it shows.
+  Scenario: A database page without a title exports as Untitled.pdf
+    When I clear the database page title
+    And I open Export as from the database Share menu
+    And I export the database to PDF
+    Then the PDF export requests "a4" paper in portrait
+    And the downloaded PDF is named "Untitled.pdf"
+
   # Desktop's mixed-field check: a tick and a select tag stay beside their row.
   Scenario: Ticks and select tags stay beside their own rows
     Given the first and third rows are checked and every row has its own Status tag

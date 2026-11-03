@@ -367,6 +367,26 @@ Given('the database has a Gallery tab, which shows only the name field', async (
   await caption(page, `A Gallery tab shows only "Name"; the Grid tab shows ${state.gridFieldNames.join(', ')}`);
 });
 
+When('I clear the database page title', async ({ page }) => {
+  const title = pageTitleInput(page);
+  const updateName = page.waitForRequest(
+    (req) =>
+      req.method() === 'POST' &&
+      new URL(req.url()).pathname.endsWith('/update-name') &&
+      req.postDataJSON()?.name === ''
+  );
+
+  await expect(title).toHaveText('New Database', { timeout: 15_000 });
+  await title.click();
+  await title.fill('');
+  await title.press('Escape');
+  await (await updateName).response();
+  // The emptied title shows its "Untitled" placeholder.
+  await expect(title).toHaveText('');
+  await expect(title).toHaveAttribute('data-placeholder', 'Untitled');
+  await caption(page, 'The database page title is cleared, so the page shows as "Untitled"');
+});
+
 When('I switch to the Grid tab', async ({ page }) => {
   await closeSharePopover(page);
   await switchToDatabaseView(page, stateOf(page).gridViewId!, 'Grid');
