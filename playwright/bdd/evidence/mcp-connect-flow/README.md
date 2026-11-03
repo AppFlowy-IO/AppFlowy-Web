@@ -12,16 +12,15 @@
 | `08-public-setup.png` | The signed-out setup page at `/oauth/mcp/setup` |
 | `09-owner-settings-off-connections-kept.png` | AI apps turned off again: the connection is kept and can still be disconnected |
 
-Provenance: `capture.spec.ts` in this directory wrote all nine files on 2026-11-03, through its own
-config, `capture.config.ts` (headless Chromium, 1360×900, device scale 1). One run wrote 01, 02 and
-04–09. 03 grows the viewport to the consent card's height (1360×1189), so the frame includes the
-approval notice and Approve and allow; a second run of the same script wrote it with
-`MCP_CAPTURE_FRAMES=03` after that fix. Both runs used a local stack on a single origin,
-`http://localhost:18180`, behind nginx: AppFlowy Cloud and the MCP service built from
-AppFlowy-Cloud-Premium PR #1521 at commit `97d942b1a`, and AppFlowy Web from this branch's Vite dev
-server (`3f088841`). Each run signs up a fresh owner and a fresh member in a disposable database.
-The owner's new workspace gets the Pro fixture subscription (`grantWorkspaceProSubscription`),
-because the hosted build allows a Free workspace only one member.
+Provenance: `capture.spec.ts` in this directory wrote all nine files in one run on 2026-11-03,
+through its own config, `capture.config.ts` (headless Chromium, 1360×900, device scale 1). 03 grows
+the viewport to the consent card's height (1360×1189), so the frame includes the approval notice and
+Approve and allow. The run used a local stack on a single origin, `http://localhost:18180`, behind
+nginx: AppFlowy Cloud and the MCP service built from AppFlowy-Cloud-Premium PR #1521 at commit
+`97d942b1a`, and AppFlowy Web from this branch's Vite dev server at `b7a6772a`, after the branch was
+rebased onto main (`75584790`). The run signs up a fresh owner and a fresh member in a disposable
+database. The owner's new workspace gets the Pro fixture subscription
+(`grantWorkspaceProSubscription`), because the hosted build allows a Free workspace only one member.
 
 The script switches AI apps through `PUT /api/admin/mcp/policy` with `expected_revision`. That
 stack's Cloud is a hosted build, whose plan has no MCP tab, so the API answered 403
@@ -32,7 +31,9 @@ changes the workspace's approval policy (06, 07) in Settings → MCP. The journe
 1. AI apps off: Settings → MCP (01), and a consent request that reaches the page (02).
 2. AI apps on: the owner approves and allows `Claude Code (e2e)`, a local app on a loopback
    redirect (03), copies the server URL in Settings → MCP (04), and the app creates a document and
-   a grid through `create-pages` that open in Web (05). The signed-out setup page (08).
+   a grid through `create-pages` that open in Web (05). Given no parent, `create-pages` puts them in
+   the workspace's oldest space. A new workspace creates General and Shared in the same second, so
+   they can land in either one (Shared in this run). The signed-out setup page (08).
 3. A member asks for approval of `Gemini CLI (e2e)` (06). The owner turns on Any app, the member
    connects it, and the owner requires approval again (07).
 4. AI apps off again: the owner's connection is kept (09).
