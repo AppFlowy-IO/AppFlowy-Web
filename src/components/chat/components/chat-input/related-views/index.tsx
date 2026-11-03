@@ -18,9 +18,24 @@ import { Separator } from '@/components/ui/separator';
 
 import { Spaces } from './spaces';
 
-export function RelatedViews() {
+export function RelatedViews({
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  /** Lets the input open the picker, for example when the user types "@". */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const [searchValue, setSearchValue] = useState('');
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = useCallback(
+    (nextOpen: boolean) => {
+      setUncontrolledOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange]
+  );
   const openGenerationRef = useRef(0);
 
   const {
@@ -109,7 +124,7 @@ export function RelatedViews() {
         })();
       }
     },
-    [flushPendingToggle, ragScopeState.status, refreshRagScope]
+    [flushPendingToggle, ragScopeState.status, refreshRagScope, setOpen]
   );
 
   return (

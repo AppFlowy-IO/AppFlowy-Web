@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as RegenerateCircleIcon } from '@/assets/icons/ai_regenerate.svg';
@@ -6,40 +6,45 @@ import { ReactComponent as RegenerateIcon } from '@/assets/icons/regenerate.svg'
 import { ReactComponent as ChevronIcon } from '@/assets/icons/triangle_down.svg';
 import { ReactComponent as TryAgainIcon } from '@/assets/icons/undo.svg';
 import { FormatGroup } from '@/components/chat/components/ui/format-group';
+import { isImageContent } from '@/components/chat/lib/image-format';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
-import { OutputContent, OutputLayout } from '@/components/chat/types';
+import { OutputContent, OutputLayout, ResponseFormat } from '@/components/chat/types';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-
 export function Regenerations({ id, sideOffset }: { id: number; sideOffset: number }) {
   const { t } = useTranslation();
-  const { messageIds } = useChatMessagesContext();
-  const { setResponseFormat, getMessageResponseFormat } = useResponseFormatContext();
+  const { messageIds, getMessage } = useChatMessagesContext();
+  const { resolveAnswerFormat } = useResponseFormatContext();
 
   const { regenerateAnswer } = useMessagesHandlerContext();
 
-  const [outputContent, setOutputContent] = useState<OutputContent | undefined>(
-    getMessageResponseFormat(id)?.output_content
+  // The format this answer was produced with, so "Try again" keeps it.
+  const originalFormat = useMemo<ResponseFormat>(
+    () => resolveAnswerFormat(id, getMessage(id)?.content),
+    [getMessage, id, resolveAnswerFormat]
   );
-  const [outputLayout, setOutputLayout] = useState<OutputLayout | undefined>(
-    getMessageResponseFormat(id)?.output_layout
+
+  const [outputContent, setOutputContent] = useState<OutputContent | undefined>(originalFormat.output_content);
+  const [outputLayout, setOutputLayout] = useState<OutputLayout | undefined>(originalFormat.output_layout);
+
+  const regenerate = useCallback(
+    (format?: ResponseFormat) => {
+      const index = messageIds.indexOf(id);
+
+      if (index < 0) {
+        return;
+      }
+
+      const questionId = id - 1;
+
+      void regenerateAnswer(questionId, format);
+    },
+    [id, messageIds, regenerateAnswer]
   );
-
-  const regenerate = useCallback(() => {
-    const index = messageIds.indexOf(id);
-
-    if (index < 0) {
-      return;
-    }
-
-    const questionId = id - 1;
-
-    void regenerateAnswer(questionId);
-  }, [id, messageIds, regenerateAnswer]);
 
   return (
     <>
@@ -50,10 +55,11 @@ export function Regenerations({ id, sideOffset }: { id: number; sideOffset: numb
               e.preventDefault();
             }}
             onClick={() => {
-              void regenerate();
+              regenerate(originalFormat);
             }}
             variant={'ghost'}
             size={'icon'}
+            data-testid='chat-answer-try-again'
           >
             <TryAgainIcon className='h-5 w-5 text-icon-secondary' />
           </Button>
@@ -109,11 +115,18 @@ export function Regenerations({ id, sideOffset }: { id: number; sideOffset: numb
                     return;
                   }
 
-                  setResponseFormat({
+                  const format: ResponseFormat = {
                     output_content: outputContent,
                     output_layout: outputLayout,
-                  });
-                  void regenerate();
+                  };
+
+                  // Keep the original image options (size, quality, prompt) when the
+                  // answer is still an image answer.
+                  if (isImageContent(outputContent) && originalFormat?.output_content_metadata) {
+                    format.output_content_metadata = originalFormat.output_content_metadata;
+                  }
+
+                  regenerate(format);
                 }}
                 className='p-0 text-fill-theme-thick'
               >

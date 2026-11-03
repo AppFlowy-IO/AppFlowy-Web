@@ -447,6 +447,70 @@
       "label": "Web Search",
       "active": "Web Search On"
     },
+    "image": {
+      "alt": "Generated image",
+      "button": "Image",
+      "title": "Generate an image",
+      "mode": "Answer with",
+      "modeOff": "Text only",
+      "modeImageOnly": "Image only",
+      "modeTextWithImage": "Text and image",
+      "size": "Size",
+      "sizeAuto": "Auto",
+      "sizeSquare": "Square",
+      "sizeLandscape": "Landscape",
+      "sizePortrait": "Portrait",
+      "quality": "Quality",
+      "qualityAuto": "Auto",
+      "qualityStandard": "Standard",
+      "qualityHd": "HD",
+      "promptLabel": "Describe the image (optional)",
+      "promptPlaceholder": "Used as the image prompt instead of the answer text",
+      "hint": "Applies to your next message only.",
+      "inputPlaceholder": "Describe the image you want",
+      "turnOff": "Turn off image mode",
+      "generating": "Generating image, this can take up to a minute",
+      "loading": "Loading image",
+      "failed": "The image could not be loaded. It may still be generating, or it may have been blocked.",
+      "retry": "Retry",
+      "regenerate": "Regenerate image",
+      "download": "Download",
+      "copy": "Copy image",
+      "preview": "Open full size",
+      "copied": "Image copied to clipboard",
+      "downloadFailed": "Failed to download the image",
+      "copyFailed": "Failed to copy the image"
+    },
+    "code": {
+      "view": "Code view",
+      "diagram": "Diagram",
+      "code": "Code"
+    },
+    "reasoning": {
+      "thinking": "Thinking",
+      "thought": "Thought process"
+    },
+    "attachments": {
+      "button": "Attach images or files",
+      "remove": "Remove attachment",
+      "failed": "Upload failed",
+      "uploadFailed": "Could not upload {{name}}",
+      "tooMany": "You can attach up to {{images}} images and {{files}} files per message",
+      "waitForUpload": "Please wait for the attachments to finish uploading"
+    },
+    "edit": {
+      "button": "Edit message",
+      "save": "Save and resend",
+      "cancel": "Cancel",
+      "hint": "Cmd/Ctrl+Enter to resend, Esc to cancel"
+    },
+    "chatSettings": {
+      "title": "Chat settings",
+      "instructionsLabel": "Instructions for this chat",
+      "instructionsPlaceholder": "For example: answer briefly, use British spelling, address me as Nathan",
+      "hint": "Applies to every answer in this chat",
+      "done": "Done"
+    },
     "view": {
       "placeholder": "Untitled"
     },

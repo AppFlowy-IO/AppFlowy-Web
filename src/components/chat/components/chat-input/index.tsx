@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ReactComponent as StopIcon } from '@/assets/icons/ai_stop_answering.svg';
+import { ReactComponent as AttachmentIcon } from '@/assets/icons/attachment.svg';
 import { ReactComponent as EarthIcon } from '@/assets/icons/earth.svg';
 import { ReactComponent as SendIcon } from '@/assets/icons/filled_round_arrow_up.svg';
 import { ReactComponent as AutoTextIcon } from '@/assets/icons/text.svg';
@@ -12,15 +13,23 @@ import { useChatContext } from '@/components/chat/chat/context';
 import { FormatGroup } from '@/components/chat/components/ui/format-group';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { Textarea } from '@/components/chat/components/ui/textarea';
+import { useImageGenerationAvailable } from '@/components/chat/contexts/model-selector-context';
 import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
+import { formatQuestionWithAttachments } from '@/components/chat/lib/attachments';
+import { isImageContent } from '@/components/chat/lib/image-format';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
+import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
 import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
-import { ChatInputMode } from '@/components/chat/types';
+import { useSuggestionsContext } from '@/components/chat/provider/suggestions-provider';
+import { AuthorType, ChatInputMode } from '@/components/chat/types';
 import { AiPrompt } from '@/components/chat/types/prompt';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+import { ACCEPTED_ATTACHMENT_TYPES, AttachmentChips, useChatAttachments } from './attachments';
+import { ChatSettingsButton } from './chat-settings';
+import { ImageOptionsButton } from './image-options';
 import { ModelSelector } from './model-selector';
 import { PromptModal } from './prompt-modal';
 import { RelatedViews } from './related-views';
@@ -34,6 +43,10 @@ export function ChatInput() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const extrasRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const {
     submitQuestion,
@@ -43,10 +56,17 @@ export function ChatInput() {
     chatSettings,
     updateChatSettings,
     ragScopeState,
+    setEditingQuestionId,
   } = useMessagesHandlerContext();
-  const { responseFormat, responseMode, setResponseFormat, setResponseMode } = useResponseFormatContext();
+  const { responseFormat, responseMode, setResponseFormat, setResponseMode, buildRequestFormat, resetImageIntent } =
+    useResponseFormatContext();
   const { openModal, currentPromptId, updateCurrentPromptId, reloadDatabasePrompts } = usePromptModal();
-  const { chatId } = useChatContext();
+  const { chatId, workspaceId, currentUser } = useChatContext();
+  const { messageIds, getMessage } = useChatMessagesContext();
+  const { getMessageSuggestions } = useSuggestionsContext();
+  const imageGenerationAvailable = useImageGenerationAvailable();
+  const { attachments, addFiles, removeAttachment, clearAttachments, readyAttachments, uploading } =
+    useChatAttachments({ workspaceId, chatId });
 
   const webSearchEnabled = chatSettings?.web_search_enabled ?? false;
 
@@ -80,11 +100,41 @@ export function ChatInput() {
 
     // adjust container height
     if (containerRef.current) {
+      const extrasHeight = extrasRef.current?.offsetHeight ?? 0;
+
       containerRef.current.style.height = `${
-        newHeight + (responseMode === ChatInputMode.FormatResponse ? 54 + 20 : 30 + 16)
+        newHeight + extrasHeight + (responseMode === ChatInputMode.FormatResponse ? 54 + 20 : 30 + 16)
       }px`; // 32px padding
     }
   }, [responseMode]);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [adjustHeight, attachments.length]);
+
+  // The newest question of the current user, for ArrowUp editing. Other
+  // members' questions are never editable from here.
+  const latestOwnQuestionId = useCallback(() => {
+    if (!currentUser?.uuid) return null;
+
+    for (const id of messageIds) {
+      const message = getMessage(id);
+
+      if (message?.author.author_type === AuthorType.Human && message.author.author_uuid === currentUser.uuid) {
+        return message.message_id;
+      }
+    }
+
+    return null;
+  }, [currentUser?.uuid, getMessage, messageIds]);
+
+  const firstSuggestion = useCallback(() => {
+    const latestAnswerId = messageIds[0];
+
+    if (latestAnswerId === undefined) return null;
+
+    return getMessageSuggestions(latestAnswerId - 1)?.items[0]?.content ?? null;
+  }, [getMessageSuggestions, messageIds]);
 
   const handleInput = () => {
     adjustHeight();
@@ -96,15 +146,84 @@ export function ChatInput() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter confirms a composition (Chinese, Japanese, Korean input methods); it must not send.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      return;
+    }
+
+    if (e.key === 'Escape' && answerApplying) {
+      e.preventDefault();
+      cancelAnswerStream();
+      return;
+    }
+
+    const empty = message.trim().length === 0;
+
+    // "/" browses prompts, "@" picks sources, Tab takes the first suggestion and
+    // ArrowUp edits the last question, all only from an empty input.
+    if (empty && e.key === '/' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      reloadDatabasePrompts();
+      openModal();
+      return;
+    }
+
+    if (empty && e.key === '@' && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      setSourcesOpen(true);
+      return;
+    }
+
+    if (empty && e.key === 'Tab' && !e.shiftKey) {
+      const suggestion = firstSuggestion();
+
+      if (suggestion) {
+        e.preventDefault();
+        setMessage(suggestion);
+      }
+
+      return;
+    }
+
+    if (empty && e.key === 'ArrowUp' && !answerApplying && !questionSending) {
+      const questionId = latestOwnQuestionId();
+
+      if (questionId !== null) {
+        e.preventDefault();
+        setEditingQuestionId(questionId);
+      }
+
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void handleSubmit();
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []);
+
+    if (files.length === 0) return;
+    e.preventDefault();
+    addFiles(files);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragging(false);
+    addFiles(Array.from(e.dataTransfer.files ?? []));
+  };
+
   const handleSubmit = async () => {
-    if (!message.trim()) {
+    if (!message.trim() && readyAttachments.length === 0) {
       toast.error(`${t('chat.errors.emptyMessage')}`);
+      return;
+    }
+
+    if (uploading) {
+      toast.error(`${t('chat.attachments.waitForUpload')}`);
       return;
     }
 
@@ -113,11 +232,18 @@ export function ChatInput() {
       return;
     }
 
-    setMessage('');
-    adjustHeight();
+    const format = buildRequestFormat();
+    const content = formatQuestionWithAttachments(message, readyAttachments);
 
     try {
-      await submitQuestion(message);
+      await submitQuestion(content, format);
+      // The draft and its uploads are kept until the question is accepted, so a
+      // rejected send loses nothing.
+      setMessage('');
+      clearAttachments();
+      adjustHeight();
+      // An image request applies to one message; the next question is text again.
+      resetImageIntent();
     } catch (e) {
       console.error(e);
     } finally {
@@ -163,12 +289,23 @@ export function ChatInput() {
     >
       <div
         ref={containerRef}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragging) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
         className={`relative flex flex-col justify-between gap-1 border ${
-          focused ? 'border-primary ring-1 ring-ring' : 'ring-0'
+          focused || dragging ? 'border-primary ring-1 ring-ring' : 'ring-0'
         } w-full rounded-[12px] border-border px-2 py-1 focus:border-primary`}
+        data-testid='chat-input-container'
       >
+        <div ref={extrasRef}>
+          <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
+        </div>
         {responseMode === ChatInputMode.FormatResponse && (
           <FormatGroup
+            imageAvailable={imageGenerationAvailable}
             setOutputLayout={(newOutLayout) => {
               setResponseFormat({
                 ...responseFormat,
@@ -191,11 +328,14 @@ export function ChatInput() {
           onChange={handleChange}
           onInput={handleInput}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           ref={textareaRef}
           onFocus={() => {
             setFocused(true);
           }}
-          placeholder={t('chat.input.placeholder')}
+          placeholder={
+            isImageContent(responseFormat.output_content) ? t('chat.image.inputPlaceholder') : t('chat.input.placeholder')
+          }
           onBlur={() => {
             setFocused(false);
           }}
@@ -251,6 +391,40 @@ export function ChatInput() {
               </TooltipContent>
             </Tooltip>
 
+            <ImageOptionsButton disabled={disabled || answerApplying} />
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                  }}
+                  variant={'ghost'}
+                  size={'icon'}
+                  disabled={disabled || answerApplying}
+                  data-testid='chat-input-attach'
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <AttachmentIcon className='h-5 w-5 text-icon-secondary' />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.attachments.button')}</TooltipContent>
+            </Tooltip>
+            <input
+              ref={fileInputRef}
+              type='file'
+              multiple
+              accept={ACCEPTED_ATTACHMENT_TYPES}
+              className='hidden'
+              data-testid='chat-input-file'
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = '';
+              }}
+            />
+
+            <ChatSettingsButton disabled={disabled} />
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -283,7 +457,7 @@ export function ChatInput() {
           </div>
 
           <div className={'flex items-center gap-2'}>
-            <RelatedViews />
+            <RelatedViews open={sourcesOpen} onOpenChange={setSourcesOpen} />
             {answerApplying ? (
               <Button
                 onClick={cancelAnswerStream}
@@ -299,7 +473,7 @@ export function ChatInput() {
                 size={'icon'}
                 variant={'link'}
                 className={'p-0 text-fill-theme-thick'}
-                disabled={!message.trim() || disabled}
+                disabled={(!message.trim() && readyAttachments.length === 0) || uploading || disabled}
                 data-testid='chat-input-send'
               >
                 {questionSending ? <LoadingDots /> : <SendIcon className='h-7 w-7' />}

@@ -3,7 +3,7 @@ import remarkMath from 'remark-math';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 
-import { BlockData, BlockType, MathEquationBlockData } from '@/application/types';
+import { BlockData, BlockType, ImageBlockData, ImageType, MathEquationBlockData } from '@/application/types';
 import { normalizeMathMarkdown } from '@/components/editor/utils/math-markdown';
 
 import { extractInlineFormatsFromMDAST, extractTextFromMDAST } from './mdast-utils';
@@ -15,10 +15,12 @@ import type {
   Code,
   DefinitionContent,
   Heading,
+  Image,
   List,
   ListItem,
   Root as MdastRoot,
   Paragraph,
+  PhrasingContent,
 } from 'mdast';
 
 /**
@@ -46,9 +48,7 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
     (_, indentation: string) => `${indentation.replace(/\t/g, '  ')}- `
   );
 
-  const {
-    gfm = true,
-  } = options;
+  const { gfm = true, inlineParentheses = false } = options;
 
   try {
     // Step 1: Parse Markdown to MDAST
@@ -59,7 +59,7 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
     }
 
     const initialTree = processor.parse(normalizedMarkdown);
-    const mathMarkdown = normalizeMathMarkdown(normalizedMarkdown, initialTree);
+    const mathMarkdown = normalizeMathMarkdown(normalizedMarkdown, initialTree, { inlineParentheses });
     const tree = mathMarkdown === normalizedMarkdown ? initialTree : processor.parse(mathMarkdown);
     const ast = processor.runSync(tree) as MdastRoot;
 
@@ -157,9 +157,92 @@ function buildHeadingBlock(node: Heading): ParsedBlock {
 }
 
 /**
- * Builds AppFlowy paragraph block from Markdown paragraph node
+ * Builds AppFlowy paragraph block(s) from a Markdown paragraph node. An image on
+ * a line of its own becomes an image block, as it does when pasted as HTML, also
+ * when that line follows a soft break inside the paragraph.
  */
-function buildParagraphBlock(node: Paragraph): ParsedBlock {
+function buildParagraphBlock(node: Paragraph): ParsedBlock | ParsedBlock[] {
+  const segments = splitParagraphAtImages(node);
+
+  if (segments.length === 1 && segments[0].type === 'text') return buildTextParagraph(node);
+
+  return segments.map((segment) =>
+    segment.type === 'image'
+      ? {
+          type: BlockType.ImageBlock,
+          data: { url: segment.image.url, image_type: ImageType.External } as ImageBlockData,
+          text: '',
+          formats: [],
+          children: [],
+        }
+      : buildTextParagraph({ type: 'paragraph', children: segment.children })
+  );
+}
+
+type ParagraphSegment = { type: 'image'; image: Image } | { type: 'text'; children: PhrasingContent[] };
+
+/**
+ * Splits inline content at images that occupy a whole line: the paragraph's only
+ * content, or content separated from the rest by a line break. An image inside a
+ * sentence stays where it is.
+ */
+function splitParagraphAtImages(node: Paragraph): ParagraphSegment[] {
+  const children = node.children;
+  const segments: ParagraphSegment[] = [];
+  let pending: PhrasingContent[] = [];
+  const flush = () => {
+    const content = trimLineEdges(pending);
+
+    if (content.some((child) => !(child.type === 'text' && !child.value.trim()))) {
+      segments.push({ type: 'text', children: content });
+    }
+
+    pending = [];
+  };
+
+  children.forEach((child, index) => {
+    if (child.type === 'image' && startsLine(children[index - 1]) && endsLine(children[index + 1])) {
+      flush();
+      segments.push({ type: 'image', image: child });
+    } else {
+      pending.push(child);
+    }
+  });
+  flush();
+
+  return segments.length ? segments : [{ type: 'text', children }];
+}
+
+/** The node before an image leaves it at a line start: nothing, a hard break, or text ending a line. */
+function startsLine(before: PhrasingContent | undefined): boolean {
+  if (!before || before.type === 'break') return true;
+
+  return before.type === 'text' && /\n\s*$/.test(before.value);
+}
+
+/** The node after an image ends its line: nothing, a hard break, or text starting a new line. */
+function endsLine(after: PhrasingContent | undefined): boolean {
+  if (!after || after.type === 'break') return true;
+
+  return after.type === 'text' && /^\s*\n/.test(after.value);
+}
+
+/** Drops the line breaks that separated a segment from a neighbouring image. */
+function trimLineEdges(nodes: PhrasingContent[]): PhrasingContent[] {
+  const content = [...nodes];
+  const trim = (index: number, pattern: RegExp) => {
+    const node = content[index];
+
+    if (node?.type === 'text') content[index] = { ...node, value: node.value.replace(pattern, '') };
+  };
+
+  trim(0, /^\s*\n/);
+  trim(content.length - 1, /\n\s*$/);
+
+  return content;
+}
+
+function buildTextParagraph(node: Paragraph): ParsedBlock {
   const text = extractTextFromMDAST(node);
 
   // Check for special patterns
@@ -237,7 +320,12 @@ function expandDisplayMath(node: { children?: unknown[] }, source: string) {
     const result: BlockContent[] = [];
     let pending: Paragraph['children'] = [];
     const flush = () => {
-      if (pending.length && extractTextFromMDAST({ children: pending }).trim()) result.push({ type: 'paragraph', children: pending });
+      // An image has no text but still holds the paragraph.
+      if (
+        pending.length &&
+        (extractTextFromMDAST({ children: pending }).trim() || pending.some((inline) => inline.type === 'image'))
+      )
+        result.push({ type: 'paragraph', children: pending });
       pending = [];
     };
 

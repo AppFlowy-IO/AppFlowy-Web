@@ -1,7 +1,15 @@
 import { expect, describe, it, beforeEach, afterEach } from '@jest/globals';
 
 // Import functions to test
-import { stringToColor, renderColor, convertToPageData, parsePromptData, ColorEnum, colorMap } from '../lib/utils';
+import {
+  stringToColor,
+  renderColor,
+  convertToPageData,
+  parsePromptData,
+  deriveChatTitle,
+  ColorEnum,
+  colorMap,
+} from '../lib/utils';
 import { AiPromptCategory } from '../types/prompt';
 
 describe('Chat Utility Functions', () => {
@@ -385,5 +393,32 @@ describe('Chat Utility Functions', () => {
       expect(result[1].id).toBe('2');
       expect(result[2].id).toBe('3');
     });
+  });
+});
+
+describe('deriveChatTitle', () => {
+  it('uses the first non-empty line with collapsed whitespace', () => {
+    expect(deriveChatTitle('\n\n  How   do I use\tKanban?  \nMore details')).toBe('How do I use Kanban?');
+  });
+
+  it('cuts long questions at a word boundary with an ellipsis', () => {
+    const title = deriveChatTitle(
+      'Please write a very detailed and extremely long explanation of the GTD method for busy people'
+    );
+
+    expect(title.length).toBeLessThanOrEqual(61);
+    expect(title.endsWith('…')).toBe(true);
+    expect(title).toBe('Please write a very detailed and extremely long explanation…');
+  });
+
+  it('returns an empty title for blank input', () => {
+    expect(deriveChatTitle('   \n ')).toBe('');
+  });
+
+  it('names the chat after the question, not its attachment markers', () => {
+    expect(deriveChatTitle('[IMAGE:https://cloud/api/file_storage/ws/v1/blob/chat/a.png]\nWhat is this?')).toBe(
+      'What is this?'
+    );
+    expect(deriveChatTitle('[FILE:https://cloud/f/notes.pdf]')).toBe('');
   });
 });
