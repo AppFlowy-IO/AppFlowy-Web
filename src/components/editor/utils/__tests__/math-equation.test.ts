@@ -108,6 +108,20 @@ describe('Flutter math character and selection shortcuts with Yjs', () => {
     expect(formulas(editor)).toEqual([]);
   });
 
+  it.each([
+    { type: BlockType.CodeBlock, marks: {} },
+    { type: BlockType.Paragraph, marks: { code: true } },
+  ])('keeps whole-string math and Unicode literal inside code (%s)', ({ type: blockType, marks }) => {
+    const editor = setup('existing', blockType, marks);
+    const text = ' $😀$ and $$x^2$$';
+
+    editor.insertText(text);
+    expect(formulas(editor)).toEqual([]);
+    expect(editor.children).toHaveLength(1);
+    expect(Node.string(editor)).toBe(`existing${text}`);
+    persisted(editor);
+  });
+
   it('opens an empty block editor with $$', () => {
     const editor = setup('$');
     const open = jest.fn();

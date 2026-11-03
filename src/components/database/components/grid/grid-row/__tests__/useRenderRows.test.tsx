@@ -214,6 +214,142 @@ describe('useRenderRows', () => {
     expect(new Set(rowKeys).size).toBe(2);
   });
 
+  it('renders the rows read so far above a loading row', () => {
+    const hydrating = { ready: 100, total: 500 };
+    const rows = [
+      { id: 'row-1', height: 36 },
+      { id: 'row-2', height: 36 },
+    ];
+    const { result } = renderHook(() => useRenderRows(rows, { hydrating }), {
+      wrapper: createWrapper(),
+    });
+
+    // No calculation row: calculations summarize the complete result only.
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.Row,
+      RenderRowType.PlaceholderRow,
+      RenderRowType.NewRow,
+    ]);
+    expect(result.current.lastVisibleRowId).toBe('row-2');
+  });
+
+  it('keeps the stream of the rows read so far while only the progress or the grouping object changes', () => {
+    const rows = [
+      { id: 'row-1', height: 36 },
+      { id: 'row-2', height: 36 },
+    ];
+    const ungrouped = (): GridGrouping => ({
+      isGrouped: false,
+      hideEmptyGroups: false,
+      ready: true,
+      activeGroupIds: [],
+      groups: [],
+      visibleGroups: [],
+    });
+    const { result, rerender } = renderHook(
+      ({ ready, grouping }: { ready: number; grouping: GridGrouping }) =>
+        useRenderRows(rows, { grouping, hydrating: { ready, total: 500 } }),
+      { wrapper: createWrapper(), initialProps: { ready: 100, grouping: ungrouped() } }
+    );
+    const firstStream = result.current.rows;
+
+    // The loading row reads the progress itself; the rows shown do not re-render.
+    rerender({ ready: 300, grouping: ungrouped() });
+    expect(result.current.rows).toBe(firstStream);
+
+    rerender({ ready: 300, grouping: ungrouped() });
+    expect(result.current.rows).toBe(firstStream);
+  });
+
+  it('keeps the render row of every row that stays in the stream when rows are appended', () => {
+    const { result, rerender } = renderHook(
+      ({ rows }: { rows: { id: string; height: number }[] }) =>
+        useRenderRows(rows, { hydrating: { ready: rows.length, total: 500 } }),
+      {
+        wrapper: createWrapper(),
+        initialProps: {
+          rows: [
+            { id: 'row-1', height: 36 },
+            { id: 'row-2', height: 36 },
+          ],
+        },
+      }
+    );
+    const dataRows = (stream: typeof result.current.rows) => stream.filter((row) => row.type === RenderRowType.Row);
+    const [first, second] = dataRows(result.current.rows);
+
+    rerender({
+      rows: [
+        { id: 'row-1', height: 36 },
+        { id: 'row-2', height: 36 },
+        { id: 'row-3', height: 36 },
+      ],
+    });
+
+    const appended = dataRows(result.current.rows);
+
+    // A memoized grid row compares its render row by identity: the rows above do not re-render.
+    expect(appended).toHaveLength(3);
+    expect(appended[0]).toBe(first);
+    expect(appended[1]).toBe(second);
+    expect(appended[2]).toEqual({ type: RenderRowType.Row, rowId: 'row-3' });
+    expect(result.current.lastVisibleRowId).toBe('row-3');
+
+    // Rows that leave the stream drop out; the one that stays keeps its render row.
+    rerender({ rows: [{ id: 'row-2', height: 36 }] });
+    expect(dataRows(result.current.rows)).toHaveLength(1);
+    expect(dataRows(result.current.rows)[0]).toBe(second);
+    expect(result.current.lastVisibleRowId).toBe('row-2');
+  });
+
+  it('renders a partial result without matches as loading, never as an empty result', () => {
+    const { result } = renderHook(() => useRenderRows([], { hydrating: { ready: 100, total: 500 } }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.PlaceholderRow,
+      RenderRowType.NewRow,
+    ]);
+  });
+
+  it('keeps the loading placeholder of a view that waits for every row', () => {
+    const { result } = renderHook(() => useRenderRows(undefined, { hydrating: { ready: 100, total: 500 } }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.PlaceholderRow,
+      RenderRowType.NewRow,
+    ]);
+  });
+
+  it('keeps the load-more row above the loading row of a limited embedded grid', () => {
+    const rows = [
+      { id: 'row-1', height: 36 },
+      { id: 'row-2', height: 36 },
+      { id: 'row-3', height: 36 },
+    ];
+    const { result } = renderHook(
+      () => useRenderRows(rows, { visibleRowLimit: 2, hydrating: { ready: 100, total: 500 } }),
+      { wrapper: createWrapper() }
+    );
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.Row,
+      RenderRowType.LoadMoreRow,
+      RenderRowType.PlaceholderRow,
+      RenderRowType.NewRow,
+    ]);
+    expect(result.current.remainingRowCount).toBe(1);
+  });
+
   it('renders an empty filtered result instead of treating it as loading', () => {
     const { result } = renderHook(() => useRenderRows([]), {
       wrapper: createWrapper(),

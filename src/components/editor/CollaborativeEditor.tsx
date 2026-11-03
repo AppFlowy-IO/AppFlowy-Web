@@ -4,8 +4,8 @@ import { createEditor, Descendant, Editor, Element as SlateElement, Node, Operat
 import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
-import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { isDatabaseBlockType } from '@/application/database-block';
+import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
@@ -171,6 +171,13 @@ function CollaborativeEditor({
     },
     [onSelectionChange, debounceCalculateWordCount]
   );
+  // Keep the editor and its history across profile changes, while selection
+  // updates use the current awareness callback rather than its initial avatar.
+  const selectionChangeRef = useRef(handleSelectionChange);
+
+  useLayoutEffect(() => {
+    selectionChangeRef.current = handleSelectionChange;
+  }, [handleSelectionChange]);
 
   const retainedEditor = useRef<YjsEditor>();
   const editor = useMemo(
@@ -189,7 +196,7 @@ function CollaborativeEditor({
               onContentChange,
               uploadFile,
               id: viewId,
-              onSelectionChange: handleSelectionChange,
+              onSelectionChange: (editor) => selectionChangeRef.current(editor),
             })
           ),
           clipboardFormatKey

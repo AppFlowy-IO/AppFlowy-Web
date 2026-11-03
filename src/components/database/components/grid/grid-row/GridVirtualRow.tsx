@@ -7,7 +7,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
-import { HoverControls } from '@/components/database/components/grid/controls/HoverControls';
+import { HOVER_CONTROLS_WIDTH, HoverControls } from '@/components/database/components/grid/controls/HoverControls';
 import {
   GridDragState,
   ItemState,
@@ -28,9 +28,14 @@ import { cn } from '@/lib/utils';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
 
+/**
+ * One row of the grid. It takes its index and its own render row, not the
+ * virtualizer's item or the whole stream: both are new whenever rows are
+ * added, and a row that did not change keeps its render then.
+ */
 function GridVirtualRow({
-  row,
-  data,
+  rowIndex,
+  rowData,
   columns,
   columnItems,
   totalSize,
@@ -39,15 +44,13 @@ function GridVirtualRow({
 }: {
   isSticky?: boolean;
   columnItems: VirtualItem[];
-  row: VirtualItem;
+  rowIndex: number;
+  rowData: RenderRow;
   totalSize: number;
-  data: RenderRow[];
   columns: RenderColumn[];
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
-  const rowIndex = row.index;
-  const rowData = data[rowIndex];
   const rowId = rowData.rowId as string;
   const rowKey = getRenderRowKey(rowData);
   const rowType = rowData.type;
@@ -141,14 +144,14 @@ function GridVirtualRow({
         <GridVirtualColumn
           key={column.key}
           columns={columns}
-          data={data}
-          row={row}
+          rowIndex={rowIndex}
+          rowData={rowData}
           column={column}
           onResizeColumnStart={onResizeColumnStart}
         />
       );
     });
-  }, [columnItems, columns, data, row, onResizeColumnStart]);
+  }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
   return (
     <GridRowProvider
@@ -165,11 +168,12 @@ function GridVirtualRow({
         <div style={{ width: `${before}px` }}>
           {isRegularRow && !readOnly && (
             <HoverControls
+              compact={before < HOVER_CONTROLS_WIDTH}
               state={state}
               dragHandleRef={(el) => {
                 dragHandleRef.current = el;
               }}
-              rowId={data[row.index].rowId as string}
+              rowId={rowId}
               rowKey={rowKey}
               groupFieldId={rowData.groupFieldId}
               groupId={rowData.groupId}
@@ -180,6 +184,13 @@ function GridVirtualRow({
         <div
           data-testid={`grid-row-${rowId}`}
           data-row-key={rowKey}
+          data-parity-id={
+            rowType === RenderRowType.Header
+              ? 'dash-widget-grid-header'
+              : isRegularRow
+              ? 'dash-widget-grid-row'
+              : undefined
+          }
           className={cn(
             'grid-table-row-content relative flex min-h-[36px]',
             state.type === GridDragState.DRAGGING && 'opacity-40'

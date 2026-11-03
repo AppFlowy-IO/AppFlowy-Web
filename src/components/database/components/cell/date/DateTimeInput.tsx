@@ -96,9 +96,8 @@ function DateTimeInput({
 
       const newDate = new Date(date || Date.now());
 
-      newDate.setFullYear(parsedDate.getFullYear());
-      newDate.setMonth(parsedDate.getMonth());
-      newDate.setDate(parsedDate.getDate());
+      // Set all three at once: setting the month first on a 31st rolls over to the next month.
+      newDate.setFullYear(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
 
       onDateChange?.(newDate);
     } catch (error) {

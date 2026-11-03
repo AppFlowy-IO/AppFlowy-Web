@@ -1,4 +1,35 @@
-# Drive and Calendar browser tests
+# Browser integration tests
+
+## PDF Embed
+
+```sh
+pnpm test:e2e:pdf
+# Exercise the same two-worker scheduling used by CI:
+pnpm test:e2e:pdf --workers=2
+```
+
+The PDF suite runs the production editor and PDF.js worker in isolated browser
+contexts, with a separate Vite server per worker. On macOS the PDF config requires
+the dedicated Chrome for Testing executable; it never attaches to an existing
+browser or personal profile. No Cloud account is required.
+
+Both light and dark projects cover upload and replacement, drag-and-drop ordering,
+captions, resizing, selection, menus and hover colors, filename mentions,
+fullscreen/browser previews, password challenges, AI actions, permission changes,
+upload limits, and persistence. CORS fallback tests verify request counts, retained
+original URLs, password retries without refetching, and invalid-file handling.
+Replacing an in-flight source verifies cancellation before accepting the new PDF.
+
+PDF files, uploads, and AI responses are controlled fixtures. These tests exercise
+the real browser UI and parsing, but do not validate Cloud storage or a live public
+host. Server-side proxy policy and streaming have separate unit tests under
+`api/_lib/__tests__`.
+
+CI runs the two theme projects concurrently and retains screenshots and failure
+traces in `pdf-browser-results`. Its job timeout includes browser installation
+and artifact upload as well as test execution.
+
+## Drive and Calendar
 
 Run from the web repository; no running Cloud, Google credentials, or shared test account is required:
 
@@ -36,6 +67,19 @@ with `new URL(request.url()).pathname`, and inspect meaningful query values thro
 instead of depending on parameter order. Route globs ending at an endpoint need an optional query
 suffix, for example `**/api/integrations/connect/google-drive{,?**}`. Keep method, body, request-count,
 and origin assertions intact.
+
+## Editor caret
+
+`editor-caret.spec.ts` runs the document editor from the code-block fixture in Chromium, Firefox and WebKit, in the same job. It covers caret placement, which differs by browser:
+
+- Text typed after pressing ArrowDown on an empty line, or after clicking below it, is saved in the document.
+- The AI writer preview is shown over an empty line but cannot take the caret, and Keep saves its answer.
+
+Firefox moves the caret from an empty line into any editable element that isn't part of the document inside that line's block. Slate cannot map input there, so the browser inserts typed text natively: it appears over the placeholder and is never saved. Chromium and WebKit keep the caret in the line, so only the Firefox project shows this failure.
+
+```sh
+pnpm test:e2e:integrations playwright/e2e/integrations/editor-caret.spec.ts --project=firefox
+```
 
 ## Callback fixture provenance
 

@@ -1,22 +1,19 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- Yjs values read inside page.evaluate are untyped. */
 import { expect, type Page, test } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import {
   EMPLOYEE_FIELDS,
   employeeRecords,
   type EmployeesCellDef,
-  expectEmployeesOnServer,
   loadEmployeesFixture,
-  seedEmployeesDatabase,
+  openSeededEmployeesDatabase,
+  resetEmployeesDatabaseSettings,
+  type SeededEmployeesDatabase,
 } from '../../support/employees-database';
-import { loginAndCreateGrid } from '../../support/field-type-helpers';
 import { deleteFilter } from '../../support/filter-test-helpers';
 import { closeMenus, expectFormulaSource, readGridFieldsDirect, typeFormula } from '../../support/formula-test-helpers';
 import { FieldType } from '../../support/selectors';
-import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 
@@ -24,90 +21,15 @@ const { Given, When, Then } = createBdd();
 // Seeded database, shared by the scenarios of one worker
 // ---------------------------------------------------------------------------
 
-interface SeededDatabase {
-  apiUrl: string;
-  baseUrl: string;
-  email: string;
-  url: string;
-  /** Row ids in fixture order. */
-  rowIds: string[];
-}
-
 /** Every column is mounted at this width, so all of them are read from the same rows. */
 const WIDE_VIEWPORT = { width: 7200, height: 1000 };
 /** Rows whose cells a scenario may edit; restored before every scenario. */
 const RESTORED_ROWS = 3;
 
-let seeded: SeededDatabase | undefined;
-
-function rowLimit(): number | undefined {
-  const limit = Number(process.env.EMPLOYEES_ROW_LIMIT);
-
-  return Number.isFinite(limit) && limit > 0 ? limit : undefined;
-}
-
-function readCachedDatabase(): SeededDatabase | undefined {
-  const file = process.env.LARGE_DATABASE_CACHE;
-
-  if (!file || !existsSync(file)) return undefined;
-  const cached = JSON.parse(readFileSync(file, 'utf8')) as SeededDatabase;
-  const expectedRows = rowLimit() ?? loadEmployeesFixture().rows.length;
-
-  if (cached.apiUrl !== TestConfig.apiUrl || cached.baseUrl !== baseUrl() || cached.rowIds.length !== expectedRows) {
-    return undefined;
-  }
-
-  return cached;
-}
-
-function baseUrl(): string {
-  return process.env.BASE_URL || 'http://localhost:3000';
-}
-
-async function openSeededDatabase(page: Page, database: SeededDatabase) {
-  await signInAndWaitForApp(page, page.request, database.email);
-  await page.goto(database.url);
-  await page.waitForFunction(() => Boolean((window as any).__TEST_DATABASE_CONTEXT__), null, { timeout: 120000 });
-  await expect(page.getByTestId('database-grid')).toBeVisible({ timeout: 120000 });
-}
-
-/** Removes the properties, filters, sorts and calculations a scenario may have added. */
-async function resetDatabaseSettings(page: Page) {
-  await page.evaluate((fieldIds) => {
-    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
-    const doc = ctx.databaseDoc;
-    const database = doc.getMap('data').get('database');
-    const fields = database.get('fields');
-    const keep = new Set(fieldIds);
-
-    doc.transact(() => {
-      Array.from(fields.keys() as Iterable<string>)
-        .filter((id) => !keep.has(id))
-        .forEach((id) => fields.delete(id));
-      database.get('views').forEach((view: any) => {
-        const orders = view.get('field_orders');
-
-        for (let index = orders.length - 1; index >= 0; index -= 1) {
-          if (!keep.has(orders.get(index).id)) orders.delete(index, 1);
-        }
-
-        const settings = view.get('field_settings');
-
-        Array.from((settings?.keys() ?? []) as Iterable<string>)
-          .filter((id) => !keep.has(id))
-          .forEach((id) => settings.delete(id));
-        ['filters', 'sorts', 'calculations'].forEach((key) => {
-          const list = view.get(key);
-
-          if (list?.length) list.delete(0, list.length);
-        });
-      });
-    });
-  }, loadEmployeesFixture().fields.map((field) => field.id));
-}
+let seeded: SeededEmployeesDatabase | undefined;
 
 /** Puts back the fixture cells of the first rows, which scenarios may edit. */
-async function restoreEditedRows(page: Page, database: SeededDatabase) {
+async function restoreEditedRows(page: Page, database: SeededEmployeesDatabase) {
   const fixture = loadEmployeesFixture();
   const restored = database.rowIds.slice(0, RESTORED_ROWS).map((rowId, index) => ({
     rowId,
@@ -143,24 +65,8 @@ Given('the 5000 employees database is open', async ({ page, request }) => {
   // Seeding and whole-grid checks take minutes.
   test.setTimeout(Math.max(test.info().timeout, 45 * 60 * 1000));
   await page.setViewportSize(WIDE_VIEWPORT);
-  seeded ??= readCachedDatabase();
-
-  if (seeded) {
-    await openSeededDatabase(page, seeded);
-  } else {
-    const email = generateRandomEmail();
-
-    await loginAndCreateGrid(page, request, email);
-    const rowIds = await seedEmployeesDatabase(page, { rowLimit: rowLimit() });
-
-    await expectEmployeesOnServer(page, rowIds);
-    seeded = { apiUrl: TestConfig.apiUrl, baseUrl: baseUrl(), email, url: page.url(), rowIds };
-    if (process.env.LARGE_DATABASE_CACHE) {
-      writeFileSync(process.env.LARGE_DATABASE_CACHE, JSON.stringify(seeded));
-    }
-  }
-
-  await resetDatabaseSettings(page);
+  seeded = await openSeededEmployeesDatabase(page, request);
+  await resetEmployeesDatabaseSettings(page);
   await expect(page.getByTestId('database-grid')).toHaveAttribute('data-row-count', String(seeded.rowIds.length), {
     timeout: 120000,
   });

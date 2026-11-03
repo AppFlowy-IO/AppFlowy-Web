@@ -43,6 +43,23 @@ export function isCollabObjectPermissionForTarget(
 }
 
 /**
+ * Whether a fresh answer repeats the capabilities already held. A background
+ * re-probe usually confirms what is shown; keeping the held object then spares
+ * every permission consumer a render.
+ */
+export function isSameCollabObjectPermission(
+  held: CollabObjectPermission | undefined,
+  next: CollabObjectPermission
+): boolean {
+  if (held === next) return true;
+  if (!held) return false;
+
+  const keys = Object.keys(next) as Array<keyof CollabObjectPermission>;
+
+  return keys.length === Object.keys(held).length && keys.every((key) => held[key] === next[key]);
+}
+
+/**
  * Resolve the server/cache identity represented by a routed folder view.
  *
  * Database routes use a folder/database-view id for navigation, while their

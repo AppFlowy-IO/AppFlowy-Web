@@ -53,10 +53,10 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   }, [selectedItem, showBilling]);
 
   useEffect(() => {
-    const item = search.get('setting') as SettingMenuItem | null;
+    const item = search.get('setting');
 
     if (item) {
-      setSelectedItem(item);
+      setSelectedItem(Object.values(SettingMenuItem).find((value) => value === item) ?? SettingMenuItem.ACCOUNT);
       onRequestOpen?.();
       setSearch((prev) => {
         prev.delete('setting');

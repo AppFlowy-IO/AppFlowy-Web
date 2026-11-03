@@ -1,0 +1,38 @@
+{
+  "locale": "cs-CZ",
+  "terms": {
+    "dashboard": "Řídicí panel",
+    "widget": "Widget",
+    "chart": "Graf",
+    "view": "Pohled",
+    "row": "Řádek",
+    "property": "Vlastnost",
+    "database": "Databáze",
+    "workspace": "Pracovní prostor",
+    "done": "Hotovo",
+    "edit": "Upravit",
+    "delete": "Smazat",
+    "duplicate": "Duplikovat",
+    "save": "Uložit",
+    "cancel": "Zrušit",
+    "close": "Zavřít",
+    "back": "Zpět",
+    "remove": "Odebrat",
+    "filter": "Filtr",
+    "sort": "Řadit",
+    "search": "Hledat",
+    "settings": "Nastavení",
+    "undo": "Zpět",
+    "redo": "Znovu",
+    "group": "Skupina",
+    "source": "Zdroj",
+    "checked": "Zaškrtnuto",
+    "unchecked": "Nezaškrtnuto"
+  },
+  "untranslated_ok": [
+    "chart.legend.page",
+    "chart.settings.data",
+    "chart.sort.labelAsc",
+    "chart.sort.labelDesc"
+  ]
+}

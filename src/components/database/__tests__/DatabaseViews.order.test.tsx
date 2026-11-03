@@ -614,6 +614,54 @@ describe('DatabaseViews order', () => {
     }
   });
 
+  it('shows both atomically created Form and Responses tabs after creation settles', async () => {
+    const doc = createDatabaseDoc('db-created-form-responses', [
+      { viewId: 'grid', name: 'Grid', createdAt: '100' },
+    ]);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: 'grid',
+      activeViewId: 'grid',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+    };
+    const rendered = render(
+      <DatabaseContext.Provider value={contextValue}>
+        <DatabaseViews activeViewId='grid' databasePageId='grid' onChangeView={jest.fn()} />
+      </DatabaseContext.Provider>
+    );
+
+    await waitFor(() => expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(['grid']));
+    act(() => global.__databaseViewsOrderTestState?.latestTabsProps?.onBeforeViewAddedToDatabase?.());
+    act(() => {
+      const views = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);
+
+      doc.transact(() => {
+        for (const [id, layout] of [['form', DatabaseViewLayout.Form], ['responses', DatabaseViewLayout.Grid]] as const) {
+          const view = new Y.Map();
+
+          view.set(YjsDatabaseKey.id, id);
+          view.set(YjsDatabaseKey.name, id);
+          view.set(YjsDatabaseKey.layout, layout);
+          view.set(YjsDatabaseKey.created_at, '200');
+          views?.set(id, view);
+        }
+      }, 'remote');
+    });
+    act(() => {
+      const tabs = global.__databaseViewsOrderTestState?.latestTabsProps;
+
+      tabs?.onViewAddedToDatabase?.('form');
+      tabs?.onAfterViewAddedToDatabase?.();
+    });
+
+    await waitFor(() => expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1))
+      .toEqual(['grid', 'form', 'responses']));
+    rendered.unmount();
+    doc.destroy();
+  });
+
   it('switches from the Form tab to the linked Responses Grid', async () => {
     const visibleViewIds = ['form', 'responses'];
     const doc = createDatabaseDoc('db-form-responses', [

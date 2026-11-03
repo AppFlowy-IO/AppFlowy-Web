@@ -2,7 +2,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, User, YDoc } from '@/application/types';
-import { collab, messages } from '@/proto/messages';
+import { collab } from '@/proto/messages';
 
 const UUID_REGEX =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
@@ -31,10 +31,12 @@ export interface RegisterSyncContext {
   doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
-  emit?: (reply: messages.IMessage) => void;
+  emit?: SyncContext['emit'];
 }
 
 export interface ApplyCollabMessageOptions {
+  /** Supplemental cross-tab server coverage; do not replay the upload response. */
+  confirmManifestOnly?: boolean;
   allowVersionReset?: boolean;
   user?: User;
   isCancelled?: () => boolean;

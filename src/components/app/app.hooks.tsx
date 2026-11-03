@@ -48,6 +48,11 @@ export function useUserWorkspaceInfo() {
   return context.userWorkspaceInfo;
 }
 
+/** The workspace info, or undefined outside an AppProvider. */
+export function useUserWorkspaceInfoOptional() {
+  return useContext(AuthInternalContext)?.userWorkspaceInfo;
+}
+
 /**
  * Returns a function that force-refreshes the workspace list. Call after
  * mutations that change it (rename/delete/leave, membership changes).

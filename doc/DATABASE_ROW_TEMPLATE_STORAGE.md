@@ -84,6 +84,21 @@ the primary default cell before initializing its editable source row. The editor
 saves that cell as the template name, so leaving the original title there would
 rename the copy on an unrelated property edit. Other default cells remain unchanged.
 
+## Legacy Database view identities
+
+Before ordinary or template row creation, Web checks the independently read parent
+Database for views written by older Web clients without their internal `id`.
+[`legacy-view-ids.ts`](../src/application/database-yjs/creation/legacy-view-ids.ts)
+fills an absent ID from its UUID map key only when the view has the expected parent,
+name, numeric layout, and row/field order arrays. It preserves all existing fields
+and never replaces an existing ID or changes `metas.iid`.
+
+The repair uses version- and restore-fenced Database full-sync, followed by a fresh
+read proving the repaired history reached the server before the row request.
+Healthy databases do not enter this write path. Uploading a DatabaseRow snapshot
+cannot repair its parent Database's view schema. Server-owned view creation already
+includes these IDs; this compatibility path repairs older stored views.
+
 ## Cross-client fixtures
 
 `flowy-database2/tests/fixtures/row_template_interop.json` is mirrored in Web's

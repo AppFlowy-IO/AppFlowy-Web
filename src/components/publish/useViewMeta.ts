@@ -79,6 +79,7 @@ export function useViewMeta () {
   const name = viewMeta?.name;
 
   return {
+    extra,
     icon,
     cover,
     style,

@@ -49,3 +49,13 @@ Word's merged-cell warning is asserted. Colour, highlight, underline, alignment,
 geometry and PDF table emphasis flatten; their text must survive. Neither format is expected
 to preserve print pagination or running footers. Source PDF/Word navigation is also validated
 by server tests; unrelated file-local return links remain plain text after importing.
+
+`@html-document-import` imports `saved_web_page.html` through the real HTML picker. The test fills
+its script placeholder with 260 KB of synthetic analytics data and embeds the reference PNG.
+It checks completion, title, article text, formatting, image loading, script exclusion and
+sidebar discovery after a reload. The fixture contains no publisher content or tracking IDs.
+Run it with `pnpm exec playwright test -c playwright.bdd.config.ts --grep @html-document-import --workers=1`
+after generating the BDD specs. The existing document-import account and page-retention variables
+apply. HTML must use the ordinary page APIs without creating or polling a document import task.
+Set `DOCUMENT_IMPORT_WORKSPACE_ID` to target a specific existing workspace for this HTML scenario.
+The test uses real page saves and image uploads; it requires no worker or database access.

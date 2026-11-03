@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import * as Y from 'yjs';
 
+import { copyDatabaseViewConfiguration } from '@/application/database-yjs/database-view-doc-ops';
 import { atomicRead } from '@/application/atomic-creation';
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
 import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
@@ -251,4 +252,31 @@ describe('server-owned database view duplication', () => {
     expect(f.ensureVisible).not.toHaveBeenCalled();
     expect([...f.views.keys()]).toEqual(['source-view-id']);
   });
+
+  it('copies how the view opens records (open_pages_in, WP13 §3.8), and clears a stale one', () => {
+    const doc = new Y.Doc();
+    const views = doc.getMap<YDatabaseView>('views');
+    const source = createView('source-view-id', 'Grid');
+    const target = createView('target-view-id', 'Grid (Copy)');
+
+    views.set('source-view-id', source);
+    views.set('target-view-id', target);
+    source.set(YjsDatabaseKey.open_pages_in, 'full_page');
+
+    copyDatabaseViewConfiguration(source, target);
+    expect(target.get(YjsDatabaseKey.open_pages_in)).toBe('full_page');
+
+    source.delete(YjsDatabaseKey.open_pages_in);
+    copyDatabaseViewConfiguration(source, target);
+    expect(target.get(YjsDatabaseKey.open_pages_in)).toBeUndefined();
+  });
 });
+
+function createView(id: string, name: string): YDatabaseView {
+  const view = new Y.Map() as YDatabaseView;
+
+  view.set(YjsDatabaseKey.id, id);
+  view.set(YjsDatabaseKey.name, name);
+  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Gallery);
+  return view;
+}

@@ -137,7 +137,7 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                aria-label={t('grid.row.newRow', 'New row in group')}
+                aria-label={t('grid.row.newRow', 'New page')}
                 className='flex h-7 w-7 items-center justify-center rounded-300 opacity-0 hover:bg-fill-content-hover focus-visible:opacity-100 group-focus-within/grid-group-header:opacity-100 group-hover/grid-group-header:opacity-100'
                 data-testid='grid-group-new-row'
                 disabled={pending}

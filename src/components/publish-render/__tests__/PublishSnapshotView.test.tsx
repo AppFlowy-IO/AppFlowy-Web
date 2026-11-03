@@ -14,6 +14,7 @@ import StaticEditor from '@/components/editor/StaticEditor';
 import type { DatabaseProps } from '@/components/publish/DatabaseView';
 import DatabaseView from '@/components/publish/DatabaseView';
 import PublishSnapshotView from '@/components/publish-render/PublishSnapshotView';
+import ViewMetaPreview from '@/components/view-meta/ViewMetaPreview';
 
 jest.mock('@/components/editor/StaticEditor', () => {
   const React = jest.requireActual('react') as typeof import('react');
@@ -57,6 +58,21 @@ const mockDatabaseView = DatabaseView as unknown as jest.Mock;
 describe('PublishSnapshotView', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it.each([
+    [{ mode: 'full' }, undefined, ''],
+    [{ mode: 'fixed', max_width: 1200 }, 1200, '1200px'],
+  ])('renders published width %p on both the title and body', (width, maxWidth, styleWidth) => {
+    const snapshot = normalizePublishedPageSnapshot(publishedDocumentPayload);
+
+    if (snapshot.kind !== 'document') throw new Error('Expected document fixture');
+    snapshot.view.extra = JSON.stringify({ document_width: width });
+    render(<MemoryRouter><PublishSnapshotView snapshot={snapshot} /></MemoryRouter>);
+
+    expect((ViewMetaPreview as jest.Mock).mock.calls[0][0].maxWidth).toBe(maxWidth);
+    expect(mockStaticEditor.mock.calls[0][0].fullWidth).toBe(true);
+    expect(screen.getByTestId('static-editor').parentElement?.style.maxWidth).toBe(styleWidth);
   });
 
   it('renders a normalized document JSON snapshot through the shared static editor UI', () => {

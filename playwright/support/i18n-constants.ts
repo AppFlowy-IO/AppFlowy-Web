@@ -30,6 +30,8 @@ export const SlashMenuNames = {
   linkedCalendar: 'Linked Calendar',
   timeline: 'Timeline',
   linkedTimeline: 'Linked Timeline',
+  dashboard: 'Dashboard',
+  linkedDashboard: 'Linked Dashboard',
   quote: 'Quote',
   divider: 'Divider',
   table: 'Table',

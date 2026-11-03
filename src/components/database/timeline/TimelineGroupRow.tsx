@@ -66,7 +66,7 @@ export const TimelineGroupFooter = memo(({ group, fieldId, sidebarWidth, showSid
         )}
         style={{ width: sidebarWidth }}
         data-testid={`timeline-group-new-row-${group.id}`}
-        aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
+        aria-label={t('grid.row.newRow', { defaultValue: 'New page' })}
         onClick={() => void createRow()}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -76,7 +76,7 @@ export const TimelineGroupFooter = memo(({ group, fieldId, sidebarWidth, showSid
         }}
       >
         <PlusIcon aria-hidden className='h-4 w-4' />
-        {showSidebar ? t('grid.row.newRow', { defaultValue: 'New row' }) : null}
+        {showSidebar ? t('grid.row.newRow', { defaultValue: 'New page' }) : null}
       </div>
       <div className='h-full flex-1 border-b border-border-primary' />
     </div>

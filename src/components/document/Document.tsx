@@ -7,6 +7,7 @@ import {
   useDispatchCursorAwareness,
   useDispatchUserAwareness,
 } from '@/application/awareness';
+import { documentMaxWidth, parseDocumentWidth } from '@/application/document-width';
 import { CollabService } from '@/application/services/domains';
 import { YjsEditor } from '@/application/slate-yjs';
 import { appendFirstEmptyParagraph } from '@/application/slate-yjs/utils/yjs';
@@ -38,6 +39,8 @@ export const Document = (props: DocumentProps) => {
     updatePageName,
   } = props;
   const blockId = search.get('blockId') || undefined;
+  const width = parseDocumentWidth(viewMeta.extra?.document_width);
+  const maxWidth = documentMaxWidth(width);
 
   const awareness = useAppAwareness(viewMeta.viewId);
   const currentUser = useCurrentUser();
@@ -120,22 +123,17 @@ export const Document = (props: DocumentProps) => {
       // Set up cursor synchronization when editor is connected
       if (currentUser && awareness) {
         const deviceId = CollabService.getDeviceId();
-        const colors = generateUserColors(currentUser.name || '');
 
-        const userParams = {
+        const userIdentity = {
           uid: Number(currentUser.uid),
           user_uuid: currentUser.uuid,
           device_id: deviceId,
-          user_name: currentUser.name || 'Anonymous',
-          cursor_color: colors.cursor_color,
-          selection_color: colors.selection_color,
-          user_avatar: userAvatar,
         };
 
-        dispatchCursorAwareness(userParams, editor);
+        dispatchCursorAwareness(userIdentity, editor);
       }
     },
-    [dispatchCursorAwareness, currentUser, awareness, userAvatar]
+    [dispatchCursorAwareness, currentUser, awareness]
   );
 
   const handleEditorConnected = useCallback(
@@ -166,12 +164,12 @@ export const Document = (props: DocumentProps) => {
         updatePageIcon={updatePageIcon}
         updatePageName={updatePageName}
         onEnter={readOnly ? undefined : handleEnter}
-        maxWidth={952}
+        maxWidth={maxWidth}
         uploadFile={uploadFile}
         onFocus={handleBlur}
       />
-      <Suspense fallback={<EditorSkeleton />}>
-        <div className={'relative flex w-full justify-center'}>
+      <Suspense fallback={<EditorSkeleton maxWidth={maxWidth ?? null} />}>
+        <div className={'relative flex w-full justify-center'} style={{ maxWidth: width ? maxWidth : undefined }}>
           <Editor
             viewId={viewMeta.viewId}
             dockableOutline={!isTemplateThumb}
@@ -184,6 +182,7 @@ export const Document = (props: DocumentProps) => {
             awareness={awareness}
             databaseRelations={viewMeta.database_relations}
             {...props}
+            fullWidth={!!width}
             mentionContext={mentionContext}
           />
         </div>

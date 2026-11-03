@@ -258,7 +258,7 @@ test('a template with an owned inline database commits its complete row graph be
     .locator('.MuiDialog-root')
     .filter({ has: template })
     .locator('.MuiDialog-container')
-    .click({ force: true, position: { x: 5, y: 5 } });
+    .click({ position: { x: 5, y: 5 } });
   await expect(template).toBeHidden();
   const finalized = page.waitForResponse(
     async (item) =>

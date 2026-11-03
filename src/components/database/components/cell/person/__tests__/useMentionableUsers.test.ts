@@ -83,6 +83,54 @@ describe('getMentionableUserIndex', () => {
 describe('useMentionableUsersWithAutoFetch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('refreshes from the API while the table holds only single profiles', async () => {
+    // The viewer's own profile is hydrated into the table at workspace load,
+    // before the member list was ever fetched: that is not a member list.
+    const workspaceId = 'partial-workspace';
+    const nathan = person('9007199254740993', 'Nathan');
+    const users = [nathan, person('9007199254740994', 'Eva')];
+    const toArray = jest
+      .fn()
+      .mockResolvedValue([{ ...nathan, workspace_id: workspaceId, user_uuid: nathan.person_id, updated_at: Date.now() }]);
+    const equals = jest.fn(() => ({ delete: jest.fn().mockResolvedValue(undefined), toArray }));
+
+    mockUseCurrentWorkspaceIdOptional.mockReturnValue(workspaceId);
+    mockProfiles.where.mockReturnValue({ equals });
+    mockProfiles.bulkPut.mockResolvedValue(undefined);
+    mockWorkspaceService.getMentionableUsers.mockResolvedValue(users);
+
+    const { result } = renderHook(() => useMentionableUsersWithAutoFetch(true));
+
+    await waitFor(() => {
+      expect(mockWorkspaceService.getMentionableUsers).toHaveBeenCalledTimes(1);
+      expect(result.current.users).toBe(users);
+    });
+    await waitFor(() => {
+      expect(localStorage.getItem(`af_mentionable_users_synced_at:${workspaceId}`)).not.toBeNull();
+    });
+  });
+
+  it('trusts the table while the full list was fetched within the TTL', async () => {
+    const workspaceId = 'synced-workspace';
+    const nathan = person('9007199254740993', 'Nathan');
+    const toArray = jest
+      .fn()
+      .mockResolvedValue([{ ...nathan, workspace_id: workspaceId, user_uuid: nathan.person_id, updated_at: 0 }]);
+    const equals = jest.fn(() => ({ delete: jest.fn().mockResolvedValue(undefined), toArray }));
+
+    localStorage.setItem(`af_mentionable_users_synced_at:${workspaceId}`, String(Date.now()));
+    mockUseCurrentWorkspaceIdOptional.mockReturnValue(workspaceId);
+    mockProfiles.where.mockReturnValue({ equals });
+
+    const { result } = renderHook(() => useMentionableUsersWithAutoFetch(true));
+
+    await waitFor(() => {
+      expect(result.current.users.map((user) => user.name)).toEqual(['Nathan']);
+    });
+    expect(mockWorkspaceService.getMentionableUsers).not.toHaveBeenCalled();
   });
 
   it('shares concurrent disk and API refreshes across consumers', async () => {

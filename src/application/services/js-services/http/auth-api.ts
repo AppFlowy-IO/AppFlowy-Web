@@ -26,6 +26,8 @@ export interface ServerInfo {
   enable_page_history: boolean;
   /** Batch permission reads preserve singleton repair and typed per-item errors. */
   enable_object_permission_batch?: boolean;
+  /** Absent on legacy servers; transport pacing must not wait for unsupported ACKs. */
+  supports_realtime_update_ack?: boolean;
   /** Both flags must be literal true before a compact atomic command is submitted. */
   enable_atomic_creation?: boolean;
   enable_atomic_creation_defaults?: boolean;
@@ -46,6 +48,8 @@ export interface ServerInfo {
   self_hosted?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket fast lane. */
   max_update_bytes?: number;
+  /** Legacy dashboard presentation hint; does not limit database views or collab writes. */
+  max_dashboard_widgets?: number;
   /**
    * Maximum raw Yjs update accepted by the opt-in HTTP slow lane.
    * Older servers omit this field, which keeps the slow lane disabled.

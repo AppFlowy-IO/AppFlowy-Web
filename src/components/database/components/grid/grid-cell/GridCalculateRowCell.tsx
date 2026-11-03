@@ -1,7 +1,16 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Row, useDatabaseView, useFieldCellsByRowsSelector, useReadOnly } from '@/application/database-yjs';
+import {
+  Row,
+  useCalculationFieldType,
+  useDatabaseContext,
+  useDatabaseSearchQuery,
+  useDatabaseView,
+  useFieldCellsByRowsSelector,
+  useReadOnly,
+} from '@/application/database-yjs';
+import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import { useCalculateFieldDispatch, useClearCalculate, useUpdateCalculate } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
@@ -32,8 +41,21 @@ export interface GridCalculateRowCellWithValuesProps {
   ready: boolean;
 }
 
-/** Shared calculation controls for callers that load complete row snapshots. */
+/**
+ * Shared calculation controls for callers that load complete row snapshots.
+ *
+ * Inside a dashboard widget the total is computed here from the widget's rows
+ * (which the viewer's private filters and the global filters narrow) and never
+ * written: the shared `calculation_value` stays the view's own (WP07 P0-5).
+ * The same holds anywhere while a row search is active (WP09 §1.2): searched
+ * rows never leak into the shared value. The calculation type is still shared
+ * view configuration.
+ */
 export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCalculateRowCellWithValuesProps) {
+  const { isDashboardWidget } = useDatabaseContext();
+  const searching = useDatabaseSearchQuery() !== '';
+  const localOnly = Boolean(isDashboardWidget) || searching;
+  const fieldType = useCalculationFieldType(fieldId);
   const databaseView = useDatabaseView();
   const [calculation, setCalculation] = useState<ICalculationCell>();
   const readOnly = useReadOnly();
@@ -77,10 +99,21 @@ export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCa
   }, [calculations, fieldId, handleObserver]);
 
   useEffect(() => {
-    if (readOnly || !ready || !cells) return;
+    if (localOnly || readOnly || !ready || !cells) return;
 
     calculate(cells);
-  }, [cells, readOnly, ready, calculate, calculation?.type]);
+  }, [cells, localOnly, readOnly, ready, calculate, calculation?.type]);
+
+  const calculationType = calculation?.type;
+  const localValue = useMemo(() => {
+    if (!localOnly || !ready || !cells || calculationType === undefined) return null;
+    return calculateFieldValue({ fieldType, calculationType, cellValues: Array.from(cells.values()) });
+  }, [calculationType, cells, fieldType, localOnly, ready]);
+  const shownCalculation = useMemo(
+    () =>
+      calculation && localOnly ? { ...calculation, value: localValue === null ? '' : String(localValue) } : calculation,
+    [calculation, localOnly, localValue]
+  );
 
   const [isHovered, setHovered] = useState(false);
 
@@ -115,7 +148,7 @@ export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCa
             <DropdownIcon className={'h-5 w-5'} />
           </div>
         ) : (
-          <CalculationCell cell={calculation} />
+          <CalculationCell cell={shownCalculation} />
         )}
         {!readOnly && (
           <CalcationMenu

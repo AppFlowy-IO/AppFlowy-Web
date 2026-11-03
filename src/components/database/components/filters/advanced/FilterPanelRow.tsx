@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, Filter, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { FieldType, Filter, useFieldSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import { predicateFieldTypeForResult } from '@/application/database-yjs/formula/filter';
 import { useFormulaResultType } from '@/application/database-yjs/selector';
@@ -42,7 +42,7 @@ const selectBoxClass =
 
 export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPanelRowProps) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const removeFilter = useRemoveAdvancedFilterAndRebuild();
   const updateFilterValue = useUpdateAdvancedFilter();
   const updateFilterAndRebuild = useUpdateAdvancedFilterAndRebuild();

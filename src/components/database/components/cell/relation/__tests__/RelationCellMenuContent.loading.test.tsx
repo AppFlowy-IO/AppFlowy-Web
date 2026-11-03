@@ -292,6 +292,49 @@ describe('RelationCellMenuContent loading states', () => {
     expect(screen.getByText('Database B row')).toBeTruthy();
   });
 
+  it('preserves the query when catalog metadata resolves another view of the same database', async () => {
+    mockDatabaseContext.loadView.mockImplementation(async (viewId: string) =>
+      createTargetDoc([], viewId, viewId === 'another-view' ? 'another-database' : DATABASE_ID)
+    );
+    const callbacks = {
+      onAddRelationRowId: jest.fn(),
+      onRemoveRelationRowId: jest.fn(),
+    };
+    const rendered = render(
+      <RelationCellMenuContent
+        {...callbacks}
+        relatedDatabaseId={DATABASE_ID}
+        selectedView={{ view_id: VIEW_ID, name: 'Tasks' } as View}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('searchLabel'), { target: { value: 'Mango' } });
+    await screen.findByTestId('relation-create-and-link');
+
+    rendered.rerender(
+      <RelationCellMenuContent
+        {...callbacks}
+        relatedDatabaseId={DATABASE_ID}
+        selectedView={{ view_id: 'container-view', name: 'Tasks' } as View}
+      />
+    );
+
+    expect(screen.getByPlaceholderText<HTMLInputElement>('searchLabel').value).toBe('Mango');
+    await screen.findByTestId('relation-create-and-link');
+
+    rendered.rerender(
+      <RelationCellMenuContent
+        {...callbacks}
+        relatedDatabaseId='another-database'
+        selectedView={{ view_id: 'another-view', name: 'Other tasks' } as View}
+      />
+    );
+
+    await screen.findByText(NO_RESULT);
+    expect(screen.getByPlaceholderText<HTMLInputElement>('searchLabel').value).toBe('');
+    expect(screen.queryByTestId('relation-create-and-link')).toBeNull();
+  });
+
   it('settles an unreadable row on the empty-name wording instead of pulsing forever', async () => {
     mockDatabaseContext.loadView.mockResolvedValue(createTargetDoc(['row-1', 'row-2']));
     mockDatabaseContext.createRow.mockImplementation((rowKey: string) =>

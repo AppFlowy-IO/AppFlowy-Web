@@ -7,6 +7,7 @@ import { validate as isUuid } from 'uuid';
 import { ServerRenderedFallback } from '@/components/_shared/ServerRenderedFallback';
 
 const FormPage = lazy(() => import('@/pages/FormPage'));
+const PDFPreviewPage = lazy(() => import('@/pages/PDFPreviewPage'));
 const MainAppRoutes = lazy(() => import('@/components/main/MainAppRoutes'));
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
       <ErrorBoundary FallbackComponent={RouteError}>
         <Suspense fallback={<ServerRenderedFallback label='Loading page' />}>
           <Routes>
+            <Route path='/app/pdf-preview' element={<PDFPreviewPage />} />
             <Route path='/form/:token' element={<FormOrPublishedRoute />} />
             <Route path='*' element={<MainAppRoutes />} />
           </Routes>

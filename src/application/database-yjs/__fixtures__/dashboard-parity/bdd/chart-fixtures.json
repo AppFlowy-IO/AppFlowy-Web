@@ -1,0 +1,57 @@
+
+{
+  "fixture": "bdd/chart-fixtures",
+  "version": 1,
+  "deals": {
+    "databases": [
+      {
+        "name": "Deals",
+        "properties": [
+          { "name": "Stage", "type": "SingleSelect", "options": [["Lead","Blue"],["Proposal","Yellow"],["Won","Green"],["Lost","Pink"]] },
+          { "name": "Owner", "type": "SingleSelect", "options": [["Alice","Purple"],["Bob","Orange"],["Carol","Aqua"]] },
+          { "name": "Amount", "type": "Number", "numberFormat": "USD" },
+          { "name": "Margin", "type": "Number", "numberFormat": "Num" },
+          { "name": "Closed", "type": "DateTime", "dateFormat": "Friendly" },
+          { "name": "Region", "type": "SingleSelect", "options": [["North America East","Blue"],["North America West","Blue"],["Central America","Green"],["South America","Green"],["Western Europe","Purple"],["Northern Europe","Purple"],["Eastern Europe","Purple"],["Middle East","Orange"],["North Africa","Yellow"],["Sub-Saharan Africa","Yellow"],["South Asia","Pink"],["Southeast Asia Pacific","Pink"]] }
+        ],
+        "rows": [
+          ["Atlas",   "Won",      "Alice", 48500,   2.5,  "2026-01-15", "North America East"],
+          ["Beacon",  "Won",      "Bob",   1000000, 3,    "2026-01-28", "North America West"],
+          ["Cobalt",  "Won",      "Bob",   300000,  1,    "2026-02-03", "Central America"],
+          ["Dune",    "Won",      "Carol", 0,       0,    "2026-02-11", "South America"],
+          ["Ember",   "Lost",     "Carol", 690000,  -500, "2026-02-14", "Western Europe"],
+          ["Fjord",   "Lost",     "Carol", 0,       -600, "2026-02-19", "Northern Europe"],
+          ["Grove",   "Lost",     "Alice", 0,       -400, "2026-02-25", "Eastern Europe"],
+          ["Harbor",  "Lead",     "Bob",   0,       300,  "2026-03-02", "Middle East"],
+          ["Iris",    "Lead",     "Carol", 0,       250,  "2026-03-09", "North Africa"],
+          ["Jade",    "Lead",     "Alice", 0,       250,  "2026-03-20", "Sub-Saharan Africa"],
+          ["Kite",    "Proposal", "Bob",   0,       700,  "2026-04-06", "South Asia"],
+          ["Lumen",   "Proposal", "Carol", 0,       500,  "2026-04-21", null]
+        ],
+        "rowColumns": ["Name", "Stage", "Owner", "Amount", "Margin", "Closed", "Region"],
+        "views": [
+          { "name": "Amount by owner", "layout": "Chart", "chart": { "chart_type": 0, "x_field": "Owner",  "aggregation_type": 1, "y_field": "Amount" } },
+          { "name": "Amount share",    "layout": "Chart", "chart": { "chart_type": 3, "x_field": "Owner",  "aggregation_type": 1, "y_field": "Amount" } },
+          { "name": "Deals by stage",  "layout": "Chart", "chart": { "chart_type": 3, "x_field": "Stage",  "aggregation_type": 0 } },
+          { "name": "Margin by stage", "layout": "Chart", "chart": { "chart_type": 0, "x_field": "Stage",  "aggregation_type": 1, "y_field": "Margin" } },
+          { "name": "Margin bars",     "layout": "Chart", "chart": { "chart_type": 2, "x_field": "Stage",  "aggregation_type": 1, "y_field": "Margin" } },
+          { "name": "Monthly deals",   "layout": "Chart", "chart": { "chart_type": 1, "x_field": "Closed", "aggregation_type": 0, "date_condition": 3 } },
+          { "name": "Deals by region", "layout": "Chart", "chart": { "chart_type": 0, "x_field": "Region", "aggregation_type": 0 } },
+          { "name": "Region share",    "layout": "Chart", "chart": { "chart_type": 3, "x_field": "Region", "aggregation_type": 0 } }
+        ]
+      },
+      {
+        "name": "Archive",
+        "properties": [
+          { "name": "Stage", "type": "SingleSelect", "options": [["Lead","Blue"],["Won","Green"]] },
+          { "name": "Amount", "type": "Number", "numberFormat": "USD" }
+        ],
+        "rows": [],
+        "views": [
+          { "name": "Archived by stage", "layout": "Chart", "chart": { "chart_type": 3, "x_field": "Stage", "aggregation_type": 0 } },
+          { "name": "Archived amounts",  "layout": "Chart", "chart": { "chart_type": 0, "x_field": "Stage", "aggregation_type": 1, "y_field": "Amount" } }
+        ]
+      }
+    ]
+  }
+}

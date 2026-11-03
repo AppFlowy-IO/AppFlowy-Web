@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import {
   FieldType,
   isAIFieldType,
+  useDatabaseContextOptional,
   useFieldsSelector,
   useNavigateToRow,
   usePrimaryFieldId,
@@ -13,14 +14,16 @@ import {
 import { Cell } from '@/application/database-yjs/cell.type';
 import { useReadOnly } from '@/application/database-yjs/context';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
+import { ReactComponent as CenterPeekIcon } from '@/assets/icons/center_peek.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
-import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
+import { ReactComponent as SidePeekIcon } from '@/assets/icons/side_peek.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { PlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
 import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
+import { useRowPeekCanShow } from '@/components/database/row-peek/RowPeekLayout';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Log } from '@/utils/log';
@@ -50,6 +53,10 @@ function EventPopoverContent({
   const duplicateRowDispatch = useDuplicateRowDispatch();
   const navigateToRow = useNavigateToRow();
   const { t } = useTranslation();
+  const context = useDatabaseContextOptional();
+  const canShowSidePeek = useRowPeekCanShow();
+  const side = canShowSidePeek && !context?.openPageModalViewId;
+  const openPeekLabel = t(side ? 'grid.rowPage.openAsSidePeekPanel' : 'grid.rowPage.openAsCenterPeekPanel');
   const [activePropertyId, setActivePropertyId] = useState<string | null>(null);
 
   const fields = useFieldsSelector();
@@ -105,18 +112,10 @@ function EventPopoverContent({
       data-testid={isDraft ? 'calendar-event-draft-editor' : undefined}
       className={'appflowy-scroller max-h-[560px] w-[360px] overflow-y-auto px-3 py-2'}
     >
+      {/* Desktop's `EventEditorControls` order: delete, open as side peek,
+          duplicate. Close is web-only; desktop dismisses the popover by
+          clicking outside it. */}
       <div className={'sticky top-0 flex w-full items-center justify-end gap-1'}>
-        {/* Duplicate button */}
-        {!readOnly && !isDraft && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant='ghost' size='icon' onClick={handleDuplicate}>
-                <DuplicateIcon className='h-5 w-5' />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side='top'>{t('calendar.duplicateEvent')}</TooltipContent>
-          </Tooltip>
-        )}
         {/* Delete button */}
         {!readOnly && (
           <Tooltip>
@@ -131,16 +130,19 @@ function EventPopoverContent({
                 <DeleteIcon className='h-5 w-5' />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side='top'>{t('calendar.deleteEvent')}</TooltipContent>
+            <TooltipContent side='top'>{t('button.delete')}</TooltipContent>
           </Tooltip>
         )}
 
-        {/* Open page button */}
+        {/* Open the row; the database opens calendar rows in side peek and
+            falls back to center peek when side peek is unavailable. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              data-testid='calendar-event-open-peek'
               size={'icon'}
               variant={'ghost'}
+              aria-label={openPeekLabel}
               onClick={(e) => {
                 e.stopPropagation();
                 if (onExpand) {
@@ -152,11 +154,27 @@ function EventPopoverContent({
                 navigateToRow?.(rowId);
               }}
             >
-              <ExpandMoreIcon className={'h-5 w-5'} />
+              {side ? (
+                <SidePeekIcon aria-hidden className='h-5 w-5' />
+              ) : (
+                <CenterPeekIcon aria-hidden className='h-5 w-5' />
+              )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent side='top'>{t('tooltip.openEvent')}</TooltipContent>
+          <TooltipContent side='top'>{openPeekLabel}</TooltipContent>
         </Tooltip>
+
+        {/* Duplicate button */}
+        {!readOnly && !isDraft && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button data-testid='calendar-event-duplicate' variant='ghost' size='icon' onClick={handleDuplicate}>
+                <DuplicateIcon className='h-5 w-5' />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side='top'>{t('calendar.duplicateEvent')}</TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Close button */}
         <Tooltip>
@@ -172,25 +190,25 @@ function EventPopoverContent({
           editor's own overlays (mention panel, link editor); Text
           properties here edit as plain text. */}
       <PlainTextCellEditing.Provider value>
-      <div className={'event-properties flex w-full flex-1 flex-col overflow-y-auto px-0.5'}>
-        {primaryFieldId && (
-          <EventTitle onSubmit={onSubmit} onCloseEvent={onCloseEvent} rowId={rowId} fieldId={primaryFieldId} />
-        )}
-        {filteredFields.map((field) => {
-          return (
-            <RowPropertyPrimitive
-              isActive={activePropertyId === field.fieldId}
-              setActivePropertyId={setActivePropertyId}
-              fieldId={field.fieldId}
-              rowId={rowId}
-              key={field.fieldId}
-              onCellUpdated={handleCellUpdated}
-              showPropertyName={false}
-              disableFieldEditing={isDraft}
-            />
-          );
-        })}
-      </div>
+        <div className={'event-properties flex w-full flex-1 flex-col overflow-y-auto px-0.5'}>
+          {primaryFieldId && (
+            <EventTitle onSubmit={onSubmit} onCloseEvent={onCloseEvent} rowId={rowId} fieldId={primaryFieldId} />
+          )}
+          {filteredFields.map((field) => {
+            return (
+              <RowPropertyPrimitive
+                isActive={activePropertyId === field.fieldId}
+                setActivePropertyId={setActivePropertyId}
+                fieldId={field.fieldId}
+                rowId={rowId}
+                key={field.fieldId}
+                onCellUpdated={handleCellUpdated}
+                showPropertyName={false}
+                disableFieldEditing={isDraft}
+              />
+            );
+          })}
+        </div>
       </PlainTextCellEditing.Provider>
     </div>
   );

@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["../src/**/*.d.ts", "../playwright.interop.config.ts", "interop/**/*.ts"],
+  "references": []
+}

@@ -1,6 +1,9 @@
 import React, { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ViewLayout } from '@/application/types';
+import type { ExportTarget } from '@/components/app/share/ExportPanel';
+import type { SavedDeck, DeckAction } from '@/components/presentation/types';
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
 import { ReactComponent as Templates } from '@/assets/icons/template.svg';
 import { useAppView } from '@/components/app/app.hooks';
@@ -16,7 +19,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // Lazy: only loaded when the user opens the Export tab.
 const ExportPanel = lazy(() => import('@/components/app/share/ExportPanel'));
 
+const AISlidesSharePanel = lazy(() => import('@/components/presentation/AISlidesSharePanel'));
+
 enum TabKey {
+  AI_SLIDES = 'ai_slides',
   SHARE = 'share',
   PUBLISH = 'publish',
   EXPORT_AS = 'export_as',
@@ -28,7 +34,12 @@ function ShareTabs({
   viewId,
   publishViewId = viewId,
   hidePublish = false,
+  presentationViewId,
+  presentationTitle,
+  presentationIsRow,
+  onPresentationRequest,
   hideExport = false,
+  exportTarget,
   shareUrl,
   onClose,
   onOpenPublishManage,
@@ -37,7 +48,12 @@ function ShareTabs({
   viewId: string;
   publishViewId?: string;
   hidePublish?: boolean;
+  presentationViewId?: string;
+  presentationTitle?: string;
+  presentationIsRow?: boolean;
+  onPresentationRequest?: (deck?: SavedDeck, action?: DeckAction) => void;
   hideExport?: boolean;
+  exportTarget?: ExportTarget;
   shareUrl?: string;
   onClose: () => void;
   onOpenPublishManage?: () => void;
@@ -90,7 +106,14 @@ function ShareTabs({
         label: t('shareAction.exportAsTab'),
         Panel: ExportPanel,
       },
-      !hidePublish && currentUser?.email?.endsWith('appflowy.io') &&
+      onPresentationRequest &&
+        (presentationViewId || (!presentationIsRow && view?.layout === ViewLayout.Document)) && {
+          value: TabKey.AI_SLIDES,
+          label: 'AI Slides',
+          Panel: AISlidesSharePanel,
+        },
+      !hidePublish &&
+        currentUser?.email?.endsWith('appflowy.io') &&
         view?.is_published && {
           value: TabKey.TEMPLATE,
           label: t('template.asTemplate'),
@@ -108,7 +131,17 @@ function ShareTabs({
         onOpenPublishManage?: () => void;
       }>;
     }>;
-  }, [currentUser?.email, hideExport, hidePublish, t, view?.is_published]);
+  }, [
+    currentUser?.email,
+    hideExport,
+    hidePublish,
+    t,
+    view?.is_published,
+    view?.layout,
+    presentationViewId,
+    presentationIsRow,
+    onPresentationRequest,
+  ]);
 
   useEffect(() => {
     if (opened) {
@@ -162,8 +195,20 @@ function ShareTabs({
                 opened={opened}
                 onOpenPublishManage={onOpenPublishManage}
                 canShare={canShare}
-                shareDetailsLoading={isLoadingPeople || isResolvingSharePermission}
+                // Publishing needs the canonical share permission, not the
+                // people/group list, which can still be refreshing separately.
+                shareDetailsLoading={isResolvingSharePermission}
               />
+            ) : option.value === TabKey.AI_SLIDES ? (
+              <AISlidesSharePanel
+                viewId={presentationViewId || viewId}
+                title={presentationTitle}
+                isRow={presentationIsRow}
+                permissionViewId={viewId}
+                onOpen={onPresentationRequest!}
+              />
+            ) : option.value === TabKey.EXPORT_AS ? (
+              <ExportPanel viewId={viewId} exportTarget={exportTarget} />
             ) : (
               <option.Panel
                 viewId={viewId}

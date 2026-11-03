@@ -1,0 +1,39 @@
+{
+  "locale": "ur",
+  "terms": {
+    "dashboard": "ڈیش بورڈ",
+    "widget": "ویجٹ",
+    "chart": "چارٹ",
+    "view": "ویو",
+    "row": "قطار",
+    "property": "خاصیت",
+    "field": "فیلڈ",
+    "database": "ڈیٹابیس",
+    "source": "ماخذ",
+    "page": "صفحہ",
+    "workspace": "ورک اسپیس",
+    "done": "ہو گیا",
+    "edit": "ترمیم کریں",
+    "delete": "حذف کریں",
+    "duplicate": "ڈپلیکیٹ کریں",
+    "save": "محفوظ کریں",
+    "cancel": "منسوخ کریں",
+    "close": "بند کریں",
+    "back": "واپس",
+    "settings": "ترتیبات",
+    "filter": "فلٹر",
+    "sort": "مرتب کریں",
+    "search": "تلاش",
+    "undo": "کالعدم کریں",
+    "redo": "دوبارہ کریں",
+    "reset": "ری سیٹ کریں",
+    "untitled": "بلا عنوان",
+    "day": "دن",
+    "week": "ہفتہ",
+    "month": "مہینہ",
+    "year": "سال"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

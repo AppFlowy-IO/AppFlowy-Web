@@ -45,6 +45,7 @@ describe('deploy/server', () => {
 
   const makeRequest = (path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
+
     headers.set('host', 'appflowy.test');
 
     return new Request(`https://appflowy.test${path}`, {
@@ -63,6 +64,7 @@ describe('deploy/server', () => {
     if (!scriptContent) return undefined;
 
     const match = scriptContent.match(/window.__APPFLOWY_PUBLISH_ERROR__ = (.*);/);
+
     if (!match) return undefined;
 
     return JSON.parse(match[1]);
@@ -93,6 +95,35 @@ describe('deploy/server', () => {
     expect(response.headers.get('Location')).toBe('/app');
     expect(mockBunFetch).not.toHaveBeenCalled();
     expect(mockReadFileSync).not.toHaveBeenCalled();
+  });
+
+  it('answers readiness probes without calling the publish API or rendering HTML', async () => {
+    const response = await createServer(makeRequest('/health'));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('healthy\n');
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(mockBunFetch).not.toHaveBeenCalled();
+    expect(mockReadFileSync).not.toHaveBeenCalled();
+  });
+
+  it('routes PDF proxy requests through the public-file handler instead of the app shell', async () => {
+    const response = await createServer(makeRequest('/api/pdf-proxy?url=http%3A%2F%2F127.0.0.1%2Ffile.pdf'));
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('Invalid PDF request');
+    expect(mockBunFetch).not.toHaveBeenCalled();
+    expect(mockReadFileSync).not.toHaveBeenCalled();
+  });
+
+  it('serves PDF.js support assets from the production static directory', async () => {
+    mockReadFileSync.mockReturnValue(Buffer.from('font-bytes'));
+    const response = await createServer(makeRequest('/pdfjs/standard_fonts/FoxitSans.pfb'));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('font-bytes');
+    expect(mockBunFetch).not.toHaveBeenCalled();
   });
 
   it('renders marketing routes with custom metadata', async () => {
@@ -211,6 +242,7 @@ describe('deploy/server', () => {
     });
 
     const scriptText = load(html)('#appflowy-publish-error').html()!;
+
     expect(scriptText).toContain('\\u003cbar\\u003e');
     expect(scriptText).not.toContain('<bar>');
   });
@@ -489,10 +521,12 @@ describe('deploy/server', () => {
 
     expect(serve).toHaveBeenCalledTimes(1);
     const args = serve.mock.calls[0][0];
+
     expect(args.port).toBe(3000);
     expect(args.fetch).toBe(createServer);
 
     const errorResponse = args.error(new Error('boom'));
+
     expect(errorResponse.status).toBe(500);
 
     if (previousBun) {
@@ -533,6 +567,7 @@ describe('deploy/server', () => {
         <body><div id="root"></div></body>
       </html>
     `;
+
     mockReadFileSync.mockReturnValue(minimalTemplate);
 
     mockBunFetch.mockResolvedValue({

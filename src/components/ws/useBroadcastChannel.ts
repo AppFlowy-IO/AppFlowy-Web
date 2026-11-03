@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { messages } from '@/proto/messages';
+import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 export type BroadcastChannelType = {
@@ -14,6 +14,9 @@ export type BroadcastChannelType = {
    * only the final message of a burst.
    */
   subscribeCollabMessages?: (listener: (message: messages.Message) => void) => () => void;
+  /** Separate server coverage from peer manifests, which cannot confirm an upload. */
+  postServerManifest?: (message: collab.ICollabMessage) => void;
+  subscribeServerManifests?: (listener: (message: collab.ICollabMessage) => void) => () => void;
   postOutboxReady: (workspaceId: string, objectId: string) => void;
   subscribeOutboxReady: (listener: (workspaceId: string, objectId: string) => void) => () => void;
   postTransportSignal: (signal: WorkspaceTransportSignal) => void;
@@ -33,6 +36,11 @@ export type WorkspaceTransportSignal =
 
 interface DurableMessageSignal {
   type: 'durable-message';
+  payload: ArrayBufferView;
+}
+
+interface ServerManifestSignal {
+  type: 'server-manifest';
   payload: ArrayBufferView;
 }
 
@@ -66,6 +74,13 @@ const isDurableMessageSignal = (value: unknown): value is DurableMessageSignal =
   return (
     signal.type === 'durable-message' && (signal.payload instanceof Uint8Array || ArrayBuffer.isView(signal.payload))
   );
+};
+
+const isServerManifestSignal = (value: unknown): value is ServerManifestSignal => {
+  if (!value || typeof value !== 'object') return false;
+  const signal = value as Partial<ServerManifestSignal>;
+
+  return signal.type === 'server-manifest' && ArrayBuffer.isView(signal.payload);
 };
 
 const isWorkspaceTransportSignal = (value: unknown): value is WorkspaceTransportSignal => {
@@ -151,6 +166,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
   const pendingInitialPostsRef = useRef<unknown[] | null>([]);
   const protocolMessageListenersRef = useRef(new Set<(message: messages.Message) => void>());
   const collabMessageListenersRef = useRef(new Set<(message: messages.Message) => void>());
+  const serverManifestListenersRef = useRef(new Set<(message: collab.ICollabMessage) => void>());
   const outboxReadyListenersRef = useRef(new Set<(workspaceId: string, objectId: string) => void>());
   const transportSignalListenersRef = useRef(new Set<(signal: WorkspaceTransportSignal) => void>());
   const [lastMessageState, setLastMessageState] = useState<ChannelMessageState | null>(null);
@@ -172,6 +188,18 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     });
 
     const handleMessage = (event: MessageEvent) => {
+      if (isServerManifestSignal(event.data)) {
+        try {
+          const message = messages.Message.decode(toUint8Array(event.data.payload)).collabMessage;
+
+          if (message?.syncRequest) serverManifestListenersRef.current.forEach((listener) => listener(message));
+        } catch (error) {
+          Log.warn('Failed to decode relayed server manifest', error);
+        }
+
+        return;
+      }
+
       if (isOutboxReadySignal(event.data)) {
         outboxReadyListenersRef.current.forEach((listener) => listener(event.data.workspaceId, event.data.objectId));
         return;
@@ -276,6 +304,34 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     } catch (error) {
       Log.warn('Failed to broadcast a durable collab update', error);
     }
+  }, []);
+
+  // Keep the ordinary binary relay for older tabs. This small, additional
+  // control frame proves server origin to new tabs without replaying updates
+  // or forwarding a server response back through the leader's socket.
+  const postServerManifest = useCallback((message: collab.ICollabMessage) => {
+    if (!message.syncRequest) return;
+    const signal: ServerManifestSignal = {
+      type: 'server-manifest',
+      payload: messages.Message.encode({ collabMessage: message }).finish(),
+    };
+    const channel = channelRef.current;
+
+    if (!channel) {
+      pendingInitialPostsRef.current?.push(signal);
+      return;
+    }
+
+    try {
+      channel.postMessage(signal);
+    } catch (error) {
+      Log.warn('Failed to relay server manifest coverage', error);
+    }
+  }, []);
+
+  const subscribeServerManifests = useCallback((listener: (message: collab.ICollabMessage) => void) => {
+    serverManifestListenersRef.current.add(listener);
+    return () => { serverManifestListenersRef.current.delete(listener); };
   }, []);
 
   const subscribeProtocolMessages = useCallback((listener: (message: messages.Message) => void) => {
@@ -387,6 +443,8 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     postDurableMessage,
     subscribeProtocolMessages,
     subscribeCollabMessages,
+    postServerManifest,
+    subscribeServerManifests,
     postOutboxReady,
     subscribeOutboxReady,
     postTransportSignal,

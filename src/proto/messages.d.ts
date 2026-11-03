@@ -325,6 +325,109 @@ export namespace collab {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a DeleteSetMetadata. */
+    interface IDeleteSetMetadata {
+
+        /** DeleteSetMetadata digest */
+        digest?: (Uint8Array|null);
+
+        /** DeleteSetMetadata deleteSetV1 */
+        deleteSetV1?: (Uint8Array|null);
+    }
+
+    /** Deletion coverage is separate from the insertion clocks in a state vector. */
+    class DeleteSetMetadata implements IDeleteSetMetadata {
+
+        /**
+         * Constructs a new DeleteSetMetadata.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.IDeleteSetMetadata);
+
+        /** DeleteSetMetadata digest. */
+        public digest: Uint8Array;
+
+        /** DeleteSetMetadata deleteSetV1. */
+        public deleteSetV1: Uint8Array;
+
+        /**
+         * Creates a new DeleteSetMetadata instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns DeleteSetMetadata instance
+         */
+        public static create(properties?: collab.IDeleteSetMetadata): collab.DeleteSetMetadata;
+
+        /**
+         * Encodes the specified DeleteSetMetadata message. Does not implicitly {@link collab.DeleteSetMetadata.verify|verify} messages.
+         * @param message DeleteSetMetadata message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.IDeleteSetMetadata, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified DeleteSetMetadata message, length delimited. Does not implicitly {@link collab.DeleteSetMetadata.verify|verify} messages.
+         * @param message DeleteSetMetadata message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.IDeleteSetMetadata, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a DeleteSetMetadata message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns DeleteSetMetadata
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.DeleteSetMetadata;
+
+        /**
+         * Decodes a DeleteSetMetadata message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns DeleteSetMetadata
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.DeleteSetMetadata;
+
+        /**
+         * Verifies a DeleteSetMetadata message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a DeleteSetMetadata message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns DeleteSetMetadata
+         */
+        public static fromObject(object: { [k: string]: any }): collab.DeleteSetMetadata;
+
+        /**
+         * Creates a plain object from a DeleteSetMetadata message. Also converts values to other types if specified.
+         * @param message DeleteSetMetadata
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.DeleteSetMetadata, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this DeleteSetMetadata to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for DeleteSetMetadata
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a SyncRequest. */
     interface ISyncRequest {
 
@@ -336,6 +439,12 @@ export namespace collab {
 
         /** SyncRequest version */
         version?: (string|null);
+
+        /** SyncRequest deleteSet */
+        deleteSet?: (collab.IDeleteSetMetadata|null);
+
+        /** SyncRequest databaseRestoreId */
+        databaseRestoreId?: (string|null);
     }
 
     /**
@@ -361,6 +470,15 @@ export namespace collab {
 
         /** SyncRequest version. */
         public version: string;
+
+        /** SyncRequest deleteSet. */
+        public deleteSet?: (collab.IDeleteSetMetadata|null);
+
+        /** SyncRequest databaseRestoreId. */
+        public databaseRestoreId?: (string|null);
+
+        /** SyncRequest _databaseRestoreId. */
+        public _databaseRestoreId?: "databaseRestoreId";
 
         /**
          * Creates a new SyncRequest instance using the specified properties.
@@ -792,6 +910,112 @@ export namespace collab {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of an UpdateAck. */
+    interface IUpdateAck {
+
+        /** UpdateAck messageId */
+        messageId?: (collab.IRid|null);
+
+        /** UpdateAck databaseRestoreId */
+        databaseRestoreId?: (string|null);
+    }
+
+    /** Represents an UpdateAck. */
+    class UpdateAck implements IUpdateAck {
+
+        /**
+         * Constructs a new UpdateAck.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.IUpdateAck);
+
+        /** UpdateAck messageId. */
+        public messageId?: (collab.IRid|null);
+
+        /** UpdateAck databaseRestoreId. */
+        public databaseRestoreId?: (string|null);
+
+        /** UpdateAck _databaseRestoreId. */
+        public _databaseRestoreId?: "databaseRestoreId";
+
+        /**
+         * Creates a new UpdateAck instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns UpdateAck instance
+         */
+        public static create(properties?: collab.IUpdateAck): collab.UpdateAck;
+
+        /**
+         * Encodes the specified UpdateAck message. Does not implicitly {@link collab.UpdateAck.verify|verify} messages.
+         * @param message UpdateAck message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.IUpdateAck, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified UpdateAck message, length delimited. Does not implicitly {@link collab.UpdateAck.verify|verify} messages.
+         * @param message UpdateAck message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.IUpdateAck, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes an UpdateAck message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns UpdateAck
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.UpdateAck;
+
+        /**
+         * Decodes an UpdateAck message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns UpdateAck
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.UpdateAck;
+
+        /**
+         * Verifies an UpdateAck message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates an UpdateAck message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns UpdateAck
+         */
+        public static fromObject(object: { [k: string]: any }): collab.UpdateAck;
+
+        /**
+         * Creates a plain object from an UpdateAck message. Also converts values to other types if specified.
+         * @param message UpdateAck
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.UpdateAck, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this UpdateAck to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for UpdateAck
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a CollabMessage. */
     interface ICollabMessage {
 
@@ -812,6 +1036,9 @@ export namespace collab {
 
         /** CollabMessage accessChanged */
         accessChanged?: (collab.IAccessChanged|null);
+
+        /** CollabMessage updateAck */
+        updateAck?: (collab.IUpdateAck|null);
     }
 
     /** Represents a CollabMessage. */
@@ -841,8 +1068,11 @@ export namespace collab {
         /** CollabMessage accessChanged. */
         public accessChanged?: (collab.IAccessChanged|null);
 
+        /** CollabMessage updateAck. */
+        public updateAck?: (collab.IUpdateAck|null);
+
         /** CollabMessage data. */
-        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged");
+        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|"updateAck");
 
         /**
          * Creates a new CollabMessage instance using the specified properties.

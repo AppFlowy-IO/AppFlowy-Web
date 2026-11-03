@@ -31,18 +31,16 @@ test('code block language can be changed by pointer and persists after reload', 
     await test.step(`Change ${currentLanguage} to ${nextLanguage}`, async () => {
       await codeBlock.hover();
       // Keep normal hit testing: forced clicks would hide the overlay regression from PR #358.
-      await codeBlock.getByRole('button', { name: currentLanguage, exact: true }).click();
+      await codeBlock.getByRole('button', { name: `Language: ${currentLanguage}`, exact: true }).click();
 
-      const languageMenu = page.locator('.MuiPopover-paper').filter({
-        has: page.getByPlaceholder('Search', { exact: true }),
-      });
+      const languageMenu = page.getByTestId('code-language-menu');
 
       await expect(languageMenu).toBeVisible();
-      await languageMenu.getByRole('textbox').fill(nextLanguage);
-      await languageMenu.getByText(nextLanguage, { exact: true }).click();
+      await languageMenu.getByRole('combobox').fill(nextLanguage);
+      await languageMenu.getByRole('option', { name: nextLanguage, exact: true }).click();
       await expect(languageMenu).not.toBeVisible();
       await codeBlock.hover();
-      await expect(codeBlock.getByRole('button', { name: nextLanguage, exact: true })).toBeVisible();
+      await expect(codeBlock.getByRole('button', { name: `Language: ${nextLanguage}`, exact: true })).toBeVisible();
       await expect.poll(() => code.innerText()).toBe(codeText);
     });
   }
@@ -50,6 +48,6 @@ test('code block language can be changed by pointer and persists after reload', 
   await page.reload();
   await expect(codeBlock).toHaveCount(1);
   await codeBlock.hover();
-  await expect(codeBlock.getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible();
+  await expect(codeBlock.getByRole('button', { name: 'Language: TypeScript', exact: true })).toBeVisible();
   await expect.poll(() => code.innerText()).toBe(codeText);
 });

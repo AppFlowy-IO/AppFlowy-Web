@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { ViewExtra, ViewLayout, ViewMetaCover } from '@/application/types';
+import { documentMaxWidth, parseDocumentWidth } from '@/application/document-width';
 import type { PublishedView } from '@/application/publish-snapshot/types';
 import ViewMetaPreview from '@/components/view-meta/ViewMetaPreview';
 import { clampCoverOffset } from '@/utils/cover';
@@ -31,7 +32,7 @@ export function getPublishedViewCover(extra: Record<string, unknown> | null): Vi
 export function PublishedPageMeta({
   view,
   layout = view.layout,
-  maxWidth = 952,
+  maxWidth,
 }: {
   view: PublishedView;
   layout?: ViewLayout;
@@ -39,6 +40,9 @@ export function PublishedPageMeta({
 }) {
   const extra = useMemo(() => parsePublishedViewExtra(view.extra), [view.extra]);
   const cover = useMemo(() => getPublishedViewCover(extra), [extra]);
+  const pageMaxWidth = layout === ViewLayout.Document
+    ? documentMaxWidth(parseDocumentWidth(extra?.document_width))
+    : 952;
 
   return (
     <ViewMetaPreview
@@ -48,7 +52,7 @@ export function PublishedPageMeta({
       name={view.name}
       viewId={view.viewId}
       layout={layout}
-      maxWidth={maxWidth}
+      maxWidth={maxWidth ?? pageMaxWidth}
       extra={extra as ViewExtra | null}
     />
   );

@@ -12,6 +12,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+/** The Timeline settings rows; also rendered by a dashboard widget's settings host. */
+export function TimelineSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Timeline} />
+      <TimelineSettingGroup />
+      <TimelineLayoutSettings />
+    </>
+  );
+}
+
 function TimelineSettings({ children }: { children: React.ReactNode }) {
   return (
     <DropdownMenu>
@@ -25,11 +37,7 @@ function TimelineSettings({ children }: { children: React.ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
-          {/* Desktop database_settings_list.dart order: Properties, Layout, Group, Timeline settings. */}
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.Timeline} />
-          <TimelineSettingGroup />
-          <TimelineLayoutSettings />
+          <TimelineSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

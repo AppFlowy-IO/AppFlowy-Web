@@ -18,7 +18,7 @@ export interface CollabViewProps {
 
 function CollabView({ doc }: CollabViewProps) {
   const visibleViewIds = usePublishContext()?.viewMeta?.visible_view_ids;
-  const { viewId, layout, icon, cover, layoutClassName, style, name } = useViewMeta();
+  const { viewId, layout, icon, cover, layoutClassName, style, name, extra } = useViewMeta();
   const View = useMemo(() => {
     switch (layout) {
       case ViewLayout.Document:
@@ -30,6 +30,7 @@ function CollabView({ doc }: CollabViewProps) {
       case ViewLayout.Gallery:
       case ViewLayout.Feed:
       case ViewLayout.Timeline:
+      case ViewLayout.Dashboard:
         return DatabaseView;
       default:
         return null;
@@ -82,6 +83,7 @@ function CollabView({ doc }: CollabViewProps) {
       case ViewLayout.List:
       case ViewLayout.Gallery:
       case ViewLayout.Feed:
+      case ViewLayout.Dashboard:
         return <GridSkeleton />;
       case ViewLayout.Board:
         return <KanbanSkeleton />;
@@ -125,6 +127,7 @@ function CollabView({ doc }: CollabViewProps) {
           variant={UIVariant.Publish}
           onRendered={onRendered}
           viewMeta={{
+            extra,
             icon,
             cover,
             viewId,

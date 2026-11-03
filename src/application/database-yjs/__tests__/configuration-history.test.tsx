@@ -827,6 +827,12 @@ describe('configuration production hooks use database history', () => {
     expect(getChartSetting()?.get('date_condition')).toBe(BigInt(DateGroupCondition.Month));
     expect(readChartLayoutSetting(getChartSetting())).toEqual(expectedChartSetting);
     expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.field_id)).toBe(numberFieldId);
+
+    // Re-selecting the stored values writes nothing, so it records no undo step.
+    act(() => result.current.history.clear());
+    act(() => result.current.updateChartSetting(expectedChartSetting));
+    expect(result.current.history.canUndo).toBe(false);
+    expect(getChartSetting()?.get('chart_type')).toBe(BigInt(ChartType.HorizontalBar));
   });
 
   it('updates visibility, wrapping, and width with an undo/redo round trip for each field-display setting', () => {

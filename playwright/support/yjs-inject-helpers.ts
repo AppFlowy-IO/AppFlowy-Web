@@ -26,6 +26,18 @@ export async function waitForDatabaseDocReady(page: Page, timeout = 15000): Prom
     .toBe(true);
 }
 
+/** Seed a view's opening preference, as if it had synced from another client. */
+export async function setViewOpenPagesIn(page: Page, mode: 'side_peek' | 'center_peek' | 'full_page'): Promise<void> {
+  await waitForDatabaseDocReady(page);
+  await page.evaluate((opening) => {
+    const win = window as any;
+    const doc = win.__TEST_DATABASE_DOC__;
+    const view = doc.getMap('data').get('database').get('views').get(win.__TEST_DATABASE_VIEW_ID__);
+
+    doc.transact(() => view.set('open_pages_in', opening), 'remote');
+  }, mode);
+}
+
 /**
  * Inject a text filter into the database view via Yjs transact,
  * simulating a filter arriving from a remote source (e.g., desktop sync).

@@ -1,207 +1,201 @@
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useMemo } from 'react';
+import { BarChart as RechartsBarChart, CartesianGrid, Customized, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { ChartAggregationType, ChartClickItem, ChartDataItem } from '@/application/database-yjs/chart.type';
-import { cn } from '@/lib/utils';
+import { CHART_GRID_DASH, ChartDataItem, ChartSeriesData, ChartType } from '@/application/database-yjs/chart.type';
+import { DASHBOARD_CHART_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
+import { groupedBarWidth } from '@/components/database/chart/hooks/chartSeries';
 
-import { ChartNoValidData } from './ChartNoValidData';
-import { ChartTitle, useChartAggregationLabel } from './ChartTitle';
-import { PositionedChartTooltip } from './ChartTooltip';
-import {
-  chartDataEqual,
-  computeHorizontalAxisMax,
-  computeHorizontalLabelCount,
-  isPlottableValue,
-  resolveChartItemColor,
-  truncateChartLabel,
-} from './chartUtils';
-import { useElementSize } from './useElementSize';
+import { layoutHorizontalCartesian } from './cartesianLayout';
+import { CategoryAnchors, CategoryTick, ValueTick } from './ChartAxisParts';
+import { ChartFrame } from './ChartFrame';
+import { calculateBarHeight } from './chartUtils';
+import { useChartMeasure } from './measureText';
+import { CartesianPlotProps, useCartesianChartModel } from './useCartesianChartModel';
+import { useChartAnimation } from './useReducedMotion';
+import { useSeriesBars } from './useSeriesBars';
 
 interface HorizontalBarChartWidgetProps {
-  data: ChartDataItem[];
-  onBarClick?: (item: ChartClickItem) => void;
-  aggregationType?: ChartAggregationType;
+  /** The series build (WP12): one `__all__` series without a Group by. */
+  data: ChartSeriesData;
+  /** Opens the drill-down of the clicked segment or category band. */
+  onItemClick?: (item: ChartDataItem) => void;
+  /** Fill a dashboard widget card instead of the standalone scrolling height. */
+  fill?: boolean;
 }
 
-/** Category label column left of the bars (desktop's `labelWidth`). */
-const LABEL_WIDTH = 120;
-/** Room right of the bar area for the value after the longest bar (desktop's `_rightPadding`). */
-const VALUE_WIDTH = 40;
-/** Desktop anchors the tooltip 110px (half its width plus 20) past the end of the bar. */
-const TOOLTIP_OFFSET_X = 110;
-/** Height desktop leaves out (8px gap + a 24px axis) when centering the tooltip on a row. */
-const X_AXIS_HEIGHT = 32;
+const { axis, hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
 
-/**
- * Desktop's `_HorizontalBarChartContent`: equal-height rows of label + bar +
- * value over dashed vertical grid lines, the value axis below, then the
- * aggregation title. Built from plain elements like desktop (no chart library).
- */
-function HorizontalBarChartContent({ data, onBarClick, aggregationType }: HorizontalBarChartWidgetProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { width, height } = useElementSize(containerRef);
-  const aggregationLabel = useChartAggregationLabel(aggregationType);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+// Module constants, so Recharts sees the same props on every render.
+const HOVER_BAND = { fill: 'var(--chart-hover-band)', stroke: 'none', radius: hoverBandRadius };
+const renderNoTooltip = () => null;
+/** The 2px gap between grouped bars (WP12 §2.3). */
+const GROUPED_BAR_GAP = 2;
 
-  const bars = useMemo(() => data.map((item, index) => ({ item, color: resolveChartItemColor(item, index) })), [data]);
-  const axisMax = useMemo(() => {
-    const maxValue = data.reduce((max, item) => Math.max(max, item.value), 0);
+/** Standalone pages keep today's scrolling height: one slot per category, 300–500px visible. */
+function standaloneHeights(count: number) {
+  const contentHeight = Math.max(300, count * calculateBarHeight(count) + 60);
 
-    return computeHorizontalAxisMax(maxValue > 0 ? maxValue : 1);
-  }, [data]);
-  const intervalCount = computeHorizontalLabelCount(axisMax);
-  const interval = axisMax / intervalCount;
-  const barAreaWidth = width - LABEL_WIDTH - VALUE_WIDTH;
-  const gridLineXs = Array.from(
-    { length: intervalCount + 1 },
-    (_, i) => LABEL_WIDTH + (i * barAreaWidth) / intervalCount
-  );
-  const axisLabels = Array.from({ length: intervalCount + 1 }, (_, i) => Math.round(i * interval));
-  const hovered = hoveredIndex === null ? undefined : bars[hoveredIndex];
-
-  const handleRowClick = (index: number) => {
-    const bar = bars[index];
-
-    // Desktop only drills into categories that have rows (a "No …" bucket at 0 has none).
-    if (!bar || bar.item.rowIds.length === 0 || !onBarClick) return;
-    // The drill-down dialog covers the chart, which ends the hover on desktop.
-    setHoveredIndex(null);
-    onBarClick({ ...bar.item, color: bar.color });
-  };
-
-  return (
-    <div ref={containerRef} className='relative h-full w-full'>
-      {width > 0 && height > 0 && (
-        <div className='flex h-full flex-col'>
-          <div className='relative min-h-0 flex-1'>
-            <svg
-              aria-hidden
-              className='pointer-events-none absolute inset-0 h-full w-full overflow-visible stroke-text-primary'
-            >
-              {gridLineXs.map((x, i) => (
-                <line
-                  key={i}
-                  data-testid='horizontal-bar-chart-grid-line'
-                  x1={x}
-                  x2={x}
-                  y1={0}
-                  y2='100%'
-                  strokeOpacity={0.08}
-                  strokeWidth={1}
-                  strokeDasharray='4 4'
-                />
-              ))}
-            </svg>
-            {/* Positioned so the rows (and the hovered row's fill) paint above the grid lines. */}
-            <div className='relative flex h-full flex-col'>
-              {bars.map(({ item, color }, index) => {
-                const isHovered = index === hoveredIndex;
-                const barWidth = Math.max(0, Math.min((item.value / axisMax) * barAreaWidth, barAreaWidth));
-
-                return (
-                  <div
-                    key={`${item.label}-${index}`}
-                    data-testid='horizontal-bar-chart-row'
-                    className={cn('flex min-h-0 flex-1 items-center', isHovered && 'cursor-pointer')}
-                    onMouseEnter={() => setHoveredIndex(index)}
-                    onMouseLeave={() => setHoveredIndex(null)}
-                    onClick={() => handleRowClick(index)}
-                  >
-                    <div className='shrink-0 py-1 pr-2' style={{ width: LABEL_WIDTH }}>
-                      <div className='truncate text-right text-xs font-medium leading-[18px] text-text-tertiary'>
-                        {truncateChartLabel(item.label)}
-                      </div>
-                    </div>
-                    {/* The hover fill runs from the bar start to the right edge, leaving the label alone. */}
-                    <div
-                      data-testid='horizontal-bar-chart-bar-area'
-                      className={cn(
-                        'flex min-w-0 flex-1 items-center self-stretch py-1',
-                        isHovered && 'bg-fill-content-hover'
-                      )}
-                    >
-                      <div
-                        data-testid='horizontal-bar-chart-bar'
-                        className='h-6 max-h-full shrink-0 rounded-r-100 transition-[width] duration-200 ease-linear'
-                        style={{ width: barWidth, backgroundColor: color }}
-                      />
-                      <span
-                        data-testid='horizontal-bar-chart-value'
-                        className='ml-2 shrink-0 text-xs font-medium leading-[18px] text-text-tertiary'
-                      >
-                        {Math.trunc(item.value)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          {/*
-           * Desktop centers this `labelWidth + barAreaWidth` wide row in the chart column, so its
-           * labels sit 20px (half of the value room) right of the grid lines; kept for parity.
-           */}
-          <div
-            className='mx-auto mt-2 flex shrink-0 justify-between text-[10px] leading-3 text-text-primary opacity-60'
-            style={{ width: LABEL_WIDTH + barAreaWidth, paddingLeft: LABEL_WIDTH }}
-          >
-            {axisLabels.map((value, i) => (
-              <span key={i} data-testid='horizontal-bar-chart-x-label'>
-                {value}
-              </span>
-            ))}
-          </div>
-          {aggregationLabel && (
-            <ChartTitle className='mt-2 shrink-0' label={aggregationLabel} orientation='horizontal' />
-          )}
-        </div>
-      )}
-      {hovered && hoveredIndex !== null && (
-        <PositionedChartTooltip
-          label={hovered.item.label}
-          value={hovered.item.value}
-          color={hovered.color}
-          anchor={{
-            x: LABEL_WIDTH + (hovered.item.value / axisMax) * barAreaWidth + TOOLTIP_OFFSET_X,
-            // Rows share the height equally, so row centers sit at (index + 0.5) / n of it.
-            y: ((hoveredIndex + 0.5) / bars.length) * (height - X_AXIS_HEIGHT),
-          }}
-          chartSize={{ width, height }}
-        />
-      )}
-    </div>
-  );
+  return { contentHeight, frameHeight: Math.min(contentHeight, 500) };
 }
 
 /**
- * Horizontal bar chart (desktop's `DatabaseHorizontalBarChart`). Categories
- * with a negative or non-finite value are dropped; zero-value categories keep
- * their row with an empty bar.
+ * The Recharts tree of the horizontal bar chart. Memoized like the vertical
+ * plot: a pointer move does not render it, and its layout, ticks, segment
+ * shapes, labels and margin keep their identity between renders.
  */
-function HorizontalBarChartWidgetImpl({ data, onBarClick, aggregationType }: HorizontalBarChartWidgetProps) {
-  const validData = useMemo(() => data.filter(isPlottableValue), [data]);
-
-  return (
-    // The 18px right inset is the padding desktop's chart page puts around this chart.
-    <div data-testid='horizontal-bar-chart-widget' className='h-[400px] w-full pr-[18px]'>
-      {validData.length === 0 ? (
-        <ChartNoValidData />
-      ) : (
-        <div className='h-full px-6'>
-          <HorizontalBarChartContent data={validData} onBarClick={onBarClick} aggregationType={aggregationType} />
-        </div>
-      )}
-    </div>
+const HorizontalBarPlot = memo(function HorizontalBarPlot({
+  data,
+  items,
+  chartRows,
+  seriesStyle,
+  fills,
+  categoryFills,
+  formatValue,
+  labels,
+  width,
+  height,
+  domain,
+  formatAxis,
+  valueTickTexts,
+  dataLabelTexts,
+  hoverActive,
+  tooltipTrigger,
+  clickable,
+  animate,
+  onClick,
+  onSegmentClick,
+  onMouseMove,
+  onMouseLeave,
+}: CartesianPlotProps & { valueTickTexts: readonly string[] }) {
+  const { measure12 } = useChartMeasure();
+  // No animation while the widget box resizes, nor after it until the data changes (W21).
+  const animation = useChartAnimation(chartRows);
+  const layout = useMemo(
+    () => layoutHorizontalCartesian(items, { width, height }, valueTickTexts, dataLabelTexts, measure12),
+    [items, width, height, valueTickTexts, dataLabelTexts, measure12]
   );
-}
+  const margin = useMemo(
+    () => ({ top: layout.marginTop, right: layout.marginRight, bottom: 0, left: 0 }),
+    [layout.marginTop, layout.marginRight]
+  );
+  const categoryTick = useMemo(() => <CategoryTick orientation='left' ticks={layout.ticks} />, [layout.ticks]);
+  const valueTick = useMemo(() => <ValueTick format={formatAxis} orientation='bottom' />, [formatAxis]);
+  const anchors = useMemo(() => <CategoryAnchors rects={layout.anchors} />, [layout.anchors]);
+  const barSize = seriesStyle === 'grouped' ? groupedBarWidth(layout.slot, data.series.length) : layout.barWidth;
+  const { bars, stackLabels } = useSeriesBars({
+    data,
+    categoryFills,
+    seriesStyle,
+    fills,
+    labels,
+    visibleLabels: layout.dataLabels,
+    orientation: 'horizontal',
+    barSize,
+    clickable,
+    animate: animate && animation,
+    onSegmentClick,
+    formatValue,
+  });
 
-// Memoized with content-equality so Yjs hydration micro-batches don't rebuild
-// the chart. `onBarClick` is `useCallback`-stable in `ChartProvider`.
-export const HorizontalBarChartWidget = memo(HorizontalBarChartWidgetImpl, (prev, next) => {
   return (
-    prev.onBarClick === next.onBarClick &&
-    prev.aggregationType === next.aggregationType &&
-    chartDataEqual(prev.data, next.data)
+    <RechartsBarChart
+      barCategoryGap={0}
+      barGap={GROUPED_BAR_GAP}
+      data={chartRows}
+      height={height}
+      layout='vertical'
+      margin={margin}
+      onClick={onClick}
+      onMouseLeave={onMouseLeave}
+      onMouseMove={onMouseMove}
+      stackOffset='sign'
+      width={width}
+    >
+      <CartesianGrid
+        data-parity-id='dash-chart-grid-line'
+        horizontal={false}
+        stroke='var(--chart-grid)'
+        strokeDasharray={CHART_GRID_DASH}
+      />
+      <XAxis
+        allowDataOverflow
+        axisLine={false}
+        domain={domain.domain}
+        height={layout.valueAxisHeight}
+        interval={0}
+        tick={valueTick}
+        tickLine={false}
+        tickMargin={4}
+        tickSize={0}
+        ticks={domain.ticks}
+        type='number'
+      />
+      <YAxis
+        axisLine={false}
+        dataKey='__key'
+        interval={0}
+        tick={categoryTick}
+        tickLine={false}
+        tickMargin={axis.tickGap}
+        tickSize={0}
+        type='category'
+        width={layout.yAxisWidth}
+      />
+      <ReferenceLine stroke='var(--chart-grid)' x={0} />
+      <Tooltip
+        active={hoverActive ? undefined : false}
+        content={renderNoTooltip}
+        cursor={HOVER_BAND}
+        isAnimationActive={false}
+        trigger={tooltipTrigger}
+      />
+      {bars}
+      {stackLabels ? <Customized component={stackLabels} /> : null}
+      <Customized component={anchors} />
+    </RechartsBarChart>
   );
 });
+
+/**
+ * Horizontal bar chart (WP10 §2.1, WP12 §2.3): categories on the left,
+ * right-aligned and truncated to the label column, values along the bottom
+ * with a vertical dotted grid and a solid zero line; negative bars extend
+ * left of it. With a Group by the stacks grow right (series 0 at the right
+ * end) and grouped bars list series 0 on top.
+ */
+function HorizontalBarChartWidgetImpl({ data, onItemClick, fill = false }: HorizontalBarChartWidgetProps) {
+  const model = useCartesianChartModel(data, ChartType.HorizontalBar, onItemClick);
+  const standalone = standaloneHeights(data.categories.length);
+
+  return (
+    <ChartFrame
+      fill={fill}
+      frameHandlers={model.frameHandlers}
+      legend={model.legend}
+      pointer={model.pointer}
+      rootAttributes={model.rootAttributes}
+      rows={model.rows}
+      scrollContentHeight={fill ? undefined : standalone.contentHeight}
+      standaloneHeight={standalone.frameHeight}
+      testId='horizontal-bar-chart-widget'
+      tooltip={model.tooltip}
+      truncationCount={model.truncationCount}
+    >
+      {(size) => (
+        <HorizontalBarPlot
+          {...model.plot}
+          dataLabelTexts={model.dataLabelTexts}
+          height={size.height}
+          valueTickTexts={model.valueTickTexts}
+          width={size.width}
+        />
+      )}
+    </ChartFrame>
+  );
+}
+
+// `useChartData` hands over a new build only when the content changed and
+// `ChartProvider` a stable `onItemClick`, so the default shallow comparison is enough.
+export const HorizontalBarChartWidget = memo(HorizontalBarChartWidgetImpl);
 
 export default HorizontalBarChartWidget;

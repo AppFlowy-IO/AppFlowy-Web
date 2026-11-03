@@ -8,7 +8,14 @@
     "support/connections.fixture.tsx",
     "support/integrations-server.ts",
     "support/integrations.fixture.tsx",
-    "support/math-equation.fixture.tsx"
+    "support/math-equation.fixture.tsx",
+    "../playwright.code-block.config.ts",
+    "support/code-block.fixture.tsx",
+    "../playwright.pdf.config.ts",
+    "support/pdf.fixture.tsx",
+    "support/dashboard-owned-clone.fixture.tsx",
+    "support/dashboard-view-startup.fixture.tsx",
+    "support/chart-settings.fixture.tsx"
   ],
   "references": []
 }

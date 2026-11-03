@@ -8,7 +8,7 @@ import { elementToBlock } from './block-converters';
 import { sanitizeHTML } from './sanitize';
 import { HTMLParseOptions, ParsedBlock } from './types';
 
-import type { Element as HastElement, Root as HastRoot } from 'hast';
+import type { Element as HastElement, ElementContent, Root as HastRoot } from 'hast';
 
 /**
  * Parses HTML string into structured blocks using AST-based parsing
@@ -73,7 +73,7 @@ function deserializeHTMLToAST(html: string): HastRoot {
  * @param depth Current depth (for max depth limiting)
  * @returns Array of parsed blocks
  */
-function convertASTToAppFlowyBlocks(nodes: HastElement[], options: HTMLParseOptions, depth = 0): ParsedBlock[] {
+function convertASTToAppFlowyBlocks(nodes: ElementContent[], options: HTMLParseOptions, depth = 0): ParsedBlock[] {
   const maxDepth = options.maxDepth || 20;
 
   if (depth > maxDepth) {
@@ -83,8 +83,13 @@ function convertASTToAppFlowyBlocks(nodes: HastElement[], options: HTMLParseOpti
 
   const blocks: ParsedBlock[] = [];
 
-  for (const node of nodes) {
+  for (const node of options.preserveBlockStructure ? groupDocumentInlineNodes(nodes) : nodes) {
     if (node.type !== 'element') continue;
+
+    if (options.preserveBlockStructure && node.tagName === 'div') {
+      blocks.push(...convertASTToAppFlowyBlocks(node.children, options, depth + 1));
+      continue;
+    }
 
     const block = elementToBlock(node);
 
@@ -114,6 +119,51 @@ function convertASTToAppFlowyBlocks(nodes: HastElement[], options: HTMLParseOpti
   }
 
   return blocks;
+}
+
+// Sanitization unwraps article/main/section, leaving div containers and loose inline text.
+// Group that text into paragraphs so descending into containers retains both it and native blocks.
+const DOCUMENT_BLOCK_TAGS = new Set([
+  'div',
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'aside',
+  'pre',
+  'ul',
+  'ol',
+  'table',
+  'hr',
+  'img',
+]);
+
+function groupDocumentInlineNodes(nodes: ElementContent[]): HastElement[] {
+  const result: HastElement[] = [];
+  let inline: ElementContent[] = [];
+  const flush = () => {
+    if (inline.some((node) => node.type === 'element' || (node.type === 'text' && node.value.trim()))) {
+      result.push({ type: 'element', tagName: 'p', properties: {}, children: inline });
+    }
+
+    inline = [];
+  };
+
+  for (const node of nodes) {
+    if (node.type === 'element' && DOCUMENT_BLOCK_TAGS.has(node.tagName)) {
+      flush();
+      result.push(node);
+    } else {
+      inline.push(node);
+    }
+  }
+
+  flush();
+  return result;
 }
 
 /**

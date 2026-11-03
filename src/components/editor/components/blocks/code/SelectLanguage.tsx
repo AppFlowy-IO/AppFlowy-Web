@@ -1,156 +1,107 @@
-import { Button, TextField } from '@mui/material';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
-import { Popover } from '@/components/_shared/popover';
-import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 
-function SelectLanguage({
-  readOnly,
-  language = 'Auto',
-  onChangeLanguage,
-  onClose,
-}: {
-  readOnly?: boolean;
-  language: string;
-  onChangeLanguage: (language: string) => void;
-  onClose?: () => void;
-}) {
+import { codeLanguageLabel, filterCodeLanguages, normalizeCodeLanguage } from './constants';
+
+/** Search keeps focus in the combobox; arrows wrap only through the filtered results. */
+export function CodeLanguageMenu({ language, onSelect }: { language: string; onSelect: (language: string) => void }) {
   const { t } = useTranslation();
-  const ref = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [selectLanguage, setSelectLanguage] = useState<string>(language);
-  const searchRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const options = useMemo(() => {
-    return supportLanguages
-      .map((item) => ({
-        key: item.id,
-        content: item.title,
-      }))
-      .filter((item) => {
-        return item.content?.toLowerCase().includes(search?.toLowerCase());
-      });
-  }, [search]);
-
-  const handleClose = useCallback(() => {
-    setOpen(false);
-    setSearch('');
-    onClose?.();
-  }, [onClose]);
-
-  const handleConfirm = useCallback(
-    (key: string) => {
-      onChangeLanguage(key);
-      handleClose();
-    },
-    [onChangeLanguage, handleClose]
+  const options = useMemo(() => filterCodeLanguages(search), [search]);
+  const [active, setActive] = useState(() =>
+    Math.max(
+      0,
+      options.findIndex((item) => item.id === normalizeCodeLanguage(language))
+    )
   );
-
-  const selectedLanguage = useMemo(() => {
-    return supportLanguages.find((item) => item.id === language?.toLowerCase())?.title || 'Auto';
-  }, [language]);
-
-  useEffect(() => {
-    if (!open) return;
-    searchRef.current?.focus();
-  }, [open]);
+  const list = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const selected = options[active];
 
   useEffect(() => {
-    const container = scrollRef.current;
+    const row = list.current?.children[active] as HTMLElement | undefined;
 
-    if (!container) return;
+    if (row && list.current) {
+      const parent = list.current;
 
-    const el = container.querySelector(`[data-key="${selectLanguage}"]`);
-
-    if (!el) return;
-
-    el.scrollIntoView({ block: 'nearest' });
-  }, [selectLanguage]);
+      if (row.offsetTop < parent.scrollTop) parent.scrollTop = row.offsetTop;
+      else if (row.offsetTop + row.offsetHeight > parent.scrollTop + parent.clientHeight)
+        parent.scrollTop = row.offsetTop + row.offsetHeight - parent.clientHeight;
+    }
+  }, [active, search]);
 
   return (
-    <>
-      <Button
-        ref={ref}
-        sx={{
-          cursor: readOnly ? 'not-allowed' : 'pointer',
-        }}
-        size={'small'}
-        color={'inherit'}
-        className={'px-4'}
-        variant={'text'}
-        onClick={() => {
-          if (readOnly) return;
-          setOpen(true);
-        }}
+    <div className='code-language-menu' data-testid='code-language-menu'>
+      <div className='code-language-search'>
+        <SearchIcon aria-hidden />
+        <input
+          autoFocus
+          role='combobox'
+          aria-expanded
+          aria-controls={id}
+          aria-autocomplete='list'
+          aria-activedescendant={selected ? `${id}-${selected.id}` : undefined}
+          aria-label={t('document.codeBlock.searchLanguageHint', { defaultValue: 'Search for a language' })}
+          placeholder={t('document.codeBlock.searchLanguageHint', { defaultValue: 'Search for a language' })}
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setActive(0);
+          }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (options.length)
+                setActive((value) => (value + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (selected) onSelect(selected.id);
+            }
+          }}
+        />
+      </div>
+      <div
+        id={id}
+        ref={list}
+        role='listbox'
+        aria-label={t('document.plugins.optionAction.codeLanguage', { defaultValue: 'Language' })}
+        className='code-language-list'
       >
-        {selectedLanguage}
-      </Button>
-
-      <Popover
-        disableAutoFocus={true}
-        disableRestoreFocus={true}
-        anchorEl={ref.current}
-        open={open}
-        onClose={handleClose}
-      >
-        <div className={'flex h-fit max-h-[520px] w-[200px] flex-col overflow-hidden py-2'}>
-          <TextField
-            ref={searchRef}
-            value={search}
-            autoComplete={'off'}
-            spellCheck={false}
-            autoCorrect={'off'}
-            onChange={(e) => setSearch(e.target.value)}
-            size={'small'}
-            autoFocus={true}
-            variant={'standard'}
-            className={'px-3 py-1 text-xs'}
-            placeholder={t('search.label')}
-            onKeyDown={(e) => {
-              if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-                e.preventDefault();
-                handleConfirm(selectLanguage);
-              }
-
-              if (createHotkey(HOT_KEY_NAME.UP)(e.nativeEvent)) {
-                const index = options.findIndex((item) => item.key === selectLanguage);
-                const prevIndex = (index - 1 + options.length) % options.length;
-
-                setSelectLanguage(options[prevIndex].key);
-              }
-
-              if (createHotkey(HOT_KEY_NAME.DOWN)(e.nativeEvent)) {
-                const index = options.findIndex((item) => item.key === selectLanguage);
-                const nextIndex = (index + 1) % options.length;
-
-                setSelectLanguage(options[nextIndex].key);
-              }
-            }}
-          />
-          <div ref={scrollRef} className={'appflowy-scroller flex-1 overflow-y-auto overflow-x-hidden p-2'}>
-            {options.map((item) => (
-              <div
-                data-key={item.key}
-                key={item.key}
-                onClick={() => handleConfirm(item.key)}
-                className={`p-2 ${
-                  selectLanguage === item.key ? 'bg-fill-content-hover' : ''
-                } flex cursor-pointer justify-between rounded-[8px] text-sm hover:bg-fill-content-hover`}
-              >
-                <div className={'flex-1'}>{item.content}</div>
-
-                {item.key === language && <TickIcon className='h-5 w-5 text-content-on-fill-hover' />}
-              </div>
-            ))}
-          </div>
-        </div>
-      </Popover>
-    </>
+        {options.map((option, index) => (
+          <button
+            key={option.id}
+            id={`${id}-${option.id}`}
+            type='button'
+            role='option'
+            aria-selected={option.id === normalizeCodeLanguage(language)}
+            tabIndex={-1}
+            className={`code-menu-row ${index === active ? 'is-active' : ''}`}
+            onMouseDown={(event) => event.preventDefault()}
+            onMouseMove={() => setActive(index)}
+            onClick={() => onSelect(option.id)}
+          >
+            <span>
+              {option.id === 'auto'
+                ? t('document.codeBlock.language.auto', { defaultValue: 'Auto' })
+                : codeLanguageLabel(option.id)}
+            </span>
+            {option.id === normalizeCodeLanguage(language) && (
+              <Check size={20} className='ml-auto text-icon-info-thick' />
+            )}
+          </button>
+        ))}
+        {!options.length && (
+          <p role='status' className='px-2 py-3 text-sm text-text-secondary'>
+            {t('findAndReplace.noResults', { defaultValue: 'No results' })}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
-
-export default memo(SelectLanguage);

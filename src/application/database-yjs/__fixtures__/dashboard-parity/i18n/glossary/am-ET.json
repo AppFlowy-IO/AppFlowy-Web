@@ -1,0 +1,39 @@
+{
+  "locale": "am-ET",
+  "terms": {
+    "dashboard": "ዳሽቦርድ",
+    "widget": "ዊጀት",
+    "chart": "ገበታ",
+    "view": "እይታ",
+    "row": "ረድፍ",
+    "property": "ንብረት",
+    "field": "መስክ",
+    "database": "የመረጃ ቋት",
+    "source": "ምንጭ",
+    "page": "ገጽ",
+    "workspace": "የስራ ቦታ",
+    "done": "ተከናውኗል",
+    "edit": "አርትዕ",
+    "delete": "ሰርዝ",
+    "duplicate": "አባዛ",
+    "save": "አስቀምጥ",
+    "cancel": "ይቅር",
+    "close": "ዝጋ",
+    "back": "ተመለስ",
+    "settings": "ቅንብሮች",
+    "filter": "ማጣሪያ",
+    "sort": "ደርድር",
+    "search": "ፈልግ",
+    "undo": "ቀልብስ",
+    "redo": "ድገም",
+    "reset": "ዳግም አስጀምር",
+    "untitled": "ርዕስ አልባ",
+    "day": "ቀን",
+    "week": "ሳምንት",
+    "month": "ወር",
+    "year": "ዓመት"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

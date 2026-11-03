@@ -48,6 +48,8 @@ export interface AuthInternalContextType {
    * optional limit fields.
    */
   syncLimitsLoaded?: boolean;
+  /** Server explicitly advertises transport UpdateAck responses. */
+  supportsRealtimeUpdateAck?: boolean;
   /** Switch the active workspace. Triggers full data reload. */
   onChangeWorkspace: (workspaceId: string) => Promise<void>;
   /** Error from loading workspace info — allows consumers to show error/retry UI. */

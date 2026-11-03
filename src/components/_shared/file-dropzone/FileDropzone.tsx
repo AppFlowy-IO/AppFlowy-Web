@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
 
 interface FileDropzoneProps {
+  buttonClassName?: string;
+  inputRef?: React.RefObject<HTMLInputElement>;
   onChange?: (files: File[]) => void;
   accept?: string;
   multiple?: boolean;
@@ -15,10 +17,11 @@ interface FileDropzoneProps {
   progress?: number;
 }
 
-function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loading, progress }: FileDropzoneProps) {
+function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loading, progress, buttonClassName, inputRef }: FileDropzoneProps) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const internalFileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = inputRef ?? internalFileInputRef;
   const isDisabled = Boolean(disabled || loading);
 
   const handleFiles = (files: FileList) => {
@@ -105,7 +108,7 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
           type='button'
           disabled={isDisabled}
           onClick={handleClick}
-          className='flex h-full min-h-[294px] w-full cursor-pointer flex-col justify-center rounded-[8px] bg-surface-primary px-4 text-center outline-dashed outline-2 outline-border-primary hover:bg-surface-primary-hover focus-visible:outline focus-visible:outline-border-theme-thick'
+          className={`flex h-full min-h-[294px] w-full cursor-pointer flex-col justify-center rounded-[8px] bg-surface-primary px-4 text-center outline-dashed outline-2 outline-border-primary hover:bg-surface-primary-hover focus-visible:outline focus-visible:outline-border-theme-thick ${buttonClassName || ''}`}
           style={{
             backgroundColor: dragging ? 'var(--fill-info-light)' : undefined,
             outlineColor: dragging ? 'var(--border-theme-thick)' : undefined,

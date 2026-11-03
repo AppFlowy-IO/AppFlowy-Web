@@ -9,16 +9,25 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { getBlocks } from '@/application/slate-yjs/utils/yjs';
-import { MentionType, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { BlockType, MentionType, PDFBlockData, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
 import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { pdfFileName } from '@/components/editor/components/blocks/pdf/pdf-data';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
 import { PageReferenceError } from './PageReferenceError';
 import { usePageReferenceMetadata } from './usePageReferenceMetadata';
 
 import './style.css';
+
+function blockReferenceText(node: Element | Text): string {
+  if (Element.isElement(node) && node.type === BlockType.PDFBlock) {
+    return pdfFileName(node.data as PDFBlockData);
+  }
+
+  return CustomEditor.getBlockTextContent(node, 2);
+}
 
 function MentionPage({
   pageId,
@@ -50,7 +59,7 @@ function MentionPage({
   const currentBlock = blockId && currentViewId === pageId
     ? findSlateEntryByBlockId(editor as YjsEditor, blockId)
     : undefined;
-  const currentBlockText = currentBlock ? CustomEditor.getBlockTextContent(currentBlock[0], 2) : undefined;
+  const currentBlockText = currentBlock ? blockReferenceText(currentBlock[0]) : undefined;
   // The open editor already owns this block's readable content. A separate
   // metadata failure must not hide it (including in detached editor surfaces).
   const hasCurrentBlockContent = Boolean(currentBlockText);
@@ -81,7 +90,7 @@ function MentionPage({
         const handleBlockChange = () => {
           if (!current) return;
           const node = getBlocks(sharedRoot).has(blockId) ? traverseBlock(blockId, sharedRoot) : undefined;
-          const text = node ? CustomEditor.getBlockTextContent(node, 2) : '';
+          const text = node ? blockReferenceText(node) : '';
 
           setExternalBlock((previous) => previous?.pageId === pageId && previous.blockId === blockId && previous.text === text
             ? previous

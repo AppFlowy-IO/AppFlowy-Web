@@ -219,33 +219,11 @@ export function useBatchSync(
     }
   }, []);
 
-  const notifyManifestSync = useCallback((objectId: string, persisted?: Promise<boolean>) => {
+  const notifyManifestSync = useCallback((objectId: string) => {
     if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) return;
-
-    const coveredDirtyEdit = backgroundDirtyEditsRef.current.get(objectId);
-
-    if (!coveredDirtyEdit) return;
-
-    const clearCoveredEdit = () => {
-      if (backgroundDirtyEditsRef.current.get(objectId)?.seq === coveredDirtyEdit.seq) {
-        clearBackgroundDirtyEdits([objectId]);
-      }
-    };
-
-    if (!persisted) {
-      clearCoveredEdit();
-      return;
-    }
-
-    void persisted
-      .then((isDurable) => {
-        if (isDurable) {
-          clearCoveredEdit();
-        }
-      })
-      .catch((error) => {
-        Log.warn('[sync] failed to observe durable manifest enqueue', { objectId, error });
-      });
+    // The protocol calls this synchronously after comparing the server state
+    // with the latest doc. Local enqueue/send promises cannot retire this work.
+    clearBackgroundDirtyEdits([objectId]);
   }, [clearBackgroundDirtyEdits]);
 
   const applyFullSyncResults = useCallback(async (results: Awaited<ReturnType<typeof collabFullSyncBatch>>,

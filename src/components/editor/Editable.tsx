@@ -220,7 +220,7 @@ const EditorEditable = () => {
         <LeafContext.Provider
           value={leafContextValue}
         >
-          <ErrorBoundary fallbackRender={ElementFallbackRender}>
+          <ErrorBoundary FallbackComponent={ElementFallbackRender}>
             <Editable
               role={'textbox'}
               data-testid={'editor-content'}

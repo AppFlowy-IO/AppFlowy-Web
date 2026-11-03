@@ -9,6 +9,7 @@
  * - useReorderSorts: Reorder sorts
  * - useAddFilter: Add a new filter
  * - useRemoveFilter: Remove a filter
+ * - useMoveFilter: Move a top-level filter to another position
  * - useUpdateFilter: Update filter settings
  */
 
@@ -26,10 +27,12 @@ import {
   resolveRollupFilterTargetFieldType,
 } from '@/application/database-yjs/filter';
 import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
+import { cloneYValue } from '@/application/database-yjs/layout-codec';
 import { newRollupFilterMetadata, rollupConfigurationMatches } from '@/application/database-yjs/rollup/filter';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
+import { useDetachedFilterStore } from './detached-filters';
 import { applyFilterUpdate, UpdateFilterParams } from './filter-update';
 
 export function useClearSortingDispatch() {
@@ -238,9 +241,12 @@ export function useAddFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
   const fields = useDatabaseFields();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (fieldId: string) => {
+      if (detachedStore) return detachedStore.addFilter(fieldId);
+
       Log.debug('[useAddFilter] Creating filter', { fieldId });
 
       // Guard: Don't create filter if fieldId is missing or empty
@@ -324,16 +330,22 @@ export function useAddFilter() {
 
       return id;
     },
-    [view, sharedRoot, fields]
+    [view, sharedRoot, fields, detachedStore]
   );
 }
 
 export function useRemoveFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (filterId: string) => {
+      if (detachedStore) {
+        detachedStore.removeFilter(filterId);
+        return;
+      }
+
       if (!view) return;
       executeOperations(
         sharedRoot,
@@ -355,6 +367,44 @@ export function useRemoveFilter() {
           },
         ],
         'removeFilter'
+      );
+    },
+    [view, sharedRoot, detachedStore]
+  );
+}
+
+/**
+ * Moves a top-level filter to `toIndex` (its index after the move), as one
+ * write: a delete and the insert of a copy. Works on the view it is given,
+ * so a dashboard widget in View mode reorders its private copy (WP07 R7). A
+ * pure reorder changes no rows, so it never makes a widget's filters dirty.
+ */
+export function useMoveFilter() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (filterId: string, toIndex: number) => {
+      if (!view) return;
+      const filters = view.get(YjsDatabaseKey.filters);
+
+      if (!filters) return;
+      const from = filters.toArray().findIndex((filter) => filter.get(YjsDatabaseKey.id) === filterId);
+      const to = Math.max(0, Math.min(filters.length - 1, toIndex));
+
+      if (from === -1 || from === to) return;
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            // A copy Yjs can insert (native clients store enums as bigints).
+            const copy = cloneYValue(filters.get(from)) as YDatabaseFilter;
+
+            filters.delete(from, 1);
+            filters.insert(to, [copy]);
+          },
+        ],
+        'moveFilter'
       );
     },
     [view, sharedRoot]
@@ -379,10 +429,12 @@ export function useUpdateFilter() {
 export function useEnterAdvancedMode() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (rootOperator: FilterType.And | FilterType.Or) => {
-      if (!view) {
+      // Detached rules are a flat AND list, like desktop's session filters.
+      if (!view || detachedStore) {
         return;
       }
 
@@ -490,7 +542,7 @@ export function useEnterAdvancedMode() {
         console.error('[useEnterAdvancedMode] Outer error:', outerError);
       }
     },
-    [view, sharedRoot]
+    [view, sharedRoot, detachedStore]
   );
 }
 
@@ -699,9 +751,15 @@ export function useUpdateAdvancedFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
   const fields = useDatabaseFields();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (params: UpdateFilterParams) => {
+      if (detachedStore) {
+        detachedStore.updateFilter(params);
+        return;
+      }
+
       if (!view) return;
       executeOperations(
         sharedRoot,
@@ -715,7 +773,7 @@ export function useUpdateAdvancedFilter() {
         'updateFilter'
       );
     },
-    [view, sharedRoot, fields]
+    [view, sharedRoot, fields, detachedStore]
   );
 }
 

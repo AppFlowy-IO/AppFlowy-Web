@@ -31,7 +31,7 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Node dependencies for SSR server
-RUN bun install cheerio pino pino-pretty
+RUN bun install cheerio pino pino-pretty ipaddr.js@2.5.0
 
 # Copy built static files from builder to BOTH locations
 # nginx serves from /usr/share/nginx/html, Bun SSR reads from /app/dist
@@ -41,6 +41,7 @@ COPY --from=builder /app/dist /app/dist
 # Copy all SSR server files (server.ts imports config.ts, logger.ts, routes.ts, etc.)
 COPY deploy/ /app/deploy/
 COPY api/_lib/youtube.ts api/_lib/youtube-import.ts /app/api/_lib/
+COPY api/_lib/pdf-proxy.ts api/_lib/pdf-proxy-response.ts /app/api/_lib/
 COPY src/application/integrations/youtube-url.ts /app/src/application/integrations/youtube-url.ts
 COPY docker/nginx-ssr.conf /etc/nginx/nginx.conf 
 COPY docker/supervisord-ssr.conf /etc/supervisor/conf.d/supervisord.conf

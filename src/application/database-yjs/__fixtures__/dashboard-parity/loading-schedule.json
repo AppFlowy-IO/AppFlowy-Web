@@ -1,0 +1,1022 @@
+{
+  "fixture": "loading-schedule",
+  "version": 2,
+  "format": {
+    "planDashboardLoads": "planDashboardLoads({now, constants, hostSourceId, closed, visibleStartedAt, sourceRows, residentSources, widgets}) -> {start, nextWakeAt}. Times are ms. residentSources lists the resident sources (see residency), sorted, each once. widgets are in layout order (top to bottom, left to right), each {id, sourceId, visible, state, firstData} with state idle | loading | suspended | done. start lists the widget ids to start now, in start order; nextWakeAt is when to plan again without a report, or null.",
+    "rules": [
+      "1. closed starts nothing and plans no wake.",
+      "2. Busy sources are the distinct sourceId of loading widgets, hostSourceId and residentSources excluded: only cold loads count. Free slots = maxConcurrentSources minus the busy sources (never below 0). suspended and done widgets hold no slot.",
+      "3. Candidates are the idle widgets and the suspended widgets that are visible. Visible candidates come first, then the others, each group in layout order.",
+      "4. A candidate whose source is the host, is resident or is busy (also busy since earlier in this pass) starts at once and takes no slot.",
+      "5. Any other candidate starts only while a slot is free, and takes it.",
+      "6. A candidate that is not visible starts only when every visible widget has firstData or is done (true when no widget is visible), or when now - visibleStartedAt >= deferredStartTimeoutMs; and only while the sum of sourceRows is at most rowBudget. When visibleStartedAt is null and this pass starts a visible widget, the timeout counts from now.",
+      "7. nextWakeAt is visibleStartedAt + deferredStartTimeoutMs when a candidate that is not visible is held back by the timing of rule 6 alone (the row budget allows it, and its source is the host, is resident, is busy or would get a free slot); otherwise null."
+    ],
+    "residency": [
+      "A source is resident when the client holds its rows in memory already, so a widget of it loads nothing cold. The client passes the resident sources it observes at plan time and plans again when the set changes.",
+      "Web: the tab holds a settled row walk of the database with its complete seed set (settled and hasCompleteSeedSet, not invalidated by a restore), and the seeds were not released: a mounted view retains the database, or the last one left it less than sourceIdleReleaseMs ago. The database document stays open once loaded. A walk in flight is not resident.",
+      "Desktop: the Rust database editor of the source is open, its row load pass has completed, and the idle release has not removed it (sourceIdleReleaseMs after its last view or session closed; 10 minutes for a widget source on a cloud account with history). An editor that is opening or loading rows is not resident.",
+      "A released source is no longer resident: its next widget queues for a slot as a cold load. Residency changes the slots only: resident candidates keep the order of rule 3 and the timing and row budget of rule 6, and rule 1 still starts nothing."
+    ],
+    "constants": "Equal to tokens.json loading. A runner passes them as input.constants of every case and step.",
+    "cases": "{name, input, expected}: planDashboardLoads({...input, constants}) must equal expected.",
+    "sequences": "{name, input, steps}: the state starts as input. For each step in order: set now to step.now; merge every step.set patch into the widget with that id (visible, state, firstData); set closed when the step has it; replace residentSources when the step has it; planDashboardLoads({...state, constants}) must equal step.expected; then every started widget becomes loading and, when visibleStartedAt is null and a started widget is visible, visibleStartedAt becomes now. After that the busy sources (rule 2), sorted, must equal step.busySources, and there are never more than maxConcurrentSources of them."
+  },
+  "constants": { "maxConcurrentSources": 2, "deferredStartTimeoutMs": 10000, "rowBudget": 10000, "sourceIdleReleaseMs": 60000, "sourceLoadTimeoutMs": 30000 },
+  "cases": [
+    {
+      "name": "visible widgets start before deferred ones, and the timeout counts from this first visible start",
+      "input": {
+        "now": 1000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w1"], "nextWakeAt": 11000 }
+    },
+    {
+      "name": "the third distinct source waits",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w1", "w2"], "nextWakeAt": null }
+    },
+    {
+      "name": "a widget of a loading source starts at once",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "A", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w4"], "nextWakeAt": null }
+    },
+    {
+      "name": "a widget of a source that takes a slot in the same pass starts with it",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "B", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w1", "w2", "w4", "w5"], "nextWakeAt": null }
+    },
+    {
+      "name": "the host never waits",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "C", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a loading host widget holds no slot",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "host", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "C", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w2", "w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a finished load frees its slot and the next queued widget in layout order starts",
+      "input": {
+        "now": 900,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a failed load frees its slot",
+      "input": {
+        "now": 900,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a done widget is never started again",
+      "input": {
+        "now": 900,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "done", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "deferred widgets start after the first data of every visible widget, in layout order",
+      "input": {
+        "now": 2000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "done", "firstData": true },
+          { "id": "w3", "sourceId": "C", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "A", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3", "w5"], "nextWakeAt": null }
+    },
+    {
+      "name": "a failed visible widget does not hold deferred widgets back",
+      "input": {
+        "now": 2000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w2"], "nextWakeAt": null }
+    },
+    {
+      "name": "deferred widgets wait while a visible widget has no first data, even on a loading source",
+      "input": {
+        "now": 4000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": 11000 }
+    },
+    {
+      "name": "deferred widgets still wait one millisecond before the timeout",
+      "input": {
+        "now": 10999,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "C", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": 11000 }
+    },
+    {
+      "name": "deferred widgets start after 10 s, within the free slots",
+      "input": {
+        "now": 11000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "C", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "after the timeout a queued visible widget still takes the free slot first",
+      "input": {
+        "now": 11000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "no wake is planned while a deferred widget also waits for a slot",
+      "input": {
+        "now": 2000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "no visible widget: deferred widgets start in layout order, two sources at a time",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "A", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w1", "w2", "w4"], "nextWakeAt": null }
+    },
+    {
+      "name": "a widget scrolled into view jumps the queue",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w2", "sourceId": "C", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "D", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "deferred widgets do not start over the row budget",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": { "A": 10001 },
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "host", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "deferred widgets start at exactly the row budget",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": { "A": 6000, "host": 4000 },
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w2"], "nextWakeAt": null }
+    },
+    {
+      "name": "no wake is planned over the row budget",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": { "A": 20000 },
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "a visible widget starts over the row budget",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": { "A": 20000 },
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w2"], "nextWakeAt": null }
+    },
+    {
+      "name": "a suspended widget holds no slot",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": false, "state": "suspended", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a suspended widget that is visible again resumes with visible priority",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "A", "visible": true, "state": "suspended", "firstData": true },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "loading", "firstData": true }
+        ]
+      },
+      "expected": { "start": ["w2"], "nextWakeAt": null }
+    },
+    {
+      "name": "a suspended widget that is still off-screen is not resumed",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": false, "state": "suspended", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "done", "firstData": true }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "a suspended widget of a loading source resumes without a slot",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": true, "state": "suspended", "firstData": true },
+          { "id": "w4", "sourceId": "C", "visible": true, "state": "suspended", "firstData": true }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "closed starts nothing",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": true,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "B", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "closed plans no wake",
+      "input": {
+        "now": 4000,
+        "hostSourceId": "host",
+        "closed": true,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "A", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "more busy sources than slots: only widgets of the host and of busy sources start",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "host", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w5", "w6"], "nextWakeAt": null }
+    },
+    {
+      "name": "a widget of a resident source skips the queue: it starts at once and takes no slot",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": ["C"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a loading widget of a resident source holds no slot",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": ["A"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w2", "w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "warm and cold sources mixed: warm widgets start at once and only cold sources take the 2 slots, in layout order",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": ["A", "C", "F"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "E", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w7", "sourceId": "F", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w1", "w2", "w3", "w4", "w6", "w7"], "nextWakeAt": null }
+    },
+    {
+      "name": "8 warm sources reopen without waiting: every visible widget starts in the first pass",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"],
+        "widgets": [
+          { "id": "w1", "sourceId": "S1", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "S2", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "S3", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "S4", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "S5", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "S6", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w7", "sourceId": "S7", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w8", "sourceId": "S8", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8"], "nextWakeAt": null }
+    },
+    {
+      "name": "a deferred widget of a resident source still waits for the visible widgets, and its wake is planned while both slots are taken",
+      "input": {
+        "now": 2000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 1000,
+        "sourceRows": {},
+        "residentSources": ["C"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": 11000 }
+    },
+    {
+      "name": "a deferred widget of a resident source starts after the first data of every visible widget, while both slots are taken",
+      "input": {
+        "now": 2000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": ["C"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": true },
+          { "id": "w3", "sourceId": "D", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "C", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": ["w4"], "nextWakeAt": null }
+    },
+    {
+      "name": "a deferred widget of a resident source does not start over the row budget",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": { "A": 20000 },
+        "residentSources": ["A", "B"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "a suspended widget of a resident source resumes without a slot",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": ["C"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "suspended", "firstData": true },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "suspended", "firstData": true }
+        ]
+      },
+      "expected": { "start": ["w3"], "nextWakeAt": null }
+    },
+    {
+      "name": "a done source that is not resident (its rows were released) takes a slot again",
+      "input": {
+        "now": 3000,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": 0,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "done", "firstData": true },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "loading", "firstData": false },
+          { "id": "w4", "sourceId": "A", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    },
+    {
+      "name": "closed starts nothing, not even a widget of a resident source",
+      "input": {
+        "now": 500,
+        "hostSourceId": "host",
+        "closed": true,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": ["A"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "A", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "expected": { "start": [], "nextWakeAt": null }
+    }
+  ],
+  "sequences": [
+    {
+      "name": "8 widgets over 8 sources never have more than 2 busy sources at any step",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "S1", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "S2", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "S3", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "S4", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "S5", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "S6", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w7", "sourceId": "S7", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w8", "sourceId": "S8", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2"], "nextWakeAt": null },
+          "busySources": ["S1", "S2"]
+        },
+        {
+          "now": 300,
+          "set": [{ "id": "w1", "firstData": true }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": ["S1", "S2"]
+        },
+        {
+          "now": 800,
+          "set": [{ "id": "w1", "state": "done" }],
+          "expected": { "start": ["w3"], "nextWakeAt": null },
+          "busySources": ["S2", "S3"]
+        },
+        {
+          "now": 1200,
+          "set": [{ "id": "w2", "state": "done" }],
+          "expected": { "start": ["w4"], "nextWakeAt": null },
+          "busySources": ["S3", "S4"]
+        },
+        {
+          "now": 2000,
+          "set": [{ "id": "w3", "firstData": true, "state": "done" }],
+          "expected": { "start": [], "nextWakeAt": 10000 },
+          "busySources": ["S4"]
+        },
+        {
+          "now": 2500,
+          "set": [{ "id": "w4", "firstData": true }],
+          "expected": { "start": ["w5"], "nextWakeAt": null },
+          "busySources": ["S4", "S5"]
+        },
+        {
+          "now": 3000,
+          "set": [{ "id": "w4", "state": "done" }],
+          "expected": { "start": ["w6"], "nextWakeAt": null },
+          "busySources": ["S5", "S6"]
+        },
+        {
+          "now": 3500,
+          "set": [{ "id": "w5", "firstData": true, "state": "done" }, { "id": "w6", "state": "done" }],
+          "expected": { "start": ["w7", "w8"], "nextWakeAt": null },
+          "busySources": ["S7", "S8"]
+        },
+        {
+          "now": 4000,
+          "set": [{ "id": "w7", "firstData": true, "state": "done" }, { "id": "w8", "firstData": true, "state": "done" }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": []
+        }
+      ]
+    },
+    {
+      "name": "a slow visible source: deferred widgets start at the timeout, a widget scrolled into view jumps the queue, leaving stops the queue",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "SLOW", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "SLOW", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "C", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "D", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "E", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2"], "nextWakeAt": 10000 },
+          "busySources": ["SLOW"]
+        },
+        {
+          "now": 10000,
+          "expected": { "start": ["w3"], "nextWakeAt": null },
+          "busySources": ["B", "SLOW"]
+        },
+        {
+          "now": 10500,
+          "set": [{ "id": "w5", "visible": true }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": ["B", "SLOW"]
+        },
+        {
+          "now": 11000,
+          "set": [{ "id": "w3", "firstData": true, "state": "done" }],
+          "expected": { "start": ["w5"], "nextWakeAt": null },
+          "busySources": ["D", "SLOW"]
+        },
+        {
+          "now": 12000,
+          "set": [{ "id": "w5", "firstData": true, "state": "done" }],
+          "expected": { "start": ["w4"], "nextWakeAt": null },
+          "busySources": ["C", "SLOW"]
+        },
+        {
+          "now": 12500,
+          "set": [{ "id": "w4", "firstData": true, "state": "done" }],
+          "closed": true,
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": ["SLOW"]
+        }
+      ]
+    },
+    {
+      "name": "a widget suspended off-screen frees its slot and resumes when it is visible again",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2"], "nextWakeAt": null },
+          "busySources": ["A", "B"]
+        },
+        {
+          "now": 1000,
+          "set": [{ "id": "w1", "firstData": true, "visible": false, "state": "suspended" }],
+          "expected": { "start": ["w3"], "nextWakeAt": null },
+          "busySources": ["B", "C"]
+        },
+        {
+          "now": 2000,
+          "set": [{ "id": "w1", "visible": true }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": ["B", "C"]
+        },
+        {
+          "now": 3000,
+          "set": [{ "id": "w2", "firstData": true, "state": "done" }],
+          "expected": { "start": ["w1"], "nextWakeAt": null },
+          "busySources": ["A", "C"]
+        }
+      ]
+    },
+    {
+      "name": "8 warm sources reopen without waiting for a slot: the visible widgets at once, the deferred ones as soon as the visible ones show data",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"],
+        "widgets": [
+          { "id": "w1", "sourceId": "S1", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "S2", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "S3", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "S4", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "S5", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "S6", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w7", "sourceId": "S7", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w8", "sourceId": "S8", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2", "w3", "w4"], "nextWakeAt": 10000 },
+          "busySources": []
+        },
+        {
+          "now": 400,
+          "set": [{ "id": "w1", "firstData": true }, { "id": "w2", "firstData": true }, { "id": "w3", "firstData": true }, { "id": "w4", "firstData": true }],
+          "expected": { "start": ["w5", "w6", "w7", "w8"], "nextWakeAt": null },
+          "busySources": []
+        },
+        {
+          "now": 900,
+          "set": [{ "id": "w1", "firstData": true, "state": "done" }, { "id": "w2", "firstData": true, "state": "done" }, { "id": "w3", "firstData": true, "state": "done" }, { "id": "w4", "firstData": true, "state": "done" }, { "id": "w5", "firstData": true, "state": "done" }, { "id": "w6", "firstData": true, "state": "done" }, { "id": "w7", "firstData": true, "state": "done" }, { "id": "w8", "firstData": true, "state": "done" }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": []
+        }
+      ]
+    },
+    {
+      "name": "warm and cold sources mixed: warm widgets never wait for a slot, and a source whose rows finished loading frees its slot",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": {},
+        "residentSources": ["A", "E"],
+        "widgets": [
+          { "id": "w1", "sourceId": "A", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "B", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "C", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "D", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "E", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "B", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w7", "sourceId": "F", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2", "w3"], "nextWakeAt": 10000 },
+          "busySources": ["B", "C"]
+        },
+        {
+          "now": 700,
+          "set": [{ "id": "w2", "firstData": true }],
+          "residentSources": ["A", "B", "E"],
+          "expected": { "start": ["w4"], "nextWakeAt": 10000 },
+          "busySources": ["C", "D"]
+        },
+        {
+          "now": 1200,
+          "set": [{ "id": "w1", "firstData": true, "state": "done" }, { "id": "w3", "firstData": true }, { "id": "w4", "firstData": true }],
+          "expected": { "start": ["w5", "w6"], "nextWakeAt": null },
+          "busySources": ["C", "D"]
+        },
+        {
+          "now": 2000,
+          "set": [{ "id": "w3", "state": "done" }],
+          "residentSources": ["A", "B", "C", "E"],
+          "expected": { "start": ["w7"], "nextWakeAt": null },
+          "busySources": ["D", "F"]
+        }
+      ]
+    },
+    {
+      "name": "a dashboard inside its own source database: off-screen host widgets wait for the first data of every visible widget, and no host widget takes a slot",
+      "input": {
+        "now": 0,
+        "hostSourceId": "host",
+        "closed": false,
+        "visibleStartedAt": null,
+        "sourceRows": { "host": 5000 },
+        "residentSources": [],
+        "widgets": [
+          { "id": "w1", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w2", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w3", "sourceId": "host", "visible": true, "state": "idle", "firstData": false },
+          { "id": "w4", "sourceId": "host", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w5", "sourceId": "host", "visible": false, "state": "idle", "firstData": false },
+          { "id": "w6", "sourceId": "host", "visible": false, "state": "idle", "firstData": false }
+        ]
+      },
+      "steps": [
+        {
+          "now": 0,
+          "expected": { "start": ["w1", "w2", "w3"], "nextWakeAt": 10000 },
+          "busySources": []
+        },
+        {
+          "now": 800,
+          "set": [{ "id": "w1", "firstData": true }, { "id": "w2", "firstData": true }],
+          "expected": { "start": [], "nextWakeAt": 10000 },
+          "busySources": []
+        },
+        {
+          "now": 1500,
+          "set": [{ "id": "w3", "firstData": true }],
+          "expected": { "start": ["w4", "w5", "w6"], "nextWakeAt": null },
+          "busySources": []
+        },
+        {
+          "now": 2500,
+          "set": [{ "id": "w1", "state": "done" }, { "id": "w2", "state": "done" }, { "id": "w3", "state": "done" }, { "id": "w4", "firstData": true, "state": "done" }, { "id": "w5", "firstData": true, "state": "done" }, { "id": "w6", "firstData": true, "state": "done" }],
+          "expected": { "start": [], "nextWakeAt": null },
+          "busySources": []
+        }
+      ]
+    }
+  ]
+}

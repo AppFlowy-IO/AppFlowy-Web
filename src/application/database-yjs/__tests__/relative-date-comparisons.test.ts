@@ -69,6 +69,26 @@ describe('relative date comparison operands (desktop #9069)', () => {
     expect(toStartDateCondition(end)).toBe(start);
   });
 
+  it.each([false, true])('preserves parameterized ranges when switching endpoints with comparisons enabled: %s', (enabled) => {
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available',
+      info: { enable_page_history: false, enable_relative_date_comparisons: enabled },
+    });
+    const content = JSON.stringify({ relative_direction: 'past', relative_amount: 7, relative_unit: 'day' });
+    const { doc, fields, filters, node } = fixture(C.DateStartsRelative, content);
+
+    applyFilterUpdate(filters, fields, { filterId: 'rule', condition: C.DateEndsRelative });
+    expect(node.get(K.condition)).toBe(C.DateEndsRelative);
+    expect(node.get(K.content)).toBe(content);
+    const parsed = parseFilter(FieldType.DateTime, node) as DateFilter;
+
+    expect(dateFilterCheck({ data: dayjs().subtract(3, 'day').unix().toString() } as DateTimeCell, parsed)).toBe(true);
+    expect(dateFilterCheck({ data: dayjs().subtract(10, 'day').unix().toString() } as DateTimeCell, parsed)).toBe(false);
+    applyFilterUpdate(filters, fields, { filterId: 'rule', condition: C.DateStartsRelative });
+    expect(node.get(K.content)).toBe(content);
+    doc.destroy();
+  });
+
   it.each<ServerInfoState>([
     { status: 'loading' },
     { status: 'unsupported' },

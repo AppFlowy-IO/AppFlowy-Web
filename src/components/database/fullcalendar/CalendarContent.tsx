@@ -9,6 +9,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import './FullCalendar.styles.scss';
 
 import { useDatabaseContext } from '@/application/database-yjs';
+import { RowsLoadingPill } from '@/components/database/components/loading/RowsLoadingRow';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { AddButton } from '@/components/database/fullcalendar/AddButton';
 import { useCalendarDraft } from '@/components/database/fullcalendar/draft/useCalendarDraft';
@@ -112,7 +113,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   } = useCalendarHandlers();
 
   // Get calendar data and setup
-  const { events, emptyEvents, firstDayOfWeek } = useFullCalendarSetup(
+  const { events, emptyEvents, loading, firstDayOfWeek } = useFullCalendarSetup(
     newEventRowIds,
     openEventRowId,
     updateEventRowIds,
@@ -495,7 +496,12 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
       <EventContext.Provider
         value={{ clearNewEvent, setOpenEventRowId, markEventAsNew, markEventAsUpdate, clearUpdateEvent }}
       >
-        <div ref={setContainerRef} style={containerStyle} className={containerClassName}>
+        <div
+          ref={setContainerRef}
+          style={containerStyle}
+          className={containerClassName}
+          aria-busy={loading ? 'true' : undefined}
+        >
           <FullCalendar
             initialView={currentView}
             views={CALENDAR_CUSTOM_VIEWS}
@@ -540,6 +546,8 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
             fixedMirrorParent={document.body}
             dragScroll={true}
           />
+          {/* Rows still loading: the month is not the result yet, so it never reads as empty. */}
+          {loading ? <RowsLoadingPill testId={'calendar-loading-indicator'} /> : null}
         </div>
         <AddButton
           ref={addButtonRef}

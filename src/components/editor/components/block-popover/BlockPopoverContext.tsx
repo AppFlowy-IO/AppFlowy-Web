@@ -10,7 +10,17 @@ import { OPEN_MATH_EQUATION_EVENT } from '@/components/editor/utils/math-equatio
 export type MathEquationAIAction = 'generate' | 'explain' | 'check';
 export interface MathEquationAISession { blockId: string; action: MathEquationAIAction; draft?: string; id?: number }
 
+export type CodeAIAction = 'generate' | 'explain' | 'check' | 'comments';
+export interface CodeBlockAction {
+  blockId: string;
+  action: CodeAIAction | 'caption' | 'expand';
+  requestId: number;
+}
+
 export interface BlockPopoverContextType {
+  codeBlockAction?: CodeBlockAction;
+  openCodeBlockAction?: (blockId: string, action: CodeBlockAction['action']) => void;
+  closeCodeBlockAction?: () => void;
   mathEquationAI?: MathEquationAISession;
   openMathEquationAI?: (session: MathEquationAISession) => void;
   closeMathEquationAI?: () => void;
@@ -46,6 +56,12 @@ export function usePopoverMountSignal(blockId: string | undefined) {
 }
 
 export const BlockPopoverProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
+  const [codeBlockAction, setCodeBlockAction] = useState<CodeBlockAction>();
+  const actionSequence = useRef(0);
+  const openCodeBlockAction = useCallback((blockId: string, action: CodeBlockAction['action']) => {
+    setCodeBlockAction({ blockId, action, requestId: ++actionSequence.current });
+  }, []);
+  const closeCodeBlockAction = useCallback(() => setCodeBlockAction(undefined), []);
   const [mathEquationAI, setMathEquationAI] = useState<MathEquationAISession>();
   const sessionId = useRef(0);
   const openMathEquationAI = useCallback((session: MathEquationAISession) => setMathEquationAI({ ...session, id: ++sessionId.current }), []);
@@ -144,8 +160,38 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
   );
 
   const contextValue = useMemo(
-    () => ({ blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen, mathEquationAI, openMathEquationAI, closeMathEquationAI }),
-    [blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen, mathEquationAI, openMathEquationAI, closeMathEquationAI]
+    () => ({
+      blockId,
+      type,
+      anchorEl,
+      open,
+      close,
+      openPopover,
+      notifyMount,
+      isOpen,
+      codeBlockAction,
+      openCodeBlockAction,
+      closeCodeBlockAction,
+      mathEquationAI,
+      openMathEquationAI,
+      closeMathEquationAI,
+    }),
+    [
+      blockId,
+      type,
+      anchorEl,
+      open,
+      close,
+      openPopover,
+      notifyMount,
+      isOpen,
+      codeBlockAction,
+      openCodeBlockAction,
+      closeCodeBlockAction,
+      mathEquationAI,
+      openMathEquationAI,
+      closeMathEquationAI,
+    ]
   );
 
   return <BlockPopoverContext.Provider value={contextValue}>{children}</BlockPopoverContext.Provider>;

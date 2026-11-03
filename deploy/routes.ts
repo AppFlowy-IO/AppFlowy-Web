@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
+import { handlePDFProxy } from '../api/_lib/pdf-proxy-response';
 import { handleYoutubeImport } from '../api/_lib/youtube-import';
 
 import { fetchPublishedViewRoute, fetchPublishMetadata, fetchPublishSnapshot, type SnapshotFetchResult } from './api';
@@ -24,7 +25,7 @@ import { readSsrSettings, type SsrSettings } from './ssr-config';
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
 
 // Static file paths that should be served from dist
-const STATIC_PATHS = ['/static/', '/af_icons/', '/covers/', '/.well-known/'];
+const STATIC_PATHS = ['/static/', '/af_icons/', '/covers/', '/.well-known/', '/pdfjs/'];
 const STATIC_FILES = ['/appflowy.ico', '/appflowy.svg', '/og-image.png'];
 
 // Vite emits content-hashed filenames under /static/, so they can be cached
@@ -395,4 +396,8 @@ const youtubeImportRoute: RouteHandler = async ({ req, url }) => url.pathname ==
   ? handleYoutubeImport(req, { baseURL: process.env.APPFLOWY_BASE_URL || 'https://test.appflowy.cloud' })
   : undefined;
 
-export const routes: RouteHandler[] = [staticRoute, youtubeImportRoute, appRoute, publishRoute, methodNotAllowed, notFound];
+const pdfProxyRoute: RouteHandler = async ({ req, url }) => url.pathname === '/api/pdf-proxy'
+  ? handlePDFProxy(req)
+  : undefined;
+
+export const routes: RouteHandler[] = [staticRoute, youtubeImportRoute, pdfProxyRoute, appRoute, publishRoute, methodNotAllowed, notFound];

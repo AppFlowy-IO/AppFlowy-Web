@@ -33,6 +33,8 @@ export interface TemplateEmbeddedDatabaseSnapshot {
    * format whose ownership has to be inferred from the document/folder shape.
    */
   isLinked?: boolean;
+  /** Live view granting access when sourceViewId belongs only to archived settings. */
+  permissionSourceViewId?: string;
 }
 
 /** The snake-case JSON shape of Desktop's `TemplateEmbeddedDatabase`. */
@@ -43,6 +45,7 @@ export interface PersistedTemplateEmbeddedDatabaseSnapshot {
   name: string;
   raw_data: string;
   is_linked?: boolean;
+  permission_source_view_id?: string;
 }
 
 /**

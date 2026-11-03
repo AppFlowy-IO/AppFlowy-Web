@@ -31,6 +31,7 @@ const mockUpdate = jest.fn((params: UpdateFilterParams) =>
 jest.mock('@/application/database-yjs/context', () => ({
   ...jest.requireActual('@/application/database-yjs/context'),
   useReadOnly: () => mockReadOnly,
+  useConditionsReadOnly: () => mockReadOnly,
 }));
 jest.mock('@/application/database-yjs/selector', () => ({
   useFieldSelector: () => ({ field: mockField }),

@@ -1,0 +1,138 @@
+{
+  "fixture": "layouts/board-settings",
+  "version": 1,
+  "encoding": {
+    "format": "The layouts/unknown-keys case format: {\"$bigint\": \"N\"} is a native integer (yrs Any::BigInt, JS bigint), a plain number is a JS number, readers compare numbers by value.",
+    "board": "A board layout map (layout_settings[\"1\"]) as a newer client left it, with the group_calculation key (WP09 §1.6) and an unknown key.",
+    "fields": "The fields of the board's database that read_cases resolve field_id against. Supported group-calculation field types are listed in group-calculations.json.",
+    "read": "The effective board calculation every reader derives from stored: {type, field_id}, or null for the default card count. group_calculation must be an object whose type is a known CalculationType integer (JS number or native integer) and whose field_id is a string; any other shape, a missing key, Count (5), a missing field or a field type that is not supported reads as null. Readers never rewrite what they cannot read.",
+    "write": "The keys the client submits, in the persisted shape. A calculation is written as the whole {type, field_id} object; Count all is {type: 5, field_id: \"\"}, never a key deletion.",
+    "writtenKeys": "Exactly the top-level keys the write may touch.",
+    "expected": "The map after the write. Key order is irrelevant; every other key, including unknown ones, is kept."
+  },
+  "board": {
+    "hide_ungrouped_column": false,
+    "collapse_hidden_groups": true,
+    "hide_empty_groups": false,
+    "show_color_columns": true,
+    "group_calculation": {"type": 4, "field_id": "f_amount"},
+    "future_board_key": {"x": 1}
+  },
+  "fields": [
+    {"id": "f_name", "type": 0, "primary": true},
+    {"id": "f_stage", "type": 3},
+    {"id": "f_amount", "type": 1},
+    {"id": "f_owner", "type": 15}
+  ],
+  "read_cases": [
+    {
+      "name": "the stored calculation reads as Sum of Amount",
+      "stored": {
+        "hide_ungrouped_column": false,
+        "collapse_hidden_groups": true,
+        "hide_empty_groups": false,
+        "show_color_columns": true,
+        "group_calculation": {"type": 4, "field_id": "f_amount"},
+        "future_board_key": {"x": 1}
+      },
+      "read": {"type": 4, "field_id": "f_amount"}
+    },
+    {
+      "name": "an absent group_calculation reads as the card count",
+      "stored": {"show_color_columns": true, "future_board_key": {"x": 1}},
+      "read": null
+    },
+    {
+      "name": "a string reads as the card count",
+      "stored": {"group_calculation": "sum"},
+      "read": null
+    },
+    {
+      "name": "an unknown calculation type reads as the card count",
+      "stored": {"group_calculation": {"type": 99, "field_id": "f_amount"}},
+      "read": null
+    },
+    {
+      "name": "Count all with an empty field id reads as the card count",
+      "stored": {"group_calculation": {"type": 5, "field_id": ""}},
+      "read": null
+    },
+    {
+      "name": "a non-string field id reads as the card count",
+      "stored": {"group_calculation": {"type": 4, "field_id": 7}},
+      "read": null
+    },
+    {
+      "name": "a native integer type reads by value",
+      "stored": {"group_calculation": {"type": {"$bigint": "4"}, "field_id": "f_amount"}},
+      "read": {"type": 4, "field_id": "f_amount"}
+    },
+    {
+      "name": "a field that no longer exists reads as the card count",
+      "stored": {"group_calculation": {"type": 4, "field_id": "f_deleted"}},
+      "read": null
+    },
+    {
+      "name": "a field type without group calculations reads as the card count",
+      "stored": {"group_calculation": {"type": 17, "field_id": "f_owner"}},
+      "read": null
+    },
+    {
+      "name": "a select field reads its count calculation",
+      "stored": {"group_calculation": {"type": {"$bigint": "17"}, "field_id": "f_stage"}},
+      "read": {"type": 17, "field_id": "f_stage"}
+    }
+  ],
+  "write_cases": [
+    {
+      "name": "setting Sum of Amount keeps every other key",
+      "stored": {
+        "hide_ungrouped_column": false,
+        "collapse_hidden_groups": true,
+        "hide_empty_groups": false,
+        "show_color_columns": true,
+        "future_board_key": {"x": 1}
+      },
+      "write": {"group_calculation": {"type": 4, "field_id": "f_amount"}},
+      "writtenKeys": ["group_calculation"],
+      "expected": {
+        "hide_ungrouped_column": false,
+        "collapse_hidden_groups": true,
+        "hide_empty_groups": false,
+        "show_color_columns": true,
+        "group_calculation": {"type": 4, "field_id": "f_amount"},
+        "future_board_key": {"x": 1}
+      }
+    },
+    {
+      "name": "Count all is written as type 5 with an empty field id",
+      "stored": {
+        "show_color_columns": true,
+        "group_calculation": {"type": {"$bigint": "4"}, "field_id": "f_amount"},
+        "future_board_key": {"x": 1}
+      },
+      "write": {"group_calculation": {"type": 5, "field_id": ""}},
+      "writtenKeys": ["group_calculation"],
+      "expected": {
+        "show_color_columns": true,
+        "group_calculation": {"type": 5, "field_id": ""},
+        "future_board_key": {"x": 1}
+      }
+    },
+    {
+      "name": "a write without group_calculation leaves it untouched",
+      "stored": {
+        "show_color_columns": true,
+        "group_calculation": {"type": 99, "field_id": "f_amount"},
+        "future_board_key": {"x": 1}
+      },
+      "write": {"show_color_columns": false},
+      "writtenKeys": ["show_color_columns"],
+      "expected": {
+        "show_color_columns": false,
+        "group_calculation": {"type": 99, "field_id": "f_amount"},
+        "future_board_key": {"x": 1}
+      }
+    }
+  ]
+}

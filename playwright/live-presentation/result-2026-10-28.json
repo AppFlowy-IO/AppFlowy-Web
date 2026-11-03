@@ -1,0 +1,121 @@
+{
+  "date": "2026-10-28",
+  "attempt": 4,
+  "result": "blocked_by_external_provider_quota",
+  "liveSuitePassed": false,
+  "workspace": {
+    "observedPlan": "paid",
+    "existingSubscription": "Pro"
+  },
+  "requestChain": {
+    "web": "http://localhost:5182",
+    "gateway": "http://127.0.0.1:8100",
+    "cloud": "http://127.0.0.1:8000",
+    "aiService": "http://127.0.0.1:5001",
+    "proof": "Browser same-origin observations, verified Vite proxy configuration, Gateway forwarding log and AI service diagnostic. The browser alone cannot observe Vite's upstream connection."
+  },
+  "source": {
+    "blockCount": 15,
+    "containsKnownMarker": true
+  },
+  "completedUiChecks": [
+    "Password login through the actual UI",
+    "Visible account and exact shared workspace selection",
+    "Task-owned editor document creation and reload",
+    "Custom slide count 13 selected"
+  ],
+  "browserPresentationResponses": [
+    {
+      "method": "GET",
+      "suffix": "/status",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "POST",
+      "suffix": "/sources",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "GET",
+      "suffix": "/session",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "GET",
+      "suffix": "/styles",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "GET",
+      "suffix": "/decks",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "GET",
+      "suffix": "/status",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "PUT",
+      "suffix": "/session",
+      "status": 200,
+      "code": 0
+    },
+    {
+      "method": "POST",
+      "suffix": "/slides/assess",
+      "status": 503,
+      "code": 1032,
+      "reason": "AI_EXECUTION_FAILED"
+    }
+  ],
+  "browserPathPrefix": "/api/presentation/{workspace_id}",
+  "providerFailure": {
+    "provider": "OpenAI",
+    "timestampUtc": "2026-10-28T04:40:21.442697Z",
+    "httpStatus": 429,
+    "type": "insufficient_quota",
+    "originalRetryable": false
+  },
+  "gatewayForwarding": {
+    "completedAtUtc": "2026-10-28T04:40:21.443521Z",
+    "elapsedMs": 1474,
+    "forwardedHttpStatus": 503
+  },
+  "accountingEvidence": {
+    "readOnlySnapshotAtUtc": "2026-10-28T04:40:30Z",
+    "additionalObservationSeconds": 35,
+    "presentationJobs": 0,
+    "presentationUsageOperations": 0,
+    "accountRows": 0,
+    "accountRowsChanged": false,
+    "aiCutoverReady": false,
+    "observedUsage": {
+      "freeSlides": 0,
+      "reservedSlides": 0,
+      "freeExports": 0,
+      "reservedExports": 0
+    }
+  },
+  "implementedButNotExecuted": [
+    "Generate and save thirteen slides from a successful Cloud job",
+    "Reload and reopen the same artifact version and scene without regeneration",
+    "Edit the story and regenerate the same artifact at the next version",
+    "Verify regenerated title in story, scene and rendered canvas",
+    "Export through a real job and authenticated download",
+    "Verify all thirteen PPTX slides contain native editable text shapes and the edited title",
+    "Verify Free slide and export allowances remain unchanged after the paid workflow"
+  ],
+  "staticValidation": {
+    "typescript": "passed",
+    "bddGeneration": "passed",
+    "testDiscovery": "one scenario",
+    "liveGeneration": "not verified"
+  }
+}

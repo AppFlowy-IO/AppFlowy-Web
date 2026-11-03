@@ -11,6 +11,17 @@ import {
 
 import type { ReactNode } from 'react';
 
+/** The List settings rows; also rendered by a dashboard widget's settings host. */
+export function ListSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.List} />
+      <ListSettingGroup />
+    </>
+  );
+}
+
 function ListSettings({ children }: { children: ReactNode }) {
   return (
     <DropdownMenu>
@@ -24,9 +35,7 @@ function ListSettings({ children }: { children: ReactNode }) {
         side='bottom'
       >
         <DropdownMenuGroup>
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.List} />
-          <ListSettingGroup />
+          <ListSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,0 +1,93 @@
+.pdf-block[data-selected='true'] .pdf-selection-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--fill-theme-select);
+}
+
+.pdf-block[data-selected='true'] .pdf-empty::after {
+  background: var(--fill-text-select);
+}
+
+#body .pdf-block[data-upload-open='true'] .pdf-empty {
+  background: var(--block-bg-hover-color-20);
+}
+
+#body .pdf-upload-dropzone button {
+  background: transparent;
+  border-color: var(--border-primary);
+
+  &:hover {
+    background: var(--surface-primary-hover);
+    border-color: var(--border-primary-hover);
+  }
+}
+
+.pdf-viewer {
+  container-type: inline-size;
+  container-name: pdf;
+
+  // Match the code block caption's typography, spacing, and placeholder.
+  .pdf-caption {
+    width: 100%;
+    display: block;
+    margin-top: 4px;
+    resize: none;
+    padding: 0;
+    min-height: 18px;
+    font: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: left;
+    color: var(--text-secondary);
+    background: none;
+    outline: none;
+  }
+
+  .pdf-caption::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+@container pdf (max-width: 180px) {
+  .pdf-toolbar-expanded {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .pdf-toolbar {
+    opacity: 1;
+  }
+}
+
+// The shared AI markdown renderer has document-level padding. PDF summaries sit
+// inside their own 12px inset panel, so use that panel's spacing and text tokens.
+.pdf-summary #appflowy-editor {
+  color: var(--text-primary);
+
+  > [data-slate-editor] {
+    padding-inline: 0;
+  }
+}
+
+@container pdf (max-width: 320px) {
+  .pdf-password-form {
+    padding: 12px;
+  }
+}
+
+.pdf-menu-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-mode: alpha;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: auto;
+}

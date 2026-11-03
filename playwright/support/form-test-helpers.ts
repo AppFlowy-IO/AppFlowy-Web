@@ -105,7 +105,7 @@ export async function addFormViewToTabBarRaw(page: Page): Promise<void> {
  * `useEffect`) usually settles within a single frame, but slow CI
  * machines may need a moment longer.
  */
-async function dismissAutoCreateDialogIfPresent(page: Page): Promise<void> {
+export async function dismissAutoCreateDialogIfPresent(page: Page): Promise<void> {
   const dialog = FormSelectors.autoCreateDialog(page);
 
   try {

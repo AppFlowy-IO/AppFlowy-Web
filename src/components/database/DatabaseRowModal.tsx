@@ -38,11 +38,13 @@ function DatabaseRowModal({
   rowId,
   openPage,
   onRegisterPrepare,
+  initialMode,
 }: {
   open: boolean;
   rowId: string;
   onOpenChange: (open: boolean) => void;
   openPage?: (rowId: string) => void | Promise<void>;
+  initialMode?: RowPeekMode;
   onRegisterPrepare?: (prepare: (() => Promise<boolean>) | null) => void;
 }) {
   const context = useDatabaseContextOptional();
@@ -58,9 +60,10 @@ function DatabaseRowModal({
   const duplicatePending = useRef(false);
   const [selectedMode, setMode] = useState<RowPeekMode>();
   const sourceLayout = Number(view?.get(YjsDatabaseKey.layout));
-  const defaultMode =
-    sourceLayout === DatabaseViewLayout.Calendar || sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
-  const mode = selectedMode ?? defaultMode;
+  // Desktop opens timeline rows with `showRowAsCenterPeek`; every other
+  // layout, calendar events included since desktop #1531, opens a side peek.
+  const defaultMode = sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
+  const mode = selectedMode ?? initialMode ?? defaultMode;
   const canShowSide = layout?.canShow === true && !openPageModalViewId;
   const side = mode === 'side' && canShowSide;
   const contentRef = useRef<HTMLDivElement>(null);

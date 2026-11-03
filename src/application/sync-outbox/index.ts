@@ -4,9 +4,12 @@ import * as Y from 'yjs';
 import { db, matchesDatabaseStorageFence } from '@/application/db';
 import { type DatabaseStorageFence, isDatabaseStorageFenceCurrent } from '@/application/db/database-storage-fence';
 import { SyncOutboxRecord } from '@/application/db/tables/sync_outbox';
+import { RealtimeBackpressureError } from '@/application/realtime/send-window';
 import { Types } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
+
+import { OutboxDrainScheduler } from './drain-scheduler';
 
 // Inlined to avoid a circular import with sync-protocol. Value must match
 // UpdateFlags.Lib0v1 in sync-protocol.ts.
@@ -64,6 +67,8 @@ interface DrainConfig {
    */
   sendBestEffort?: OutboxSender;
   isReady: OutboxReady;
+  /** Transport admission for one object; absent on legacy transports. */
+  canSendObject?: (objectId?: string) => boolean;
   /**
    * Verify the current database restore identity before transmitting captured
    * Database/DatabaseRow bytes; other collab types never wait on it. False
@@ -139,6 +144,47 @@ let discoveredOutboxSessionKey: string | null = null;
 
 const SLOW_SYNC_RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 5 * 60_000];
 const DEFAULT_REALTIME_UPDATE_BYTES = 4 * 1024 * 1024;
+const blockedRealtimeObjects = new Set<string>();
+const drainScheduler = new OutboxDrainScheduler({
+  concurrency: 8,
+  canRun: (objectId) => {
+    const config = drainConfig;
+
+    if (!config || isPurging) return false;
+    const key = sessionObjectKey(config.userId, config.workspaceId, objectId);
+
+    if (suppressedObjects.has(key)) return false;
+    // Inspect an unknown head once even offline: oversized records can use HTTP without WS.
+    return !blockedRealtimeObjects.has(objectId) ||
+      (config.isReady() && (config.canSendObject?.(objectId) ?? true));
+  },
+  run: (objectId) => {
+    const config = drainConfig;
+    const promise = drainObject(objectId).finally(() => {
+      draining.delete(objectId);
+      const rerun = pendingRerun.delete(objectId);
+      const blocked = drainConfig === config && blockedRealtimeObjects.has(objectId);
+      const current = drainConfig;
+
+      // A new session may have queued this same object while the old worker was exiting.
+      // Only its explicit rerun crosses that boundary; old blocked work cannot retarget it.
+      if ((rerun || blocked) && current && !isPurging &&
+          !suppressedObjects.has(sessionObjectKey(current.userId, current.workspaceId, objectId))) {
+        scheduleDrain(objectId);
+      }
+    });
+
+    draining.set(objectId, promise);
+    return promise;
+  },
+  onError: (objectId, error) => Log.warn('[outbox] scheduled drain failed', { objectId, error }),
+});
+
+/** Resume remembered object IDs after transport ACKs, without rescanning IndexedDB. */
+export function wakeOutboxDrains(): void {
+  drainScheduler.wake();
+}
+
 const OUTBOX_READ_BATCH_SIZE = 64;
 const SLOW_SYNC_LOCK_PREFIX = 'appflowy:sync-outbox:slow';
 
@@ -196,11 +242,17 @@ export function getCurrentOutboxSessionGeneration(): number {
   return lifecycleGeneration;
 }
 
+type PendingOutboxRecord = Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId' | 'source'>;
+
 /** Resolves true only after the update has been written to IndexedDB. */
-export function enqueueOutboxUpdate(
-  record: Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId' | 'source'>,
-  options?: EnqueueOutboxOptions
-): Promise<boolean> {
+export function enqueueOutboxUpdate(record: PendingOutboxRecord, options?: EnqueueOutboxOptions): Promise<boolean> {
+  // Fenced row activation notifies Yjs observers inside a collab_custom-only
+  // transaction. The outbox write and its async continuations need their own
+  // storage scope, including manifest coalescing and immediate-send cleanup.
+  return BaseDexie.ignoreTransaction(() => enqueueUpdate(record, options));
+}
+
+function enqueueUpdate(record: PendingOutboxRecord, options?: EnqueueOutboxOptions): Promise<boolean> {
   if (isPurging) {
     // Logout / session-change in progress — drop. A new session will
     // re-enqueue any genuinely-pending edits through its own lifecycle.
@@ -246,7 +298,12 @@ export function enqueueOutboxUpdate(
   // the durable outbox row remains the fallback when it is not.
   const broadcast = drainConfig?.broadcast;
 
-  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId && !isRestoreGated(drainConfig, record.collabType)) {
+  if (
+    options?.broadcast !== false &&
+    broadcast &&
+    drainConfig?.workspaceId === workspaceId &&
+    !isRestoreGated(drainConfig, record.collabType)
+  ) {
     try {
       broadcast(buildUpdateMessage(record, drainConfig));
     } catch (error) {
@@ -288,6 +345,7 @@ export function enqueueOutboxUpdate(
     discoveredOutboxSessionKey === sessionKey(enqueueUserId, enqueueWorkspaceId) &&
     !suppressedObjects.has(objectSessionKey) &&
     !draining.has(record.objectId) &&
+    !drainScheduler.hasWork(record.objectId) &&
     activeConfig.isReady() &&
     !isIndividuallyOversized &&
     !serializedSlowSyncObjects.has(objectSessionKey)
@@ -296,7 +354,9 @@ export function enqueueOutboxUpdate(
       activeConfig.send(buildUpdateMessage(record, activeConfig));
       sentImmediately = true;
     } catch (error) {
-      Log.warn('[outbox] immediate send failed; durable row will drain', { objectId: record.objectId, error });
+      if (!(error instanceof RealtimeBackpressureError)) {
+        Log.warn('[outbox] immediate send failed; durable row will drain', { objectId: record.objectId, error });
+      }
     }
   }
 
@@ -540,6 +600,8 @@ export function configureDrain(config: DrainConfig) {
 
   if (previousConfig && (previousConfig.userId !== config.userId || previousConfig.workspaceId !== config.workspaceId)) {
     abortSlowSyncCoordinations(previousConfig.userId, previousConfig.workspaceId);
+    drainScheduler.clear();
+    blockedRealtimeObjects.clear();
   }
 
   // A meaningful owner/capability rebuild is the point at which a previously
@@ -558,6 +620,8 @@ export function clearDrainConfig() {
   const previousConfig = drainConfig;
 
   drainConfig = null;
+  drainScheduler.clear();
+  blockedRealtimeObjects.clear();
   if (previousConfig) {
     abortSlowSyncCoordinations(previousConfig.userId, previousConfig.workspaceId);
   }
@@ -725,6 +789,8 @@ export function purgeAllOutbox(): Promise<void> {
   // — e.g. from a React render triggered by `SESSION_INVALID` — is dropped
   // before it can add new rows behind the purge.
   isPurging = true;
+  drainScheduler.clear();
+  blockedRealtimeObjects.clear();
   // Abort lock acquisition and HTTP before runPurge awaits active drains.
   abortSlowSyncCoordinations();
 
@@ -807,6 +873,8 @@ export async function deleteOutboxByObjectId(
   // edits that happen to use the same object ID.
   objectGenerations.set(objectSessionKey, (objectGenerations.get(objectSessionKey) ?? 0) + 1);
   suppressedObjects.add(objectSessionKey);
+  drainScheduler.cancel(objectId);
+  blockedRealtimeObjects.delete(objectId);
   abortSlowSyncCoordination(objectSessionKey);
 
   try {
@@ -1306,15 +1374,7 @@ function scheduleDrain(objectId: string) {
     return;
   }
 
-  const promise = drainObject(objectId).finally(() => {
-    draining.delete(objectId);
-
-    if (pendingRerun.delete(objectId)) {
-      scheduleDrain(objectId);
-    }
-  });
-
-  draining.set(objectId, promise);
+  drainScheduler.enqueue(objectId);
 }
 
 async function drainObject(objectId: string): Promise<void> {
@@ -1359,6 +1419,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
     const records = await readOutboxPrefix(userId, workspaceId, objectId);
 
+    if (drainConfig !== initialConfig || !isCurrentGeneration()) return;
     if (records.length === 0) {
       serializedSlowSyncObjects.delete(objectSessionKey);
       clearSlowSyncRetry(objectSessionKey);
@@ -1524,7 +1585,12 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
       continue;
     }
 
-    if (!config.isReady()) return;
+    if (!config.isReady() || config.canSendObject?.(objectId) === false) {
+      blockedRealtimeObjects.add(objectId);
+      return;
+    }
+
+    blockedRealtimeObjects.delete(objectId);
 
     const realtimeBatch = selectRecordsForRealtime(records, realtimeLimit);
     const lastRecord = realtimeBatch.records[realtimeBatch.records.length - 1];
@@ -1560,7 +1626,12 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     try {
       config.send(message);
     } catch (error) {
-      Log.warn('[outbox] send failed; leaving records queued', { objectId, error });
+      if (error instanceof RealtimeBackpressureError) {
+        blockedRealtimeObjects.add(objectId);
+      } else {
+        Log.warn('[outbox] send failed; leaving records queued', { objectId, error });
+      }
+
       return;
     }
 

@@ -30,8 +30,11 @@ import { cn } from '@/lib/utils';
 
 import CustomIconPopover from 'src/components/_shared/cutsom-icon/CustomIconPopover';
 
-import { loadRelationDatabaseCandidates, RelationDatabaseCandidate } from './relationDatabaseCandidates';
-import { RelationView } from './RelationView';
+import {
+  formatCandidatePath,
+  loadRelationDatabaseCandidates,
+  RelationDatabaseCandidate,
+} from './relationDatabaseCandidates';
 
 export type RelationCreationResult = {
   fieldName: string;
@@ -412,6 +415,8 @@ export function RelationCreationDialog({
               ) : (
                 // `DatabaseMetaItem` lists every database under its own name —
                 // only the trigger relabels the current one as "This database".
+                // Below the name it shows where the database lives, so two
+                // databases with the same name can be told apart.
                 candidates.map((candidate) => (
                   <AFDropdownItem
                     key={candidate.databaseId}
@@ -422,7 +427,25 @@ export function RelationCreationDialog({
                       close();
                     }}
                   >
-                    <RelationView view={candidate.displayView} />
+                    <PageIcon
+                      className='flex !h-5 !w-5 shrink-0 items-center justify-center text-xl'
+                      iconSize={20}
+                      view={candidate.displayView}
+                    />
+                    <span className='flex min-w-0 flex-1 flex-col'>
+                      <span className='truncate'>
+                        {candidate.displayView.name || t('menuAppHeader.defaultNewPageName')}
+                      </span>
+                      {/* `caption.standard` in `textColorScheme.tertiary`, one line. */}
+                      {candidate.path.length > 0 ? (
+                        <span
+                          data-testid={`relation-database-path-${candidate.databaseId}`}
+                          className='truncate text-xs text-text-tertiary'
+                        >
+                          {formatCandidatePath(candidate.path)}
+                        </span>
+                      ) : null}
+                    </span>
                   </AFDropdownItem>
                 ))
               )

@@ -7,13 +7,14 @@ export const VITE_DEDUPED_DEPENDENCIES = ['react', 'react-dom'] as const;
 
 /**
  * Lazy views are not guaranteed to be found by Vite's startup dependency
- * scan. Pre-bundle Recharts with React so opening the first Chart view cannot
- * trigger a mid-session dependency re-optimization and split the React graph.
+ * scan. Pre-bundle lazy Chart and Form dependencies with React so their first
+ * open cannot re-optimize dependencies mid-session and split the React graph.
  */
 export const VITE_OPTIMIZED_DEPENDENCIES = [
   'react',
   'react-dom',
   'recharts',
+  'react-beautiful-dnd',
   'react-katex',
   '@appflowyinc/editor',
   'react-colorful',

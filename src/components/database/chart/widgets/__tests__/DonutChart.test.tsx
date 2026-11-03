@@ -1,307 +1,133 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 
-import { CHART_COLORS, ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
-import { DonutChartWidget } from '@/components/database/chart/widgets/DonutChart';
+import { ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
+import DonutChartWidget from '@/components/database/chart/widgets/DonutChart';
 
-jest.mock('react-i18next', () => {
-  const translations: unknown = jest.requireActual('@/@types/translations/en.json');
-  const t = (key: string) => {
-    const value = key
-      .split('.')
-      .reduce<unknown>(
-        (node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined),
-        translations
-      );
+import { installChartEnvironment, renderChart, setObservedSize, seriesDataOf } from './chartTestUtils';
 
-    return typeof value === 'string' ? value : key;
-  };
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
+  }),
+}));
 
-  return { useTranslation: () => ({ t }) };
-});
-
-// Size of the ring area: the 400px widget minus its 24px insets, the 16px gap and the legend.
-const CHART_WIDTH = 800;
-const CHART_HEIGHT = 316;
-
-class ResizeObserverMock implements ResizeObserver {
-  constructor(private readonly callback: ResizeObserverCallback) {}
-
-  disconnect() {
-    // observe() reports one fixed size, so there is nothing to release.
-  }
-
-  observe(target: Element) {
-    this.callback(
-      [
-        {
-          borderBoxSize: [],
-          contentBoxSize: [],
-          contentRect: {
-            bottom: CHART_HEIGHT,
-            height: CHART_HEIGHT,
-            left: 0,
-            right: CHART_WIDTH,
-            top: 0,
-            width: CHART_WIDTH,
-            x: 0,
-            y: 0,
-            toJSON: () => ({}),
-          },
-          devicePixelContentBoxSize: [],
-          target,
-        },
-      ],
-      this
-    );
-  }
-
-  unobserve() {
-    // Sizes never change in these tests.
-  }
-}
-
-// Desktop PR screenshot data: five options with one row each, plus categories the donut drops.
-const data: ChartDataItem[] = [
-  { label: 'Plan A', value: 1, rowIds: ['row-1'], color: '#E5E7EB', textColor: '#4B5563' },
-  { label: 'Plan B', value: 1, rowIds: ['row-2'] },
-  { label: 'Zero', value: 0, rowIds: [] },
-  { label: 'Plan X', value: 1, rowIds: ['row-3'] },
-  { label: 'Negative', value: -3, rowIds: ['row-4'] },
-  { label: 'Plan Z', value: 1, rowIds: ['row-5'] },
-  { label: 'Broken', value: Number.NaN, rowIds: ['row-6'] },
-  { label: 'PlanY', value: 1, rowIds: ['row-7'] },
+const STAGES: ChartDataItem[] = [
+  { key: 'lead', label: 'Lead', value: 3, rowIds: ['a', 'b', 'c'], color: '#5E9FE8' },
+  { key: 'lost', label: 'Lost', value: 3, rowIds: ['d', 'e', 'f'], color: '#DF84A8' },
+  { key: 'proposal', label: 'Proposal', value: 2, rowIds: ['g', 'h'], color: '#EAC26B' },
+  { key: 'won', label: 'Won', value: 4, rowIds: ['i', 'j', 'k', 'l'], color: '#72BC8F' },
 ];
-const validData = data.filter((item) => item.value > 0);
 
-/** jsdom reports inline hex colors as `rgb(r, g, b)`. */
-const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
-const sectors = (container: HTMLElement) => Array.from(container.querySelectorAll<SVGGElement>('.recharts-pie-sector'));
-const leaderFor = (label: string) => {
-  const leader = screen.getAllByTestId('donut-chart-leader').find((element) => element.textContent?.startsWith(label));
+const OWNERS: ChartDataItem[] = [
+  { key: 'alice', label: 'Alice', value: 48500, rowIds: ['a'], color: '#BF8EDA' },
+  { key: 'bob', label: 'Bob', value: 1300000, rowIds: ['b'], color: '#DE9255' },
+  { key: 'carol', label: 'Carol', value: 690000, rowIds: ['c'], color: '#4FB9C9' },
+];
 
-  if (!leader) throw new Error(`No leader for ${label}`);
-  return leader;
-};
-
-const labelBox = (label: string) => leaderFor(label).querySelector<HTMLElement>('div');
-const px = (value?: string) => parseFloat(value ?? '');
-const fillOpacities = () =>
-  screen.getAllByTestId('donut-chart-section').map((section) => section.getAttribute('fill-opacity'));
+const COUNT = { aggregation: ChartAggregationType.Count, yField: null };
 
 describe('DonutChartWidget', () => {
-  const originalResizeObserver = globalThis.ResizeObserver;
+  installChartEnvironment();
 
-  beforeAll(() => {
-    globalThis.ResizeObserver = ResizeObserverMock;
+  it('shows the rounded total over its caption', () => {
+    renderChart(<DonutChartWidget data={seriesDataOf(STAGES)} fill />, COUNT);
+
+    expect(screen.getByTestId('chart-donut-total').textContent).toBe('12');
+    expect(screen.getByTestId('chart-donut-total').getAttribute('data-value')).toBe('12');
+    expect(screen.getByTestId('chart-donut-caption').textContent).toBe('Total');
   });
 
-  afterAll(() => {
-    globalThis.ResizeObserver = originalResizeObserver;
+  it('prints a compact currency total', () => {
+    renderChart(<DonutChartWidget data={seriesDataOf(OWNERS)} fill />);
+
+    expect(screen.getByTestId('chart-donut-total').textContent).toBe('$2M');
   });
 
-  it('renders a Recharts section, a leader and a legend item per positive category', () => {
-    const { container } = render(<DonutChartWidget data={data} />);
+  it('draws positive values only', () => {
+    const { container } = renderChart(
+      <DonutChartWidget data={seriesDataOf([...STAGES, { key: 'refund', label: 'Refund', value: -5, rowIds: ['m'] }])} fill />,
+      COUNT
+    );
 
-    expect(screen.getByTestId('donut-chart-widget')).toBeTruthy();
-    expect(container.querySelector('.recharts-pie')).not.toBeNull();
-    expect(sectors(container)).toHaveLength(5);
-    expect(screen.getAllByTestId('donut-chart-leader')).toHaveLength(5);
-    expect(screen.getAllByTestId('donut-chart-legend-item').map((item) => item.textContent)).toEqual([
-      'Plan A',
-      'Plan B',
-      'Plan X',
-      'Plan Z',
-      'PlanY',
+    expect(container.querySelectorAll('.recharts-pie-sector')).toHaveLength(4);
+    expect(screen.getByTestId('chart-donut-total').textContent).toBe('12');
+    expect(
+      Array.from(container.querySelectorAll('[data-testid="chart-donut-slice-anchor"]')).map((anchor) =>
+        anchor.getAttribute('data-label')
+      )
+    ).toEqual(['Lead', 'Lost', 'Proposal', 'Won']);
+  });
+
+  it('shows the empty ring with "No data" when no value is positive', () => {
+    renderChart(
+      <DonutChartWidget
+        data={seriesDataOf([
+          { key: 'a', label: 'A', value: 0, rowIds: [] },
+          { key: 'b', label: 'B', value: -2, rowIds: ['x'] },
+        ])}
+        fill
+      />,
+      COUNT
+    );
+
+    expect(screen.getByTestId('chart-donut-empty-ring')).toBeTruthy();
+    expect(screen.getByTestId('chart-no-data').textContent).toBe('No data');
+  });
+
+  it('separates slices with 1px card-color strokes and no padding angle', () => {
+    const { container } = renderChart(<DonutChartWidget data={seriesDataOf(STAGES)} fill />, COUNT);
+    const sector = container.querySelector('.recharts-pie-sector path') as SVGPathElement;
+
+    expect(sector.getAttribute('stroke')).toBe('var(--dash-card-bg)');
+    expect(sector.getAttribute('stroke-width')).toBe('1');
+    expect(container.querySelector('[data-parity-id="dash-donut-ring"]')).not.toBeNull();
+  });
+
+  it('shows the share in the tooltip', () => {
+    const { container } = renderChart(<DonutChartWidget data={seriesDataOf(STAGES)} onItemClick={jest.fn()} fill />, COUNT);
+    const won = container.querySelectorAll('.recharts-pie-sector')[3];
+
+    act(() => {
+      fireEvent.mouseEnter(won, { clientX: 100, clientY: 100 });
+    });
+    expect(screen.getByTestId('chart-tooltip-name').textContent).toBe('Won');
+    expect(screen.getByTestId('chart-tooltip-value').textContent).toBe('4 (33.3%)');
+    expect(screen.getByText('Click to view data')).toBeTruthy();
+  });
+
+  it('labels the slices outside the ring, except a slice under 3%', () => {
+    renderChart(<DonutChartWidget data={seriesDataOf(OWNERS)} fill />);
+
+    expect(screen.getAllByTestId('chart-donut-outside-label').map((label) => label.getAttribute('data-label'))).toEqual([
+      'Bob',
+      'Carol',
     ]);
-    expect(screen.queryByText('Zero')).toBeNull();
-    expect(screen.queryByText('Negative')).toBeNull();
-    expect(screen.queryByText('Broken')).toBeNull();
+    expect(screen.getAllByTestId('chart-donut-outside-label')[0].textContent).toBe('Bob $1.3M (63.8%)');
   });
 
-  it('shows the total and the aggregation title in the ring', () => {
-    const { rerender } = render(<DonutChartWidget data={data} aggregationType={ChartAggregationType.Count} />);
-    const center = screen.getByTestId('donut-chart-center');
+  it('drops the outside labels in a small frame', () => {
+    setObservedSize(240, 200);
+    renderChart(<DonutChartWidget data={seriesDataOf(OWNERS)} fill />);
 
-    expect(center.textContent).toBe('5TotalCount(Type)');
-    expect(within(center).getByTestId('chart-title').textContent).toBe('Count(Type)');
-
-    rerender(<DonutChartWidget data={data} aggregationType={ChartAggregationType.Average} />);
-    expect(within(screen.getByTestId('donut-chart-center')).getByTestId('chart-title').textContent).toBe(
-      'Average(Type)'
-    );
-
-    rerender(<DonutChartWidget data={data} />);
-    expect(screen.getByTestId('donut-chart-center').textContent).toBe('5Total');
+    expect(screen.queryByTestId('chart-donut-outside-label')).toBeNull();
+    expect(screen.getAllByTestId('chart-donut-slice-anchor')).toHaveLength(3);
   });
 
-  it('labels every leader with the truncated count and its share', () => {
-    const { rerender } = render(<DonutChartWidget data={data} />);
+  it('pages through a legend that needs more than two lines', () => {
+    const regions: ChartDataItem[] = Array.from({ length: 12 }, (_, index) => ({
+      key: `r${index}`,
+      label: `Region number ${index + 1}`,
+      value: index + 1,
+      rowIds: [],
+      color: '#5E9FE8',
+    }));
 
-    expect(screen.getAllByTestId('donut-chart-leader-value').map((value) => value.textContent)).toEqual(
-      Array(5).fill('1 (20.0%)')
-    );
+    setObservedSize(260, 400);
+    renderChart(<DonutChartWidget data={seriesDataOf(regions)} fill />, COUNT);
 
-    rerender(
-      <DonutChartWidget
-        data={[
-          { label: 'Sum A', value: 2.6, rowIds: ['row-1'] },
-          { label: 'Sum B', value: 1.6, rowIds: ['row-2'] },
-        ]}
-      />
-    );
-    expect(screen.getAllByTestId('donut-chart-leader-value').map((value) => value.textContent)).toEqual([
-      '2 (61.9%)',
-      '1 (38.1%)',
-    ]);
-    expect(screen.getByTestId('donut-chart-center').textContent).toBe('4Total');
-  });
-
-  it('tints leaders with the section colors', () => {
-    render(<DonutChartWidget data={data} />);
-
-    const planA = leaderFor('Plan A');
-    const planB = leaderFor('Plan B');
-
-    // Lines use the fill color, labels the option's text color (falling back to the fill).
-    expect(planA.querySelector('polyline')?.getAttribute('stroke')).toBe('#E5E7EB');
-    expect(planA.querySelector<HTMLElement>('span')?.style.color).toBe(rgb('#4B5563'));
-    expect(planB.querySelector('polyline')?.getAttribute('stroke')).toBe(CHART_COLORS[1]);
-    expect(planB.querySelector<HTMLElement>('span')?.style.color).toBe(rgb(CHART_COLORS[1]));
-    expect(within(planB).getByTestId('donut-chart-leader-value').style.opacity).toBe('0.7');
-  });
-
-  it('lays sections out clockwise from 3 o’clock with desktop leader geometry', () => {
-    render(<DonutChartWidget data={data} />);
-
-    // Plan A spans 0°–72°: below-right of the center (400, 158), so its label extends right.
-    expect(leaderFor('Plan A').querySelector('polyline')?.getAttribute('points')?.split(' ')).toHaveLength(3);
-    expect(px(labelBox('Plan A')?.style.left)).toBeCloseTo(542.16, 1);
-    expect(px(labelBox('Plan A')?.style.top)).toBeCloseTo(228.76, 1);
-
-    // Plan X is centered at 9 o'clock: one straight 50px line, label right-anchored at its end.
-    expect(leaderFor('Plan X').querySelector('polyline')?.getAttribute('points')?.split(' ')).toHaveLength(2);
-    expect(px(labelBox('Plan X')?.style.right)).toBeCloseTo(CHART_WIDTH - 239, 1);
-    expect(px(labelBox('Plan X')?.style.top)).toBeCloseTo(140, 1);
-
-    // Plan Z (252°) would poke above the chart: its label is clamped 4px below the top edge.
-    expect(px(labelBox('Plan Z')?.style.right)).toBeCloseTo(466.66, 1);
-    expect(labelBox('Plan Z')?.style.top).toBe('4px');
-
-    // Plan B (108°) is clamped to 36 + 4px above the bottom edge.
-    expect(px(labelBox('Plan B')?.style.top)).toBeCloseTo(CHART_HEIGHT - 40, 1);
-  });
-
-  it('separates sections with a constant 2px gap and draws a lone section as a full ring', () => {
-    const { container, rerender } = render(<DonutChartWidget data={data} />);
-    const firstPath = screen.getAllByTestId('donut-chart-section')[0].getAttribute('d') ?? '';
-    const [, innerX, innerY, outerX, outerY] =
-      /^M([\d.]+),([\d.]+) L([\d.]+),([\d.]+)/.exec(firstPath)?.map(Number) ?? [];
-
-    // The first edge runs parallel to the 3 o'clock ray, 1px (half the gap) below it.
-    expect(innerY).toBeCloseTo(159, 6);
-    expect(outerY).toBeCloseTo(159, 6);
-    expect(innerX).toBeCloseTo(400 + Math.sqrt(70 ** 2 - 1), 6);
-    expect(outerX).toBeCloseTo(400 + Math.sqrt(110 ** 2 - 1), 6);
-
-    rerender(<DonutChartWidget data={[{ label: 'Only', value: 3, rowIds: ['row-1'] }]} />);
-    expect(screen.getByTestId('donut-chart-section').getAttribute('d')).toBe(
-      'M510,158 A110,110 0 1 1 290,158 A110,110 0 1 1 510,158 M470,158 A70,70 0 1 0 330,158 A70,70 0 1 0 470,158 Z'
-    );
-
-    fireEvent.mouseEnter(sectors(container)[0]);
-    expect(screen.getByTestId('donut-chart-section').getAttribute('d')).toMatch(/^M515,158 A115,115 /);
-  });
-
-  it('keeps only the part of a thin section that clears the gaps, like fl_chart', () => {
-    const { rerender } = render(
-      <DonutChartWidget
-        data={[
-          { label: 'Big', value: 299, rowIds: ['row-1'] },
-          { label: 'Thin', value: 1, rowIds: ['row-2'] },
-        ]}
-      />
-    );
-    const thinPath = screen.getAllByTestId('donut-chart-section')[1].getAttribute('d') ?? '';
-    const [, apexX, apexY] = /^M([\d.]+),([\d.]+)/.exec(thinPath)?.map(Number) ?? [];
-
-    // Its inset edges meet ~95px from the center, between the hole and the rim: no inner arc is left.
-    expect(thinPath.match(/A/g)).toHaveLength(1);
-    expect(Math.hypot(apexX - 400, apexY - 158)).toBeCloseTo(1 / Math.sin(Math.PI / 300), 3);
-
-    rerender(
-      <DonutChartWidget
-        data={[
-          { label: 'Big', value: 1000, rowIds: ['row-1'] },
-          { label: 'Thin', value: 1, rowIds: ['row-2'] },
-        ]}
-      />
-    );
-    // Narrower than the gap itself: nothing is painted, but the leader still points at it.
-    expect(screen.getAllByTestId('donut-chart-section')[1].getAttribute('d')).toBe('');
-    expect(screen.getAllByTestId('donut-chart-leader')).toHaveLength(2);
-  });
-
-  it('grows and fades the hovered section and shows the tooltip beside its label', () => {
-    const { container } = render(<DonutChartWidget data={data} />);
-
-    fireEvent.mouseEnter(sectors(container)[1]);
-
-    expect(fillOpacities()).toEqual(['1', '0.8', '1', '1', '1']);
-
-    const tooltip = screen.getByTestId('chart-tooltip');
-
-    expect(tooltip.textContent).toContain('Plan B');
-    expect(tooltip.textContent).toContain('1');
-    // Left-half anchor x = lineEndX - 96 + 8 - 90 = 155.34; y = lineEndY = 301.6, clamped to 316 - 88.
-    expect(px(tooltip.parentElement?.style.left)).toBeCloseTo(65.34, 1);
-    expect(tooltip.parentElement?.style.top).toBe(`${CHART_HEIGHT - 88}px`);
-
-    // The hovered leader is drawn last, above the other labels.
-    const leaders = screen.getAllByTestId('donut-chart-leader');
-
-    expect(leaders[leaders.length - 1].textContent).toContain('Plan B');
-
-    fireEvent.mouseLeave(sectors(container)[1]);
-    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
-    expect(fillOpacities()).toEqual(Array(5).fill('1'));
-  });
-
-  it('uses the section text color for the tooltip dot', () => {
-    const { container } = render(<DonutChartWidget data={data} />);
-
-    fireEvent.mouseEnter(sectors(container)[0]);
-
-    const dot = within(screen.getByTestId('chart-tooltip')).getByTestId('chart-indicator-dot');
-
-    expect(dot.querySelector<HTMLElement>(':scope > span > span')?.style.backgroundColor).toBe(rgb('#4B5563'));
-  });
-
-  it('drills down from a section or a legend item with the resolved color', () => {
-    const onSliceClick = jest.fn();
-    const { container } = render(<DonutChartWidget data={data} onSliceClick={onSliceClick} />);
-
-    fireEvent.mouseEnter(sectors(container)[1]);
-    fireEvent.click(sectors(container)[1]);
-    expect(onSliceClick).toHaveBeenLastCalledWith({ ...validData[1], color: CHART_COLORS[1] });
-    // Desktop clears the hover once a section is tapped.
-    expect(screen.queryByTestId('chart-tooltip')).toBeNull();
-
-    fireEvent.click(screen.getAllByTestId('donut-chart-legend-item')[0]);
-    expect(onSliceClick).toHaveBeenLastCalledWith({ ...validData[0], color: '#E5E7EB' });
-    expect(onSliceClick).toHaveBeenCalledTimes(2);
-  });
-
-  it('shows the no-valid-data message when no category is positive', () => {
-    const { container } = render(
-      <DonutChartWidget
-        data={[
-          { label: 'Zero', value: 0, rowIds: [] },
-          { label: 'Negative', value: -1, rowIds: ['row-1'] },
-        ]}
-      />
-    );
-
-    expect(screen.getByTestId('chart-no-valid-data').textContent).toBe('No valid data to display');
-    expect(container.querySelector('.recharts-pie')).toBeNull();
+    expect(screen.getByTestId('chart-legend-pager')).toBeTruthy();
+    expect(screen.getByTestId('chart-legend-page').textContent).toBe('1/3');
+    fireEvent.click(screen.getByTestId('chart-legend-next'));
+    expect(screen.getByTestId('chart-legend-page').textContent).toBe('2/3');
   });
 });

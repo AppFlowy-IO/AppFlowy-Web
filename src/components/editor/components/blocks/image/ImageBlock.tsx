@@ -77,7 +77,8 @@ export const ImageBlock = memo(
 
       return align === AlignType.Center ? 'justify-center' : align === AlignType.Right ? 'justify-end' : 'justify-start';
     }, [align]);
-    const [showToolbar, setShowToolbar] = useState(false);
+    // An upload can become ready while the pointer stays inside the block.
+    const [isHovered, setIsHovered] = useState(false);
     const { openPopover } = usePopoverContext();
 
     const handleClick = useCallback(async () => {
@@ -215,11 +216,8 @@ export const ImageBlock = memo(
         {...attributes}
         ref={containerRef}
         contentEditable={readOnly ? false : undefined}
-        onMouseEnter={() => {
-          if (!url) return;
-          setShowToolbar(true);
-        }}
-        onMouseLeave={() => setShowToolbar(false)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         className={className}
         onClick={handleClick}
       >
@@ -241,7 +239,7 @@ export const ImageBlock = memo(
             </div>
           ) : hasImage ? (
             <ImageRender
-              showToolbar={showToolbar}
+              showToolbar={isHovered && Boolean(url)}
               selected={selected}
               node={{
                 ...node,

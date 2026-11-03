@@ -18,6 +18,13 @@ message Rid {
   uint32 counter = 2;
 }
 
+/** Deletion coverage is separate from the insertion clocks in a state vector. */
+message DeleteSetMetadata {
+  // Canonical digest from appflowy-proto::canonical_delete_set_digest.
+  bytes digest = 1;
+  bytes delete_set_v1 = 2;
+}
+
 /**
  * SyncRequest message is send by either a server or a client, which informs about the
  * last collab state known to either party.
@@ -38,6 +45,12 @@ message SyncRequest {
 
   // Collab version known to the sender of this message.
   string version = 3;
+
+  // State vectors do not cover deletions. Request and compare this metadata
+  // before retiring a manifest upload that contains a delete set.
+  DeleteSetMetadata delete_set = 4;
+  reserved 5;
+  optional string database_restore_id = 6;
 }
 
 /**
@@ -104,6 +117,12 @@ message AccessChanged {
   int32 reason = 3;
 }
 
+// Retires one handled update attempt. This is flow control, not proof of append or convergence.
+message UpdateAck {
+  Rid message_id = 1;
+  optional string database_restore_id = 2;
+}
+
 message CollabMessage {
   // Unique collab identifier (UUID), which this message is related to.
   // We're using string here, since it's easier to represent in web browser client.
@@ -116,6 +135,7 @@ message CollabMessage {
     Update update = 4;
     AwarenessUpdate awareness_update = 5;
     AccessChanged access_changed = 6;
+    UpdateAck update_ack = 7;
   }
 }
 

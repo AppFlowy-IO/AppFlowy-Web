@@ -1,197 +1,282 @@
-import { CircularProgress, IconButton, Tooltip } from '@mui/material';
-import React, { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Element } from 'slate';
-import { useReadOnly, useSlateStatic } from 'slate-react';
+import { forwardRef, lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
+import { ERROR_CODE } from '@/application/constants';
+import { readErrorIdentity } from '@/application/errors/error-message';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { BlockType, FieldURLType, PDFBlockData } from '@/application/types';
-import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
-import { ReactComponent as ReloadIcon } from '@/assets/icons/regenerate.svg';
+import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
+import { BlockType, PDFBlockData } from '@/application/types';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
+import moreIcon from '@/assets/icons/pdf/figma/6ce7044d646d972a9d3da547c0fb4cc2f68661cf.svg';
+import pdfIcon from '@/assets/icons/pdf/figma/bad4f9029c2ddb7dec6b79b6f194f5ae0889c385.svg';
 import { notify } from '@/components/_shared/notify';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
-import FileToolbar from '@/components/editor/components/blocks/file/FileToolbar';
-import { EditorElementProps, FileNode, PDFNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { EditorElementProps, PDFNode } from '@/components/editor/editor.type';
+import { useBlockSelected, useEditorContext } from '@/components/editor/EditorContext';
+import { Button } from '@/components/ui/button';
 import { FileHandler } from '@/utils/file';
+import { resolveFileUrl } from '@/utils/file-storage-url';
+
+import { clearPDFUploadError, usePDFUploadError } from './pdf-block-state';
+import { isLocalPDF, pdfFileName } from './pdf-data';
+import { retryPDFUpload, uploadPDFFiles } from './pdf-upload';
+import { PDF_ACTION_EVENT, PDFBlockMenu } from './PDFBlockMenu';
+import { PDFUploadLimitDialog } from './PDFUploadLimitDialog';
+import './pdf.scss';
+
+const PDFViewer = lazy(() => import('./PDFViewer'));
+const PDFAssistant = lazy(() => import('./PDFAssistant'));
 
 export const PDFBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<PDFNode>>(({ node, children, ...attributes }, ref) => {
-    const { blockId, data } = node;
-    const { uploadFile } = useEditorContext();
     const editor = useSlateStatic() as YjsEditor;
-    const [needRetry, setNeedRetry] = useState(false);
-    const fileHandlerRef = useRef(new FileHandler());
-    const [localUrl, setLocalUrl] = useState<string | undefined>(undefined);
-    const [loading, setLoading] = useState(false);
-    const { url, name, retry_local_url } = data || {};
-    const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
-    const emptyRef = useRef<HTMLDivElement>(null);
-    const [showToolbar, setShowToolbar] = useState(false);
-
-    const hasContent = url || needRetry;
-
-    const className = ['w-full', url || !readOnly ? 'cursor-pointer' : 'text-text-secondary', attributes.className]
-      .filter(Boolean)
-      .join(' ');
-
-    const { openPopover } = usePopoverContext();
-
-    const openUploadPopover = useCallback(() => {
-      if (emptyRef.current && !readOnly) {
-        openPopover(blockId, BlockType.PDFBlock, emptyRef.current);
-      }
-    }, [blockId, openPopover, readOnly]);
-
-    const openPDFInNewTab = useCallback(() => {
-      const link = url || localUrl;
-
-      if (link) {
-        window.open(link, '_blank');
-      }
-    }, [url, localUrl]);
-
-    const handleClick = useCallback(async () => {
-      try {
-        if (!url && !needRetry) {
-          openUploadPopover();
-          return;
-        }
-
-        openPDFInNewTab();
-      } catch (e: unknown) {
-        notify.error((e as Error).message);
-      }
-    }, [url, needRetry, openUploadPopover, openPDFInNewTab]);
+    const aiEnabled = useAIEnabled();
+    const readOnly = useReadOnly() || editor.isElementReadOnly(node);
+    const selected = useBlockSelected(node.blockId);
+    const { uploadFile, workspaceId, viewId } = useEditorContext();
+    const { openPopover, open: popoverOpen, blockId: popoverBlockId } = usePopoverContext();
+    const uploadOpen = popoverOpen && popoverBlockId === node.blockId;
+    const { t } = useTranslation();
+    const anchor = useRef<HTMLDivElement>(null);
+    const [local, setLocal] = useState<{ id: string; url: string }>();
+    const [retrying, setRetrying] = useState(false);
+    const retryInProgress = useRef(false);
+    const uploadError = usePDFUploadError(editor, node.blockId);
+    const [emptyAssistantOpen, setEmptyAssistantOpen] = useState(false);
+    const [uploadLimitOpen, setUploadLimitOpen] = useState(false);
+    const [menu, setMenu] = useState<HTMLElement | null>(null);
+    const [nearby, setNearby] = useState(false);
+    const { url, retry_local_url, pending_upload_id } = node.data;
+    const source =
+      (url ? resolveFileUrl(url, workspaceId, viewId) : '') || (local?.id === retry_local_url ? local?.url : undefined);
+    const localUnavailable = !!url && isLocalPDF(node.data);
+    const uploadFailed = (!!retry_local_url || node.data.upload_error) && !pending_upload_id && !url;
 
     useEffect(() => {
-      if (readOnly) return;
-      void (async () => {
-        if (retry_local_url) {
-          const fileData = await fileHandlerRef.current.getStoredFile(retry_local_url);
+      let cancelled = false;
+      let objectUrl: string | undefined;
 
-          setLocalUrl(fileData?.url);
-          setNeedRetry(!!fileData);
-        } else {
-          setNeedRetry(false);
-        }
-      })();
-    }, [readOnly, retry_local_url]);
+      if (retry_local_url && !url) {
+        void new FileHandler()
+          .getStoredFile(retry_local_url)
+          .then((file) => {
+            objectUrl = file?.url;
+            if (cancelled) {
+              if (objectUrl) URL.revokeObjectURL(objectUrl);
+              return;
+            }
 
-    const uploadFileRemote = useCallback(
-      async (file: File) => {
-        try {
-          if (uploadFile) {
-            return await uploadFile(file);
+            setLocal(objectUrl ? { id: retry_local_url, url: objectUrl } : undefined);
+          })
+          .catch(() => {
+            if (!cancelled) setLocal(undefined);
+          });
+      }
+
+      return () => {
+        cancelled = true;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+    }, [retry_local_url, url]);
+
+    useEffect(() => {
+      const element = anchor.current;
+
+      if (!element) return;
+      if (typeof IntersectionObserver === 'undefined') {
+        setNearby(true);
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          // Start near the viewport. Keep a loaded document alive while scrolling.
+          if (entry.isIntersecting) {
+            setNearby(true);
+            observer.disconnect();
           }
-        } catch (e: unknown) {
-          return;
-        }
+        },
+        { rootMargin: '400px' }
+      );
+
+      observer.observe(element);
+      return () => observer.disconnect();
+    }, []);
+
+    const onChange = useCallback(
+      (data: Partial<PDFBlockData>) => {
+        const current = findSlateEntryByBlockId(editor, node.blockId)?.[0];
+
+        if (!readOnly && !editor.readOnly && current?.type === BlockType.PDFBlock && !editor.isElementReadOnly(current))
+          CustomEditor.setBlockData(editor, node.blockId, data);
       },
-      [uploadFile]
+      [editor, node.blockId, readOnly]
     );
+    const handleUploadError = useCallback((error: unknown) => {
+      const identity = readErrorIdentity(error);
 
-    const handleRetry = useCallback(
-      async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!retry_local_url) return;
+      if (
+        identity.sourceDomain === 'appflowy.server' &&
+        identity.code === ERROR_CODE.SINGLE_UPLOAD_LIMIT_EXCEEDED &&
+        getWorkspacePlanPolicy().usesHostedBilling
+      )
+        setUploadLimitOpen(true);
+    }, []);
 
-        setLoading(true);
-        try {
-          const fileData = await fileHandlerRef.current.getStoredFile(retry_local_url);
-          const file = fileData?.file;
+    useEffect(() => {
+      if (!uploadError) return;
+      handleUploadError(uploadError.error);
+      clearPDFUploadError(editor, node.blockId, uploadError);
+    }, [editor, node.blockId, uploadError, handleUploadError]);
 
-          if (!file) {
-            notify.error('File not found. Please upload again.');
-            return;
-          }
+    useEffect(() => {
+      const live = findSlateEntryByBlockId(editor, node.blockId)?.[0];
+      const element = live && ReactEditor.toDOMNode(editor, live);
+      const aiListener = (event: Event) => {
+        if ((event as CustomEvent).detail === 'ask' && !url) setEmptyAssistantOpen(true);
+      };
 
-          const url = await uploadFileRemote(file);
+      element?.addEventListener(PDF_ACTION_EVENT, aiListener);
+      return () => {
+        element?.removeEventListener(PDF_ACTION_EVENT, aiListener);
+      };
+    }, [editor, node.blockId, url]);
 
-          if (!url) {
-            notify.error('Upload failed. Please try again.');
-            return;
-          }
+    const openUpload = () => {
+      if (!readOnly && anchor.current) openPopover(node.blockId, BlockType.PDFBlock, anchor.current);
+    };
 
-          await fileHandlerRef.current.cleanup(retry_local_url);
-          CustomEditor.setBlockData(editor, blockId, {
-            url,
-            name,
-            uploaded_at: Date.now(),
-            url_type: FieldURLType.Upload,
-            retry_local_url: '',
-            pending_upload_id: '',
-          } as PDFBlockData);
-        } catch (e: unknown) {
-          notify.error((e as Error).message || 'Failed to retry upload. Please try again.');
-        } finally {
-          setLoading(false);
-        }
-      },
-      [blockId, editor, name, retry_local_url, uploadFileRemote]
-    );
+    const retryUpload = async () => {
+      if (!retry_local_url || !uploadFile || retryInProgress.current || readOnly) return;
+      retryInProgress.current = true;
+      setRetrying(true);
+      try {
+        await retryPDFUpload({ editor, blockId: node.blockId, uploadFile });
+      } catch (error) {
+        handleUploadError(error);
+        notify.error(t('button.uploadFailed'));
+      } finally {
+        retryInProgress.current = false;
+        setRetrying(false);
+      }
+    };
 
     return (
-      <div
-        {...attributes}
-        contentEditable={readOnly ? false : undefined}
-        className={className}
-        onMouseEnter={() => {
-          if (!url) return;
-          setShowToolbar(true);
-        }}
-        onMouseLeave={() => setShowToolbar(false)}
-        onClick={handleClick}
-      >
+      <div {...attributes} className={`relative w-full ${attributes.className || ''}`}>
         <div
+          ref={anchor}
           contentEditable={false}
-          className={`embed-block flex flex-row items-center gap-4 p-4 ${hasContent ? 'text-text-primary' : ''}`}
+          className='pdf-block w-full'
+          data-selected={!!selected}
+          data-upload-open={uploadOpen}
+          onDragOver={(event) => {
+            if (!readOnly && event.dataTransfer.types.includes('Files')) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+          onDrop={(event) => {
+            if (readOnly || !event.dataTransfer.files.length) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const files = Array.from(event.dataTransfer.files);
+
+            void uploadPDFFiles({ editor, blockId: node.blockId, files, uploadFile, onError: handleUploadError }).catch(
+              () => notify.error(t('button.uploadFailed'))
+            );
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
         >
-          <div className={'flex h-full items-start'}>
-            <PDFIcon className={'h-6 w-6'} />
-          </div>
-
-          <div ref={emptyRef} className={'flex flex-1 flex-col gap-2 overflow-hidden text-base font-medium'}>
-            {hasContent ? (
-              <div className={'flex flex-col gap-2'}>
-                <div className={'w-full truncate'}>{name?.trim() || 'PDF Document'}</div>
-                {needRetry && <div className={'font-normal text-function-error'}>Upload failed</div>}
-              </div>
-            ) : (
-              <div className={'text-text-secondary'}>Upload or embed a PDF</div>
-            )}
-          </div>
-
-          {needRetry &&
-            (loading ? (
-              <CircularProgress size={16} />
-            ) : (
-              <Tooltip placement={'top'} title={'Retry upload'}>
-                <IconButton onClick={handleRetry} size={'small'} color={'error'}>
-                  <ReloadIcon />
-                </IconButton>
-              </Tooltip>
-            ))}
-          {showToolbar && url && (
-            <FileToolbar
-              node={
-                {
-                  ...node,
-                  data: {
-                    ...data,
-                    url,
-                  },
-                } as unknown as FileNode
+          {localUnavailable ? (
+            <div role='status' className='pdf-selection-surface relative flex flex-col gap-3 rounded-lg bg-fill-content p-4 text-text-secondary'>
+              <p>{t('document.plugins.pdf.localUnavailable')}</p>
+              {!readOnly && (
+                <Button variant='outline' onClick={openUpload}>
+                  {t('document.plugins.pdf.replace')}
+                </Button>
+              )}
+            </div>
+          ) : source ? (
+            <Suspense
+              fallback={
+                <div className='pdf-selection-surface relative h-[400px] rounded-xl' role='status'>
+                  {t('document.plugins.pdf.loading')}
+                </div>
               }
-            />
+            >
+              {nearby ? (
+                <PDFViewer key={source} node={node} source={source} readOnly={readOnly} onChange={onChange} />
+              ) : (
+                <div className='pdf-selection-surface relative h-[400px] rounded-xl' />
+              )}
+            </Suspense>
+          ) : (
+            <div
+              className='pdf-empty pdf-selection-surface relative flex h-11 w-full items-center gap-2 rounded-lg bg-[var(--block-bg-color-20)] py-2 pl-3 pr-2 text-sm leading-5 text-text-tertiary hover:bg-[var(--block-bg-hover-color-20)]'
+              data-testid='pdf-empty'
+            >
+              <button
+                type='button'
+                className='flex h-7 min-w-0 flex-1 items-center gap-2 text-left font-normal disabled:cursor-default'
+                disabled={readOnly}
+                onClick={openUpload}
+              >
+                <img src={pdfIcon} alt='' />
+                <span className='truncate'>
+                  {pending_upload_id ? pdfFileName(node.data) : t('document.plugins.pdf.placeholder')}
+                </span>
+              </button>
+              {!readOnly && (
+                <Button
+                  variant='ghost'
+                  size='icon'
+                  className='h-7 w-7 rounded p-1'
+                  aria-label={t('button.more')}
+                  onClick={(event) => setMenu(event.currentTarget)}
+                >
+                  <img src={moreIcon} alt='' />
+                </Button>
+              )}
+            </div>
+          )}
+          {emptyAssistantOpen && aiEnabled && !source && !readOnly && (
+            <Suspense fallback={null}>
+              <PDFAssistant node={node} mode='ask' text='' onClose={() => setEmptyAssistantOpen(false)} />
+            </Suspense>
+          )}
+          {menu && <PDFBlockMenu node={node} anchorEl={menu} onClose={() => setMenu(null)} />}
+          {(pending_upload_id || retrying) && (
+            <div role='status' className='mt-2 text-sm text-text-secondary'>
+              {t('fileDropzone.uploading')}
+            </div>
+          )}
+          {uploadFailed && (
+            <div role='alert' className='mt-2 flex items-center gap-2 text-sm text-text-error'>
+              {t('button.uploadFailed')}
+              {!readOnly && (
+                <Button
+                  variant='ghost'
+                  disabled={retrying}
+                  onClick={() => (retry_local_url ? void retryUpload() : openUpload())}
+                >
+                  {t('button.retry')}
+                </Button>
+              )}
+            </div>
           )}
         </div>
-        <div ref={ref} className={`absolute h-full w-full text-transparent caret-transparent`}>
+        <PDFUploadLimitDialog open={uploadLimitOpen && !readOnly} onClose={() => setUploadLimitOpen(false)} />
+        <div
+          ref={ref}
+          className='pointer-events-none absolute left-0 top-0 h-px w-px overflow-hidden text-transparent caret-transparent'
+        >
           {children}
         </div>
       </div>
     );
   })
 );
-
 PDFBlock.displayName = 'PDFBlock';

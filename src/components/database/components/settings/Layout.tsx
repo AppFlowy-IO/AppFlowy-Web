@@ -8,9 +8,12 @@ import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
 import { DatabaseViewCreationHint } from '@/components/_shared/DatabaseViewCreationItem';
+import { useSubmenuPointerGuard } from '@/components/_shared/hooks/useSubmenuPointerGuard';
+import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { ViewIcon } from '@/components/_shared/view-icon/ViewIcon';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
+import { isProPlanDatabaseViewLayout } from '@/utils/subscription';
 import {
   DropdownMenuItem,
   DropdownMenuItemTick,
@@ -21,24 +24,42 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getErrorMessage } from '@/utils/errors';
 
-import { useSubmenuPointerGuard } from './useSubmenuPointerGuard';
+interface LayoutOption {
+  value: DatabaseViewLayout;
+  icon: ViewLayout;
+  label: string;
+  disabledReason?: string;
+}
 
 function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout; children?: ReactNode }) {
   const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);
   const { contentRef, onTriggerPointerLeave } = useSubmenuPointerGuard();
-  const { workspaceId, getSubscriptions } = useDatabaseContext();
+  const { workspaceId, getSubscriptions, isDashboardWidget } = useDatabaseContext();
   const isSelfHosted = useServerHostingMode() === 'self-hosted';
   const { getAction } = useDatabaseViewCreation({
     workspaceId,
     getSubscriptions,
     enabled: open,
   });
+  // Switching to Timeline or Dashboard makes a view of that layout, so the
+  // workspace plan gates it as it gates creating one.
+  const isRefusedLayout = (option: LayoutOption) =>
+    option.value !== currentLayout && isProPlanDatabaseViewLayout(option.icon) && getAction(option.icon).type !== 'create';
   const timelineAction = getAction(ViewLayout.Timeline);
+  const dashboardAction = getAction(ViewLayout.Dashboard);
+  const timelineDisabledReason = timelineAction.type === 'create' ? undefined : timelineAction.reason;
+  const dashboardDisabledReason = dashboardAction.type === 'create' ? undefined : dashboardAction.reason;
   const viewId = useDatabaseViewId();
   const updateLayout = useUpdateDatabaseLayout(viewId);
-  const options = useMemo(
+  const { available: canCreateDashboard } = useDashboardCreationGate();
+  // Dashboards never nest, so a widget's view cannot become one. Like
+  // Timeline, an existing dashboard keeps its option in a mobile context:
+  // it still reads as one even where creation is unavailable.
+  const isDashboard = currentLayout === DatabaseViewLayout.Dashboard;
+  const showDashboard = (canCreateDashboard || isDashboard) && !isDashboardWidget;
+  const options = useMemo<LayoutOption[]>(
     () => [
       {
         value: DatabaseViewLayout.Grid,
@@ -59,6 +80,7 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
         value: DatabaseViewLayout.Timeline,
         icon: ViewLayout.Timeline,
         label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+        disabledReason: currentLayout === DatabaseViewLayout.Timeline ? undefined : timelineDisabledReason,
       },
       ...(isSelfHosted || currentLayout === DatabaseViewLayout.Chart
         ? [
@@ -93,8 +115,18 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
         icon: ViewLayout.Feed,
         label: t('feed.menuName'),
       },
+      ...(showDashboard
+        ? [
+            {
+              value: DatabaseViewLayout.Dashboard,
+              icon: ViewLayout.Dashboard,
+              label: t('dashboard.menuName', { defaultValue: 'Dashboard' }),
+              disabledReason: currentLayout === DatabaseViewLayout.Dashboard ? undefined : dashboardDisabledReason,
+            },
+          ]
+        : []),
     ],
-    [t, currentLayout, isSelfHosted]
+    [t, currentLayout, showDashboard, isSelfHosted, timelineDisabledReason, dashboardDisabledReason]
   );
 
   return (
@@ -117,40 +149,36 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
       <DropdownMenuPortal>
         <DropdownMenuSubContent ref={contentRef} className={'appflowy-scroller w-[240px] overflow-y-auto'}>
           {options.map((option) => {
-            const disabled =
-              option.value === DatabaseViewLayout.Timeline &&
-              option.value !== currentLayout &&
-              timelineAction.type !== 'create';
+            const item = (
+              <DropdownMenuItem
+                key={option.value}
+                className={'w-full'}
+                data-testid={`database-layout-option-${option.value}`}
+                disabled={Boolean(option.disabledReason) || isRefusedLayout(option)}
+                onSelect={() => {
+                  if (option.value === currentLayout || option.disabledReason || isRefusedLayout(option)) return;
+                  void (async () => {
+                    try {
+                      await updateLayout(option.value);
+                    } catch (error) {
+                      toast.error(getErrorMessage(error, 'Failed to change view layout'));
+                    }
+                  })();
+                }}
+              >
+                {currentLayout === DatabaseViewLayout.Gallery ? <ViewIcon layout={option.icon} size='small' /> : null}
+                <span>{option.label}</span>
+                {currentLayout === option.value && <DropdownMenuItemTick />}
+              </DropdownMenuItem>
+            );
 
             return (
               <DatabaseViewCreationHint
                 key={option.value}
-                enabled={option.value === DatabaseViewLayout.Timeline}
-                reason={disabled ? timelineAction.reason : undefined}
+                enabled={isProPlanDatabaseViewLayout(option.icon)}
+                reason={option.disabledReason}
               >
-                <DropdownMenuItem
-                  disabled={disabled}
-                  className={'w-full'}
-                  data-testid={`database-layout-option-${option.value}`}
-                  onSelect={() => {
-                    if (
-                      option.value === currentLayout ||
-                      (option.value === DatabaseViewLayout.Timeline && getAction(ViewLayout.Timeline).type !== 'create')
-                    )
-                      return;
-                    void (async () => {
-                      try {
-                        await updateLayout(option.value);
-                      } catch (error) {
-                        toast.error(getErrorMessage(error, 'Failed to change view layout'));
-                      }
-                    })();
-                  }}
-                >
-                  {currentLayout === DatabaseViewLayout.Gallery ? <ViewIcon layout={option.icon} size='small' /> : null}
-                  <span>{option.label}</span>
-                  {currentLayout === option.value && <DropdownMenuItemTick />}
-                </DropdownMenuItem>
+                {item}
               </DatabaseViewCreationHint>
             );
           })}

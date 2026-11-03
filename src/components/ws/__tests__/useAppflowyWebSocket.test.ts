@@ -1,7 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 
 import { getServerInfo } from '@/application/services/js-services/http/auth-api';
-import { getTokenParsed } from '@/application/session/token';
+import { refreshToken } from '@/application/services/js-services/http/gotrue';
+import { getTokenParsed, invalidToken } from '@/application/session/token';
+import { messages } from '@/proto/messages';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 
@@ -10,6 +13,7 @@ import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 const stableSendMessage = jest.fn();
 const stableGetWebSocket = jest.fn(() => null);
 let mockReadyState = 1;
+let mockSessionGeneration = 0;
 const mockUseWebSocket = jest.fn(() => ({
   lastMessage: null,
   sendMessage: stableSendMessage,
@@ -27,8 +31,10 @@ jest.mock('@/application/services/js-services/http/auth-api', () => ({
 }));
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: () => ({ generation: mockSessionGeneration }),
   getTokenParsed: jest.fn(),
   invalidToken: jest.fn(),
+  isTokenSessionCurrent: (session: { generation: number }) => session.generation === mockSessionGeneration,
 }));
 
 jest.mock('@/application/services/js-services/http/gotrue', () => ({
@@ -67,6 +73,7 @@ const lastSocketOptions = () => {
     {
       shouldReconnect?: (event: CloseEvent) => boolean;
       reconnectInterval?: (attemptNumber: number) => number;
+      onMessage?: (event: MessageEvent) => void;
     }
   ][];
 
@@ -83,6 +90,7 @@ describe('useAppflowyWebSocket', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadyState = 1;
+    mockSessionGeneration = 0;
     setStoredToken('token-A');
   });
 
@@ -93,6 +101,53 @@ describe('useAppflowyWebSocket', () => {
     expect(await resolveLastSocketUrl()).toContain('/workspace-1/');
     expect(new URL(await resolveLastSocketUrl()).searchParams.has('server_restore_id')).toBe(false);
     expect(getServerInfo).not.toHaveBeenCalled();
+  });
+
+  it('consumes every ACK in a socket burst even when React has no lastMessage render', () => {
+    const { result, unmount } = renderHook(() => useAppflowyWebSocket({ ...baseOptions, supportsUpdateAck: true }));
+    const update = (objectId: string) => ({ collabMessage: { objectId, update: { payload: new Uint8Array([1]) } } });
+
+    for (let i = 0; i < 32; i += 1) result.current.sendMessage(update(`doc-${i}`));
+    expect(() => result.current.sendMessage(update('waiting'))).toThrow('send window is full');
+    act(() => {
+      for (let i = 0; i < 32; i += 1) {
+        const frame = messages.Message.encode({ collabMessage: { objectId: `doc-${i}`, updateAck: {} } }).finish();
+
+        lastSocketOptions().onMessage?.(new MessageEvent('message', { data: Uint8Array.from(frame).buffer }));
+      }
+    });
+    expect(result.current.lastMessage).toBeNull();
+    expect(result.current.canSendUpdate?.('waiting')).toBe(true);
+    for (let i = 0; i < 32; i += 1) result.current.sendMessage(update(`next-${i}`));
+    expect(stableSendMessage).toHaveBeenCalledTimes(64);
+    unmount();
+  });
+
+  it('recovers a stalled shared socket through its owner rather than calling the protected proxy', async () => {
+    jest.useFakeTimers();
+    const { result, unmount } = renderHook(() => useAppflowyWebSocket({ ...baseOptions, supportsUpdateAck: true }));
+
+    try {
+      result.current.sendMessage({ collabMessage: { objectId: 'stalled', update: { payload: new Uint8Array([1]) } } });
+      await act(async () => { jest.advanceTimersByTime(30_000); });
+      expect(await resolveLastSocketUrl()).toContain('_rc=1');
+      expect(result.current.canSendUpdate?.('successor')).toBe(false);
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the send window usable after StrictMode replays effect cleanup', () => {
+    const { result, unmount } = renderHook(
+      () => useAppflowyWebSocket({ ...baseOptions, supportsUpdateAck: true }),
+      { wrapper: StrictMode }
+    );
+
+    result.current.sendMessage({ collabMessage: { objectId: 'doc', update: { payload: new Uint8Array([1]) } } });
+    expect(stableSendMessage).toHaveBeenCalledTimes(1);
+    expect(result.current.canSendUpdate?.('doc')).toBe(false);
+    unmount();
   });
 
   // A token rotation must not replace the URL callback during a live session,
@@ -127,6 +182,41 @@ describe('useAppflowyWebSocket', () => {
     });
 
     expect(await resolveLastSocketUrl()).toContain('token=token-B');
+  });
+
+  it('preserves the session on an OAuth-shaped temporary refresh failure', async () => {
+    mockReadyState = 3;
+    mockGetTokenParsed.mockReturnValue({ access_token: 'token-A', refresh_token: 'refresh-a', expires_at: 1 });
+    jest.mocked(refreshToken).mockRejectedValueOnce({
+      response: { status: 503, data: { error_code: 'session_not_found' } },
+    });
+    const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+
+    await act(async () => { result.current.reconnect(); });
+
+    expect(refreshToken).toHaveBeenCalledTimes(1);
+    expect(invalidToken).not.toHaveBeenCalled();
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
+  });
+
+  it('ignores an old login rejection after another account signs in', async () => {
+    mockReadyState = 3;
+    mockGetTokenParsed.mockReturnValue({ access_token: 'token-A', refresh_token: 'refresh-a', expires_at: 1 });
+    let rejectRefresh!: (reason: unknown) => void;
+
+    jest.mocked(refreshToken).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRefresh = reject; }));
+    const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+
+    act(() => { result.current.reconnect(); });
+    expect(refreshToken).toHaveBeenCalledTimes(1);
+    mockSessionGeneration += 1;
+    setStoredToken('token-B');
+    await act(async () => {
+      rejectRefresh({ response: { status: 400, data: { error_code: 'session_not_found' } } });
+    });
+
+    expect(invalidToken).not.toHaveBeenCalled();
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
   });
 
   it('uses the freshest stored token when react-use-websocket schedules an automatic retry', async () => {

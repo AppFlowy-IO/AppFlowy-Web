@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Image / Error / Locked">
+<path id="Rectangle 1611231683" d="M14 32C14 29.7909 15.7909 28 18 28H46C48.2091 28 50 29.7909 50 32V50C50 52.2091 48.2091 54 46 54H18C15.7909 54 14 52.2091 14 50V32Z" fill="#B5BBD3"/>
+<mask id="stroke0_19522_59254" fill="white">
+<path d="M19 23C19 15.8203 24.8203 10 32 10C39.1797 10 45 15.8203 45 23V29C45 36.1797 39.1797 42 32 42C24.8203 42 19 36.1797 19 29V23Z"/>
+</mask>
+<path id="Rectangle 1611231685" d="M32 42C24.8203 42 19 36.1797 19 29V23C19 15.8203 24.8203 10 32 10C39.1797 10 45 15.8203 45 23V29C45 36.1797 39.1797 42 32 42Z" stroke-width="10" stroke="#B5BBD3" mask="url(#stroke0_19522_59254)"/>
+<rect id="Rectangle 1611231684" x="30" y="34" width="4" height="9" rx="2" fill="white"/>
+</g>
+</svg>

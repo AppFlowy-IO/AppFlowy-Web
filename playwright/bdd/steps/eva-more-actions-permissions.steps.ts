@@ -23,8 +23,8 @@ import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
 
-const OWNER_EMAIL = 'nathan@appflowy.io';
-const EVA_EMAIL = 'eva@appflowy.io';
+const OWNER_EMAIL = process.env.APPFLOWY_TEST_EVA_OWNER_EMAIL || 'nathan@appflowy.io';
+const EVA_EMAIL = process.env.APPFLOWY_TEST_EVA_EMAIL || 'eva@appflowy.io';
 const FIXTURE_PASSWORD = 'AppFlowy!@123';
 const VIEW_LAYOUT_DOCUMENT = 0;
 const FIXTURE_PAGE_ALIASES = {
@@ -36,6 +36,7 @@ const MENU_ACTIONS = {
   Rename: (page: Page) => ViewActionSelectors.renameButton(page),
   'Change icon': (page: Page) => ViewActionSelectors.changeIconButton(page),
   'Lock page': (page: Page) => page.getByTestId('more-page-lock'),
+  'Document width': (page: Page) => page.getByTestId('document-width-action'),
   Duplicate: (page: Page) => ViewActionSelectors.duplicateButton(page),
   'Move to': (page: Page) => ViewActionSelectors.moveToButton(page),
   'Find and replace': (page: Page) => page.getByTestId('more-page-find-and-replace'),

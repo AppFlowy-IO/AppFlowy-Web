@@ -19,6 +19,7 @@ import {
   importConfluenceZipToView,
   importCsvFilesAsDatabases,
   importDocumentFiles,
+  importHtmlFiles,
   importNotionZipToView,
   populateDocumentWithMarkdown,
   stripFileExtension,
@@ -48,7 +49,7 @@ type ZipImportFormat = 'notion' | 'confluence';
 type DocumentTileFormat = Exclude<DocumentFileImportFormat, 'doc'>;
 type ImportFormat = 'markdown' | 'csv' | ZipImportFormat | DocumentFileImportFormat;
 
-/** Formats imported one file at a time through a server task, sharing the batch UI. */
+/** Formats imported one file at a time, sharing the batch UI. */
 type BatchImportFormat = 'csv' | DocumentFileImportFormat;
 
 interface BatchProgress {
@@ -305,11 +306,25 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const handleDocumentFiles = useCallback(
     (files: File[], format: DocumentFileImportFormat) => {
       if (!workspaceId) return;
+      if (format === 'html') {
+        if (!addPage) return;
+        void runBatch(format, files, (signal, onFileStart) =>
+          importHtmlFiles({
+            workspaceId,
+            files,
+            signal,
+            onFileStart,
+            createPage: (name) => addPage(parentViewId, { layout: ViewLayout.Document, name, prev_view_id: prevViewId }),
+          })
+        );
+        return;
+      }
+
       void runBatch(format, files, (signal, onFileStart) =>
         importDocumentFiles({ workspaceId, parentViewId, files, format, signal, onFileStart })
       );
     },
-    [workspaceId, parentViewId, runBatch]
+    [workspaceId, parentViewId, prevViewId, addPage, runBatch]
   );
 
   const handleZip = useCallback(

@@ -222,8 +222,12 @@ export function ModelSelector({ className, disabled, triggerContent }: ModelSele
               data-testid='model-selector-button'
               aria-label='Select AI Model'
             >
-              {triggerContent ?? <><AISparksIcon className='h-5 w-5 text-icon-secondary' />
-              <span className='max-w-[120px] truncate'>{displayText}</span></>}
+              {triggerContent ?? (
+                <>
+                  <AISparksIcon className='h-5 w-5 text-icon-secondary' />
+                  <span className='max-w-[120px] truncate'>{displayText}</span>
+                </>
+              )}
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>

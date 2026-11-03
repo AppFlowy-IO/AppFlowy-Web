@@ -6,39 +6,22 @@ import {
   SelectOptionFilter,
   SelectOptionFilterCondition,
   useFieldSelector,
-  useReadOnly,
+  useConditionsReadOnly,
 } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { multiSelectFilterConditions } from '@/components/database/components/filters/filter-conditions';
 import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
+import { toggleSelectOptionContent } from '@/components/database/components/filters/value-controls/filter-value';
 
 import FieldMenuTitle from './FieldMenuTitle';
 
 function MultiSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { field } = useFieldSelector(filter.fieldId);
-  const conditions = useMemo(() => {
-    return [
-      {
-        value: SelectOptionFilterCondition.OptionContains,
-        text: t('grid.selectOptionFilter.contains'),
-      },
-      {
-        value: SelectOptionFilterCondition.OptionDoesNotContain,
-        text: t('grid.selectOptionFilter.doesNotContain'),
-      },
-      {
-        value: SelectOptionFilterCondition.OptionIsEmpty,
-        text: t('grid.selectOptionFilter.isEmpty'),
-      },
-      {
-        value: SelectOptionFilterCondition.OptionIsNotEmpty,
-        text: t('grid.selectOptionFilter.isNotEmpty'),
-      },
-    ];
-  }, [t]);
+  const conditions = useMemo(() => multiSelectFilterConditions(t), [t]);
 
   const displaySelectOptionList = useMemo(() => {
     return ![SelectOptionFilterCondition.OptionIsEmpty, SelectOptionFilterCondition.OptionIsNotEmpty].includes(
@@ -50,24 +33,13 @@ function MultiSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter })
   const handleToggleSelectOption = useCallback(
     (id: string) => {
       if (readOnly) return;
-      const selectedIds = new Set(filter.optionIds);
-
-      if (selectedIds.has(id)) {
-        selectedIds.delete(id);
-      } else {
-        selectedIds.add(id);
-      }
-
       // Desktop parity: persist the selection in field option order.
       const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
-      const orderedIds = typeOption
-        ? typeOption.options.filter((option) => option && selectedIds.has(option.id)).map((option) => option.id)
-        : [...selectedIds];
 
       updateFilter({
         filterId: filter.id,
         fieldId: filter.fieldId,
-        content: orderedIds.filter((id) => id !== '').join(','),
+        content: toggleSelectOptionContent(filter.optionIds, id, typeOption?.options),
       });
     },
     [field, filter, readOnly, updateFilter]

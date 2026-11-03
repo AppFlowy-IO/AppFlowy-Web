@@ -1,0 +1,412 @@
+{
+  "fixture": "series",
+  "version": 1,
+  "encoding": {
+    "rows": "Rows in view order. x and sub hold the R-GROUPKEY keys the row maps to, already extracted (WP11); [] means no value and becomes __empty__. y is WP11's per-row Y value (number or null).",
+    "xField": "kind (select | checkbox | other) and the X candidate groups in WP11's candidate order (auto, manual or label). __empty__ is last.",
+    "subField": "null when there is no effective Group by. Otherwise kind and the sub-group candidates in auto order, __empty__ last.",
+    "optionColor": "SelectOptionColor name from tokens.json (Purple, Pink, LightPink, Orange, Yellow, Lime, Green, Aqua, Blue, Cream, Mint, Sky, Lilac, Pearl, Sunset, Coral, Sapphire, Moss, Sand, Charcoal).",
+    "colors": "#RRGGBB opaque; #RRGGBB/0.7 a base hue at an opacity step; empty = chart.empty; null = none.",
+    "expected": "Only the keys present are compared. dataLabels use side positive/negative for stack totals."
+  },
+  "defaults": {
+    "chartType": 0,
+    "aggregation": 0,
+    "groupStyle": "stacked",
+    "cumulative": false,
+    "showEmptyValues": true,
+    "hiddenGroups": [],
+    "xSort": "auto",
+    "colorTheme": "auto",
+    "legendPosition": "auto",
+    "showDataLabels": true,
+    "limits": { "maxCategories": 200, "maxSeries": 50 }
+  },
+  "groupedBarWidth": [
+    { "slot": 100, "seriesCount": 3, "width": 16 },
+    { "slot": 60, "seriesCount": 2, "width": 16 },
+    { "slot": 40, "seriesCount": 3, "width": 10.666666666666666 },
+    { "slot": 30, "seriesCount": 4, "width": 6 },
+    { "slot": 10, "seriesCount": 50, "width": 1 }
+  ],
+  "datasets": {
+    "content": {
+      "xField": { "kind": "select", "groups": [
+        { "key": "opt:blog", "label": "Blog", "optionColor": "Purple" },
+        { "key": "opt:video", "label": "Video", "optionColor": "Pink" },
+        { "key": "opt:podcast", "label": "Podcast", "optionColor": "Yellow" },
+        { "key": "__empty__", "label": "No Channel", "isEmpty": true }
+      ] },
+      "subField": { "kind": "select", "groups": [
+        { "key": "opt:biz", "label": "Business", "optionColor": "Orange" },
+        { "key": "opt:con", "label": "Consumers", "optionColor": "Blue" },
+        { "key": "opt:smb", "label": "SMB", "optionColor": "Green" },
+        { "key": "__empty__", "label": "No Audience", "isEmpty": true }
+      ] },
+      "rows": [
+        { "id": "r1", "x": ["opt:blog"], "sub": ["opt:biz"], "y": 100 },
+        { "id": "r2", "x": ["opt:blog"], "sub": ["opt:con"], "y": 50 },
+        { "id": "r3", "x": ["opt:blog"], "sub": ["opt:con"], "y": 30 },
+        { "id": "r4", "x": ["opt:video"], "sub": ["opt:smb"], "y": 200 },
+        { "id": "r5", "x": ["opt:video"], "sub": ["opt:biz"], "y": 10 },
+        { "id": "r6", "x": ["opt:podcast"], "sub": ["opt:con"], "y": 40 },
+        { "id": "r7", "x": ["opt:podcast"], "sub": [], "y": 5 },
+        { "id": "r8", "x": [], "sub": ["opt:biz"], "y": 7 }
+      ]
+    },
+    "multi": {
+      "xField": { "kind": "select", "groups": [ { "key": "opt:blog", "label": "Blog", "optionColor": "Purple" } ] },
+      "subField": { "kind": "select", "groups": [
+        { "key": "opt:b.1", "label": "Business", "optionColor": "Orange" },
+        { "key": "opt:s.1", "label": "SMB", "optionColor": "Green" }
+      ] },
+      "rows": [
+        { "id": "m1", "x": ["opt:blog"], "sub": ["opt:b.1", "opt:s.1"], "y": null },
+        { "id": "m2", "x": ["opt:blog"], "sub": ["opt:s.1"], "y": null }
+      ]
+    },
+    "signed": {
+      "xField": { "kind": "select", "groups": [ { "key": "opt:a", "label": "A", "optionColor": "Blue" } ] },
+      "subField": { "kind": "select", "groups": [
+        { "key": "opt:s1", "label": "S1", "optionColor": "Blue" },
+        { "key": "opt:s2", "label": "S2", "optionColor": "Green" },
+        { "key": "opt:s3", "label": "S3", "optionColor": "Pink" }
+      ] },
+      "rows": [
+        { "id": "n1", "x": ["opt:a"], "sub": ["opt:s1"], "y": 30 },
+        { "id": "n2", "x": ["opt:a"], "sub": ["opt:s2"], "y": -10 },
+        { "id": "n3", "x": ["opt:a"], "sub": ["opt:s3"], "y": 10 }
+      ]
+    },
+    "checkbox": {
+      "xField": { "kind": "select", "groups": [ { "key": "opt:blog", "label": "Blog", "optionColor": "Purple" } ] },
+      "subField": { "kind": "checkbox", "groups": [
+        { "key": "checked", "label": "Checked" },
+        { "key": "unchecked", "label": "Unchecked" }
+      ] },
+      "rows": [
+        { "id": "c1", "x": ["opt:blog"], "sub": ["checked"], "y": null },
+        { "id": "c2", "x": ["opt:blog"], "sub": ["unchecked"], "y": null },
+        { "id": "c3", "x": ["opt:blog"], "sub": ["unchecked"], "y": null }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "stacked count keeps the empty category and the empty series",
+      "dataset": "content",
+      "input": {},
+      "expected": {
+        "categories": [
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": null, "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:video", "label": "Video", "isEmpty": false, "color": null, "rowIds": ["r4", "r5"] },
+          { "key": "opt:podcast", "label": "Podcast", "isEmpty": false, "color": null, "rowIds": ["r6", "r7"] },
+          { "key": "__empty__", "label": "No Channel", "isEmpty": true, "color": null, "rowIds": ["r8"] }
+        ],
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 1, 0, 1], "rowIds": [["r1"], ["r5"], [], ["r8"]] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 0, 1, 0], "rowIds": [["r2", "r3"], [], ["r6"], []] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [0, 1, 0, 0], "rowIds": [[], ["r4"], [], []] },
+          { "key": "__empty__", "label": "No Audience", "isEmpty": true, "color": "empty", "values": [0, 0, 1, 0], "rowIds": [[], [], ["r7"], []] }
+        ],
+        "truncated": { "categories": false, "series": false },
+        "captionCount": null,
+        "stackTotals": { "positive": [3, 2, 2, 1], "negative": [0, 0, 0, 0] },
+        "outermost": { "positive": [0, 0, 1, 0], "negative": [null, null, null, null] },
+        "valueExtent": { "min": 0, "max": 3 },
+        "dataLabels": [
+          { "category": "opt:blog", "series": null, "side": "positive", "value": 3 },
+          { "category": "opt:video", "series": null, "side": "positive", "value": 2 },
+          { "category": "opt:podcast", "series": null, "side": "positive", "value": 2 },
+          { "category": "__empty__", "series": null, "side": "positive", "value": 1 }
+        ],
+        "tooltips": {
+          "opt:video": [ { "series": "opt:biz", "value": 1 }, { "series": "opt:smb", "value": 1 } ],
+          "opt:podcast": [ { "series": "opt:con", "value": 1 }, { "series": "__empty__", "value": 1 } ]
+        },
+        "legendVisible": true
+      }
+    },
+    {
+      "name": "hiding empty values drops the empty category and the empty series",
+      "dataset": "content",
+      "input": { "showEmptyValues": false },
+      "expected": {
+        "categories": [
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": null, "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:video", "label": "Video", "isEmpty": false, "color": null, "rowIds": ["r4", "r5"] },
+          { "key": "opt:podcast", "label": "Podcast", "isEmpty": false, "color": null, "rowIds": ["r6"] }
+        ],
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 1, 0], "rowIds": [["r1"], ["r5"], []] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 0, 1], "rowIds": [["r2", "r3"], [], ["r6"]] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [0, 1, 0], "rowIds": [[], ["r4"], []] }
+        ],
+        "stackTotals": { "positive": [3, 2, 1], "negative": [0, 0, 0] },
+        "outermost": { "positive": [0, 0, 1], "negative": [null, null, null] }
+      }
+    },
+    {
+      "name": "grouped sum labels every non-zero bar in category then series order",
+      "dataset": "content",
+      "input": { "aggregation": 1, "groupStyle": "grouped" },
+      "expected": {
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [100, 10, 0, 7], "rowIds": [["r1"], ["r5"], [], ["r8"]] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [80, 0, 40, 0], "rowIds": [["r2", "r3"], [], ["r6"], []] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [0, 200, 0, 0], "rowIds": [[], ["r4"], [], []] },
+          { "key": "__empty__", "label": "No Audience", "isEmpty": true, "color": "empty", "values": [0, 0, 5, 0], "rowIds": [[], [], ["r7"], []] }
+        ],
+        "valueExtent": { "min": 0, "max": 200 },
+        "dataLabels": [
+          { "category": "opt:blog", "series": "opt:biz", "side": "positive", "value": 100 },
+          { "category": "opt:blog", "series": "opt:con", "side": "positive", "value": 80 },
+          { "category": "opt:video", "series": "opt:biz", "side": "positive", "value": 10 },
+          { "category": "opt:video", "series": "opt:smb", "side": "positive", "value": 200 },
+          { "category": "opt:podcast", "series": "opt:con", "side": "positive", "value": 40 },
+          { "category": "opt:podcast", "series": "__empty__", "side": "positive", "value": 5 },
+          { "category": "__empty__", "series": "opt:biz", "side": "positive", "value": 7 }
+        ],
+        "tooltips": { "opt:blog": [ { "series": "opt:biz", "value": 100 }, { "series": "opt:con", "value": 80 } ] }
+      }
+    },
+    {
+      "name": "percent shares keep the raw values and draw no labels",
+      "dataset": "content",
+      "input": { "groupStyle": "percent" },
+      "expected": {
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 1, 0, 1], "rowIds": [["r1"], ["r5"], [], ["r8"]], "percents": [33.333333333333336, 50, 0, 100] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 0, 1, 0], "rowIds": [["r2", "r3"], [], ["r6"], []], "percents": [66.66666666666667, 0, 50, 0] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [0, 1, 0, 0], "rowIds": [[], ["r4"], [], []], "percents": [0, 50, 0, 0] },
+          { "key": "__empty__", "label": "No Audience", "isEmpty": true, "color": "empty", "values": [0, 0, 1, 0], "rowIds": [[], [], ["r7"], []], "percents": [0, 0, 50, 0] }
+        ],
+        "outermost": { "positive": [0, 0, 1, 0], "negative": [null, null, null, null] },
+        "valueExtent": { "min": 0, "max": 100 },
+        "dataLabels": [],
+        "tooltips": { "opt:blog": [ { "series": "opt:biz", "value": 1, "percent": 33.333333333333336 }, { "series": "opt:con", "value": 2, "percent": 66.66666666666667 } ] }
+      }
+    },
+    {
+      "name": "cumulative runs per series along X and skips the empty category",
+      "dataset": "content",
+      "input": { "cumulative": true },
+      "expected": {
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 2, 2, 1], "rowIds": [["r1"], ["r5"], [], ["r8"]] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 2, 3, 0], "rowIds": [["r2", "r3"], [], ["r6"], []] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [0, 1, 1, 0], "rowIds": [[], ["r4"], [], []] },
+          { "key": "__empty__", "label": "No Audience", "isEmpty": true, "color": "empty", "values": [0, 0, 1, 0], "rowIds": [[], [], ["r7"], []] }
+        ],
+        "stackTotals": { "positive": [3, 5, 7, 1], "negative": [0, 0, 0, 0] },
+        "outermost": { "positive": [0, 0, 0, 0], "negative": [null, null, null, null] },
+        "valueExtent": { "min": 0, "max": 7 }
+      }
+    },
+    {
+      "name": "hidden categories drop series that only appear in them",
+      "dataset": "content",
+      "input": { "hiddenGroups": ["opt:video"] },
+      "expected": {
+        "categories": [
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": null, "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:podcast", "label": "Podcast", "isEmpty": false, "color": null, "rowIds": ["r6", "r7"] },
+          { "key": "__empty__", "label": "No Channel", "isEmpty": true, "color": null, "rowIds": ["r8"] }
+        ],
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 0, 1], "rowIds": [["r1"], [], ["r8"]] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 1, 0], "rowIds": [["r2", "r3"], ["r6"], []] },
+          { "key": "__empty__", "label": "No Audience", "isEmpty": true, "color": "empty", "values": [0, 1, 0], "rowIds": [[], ["r7"], []] }
+        ],
+        "stackTotals": { "positive": [3, 2, 1], "negative": [0, 0, 0] },
+        "outermost": { "positive": [0, 1, 0], "negative": [null, null, null] }
+      }
+    },
+    {
+      "name": "both caps keep the first groups in sort order and the caption names the category cap",
+      "dataset": "content",
+      "input": { "limits": { "maxCategories": 2, "maxSeries": 2 } },
+      "expected": {
+        "categories": [
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": null, "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:video", "label": "Video", "isEmpty": false, "color": null, "rowIds": ["r5"] }
+        ],
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 1], "rowIds": [["r1"], ["r5"]] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 0], "rowIds": [["r2", "r3"], []] }
+        ],
+        "truncated": { "categories": true, "series": true },
+        "captionCount": 2,
+        "stackTotals": { "positive": [3, 1], "negative": [0, 0] }
+      }
+    },
+    {
+      "name": "a series cap alone names the series cap",
+      "dataset": "content",
+      "input": { "limits": { "maxCategories": 200, "maxSeries": 1 } },
+      "expected": {
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 1, 0, 1], "rowIds": [["r1"], ["r5"], [], ["r8"]] }
+        ],
+        "truncated": { "categories": false, "series": true },
+        "captionCount": 1,
+        "outermost": { "positive": [0, 0, null, 0], "negative": [null, null, null, null] },
+        "dataLabels": [
+          { "category": "opt:blog", "series": null, "side": "positive", "value": 1 },
+          { "category": "opt:video", "series": null, "side": "positive", "value": 1 },
+          { "category": "opt:podcast", "series": null, "side": "positive", "value": 0 },
+          { "category": "__empty__", "series": null, "side": "positive", "value": 1 }
+        ],
+        "legendVisible": false
+      }
+    },
+    {
+      "name": "without Group by there is one __all__ series, categories keep their colours and a stored percent style is ignored",
+      "dataset": "content",
+      "subField": null,
+      "input": { "groupStyle": "percent" },
+      "expected": {
+        "categories": [
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": "#BF8EDA", "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:video", "label": "Video", "isEmpty": false, "color": "#DF84A8", "rowIds": ["r4", "r5"] },
+          { "key": "opt:podcast", "label": "Podcast", "isEmpty": false, "color": "#EAC26B", "rowIds": ["r6", "r7"] },
+          { "key": "__empty__", "label": "No Channel", "isEmpty": true, "color": "empty", "rowIds": ["r8"] }
+        ],
+        "series": [
+          { "key": "__all__", "label": "", "isEmpty": false, "color": null, "values": [3, 2, 2, 1], "rowIds": [["r1", "r2", "r3"], ["r4", "r5"], ["r6", "r7"], ["r8"]] }
+        ],
+        "valueExtent": { "min": 0, "max": 3 },
+        "dataLabels": [
+          { "category": "opt:blog", "series": null, "side": "positive", "value": 3 },
+          { "category": "opt:video", "series": null, "side": "positive", "value": 2 },
+          { "category": "opt:podcast", "series": null, "side": "positive", "value": 2 },
+          { "category": "__empty__", "series": null, "side": "positive", "value": 1 }
+        ],
+        "legendVisible": false
+      }
+    },
+    {
+      "name": "a multi-select sub-group counts a row in each of its series",
+      "dataset": "multi",
+      "input": {},
+      "expected": {
+        "categories": [ { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": null, "rowIds": ["m1", "m2"] } ],
+        "series": [
+          { "key": "opt:b.1", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1], "rowIds": [["m1"]] },
+          { "key": "opt:s.1", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [2], "rowIds": [["m1", "m2"]] }
+        ],
+        "stackTotals": { "positive": [3], "negative": [0] },
+        "valueExtent": { "min": 0, "max": 3 }
+      }
+    },
+    {
+      "name": "a value sort orders categories by their total before the caps",
+      "dataset": "content",
+      "input": { "aggregation": 1, "showEmptyValues": false, "xSort": "value_desc" },
+      "expected": {
+        "categories": [
+          { "key": "opt:video", "label": "Video", "isEmpty": false, "color": null, "rowIds": ["r4", "r5"] },
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": null, "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:podcast", "label": "Podcast", "isEmpty": false, "color": null, "rowIds": ["r6"] }
+        ],
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [10, 100, 0], "rowIds": [["r5"], ["r1"], []] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [0, 80, 40], "rowIds": [[], ["r2", "r3"], ["r6"]] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [200, 0, 0], "rowIds": [["r4"], [], []] }
+        ],
+        "stackTotals": { "positive": [210, 180, 40], "negative": [0, 0, 0] },
+        "outermost": { "positive": [0, 0, 1], "negative": [null, null, null] },
+        "valueExtent": { "min": 0, "max": 210 }
+      }
+    },
+    {
+      "name": "a line chart draws one line per series and ignores the group style",
+      "dataset": "content",
+      "input": { "chartType": 1, "groupStyle": "percent" },
+      "expected": {
+        "series": [
+          { "key": "opt:biz", "label": "Business", "isEmpty": false, "color": "#DE9255", "values": [1, 1, 0, 1], "rowIds": [["r1"], ["r5"], [], ["r8"]] },
+          { "key": "opt:con", "label": "Consumers", "isEmpty": false, "color": "#5E9FE8", "values": [2, 0, 1, 0], "rowIds": [["r2", "r3"], [], ["r6"], []] },
+          { "key": "opt:smb", "label": "SMB", "isEmpty": false, "color": "#72BC8F", "values": [0, 1, 0, 0], "rowIds": [[], ["r4"], [], []] },
+          { "key": "__empty__", "label": "No Audience", "isEmpty": true, "color": "empty", "values": [0, 0, 1, 0], "rowIds": [[], [], ["r7"], []] }
+        ],
+        "valueExtent": { "min": 0, "max": 2 },
+        "dataLabels": [],
+        "legendVisible": true
+      }
+    },
+    {
+      "name": "a donut ignores Group by",
+      "dataset": "content",
+      "input": { "chartType": 3 },
+      "expected": {
+        "categories": [
+          { "key": "opt:blog", "label": "Blog", "isEmpty": false, "color": "#BF8EDA", "rowIds": ["r1", "r2", "r3"] },
+          { "key": "opt:video", "label": "Video", "isEmpty": false, "color": "#DF84A8", "rowIds": ["r4", "r5"] },
+          { "key": "opt:podcast", "label": "Podcast", "isEmpty": false, "color": "#EAC26B", "rowIds": ["r6", "r7"] },
+          { "key": "__empty__", "label": "No Channel", "isEmpty": true, "color": "empty", "rowIds": ["r8"] }
+        ],
+        "series": [
+          { "key": "__all__", "label": "", "isEmpty": false, "color": null, "values": [3, 2, 2, 1], "rowIds": [["r1", "r2", "r3"], ["r4", "r5"], ["r6", "r7"], ["r8"]] }
+        ]
+      }
+    },
+    {
+      "name": "negative values stack below zero with their own total and radius",
+      "dataset": "signed",
+      "input": { "aggregation": 1 },
+      "expected": {
+        "series": [
+          { "key": "opt:s1", "label": "S1", "isEmpty": false, "color": "#5E9FE8", "values": [30], "rowIds": [["n1"]] },
+          { "key": "opt:s2", "label": "S2", "isEmpty": false, "color": "#72BC8F", "values": [-10], "rowIds": [["n2"]] },
+          { "key": "opt:s3", "label": "S3", "isEmpty": false, "color": "#DF84A8", "values": [10], "rowIds": [["n3"]] }
+        ],
+        "stackTotals": { "positive": [40], "negative": [-10] },
+        "outermost": { "positive": [0], "negative": [1] },
+        "valueExtent": { "min": -10, "max": 40 },
+        "dataLabels": [
+          { "category": "opt:a", "series": null, "side": "positive", "value": 40 },
+          { "category": "opt:a", "series": null, "side": "negative", "value": -10 }
+        ]
+      }
+    },
+    {
+      "name": "percent counts only positive values",
+      "dataset": "signed",
+      "input": { "aggregation": 1, "groupStyle": "percent" },
+      "expected": {
+        "series": [
+          { "key": "opt:s1", "label": "S1", "isEmpty": false, "color": "#5E9FE8", "values": [30], "rowIds": [["n1"]], "percents": [75] },
+          { "key": "opt:s2", "label": "S2", "isEmpty": false, "color": "#72BC8F", "values": [-10], "rowIds": [["n2"]], "percents": [0] },
+          { "key": "opt:s3", "label": "S3", "isEmpty": false, "color": "#DF84A8", "values": [10], "rowIds": [["n3"]], "percents": [25] }
+        ],
+        "valueExtent": { "min": 0, "max": 100 },
+        "dataLabels": [],
+        "tooltips": { "opt:a": [ { "series": "opt:s1", "value": 30, "percent": 75 }, { "series": "opt:s2", "value": -10, "percent": 0 }, { "series": "opt:s3", "value": 10, "percent": 25 } ] }
+      }
+    },
+    {
+      "name": "the colorful theme colours series by index and keeps the empty grey",
+      "dataset": "content",
+      "input": { "colorTheme": "colorful" },
+      "expected": { "seriesColors": ["#5E9FE8", "#EAC26B", "#72BC8F", "empty"] }
+    },
+    {
+      "name": "a single-hue theme steps the opacity per non-empty series",
+      "dataset": "content",
+      "input": { "colorTheme": "orange" },
+      "expected": { "seriesColors": ["#DE9255", "#DE9255/0.7", "#DE9255/0.5", "empty"] }
+    },
+    {
+      "name": "a checkbox sub-group uses the checkbox colours",
+      "dataset": "checkbox",
+      "input": {},
+      "expected": {
+        "series": [
+          { "key": "checked", "label": "Checked", "isEmpty": false, "color": "#72BC8F", "values": [1], "rowIds": [["c1"]] },
+          { "key": "unchecked", "label": "Unchecked", "isEmpty": false, "color": "#C7C6C4", "values": [2], "rowIds": [["c2", "c3"]] }
+        ]
+      }
+    }
+  ]
+}

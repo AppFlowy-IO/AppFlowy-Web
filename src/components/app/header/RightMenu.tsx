@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useDatabasePageSelection } from '@/application/database-yjs/database-page-state';
 import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import { useActiveRowPage } from '@/application/row-document/row-page-state';
+import { ViewLayout } from '@/application/types';
 import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { findView } from '@/components/_shared/outline/utils';
@@ -13,6 +14,8 @@ import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
+import { usePresentationEntryEnabled } from '@/components/presentation/feature-flags';
+import PresentEntry from '@/components/presentation/PresentEntry';
 import { openOrDownload } from '@/utils/open_schema';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -29,6 +32,7 @@ function RightMenu() {
   const workspaceId = useCurrentWorkspaceId();
   const [searchParams] = useSearchParams();
   const hasRowPageRoute = searchParams.has('r');
+  const presentationEntryEnabled = usePresentationEntryEnabled();
   const rowPageRowId = searchParams.get('r');
   const activeRowPage = useActiveRowPage();
   const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM);
@@ -41,8 +45,9 @@ function RightMenu() {
   });
   // Prefer the rendered database's selection, including restored views that
   // have not reached the outline yet. Resolve from the route while it mounts.
-  const activeViewId = displayedViewId ?? (
-    routeView && isDatabaseLayout(routeView.layout)
+  const activeViewId =
+    displayedViewId ??
+    (routeView && isDatabaseLayout(routeView.layout)
       ? resolveActiveDatabaseViewId({
           databasePageId: routeViewId,
           tabViewId,
@@ -59,10 +64,11 @@ function RightMenu() {
     return parentView && isDatabaseContainer(parentView) ? parentView.view_id : routeViewId;
   }, [outline, routeView?.parent_view_id, routeViewId]);
 
-  // On a full-page row (?r=), the favorite action targets the row document,
-  // not the containing database.
+  // On a full-page row (?r=), favorite and export target the row document,
+  // not the containing database. Materializing the row-document view first
+  // gives the server the row title for favorites and the exported PDF.
   const rowPage = rowPageRowId && activeRowPage?.rowId === rowPageRowId ? activeRowPage : null;
-  const prepareRowDocumentForFavorite = useCallback(async () => {
+  const prepareRowDocumentView = useCallback(async () => {
     if (!rowPage?.documentId || !workspaceId) return;
 
     if (rowPage.source) {
@@ -77,19 +83,40 @@ function RightMenu() {
   }, [rowPage, workspaceId]);
 
   // While a row route is loading, do not fall back to the containing database:
-  // a click in that window would favorite the wrong object.
+  // a click in that window would favorite or export the wrong object.
   const favoriteViewId = hasRowPageRoute ? rowPage?.documentId : actionViewId;
+  const exportTarget = useMemo(
+    () => (hasRowPageRoute ? { viewId: rowPage?.documentId, prepare: prepareRowDocumentView } : undefined),
+    [hasRowPageRoute, rowPage?.documentId, prepareRowDocumentView]
+  );
 
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
+      {presentationEntryEnabled &&
+        (hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
+          <PresentEntry
+            viewId={rowPage?.documentId || routeViewId!}
+            permissionViewId={actionViewId}
+            title={rowPage?.title}
+            isRow={hasRowPageRoute}
+          />
+        )}
       {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
       {actionViewId ? (
-        <ShareButton viewId={actionViewId} publishViewId={routeViewId} hidePublish={hasRowPageRoute} />
+        <ShareButton
+          viewId={actionViewId}
+          publishViewId={activeViewId}
+          hidePublish={hasRowPageRoute}
+          presentationViewId={hasRowPageRoute ? rowPage?.documentId : undefined}
+          presentationTitle={rowPage?.title}
+          presentationIsRow={hasRowPageRoute}
+          exportTarget={exportTarget}
+        />
       ) : null}
       <InlineCommentToggleButton />
       {favoriteViewId && (
-        <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
+        <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentView : undefined} />
       )}
       {actionViewId && <MoreActions viewId={actionViewId} activeViewId={activeViewId} rowId={rowPageRowId} />}
 

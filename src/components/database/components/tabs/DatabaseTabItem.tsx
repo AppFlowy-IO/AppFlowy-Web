@@ -2,6 +2,10 @@ import { type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge
 import { memo, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+  DATABASE_VIEW_LAYOUT_DEFAULT_NAMES,
+  DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT,
+} from '@/application/database-yjs/database-view-doc-ops';
 import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
@@ -32,6 +36,7 @@ export interface DatabaseTabItemProps {
   onOpenDeleteModal: (id: string) => void;
   onDuplicate?: (id: string) => void;
   duplicateDisabled?: boolean;
+  duplicateDisabledReason?: string;
   onOpenRenameModal: (view: View) => void;
   setTabRef: (id: string, el: HTMLElement | null) => void;
   /** Drag instance of the tab bar group; undefined disables reordering for this tab. */
@@ -51,6 +56,7 @@ export const DatabaseTabItem = memo(
     onOpenDeleteModal,
     onDuplicate,
     duplicateDisabled,
+    duplicateDisabledReason,
     onOpenRenameModal,
     setTabRef,
     reorderInstanceId,
@@ -104,57 +110,15 @@ export const DatabaseTabItem = memo(
 
     const databaseLayout = (rawLayoutValue === null ? NaN : Number(rawLayoutValue)) as DatabaseViewLayout;
 
-    // Get the default name based on layout if no name is available
-    const getDefaultNameByLayout = () => {
-      switch (databaseLayout) {
-        case DatabaseViewLayout.Grid:
-          return 'Grid';
-        case DatabaseViewLayout.Board:
-          return 'Board';
-        case DatabaseViewLayout.Calendar:
-          return 'Calendar';
-        case DatabaseViewLayout.Chart:
-          return 'Chart';
-        case DatabaseViewLayout.List:
-          return 'List';
-        case DatabaseViewLayout.Gallery:
-          return 'Gallery';
-        case DatabaseViewLayout.Feed:
-          return 'Feed';
-        case DatabaseViewLayout.Form:
-          return 'Form builder';
-        case DatabaseViewLayout.Timeline:
-          return 'Timeline';
-        default:
-          return t('untitled');
-      }
-    };
-
-    const defaultName = getDefaultNameByLayout();
+    // The layout's default name when the view has none; an unknown layout is untitled.
+    const defaultName = DATABASE_VIEW_LAYOUT_DEFAULT_NAMES[databaseLayout] ?? t('untitled');
     const yjsName = rawName?.trim();
     const override = nameOverride?.trim();
     // Prefer folder/outline name when available (fixes published page tab names)
     const name = override || yjsName || defaultName;
 
-    // Compute the layout for PageIcon (icon is based on layout type)
-    const computedLayout =
-      databaseLayout === DatabaseViewLayout.Board
-        ? ViewLayout.Board
-        : databaseLayout === DatabaseViewLayout.Calendar
-        ? ViewLayout.Calendar
-        : databaseLayout === DatabaseViewLayout.Chart
-        ? ViewLayout.Chart
-        : databaseLayout === DatabaseViewLayout.List
-        ? ViewLayout.List
-        : databaseLayout === DatabaseViewLayout.Gallery
-        ? ViewLayout.Gallery
-        : databaseLayout === DatabaseViewLayout.Feed
-        ? ViewLayout.Feed
-        : databaseLayout === DatabaseViewLayout.Form
-        ? ViewLayout.Form
-        : databaseLayout === DatabaseViewLayout.Timeline
-        ? ViewLayout.Timeline
-        : ViewLayout.Grid;
+    // The layout for PageIcon (the icon follows the layout type); an unknown layout shows as a Grid.
+    const computedLayout = DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[databaseLayout] ?? ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu
     // This avoids dependency on meta/folderView for display
@@ -179,6 +143,7 @@ export const DatabaseTabItem = memo(
         value={viewId}
         id={`view-tab-${viewId}`}
         data-testid={`view-tab-${viewId}`}
+        data-parity-id='dash-view-tab'
         className={cn('min-w-[80px] max-w-[360px]', dragState.type === 'dragging' && 'opacity-40')}
         ref={setRefs}
         onClickCapture={(e) => {
@@ -211,7 +176,7 @@ export const DatabaseTabItem = memo(
           }}
           className={'flex items-center gap-1.5 overflow-hidden'}
         >
-          <PageIcon iconSize={16} view={{ layout: computedLayout }} className={'!h-5 !w-5 text-base leading-[1.3rem]'} />
+          <PageIcon iconSize={16} view={{ layout: computedLayout }} className={'!h-4 !w-4 text-base leading-[1.3rem]'} />
 
           <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
@@ -249,6 +214,7 @@ export const DatabaseTabItem = memo(
                 onOpenRenameModal={onOpenRenameModal}
                 deleteDisabled={visibleViewIds.length <= 1}
                 duplicateDisabled={duplicateDisabled}
+                duplicateDisabledReason={duplicateDisabledReason}
                 view={viewForActions}
               />
             )}

@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 
-import { useReadOnly } from '@/application/database-yjs/context';
-import { Filter } from '@/application/database-yjs/database.type';
-import { useUpdateFilter } from '@/application/database-yjs/dispatch/sort-filter';
+import { Filter, useConditionsReadOnly } from '@/application/database-yjs';
+import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,7 +27,7 @@ function FilterConditionsSelect ({
   disabled?: boolean;
 }) {
   const updateFilter = useUpdateFilter();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const selectedCondition = useMemo(() => {
     return conditions.find((c) => c.value === filter.condition);
   }, [filter.condition, conditions]);

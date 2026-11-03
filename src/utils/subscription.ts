@@ -11,8 +11,17 @@ import { isSameUserUid, UserUid } from '@/application/user-uid';
 
 const PRO_ACCESS_PLANS = new Set([SubscriptionPlan.Pro, SubscriptionPlan.Team]);
 
+/** Layouts whose creation the workspace plan can refuse (they show the Pro crown). */
 export function isLimitedDatabaseViewLayout(layout?: ViewLayout): boolean {
-  return layout === ViewLayout.Timeline || layout === ViewLayout.Form || layout === ViewLayout.Chart;
+  return isProPlanDatabaseViewLayout(layout) || layout === ViewLayout.Form || layout === ViewLayout.Chart;
+}
+
+/**
+ * Layouts that only a Pro workspace can create at all. The server applies
+ * Timeline's Pro policy to Dashboard views too.
+ */
+export function isProPlanDatabaseViewLayout(layout?: ViewLayout): boolean {
+  return layout === ViewLayout.Timeline || layout === ViewLayout.Dashboard;
 }
 
 /** Shared access rule for billing settings and the dialog that handles their Change plan action. */

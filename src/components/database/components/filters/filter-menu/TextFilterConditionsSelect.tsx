@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { TextFilter, TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
+import { TextFilter } from '@/application/database-yjs/fields/text/text.type';
+import { textFilterConditions } from '@/components/database/components/filters/filter-conditions';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 
 function TextFilterConditionsSelect({
@@ -12,44 +13,7 @@ function TextFilterConditionsSelect({
   onSelect?: (condition: number) => void;
 }) {
   const { t } = useTranslation();
-
-  // Desktop parity: conditions listed in protobuf ordinal order.
-  const conditions = useMemo(() => {
-    return [
-      {
-        value: TextFilterCondition.TextIs,
-        text: t('grid.textFilter.is'),
-      },
-      {
-        value: TextFilterCondition.TextIsNot,
-        text: t('grid.textFilter.isNot'),
-      },
-      {
-        value: TextFilterCondition.TextContains,
-        text: t('grid.textFilter.contains'),
-      },
-      {
-        value: TextFilterCondition.TextDoesNotContain,
-        text: t('grid.textFilter.doesNotContain'),
-      },
-      {
-        value: TextFilterCondition.TextStartsWith,
-        text: t('grid.textFilter.startWith'),
-      },
-      {
-        value: TextFilterCondition.TextEndsWith,
-        text: t('grid.textFilter.endsWith'),
-      },
-      {
-        value: TextFilterCondition.TextIsEmpty,
-        text: t('grid.textFilter.isEmpty'),
-      },
-      {
-        value: TextFilterCondition.TextIsNotEmpty,
-        text: t('grid.textFilter.isNotEmpty'),
-      },
-    ];
-  }, [t]);
+  const conditions = useMemo(() => textFilterConditions(t), [t]);
 
   return <FilterConditionsSelect filter={filter} conditions={conditions} onSelect={onSelect} />;
 }

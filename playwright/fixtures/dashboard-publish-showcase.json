@@ -1,0 +1,343 @@
+[
+  {
+    "key": "agency-hub",
+    "title": "Agency hub (4 sources)",
+    "workspaceId": "5e05365a-b9bb-4e57-b6fb-e71e6d6897c6",
+    "dashboardViewId": "88afc286-353d-4807-9673-47903724a740",
+    "hostPageId": "4fa6257b-87ce-4900-90a7-3dc9f2f8c4ef",
+    "hostDatabaseId": "dc83d06a-82c2-46ee-81df-c90322ab5573",
+    "workspaceName": "Pro workspace",
+    "spaceId": "55118247-1b6c-4798-abc5-7d213b9294ab",
+    "sourcePageIds": [
+      "dfa4ec6e-ca1f-4ae2-b07c-e29bab2d3e3c",
+      "4fa6257b-87ce-4900-90a7-3dc9f2f8c4ef",
+      "dbcb9f01-a428-4ce5-a452-8cd73aca9b22",
+      "bd7a6d56-464b-4616-bb73-6659cac26e4e"
+    ],
+    "widgets": [
+      {
+        "view": "Active clients",
+        "viewId": "6cc8e837-65aa-4c85-9467-a1cb802cbafc",
+        "databaseId": "436912b6-6b52-4231-bfe0-b88c5259f02f",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "4"
+        }
+      },
+      {
+        "view": "Budget in play",
+        "viewId": "5984f87b-abe5-47ad-bd3c-24b0cbd766f9",
+        "databaseId": "dc83d06a-82c2-46ee-81df-c90322ab5573",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "$135,000"
+        }
+      },
+      {
+        "view": "Open tasks",
+        "viewId": "656b66ee-85e6-4568-8ea3-f3d1d6870dcf",
+        "databaseId": "3bee7362-6d8d-45c9-8b4e-f910eb92aaae",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "8"
+        }
+      },
+      {
+        "view": "Projects by status",
+        "viewId": "81fbb8e6-79d8-43e4-b86d-5a1558ae1662",
+        "databaseId": "dc83d06a-82c2-46ee-81df-c90322ab5573",
+        "layout": "Donut chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "Active",
+              "value": "4"
+            },
+            {
+              "label": "Paused",
+              "value": "1"
+            },
+            {
+              "label": "Done",
+              "value": "1"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Tasks by status",
+        "viewId": "01819127-ef71-4823-852a-7ecd91064a23",
+        "databaseId": "3bee7362-6d8d-45c9-8b4e-f910eb92aaae",
+        "layout": "Bar chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "To do",
+              "value": "5"
+            },
+            {
+              "label": "Doing",
+              "value": "3"
+            },
+            {
+              "label": "Done",
+              "value": "1"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Due soon",
+        "viewId": "a7796ce1-b86c-4fd1-99b2-803f8e2fb722",
+        "databaseId": "3bee7362-6d8d-45c9-8b4e-f910eb92aaae",
+        "layout": "Grid",
+        "expected": {
+          "kind": "grid",
+          "rowCount": 8,
+          "rowText": "Moodboard review"
+        }
+      },
+      {
+        "view": "Documents",
+        "viewId": "1f6026a4-63fc-46cf-baef-8d91f9bcc6db",
+        "databaseId": "2287fb32-385a-4b85-b3de-829f8a1dbabc",
+        "layout": "List",
+        "expected": {
+          "kind": "list",
+          "items": [
+            "Northwind proposal",
+            "Globex contract",
+            "Q3 agency report",
+            "Hooli statement of work"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "key": "full-house",
+    "title": "Full house (12 widgets)",
+    "workspaceId": "5e05365a-b9bb-4e57-b6fb-e71e6d6897c6",
+    "dashboardViewId": "14ae8b73-1712-4924-8086-e17d1c5a58a6",
+    "hostPageId": "b67d44e5-128a-4559-9b61-ba0ca6279f89",
+    "hostDatabaseId": "d5d95c3d-23cb-41f4-8862-9c3bc6ec1105",
+    "workspaceName": "Pro workspace",
+    "spaceId": "55118247-1b6c-4798-abc5-7d213b9294ab",
+    "sourcePageIds": [
+      "b67d44e5-128a-4559-9b61-ba0ca6279f89",
+      "50aac311-2d69-4dbd-ab5c-82d801156064",
+      "4fcb105f-d8fa-44cf-8798-f39b04b03f32"
+    ],
+    "widgets": [
+      {
+        "view": "Observations",
+        "viewId": "04602a4f-6acc-49f8-a56d-f7a52c646309",
+        "databaseId": "d5d95c3d-23cb-41f4-8862-9c3bc6ec1105",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "10"
+        }
+      },
+      {
+        "view": "Specimens counted",
+        "viewId": "df8d84ec-5593-4a21-a292-48e1ff03dd2c",
+        "databaseId": "d5d95c3d-23cb-41f4-8862-9c3bc6ec1105",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "45"
+        }
+      },
+      {
+        "view": "Sequenced",
+        "viewId": "ca886c42-ed3c-4313-969f-062f35d06d80",
+        "databaseId": "d5d95c3d-23cb-41f4-8862-9c3bc6ec1105",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "6"
+        }
+      },
+      {
+        "view": "Sequencing rate",
+        "viewId": "56cb704f-af26-473e-919c-09e696199bff",
+        "databaseId": "d5d95c3d-23cb-41f4-8862-9c3bc6ec1105",
+        "layout": "Number chart",
+        "expected": {
+          "kind": "number",
+          "value": "60%"
+        }
+      },
+      {
+        "view": "Trophic mode",
+        "viewId": "b1079d1f-35c3-4621-a08a-c6317c50b4df",
+        "databaseId": "7668d75d-7929-46b3-9142-6cd4d79cb75f",
+        "layout": "Donut chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "Symbiotic",
+              "value": "5"
+            },
+            {
+              "label": "Saprotroph",
+              "value": "3"
+            },
+            {
+              "label": "Parasite",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      {
+        "view": "By station",
+        "viewId": "7e4a1fb6-d737-442a-b374-69fc759992c0",
+        "databaseId": "7668d75d-7929-46b3-9142-6cd4d79cb75f",
+        "layout": "Donut chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "LT01",
+              "value": "4"
+            },
+            {
+              "label": "LT02",
+              "value": "3"
+            },
+            {
+              "label": "LT03",
+              "value": "3"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Observations per year",
+        "viewId": "eb486e60-da0a-4845-ae2b-553aa7a05a7a",
+        "databaseId": "7668d75d-7929-46b3-9142-6cd4d79cb75f",
+        "layout": "Bar chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "2024",
+              "value": "2"
+            },
+            {
+              "label": "2025",
+              "value": "3"
+            },
+            {
+              "label": "2026",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Conservation status",
+        "viewId": "89c46dd7-d91c-4e58-8b6e-94527e7f70b2",
+        "databaseId": "7668d75d-7929-46b3-9142-6cd4d79cb75f",
+        "layout": "Horizontal bar chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "Known",
+              "value": "6"
+            },
+            {
+              "label": "Rare",
+              "value": "2"
+            },
+            {
+              "label": "New species",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Specimens per year",
+        "viewId": "94d79d57-c469-4330-99b8-e46ea4c80ed9",
+        "databaseId": "7668d75d-7929-46b3-9142-6cd4d79cb75f",
+        "layout": "Line chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "2024",
+              "value": "7"
+            },
+            {
+              "label": "2025",
+              "value": "19"
+            },
+            {
+              "label": "2026",
+              "value": "19"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Rare finds",
+        "viewId": "a9f3ba0e-c0d6-4f26-9794-6befbc2d4649",
+        "databaseId": "b6eb9db3-9761-461a-9a2a-8c41335e47af",
+        "layout": "List",
+        "expected": {
+          "kind": "list",
+          "items": [
+            "Armillaria ostoyae",
+            "Cortinarius sp. nov.",
+            "Hericium coralloides",
+            "Ophiocordyceps sp."
+          ]
+        }
+      },
+      {
+        "view": "Sequenced by trophic mode",
+        "viewId": "89cad592-7304-41fa-acf2-3151035726eb",
+        "databaseId": "b6eb9db3-9761-461a-9a2a-8c41335e47af",
+        "layout": "Bar chart",
+        "expected": {
+          "kind": "chart",
+          "values": [
+            {
+              "label": "Symbiotic",
+              "value": "4"
+            },
+            {
+              "label": "Saprotroph",
+              "value": "1"
+            },
+            {
+              "label": "Parasite",
+              "value": "1"
+            }
+          ]
+        }
+      },
+      {
+        "view": "Field log",
+        "viewId": "e2a469a8-33a4-4d49-a6eb-6349ea5a17b8",
+        "databaseId": "b6eb9db3-9761-461a-9a2a-8c41335e47af",
+        "layout": "Grid",
+        "expected": {
+          "kind": "grid",
+          "rowCount": 10,
+          "rowText": "Cortinarius sp. nov."
+        }
+      }
+    ]
+  }
+]

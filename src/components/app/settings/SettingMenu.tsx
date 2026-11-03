@@ -65,7 +65,11 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
   }, [showBilling, t]);
 
   return (
-    <div className={'flex h-full w-[228px] flex-col gap-1 overflow-y-auto overflow-x-hidden bg-surface-container-layer-01 px-2 py-4'}>
+    <div
+      className={
+        'flex h-full w-[228px] flex-col gap-1 overflow-y-auto overflow-x-hidden bg-surface-container-layer-01 px-2 py-4'
+      }
+    >
       {options.map((option) => (
         <div
           key={option.value}

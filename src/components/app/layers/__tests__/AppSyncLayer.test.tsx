@@ -3,6 +3,8 @@ import { memo, useEffect } from 'react';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
+import { db } from '@/application/db';
+import { UserService } from '@/application/services/domains';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
@@ -11,7 +13,7 @@ import { AppSyncLayer } from '@/components/app/layers/AppSyncLayer';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import type { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import type { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
-import type { messages } from '@/proto/messages';
+import { notification, type messages } from '@/proto/messages';
 
 jest.mock('@/components/ws', () => ({
   useSync: jest.fn(),
@@ -49,7 +51,7 @@ jest.mock('@/application/sync-outbox', () => ({
 jest.mock('@/application/db', () => ({
   db: {
     users: { get: jest.fn(), put: jest.fn() },
-    workspace_member_profiles: { put: jest.fn() },
+    workspace_member_profiles: { where: jest.fn(), put: jest.fn() },
   },
 }));
 
@@ -92,7 +94,7 @@ const stableSyncValue = {
   revertCollabVersion: jest.fn(),
   flushAllSync: jest.fn(),
   syncAllToServer: jest.fn(),
-  applyHttpFullSyncResult: jest.fn(async () => undefined),
+  applyHttpFullSyncResult: jest.fn(async (): Promise<void> => undefined),
   ensureDatabaseRestoreCurrent: jest.fn(async () => true),
   reloadDatabaseAfterRestore: jest.fn(async () => undefined),
   scheduleDeferredCleanup: jest.fn(),
@@ -187,6 +189,86 @@ describe('AppSyncLayer per-message churn', () => {
       canSendToServer: true,
       sendBestEffort: stableSendBestEffort,
     });
+  });
+
+  it.each(['cached', 'hydrated'] as const)(
+    'preserves omitted protobuf profile fields for a %s profile',
+    async (source) => {
+      const profile = {
+        person_id: 'profile-user', uid: '7', name: 'Before', email: 'test@example.com', role: 1,
+        avatar_url: '🎨', cover_image_url: 'cover', custom_image_url: 'custom', description: 'Description',
+      };
+      const profiles = db.workspace_member_profiles as unknown as { where: jest.Mock; put: jest.Mock };
+
+      profiles.where.mockReturnValue({ equals: () => ({ first: async () => source === 'cached' ? profile : undefined }) });
+      (db.users.get as jest.Mock).mockResolvedValue({ uuid: 'profile-user' });
+      (UserService.getWorkspaceMemberProfile as jest.Mock).mockResolvedValue(profile);
+      const change = notification.WorkspaceMemberProfileChanged.decode(
+        notification.WorkspaceMemberProfileChanged.encode({ userUuid: 'profile-user', name: 'Renamed' }).finish()
+      );
+
+      expect(change.avatarUrl).toBeNull();
+      expect(Object.prototype.hasOwnProperty.call(change, 'avatarUrl')).toBe(false);
+      renderLayer();
+      latestEventEmitter!.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, change);
+      await waitFor(() => expect(profiles.put).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Renamed', avatar_url: '🎨', cover_image_url: 'cover', custom_image_url: 'custom', description: 'Description',
+      })));
+    }
+  );
+
+  it.each(['cached', 'hydrated'] as const)('applies explicitly cleared protobuf fields to a %s profile', async (source) => {
+    const profile = {
+      person_id: 'profile-user', uid: '7', name: 'Before', email: 'test@example.com', role: 1,
+      avatar_url: '🎨', cover_image_url: 'cover', custom_image_url: 'custom', description: 'Description',
+    };
+    const profiles = db.workspace_member_profiles as unknown as { where: jest.Mock; put: jest.Mock };
+
+    profiles.where.mockReturnValue({ equals: () => ({ first: async () => source === 'cached' ? profile : undefined }) });
+    (db.users.get as jest.Mock).mockResolvedValue({ uuid: 'profile-user' });
+    (UserService.getWorkspaceMemberProfile as jest.Mock).mockResolvedValue(profile);
+    const change = notification.WorkspaceMemberProfileChanged.decode(
+      notification.WorkspaceMemberProfileChanged.encode({
+        userUuid: 'profile-user', name: 'Renamed', avatarUrl: '', coverImageUrl: '', customImageUrl: '', description: '',
+      }).finish()
+    );
+
+    expect(Object.prototype.hasOwnProperty.call(change, 'avatarUrl')).toBe(true);
+    renderLayer();
+    latestEventEmitter!.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, change);
+    await waitFor(() => expect(profiles.put).toHaveBeenCalledWith(expect.objectContaining({
+      avatar_url: null, cover_image_url: null, custom_image_url: null, description: null,
+    })));
+  });
+
+  it('applies a provided protobuf avatar while preserving the omitted profile fields', async () => {
+    const profile = {
+      person_id: 'profile-user', uid: '7', name: 'Before', email: 'test@example.com', role: 1,
+      avatar_url: '🎨', cover_image_url: 'cover', custom_image_url: 'custom', description: 'Description',
+    };
+    const profiles = db.workspace_member_profiles as unknown as { where: jest.Mock; put: jest.Mock };
+
+    profiles.where.mockReturnValue({ equals: () => ({ first: async () => profile }) });
+    const change = notification.WorkspaceMemberProfileChanged.decode(
+      notification.WorkspaceMemberProfileChanged.encode({ userUuid: 'profile-user', name: 'Renamed', avatarUrl: '🌟' }).finish()
+    );
+
+    renderLayer();
+    latestEventEmitter!.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, change);
+    await waitFor(() => expect(profiles.put).toHaveBeenCalledWith(expect.objectContaining({
+      avatar_url: '🌟', cover_image_url: 'cover', custom_image_url: 'custom', description: 'Description',
+    })));
+  });
+
+  it('preserves explicitly undefined fields in a plain profile notification', async () => {
+    const profiles = db.workspace_member_profiles as unknown as { where: jest.Mock; put: jest.Mock };
+
+    profiles.where.mockReturnValue({ equals: () => ({ first: async () => ({ avatar_url: '🎨' }) }) });
+    renderLayer();
+    latestEventEmitter!.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, {
+      userUuid: 'profile-user', name: 'Renamed', avatarUrl: undefined,
+    });
+    await waitFor(() => expect(profiles.put).toHaveBeenCalledWith(expect.objectContaining({ avatar_url: '🎨' })));
   });
 
   // Reproduces the fan-out bug: an incoming collab message produces a new

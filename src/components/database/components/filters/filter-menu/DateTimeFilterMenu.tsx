@@ -5,24 +5,40 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch/sort-filter';
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
 import {
+  DEFAULT_RELATIVE_DATE_SPEC,
+  isParameterizedRelativeCondition,
   isRelativeDateComparison,
   isRelativeDateCondition,
   isStartDateCondition,
+  parseRelativeDateSpec,
+  RelativeDateSpec,
+  serializeRelativeDateSpec,
   toEndDateCondition,
   toStartDateCondition,
 } from '@/application/database-yjs/fields/date/relativeDate';
+import { useConditionsReadOnly } from '@/application/database-yjs/context';
 import { useFieldType } from '@/application/database-yjs/selector';
+import { dateFilterConditions } from '@/components/database/components/filters/filter-conditions';
 import DateTimeFilterDatePicker from '@/components/database/components/filters/filter-menu/DateTimeFilterDatePicker';
 import DateTimeFilterStartEndDateSelect
   from '@/components/database/components/filters/filter-menu/DateTimeFilterStartEndDateSelect';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
+import RelativeDateFilterBuilder from '@/components/database/components/filters/filter-menu/RelativeDateFilterBuilder';
 import { useRelativeDateFilterWrites } from '@/components/database/components/filters/hooks/useRelativeDateFilterWrites';
 
 function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateFilter();
+  const readOnly = useConditionsReadOnly();
   const fieldType = useFieldType(filter.fieldId);
+  const relative = isParameterizedRelativeCondition(filter.condition);
+  const relativeSpec = useMemo(
+    () => parseRelativeDateSpec(filter),
+    // The spec keys are what `parseFilter` spread from the content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filter.relative_direction, filter.relative_amount, filter.relative_unit]
+  );
   const allowRelativeComparisons = useRelativeDateFilterWrites();
   const compatibilityReadOnly = !allowRelativeComparisons && isRelativeDateComparison(filter.condition, filter.content);
 
@@ -31,28 +47,10 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
   const selectedStart = isStartDateCondition(filter.condition);
 
   const conditions = useMemo(() => {
-    const pick = (start: DateFilterCondition): DateFilterCondition =>
-      selectedStart ? start : toEndDateCondition(start);
+    // A row's created / last edited time is never empty.
     const isRowTime = fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime;
 
-    return [
-      { value: pick(DateFilterCondition.DateStartsOn), text: t('grid.dateFilter.is') },
-      { value: pick(DateFilterCondition.DateStartsBefore), text: t('grid.dateFilter.before') },
-      { value: pick(DateFilterCondition.DateStartsAfter), text: t('grid.dateFilter.after') },
-      { value: pick(DateFilterCondition.DateStartsOnOrBefore), text: t('grid.dateFilter.onOrBefore') },
-      { value: pick(DateFilterCondition.DateStartsOnOrAfter), text: t('grid.dateFilter.onOrAfter') },
-      { value: pick(DateFilterCondition.DateStartsBetween), text: t('grid.dateFilter.between') },
-      { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty'), hidden: isRowTime },
-      { value: pick(DateFilterCondition.DateStartIsNotEmpty), text: t('grid.dateFilter.notEmpty'), hidden: isRowTime },
-      { value: pick(DateFilterCondition.DateStartsToday), text: t('relativeDates.today') },
-      { value: pick(DateFilterCondition.DateStartsYesterday), text: t('relativeDates.yesterday') },
-      { value: pick(DateFilterCondition.DateStartsTomorrow), text: t('relativeDates.tomorrow') },
-      { value: pick(DateFilterCondition.DateStartsThisWeek), text: t('relativeDates.thisWeek') },
-      { value: pick(DateFilterCondition.DateStartsLastWeek), text: t('relativeDates.lastWeek') },
-      { value: pick(DateFilterCondition.DateStartsNextWeek), text: t('relativeDates.nextWeek') },
-    ]
-      .filter((condition) => !condition.hidden)
-      .map(({ value, text }) => ({ value, text }));
+    return dateFilterConditions(t, { start: selectedStart, emptiness: !isRowTime });
   }, [fieldType, selectedStart, t]);
 
   const displayTextField =
@@ -63,6 +61,32 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
       DateFilterCondition.DateStartIsEmpty,
       DateFilterCondition.DateStartIsNotEmpty,
     ].includes(filter.condition);
+
+  // Into "Is relative to today" the spec starts as This week; back to an
+  // absolute condition the date is picked again.
+  const handleSelectCondition = useCallback(
+    (condition: number) => {
+      if (compatibilityReadOnly || condition === filter.condition) return;
+      const intoRelative = isParameterizedRelativeCondition(condition);
+
+      updateFilter({
+        filterId: filter.id,
+        fieldId: filter.fieldId,
+        condition,
+        ...(intoRelative
+          ? { content: serializeRelativeDateSpec(DEFAULT_RELATIVE_DATE_SPEC) }
+          : relative
+          ? { content: '' }
+          : {}),
+      });
+    },
+    [compatibilityReadOnly, filter.condition, filter.fieldId, filter.id, relative, updateFilter]
+  );
+  const handleRelativeChange = useCallback(
+    (spec: RelativeDateSpec) =>
+      updateFilter({ filterId: filter.id, fieldId: filter.fieldId, content: serializeRelativeDateSpec(spec) }),
+    [filter.fieldId, filter.id, updateFilter]
+  );
 
   const handleSelectStartOrEnd = useCallback(
     (isStart: boolean) => {
@@ -103,12 +127,23 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
               disabled={compatibilityReadOnly}
               filter={filter}
               conditions={conditions}
+              onSelect={handleSelectCondition}
             />
           </>
         }
       />
       {displayTextField && (
         <DateTimeFilterDatePicker filter={filter} />
+      )}
+      {relative && (
+        <div className={'px-1 pb-1'}>
+          <RelativeDateFilterBuilder
+            spec={relativeSpec}
+            onChange={handleRelativeChange}
+            testIdPrefix={'date-filter'}
+            readOnly={readOnly}
+          />
+        </div>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
@@ -21,11 +22,13 @@ import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
+import { CodeMenu } from '@/components/editor/components/blocks/code/CodeMenu';
 import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { MathEquationMenu } from '@/components/editor/components/blocks/math-equation/MathEquationMenu';
+import { PDFBlockMenu } from '@/components/editor/components/blocks/pdf/PDFBlockMenu';
 import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
 import { scrollSimpleTableFromMenu } from '@/components/editor/components/blocks/simple-table/SimpleTable.scroll';
 import { SimpleTableBlockControls } from '@/components/editor/components/blocks/simple-table/SimpleTableBlockControls';
@@ -35,7 +38,7 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { CalloutNode, DatabaseNode, OutlineNode, MathEquationNode } from '@/components/editor/editor.type';
+import { PDFNode , CalloutNode, CodeNode, DatabaseNode, MathEquationNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
@@ -269,6 +272,9 @@ function ControlsMenu({
     bindViewSync,
     scheduleDeferredCleanup,
     duplicatePage,
+    createDatabaseView,
+    deletePage,
+    updatePage,
   } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
@@ -340,6 +346,32 @@ function ControlsMenu({
 
             if (layout === undefined) {
               throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
+            }
+
+            if (layout === ViewLayout.Dashboard) {
+              if (!createDatabaseView) throw new Error('Dashboard duplication is unavailable');
+            // The copy of a dashboard keeps the source's widgets, with its own copies of the views they own.
+            const { response } = await createLinkedDatabaseViewForLayout(layout, {
+              requestViewId: parentId,
+              sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+              duplicate: true,
+              payload: {
+                parent_view_id: parentId,
+                database_id: databaseId,
+                name: sourceView?.name,
+                embedded: true,
+              },
+              createDatabaseView,
+              loadView,
+              loadViewMeta,
+              updatePage,
+              deletePage,
+              bindViewSync,
+              scheduleDeferredCleanup,
+              });
+
+              target.assertCurrent();
+              return response.view_id;
             }
 
             if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
@@ -527,11 +559,14 @@ function ControlsMenu({
       editorContext.canWrite,
       bindViewSync,
       duplicateCopySuffix,
+      createDatabaseView,
+      deletePage,
       duplicatePage,
       loadView,
       loadViewMeta,
       scheduleDeferredCleanup,
       t,
+      updatePage,
       workspaceId,
     ]
   );
@@ -627,6 +662,23 @@ function ControlsMenu({
       onClick: () => void | Promise<void>;
     }[];
   }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor, isSimpleTable]);
+
+  if (open && onlySingleBlockSelected && node?.type === BlockType.CodeBlock && anchorEl) {
+    return (
+      <CodeMenu
+        node={node as CodeNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
+
+  if (onlySingleBlockSelected && node?.type === BlockType.PDFBlock && anchorEl && open) {
+    return <PDFBlockMenu node={node as PDFNode} anchorEl={anchorEl} onClose={onClose}
+      anchorOrigin={popoverProps.anchorOrigin} transformOrigin={popoverProps.transformOrigin} />;
+  }
 
   if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
     return (

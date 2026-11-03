@@ -6,12 +6,42 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      cloud_version:
+        description: Optional published Cloud tag; paired interop otherwise selects verified prebuilt artifacts
+        default: ''
+      cloud_source_sha:
+        description: Optional immutable Cloud source; must accompany cloud_image_run_id
+        default: ''
+      cloud_image_run_id:
+        description: Optional successful private image build for cloud_source_sha
+        default: ''
+      ci_tools_ref:
+        description: Optional immutable AppFlowy-CI tools revision already merged into main
+        default: ''
+      desktop_ref:
+        description: Desktop commit or branch to test (defaults to main)
+        default: main
+      interop_only:
+        description: Run only the Web/Desktop template compatibility suite
+        type: boolean
+        default: false
+      correlation_id:
+        description: Caller correlation ID for the Desktop CI check
+        required: false
+
+  # Nightly dashboard coverage over the seeded large database.
+  schedule:
+    - cron: '0 3 * * *'
+
+run-name: ${{ inputs.correlation_id || github.workflow }}
 
 env:
   # Follow the latest image for each service. Resolve Cloud once by digest so its
   # compose files and seed snapshot match the image used throughout the job;
   # independently published Worker, Search and AI may have different revisions.
   CLOUD_VERSION: latest-amd64
+  CLOUD_IMAGE_TAG: ${{ inputs.cloud_version || 'latest-amd64' }}
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
@@ -19,13 +49,16 @@ env:
   PNPM_VERSION: '10.9.0'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'nightly' || inputs.correlation_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Playwright 1.58.2 cannot install browsers on Ubuntu 26.04, which
+  # ubuntu-latest can select. Keep builds and tests on its supported image.
   callout:
+    if: ${{ !inputs.interop_only }}
     name: 'Callout (light and dark)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -49,9 +82,65 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  code-block:
+    if: ${{ !inputs.interop_only }}
+    name: 'Code blocks and Mermaid (light and dark)'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test code-block editing and appearance
+        run: pnpm test:e2e:code-block
+      - name: Upload code-block screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-block-browser-results
+          path: test-results/
+          retention-days: 7
+
+  pdf:
+    if: ${{ !inputs.interop_only }}
+    name: 'Embedded PDF (light and dark)'
+    runs-on: ubuntu-24.04
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test pdf editing and appearance
+        run: pnpm test:e2e:pdf
+      - name: Upload pdf screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-browser-results
+          path: test-results/
+          retention-days: 7
+
   connections:
+    if: github.event_name != 'schedule' && !inputs.interop_only
     name: 'Connections (Chromium, Firefox, WebKit)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -81,11 +170,22 @@ jobs:
 
   # Build once and share artifact with all test jobs
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: 'Build'
+    outputs:
+      test-groups: ${{ steps.groups.outputs.groups }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Test Web backend fixture selection
+        run: python3 .github/scripts/test_web_ci_compose.py
+
+      - name: Test hosted Gateway startup ordering
+        run: python3 .github/scripts/test_web_ci_gateway_network.py
+
+      - name: Test Web Gateway CORS
+        run: python3 .github/scripts/test_web_ci_gateway_routes.py
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -113,6 +213,28 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Ordinary runs skip template-interop until Desktop main has the SDK driver
+      # (AppFlowy-Premium #1547) and a Cloud release includes Cloud-Premium #1504.
+      # Dispatch with interop_only=true still runs it for paired validation.
+      - name: Select test groups
+        id: groups
+        env:
+          INTEROP_ONLY: ${{ inputs.interop_only }}
+          CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
+          CLOUD_IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const groups = require("./.github/playwright-groups.json");
+            if ((process.env.CLOUD_SOURCE_SHA || process.env.CLOUD_IMAGE_RUN_ID) && process.env.INTEROP_ONLY !== "true") {
+              throw new Error("Exact Cloud artifacts require interop_only=true");
+            }
+            const selected = process.env.INTEROP_ONLY === "true"
+              ? groups.filter(group => group.name === "template-interop")
+              : groups.filter(group => group.name !== "template-interop");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `groups=${JSON.stringify(selected)}\n`);
+          '
+
       - name: Setup environment
         run: cp deploy.env .env
 
@@ -127,7 +249,10 @@ jobs:
           retention-days: 1
 
   test:
-    runs-on: ubuntu-latest
+    # Fork PRs cannot access the Docker Hub, private Cloud repository, or AI
+    # credentials. Keep the standalone browser jobs above running for forks.
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
     needs: build
     env:
       # Publish namespaces the SSR server renders (deploy/indexing-policy.ts).
@@ -135,131 +260,84 @@ jobs:
       # moves its workspace to one of these; every other test keeps a random
       # namespace and so the default, non-SSR response.
       APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
+      CI_TOOLS_REF: ${{ inputs.ci_tools_ref || 'c0e13cc13fb6c704f55d09ffde9adfad606bc897' }}
     strategy:
       fail-fast: false
       matrix:
-        test-group:
-          - name: 'auth-chat'
-            spec: 'playwright/e2e/auth playwright/e2e/chat'
-            description: 'Authentication and AI chat'
-            bdd: 'false'
-            shard: ''
-          - name: 'editor'
-            spec: 'playwright/e2e/editor'
-            description: 'Document editing and formatting'
-            bdd: 'false'
-            shard: ''
-          - name: 'simple-table-bdd'
-            spec: >-
-              playwright/.features-gen/playwright/bdd/features/editor/simple-table-headers.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/editor/simple-table-block-actions.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/editor/simple-table-selection-scroll.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/editor/simple-table-add-row-scroll.feature.spec.js
-            description: 'Simple table headers, block actions, conversion undo/redo, selection, and scrolling'
-            bdd: 'true'
-            shard: ''
-          - name: 'dockable-outline-bdd'
-            spec: 'playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js'
-            description: 'Dockable document outline, scroll tracking, themes, comments, and published display modes'
-            bdd: 'true'
-            shard: ''
-          - name: 'database'
-            spec: 'playwright/e2e/database/'
-            description: 'Database and grid operations (shard 1 of 3)'
-            bdd: 'false'
-            shard: '1/3'
-          - name: 'database-2'
-            spec: 'playwright/e2e/database/'
-            description: 'Database and grid operations (shard 2 of 3)'
-            bdd: 'false'
-            shard: '2/3'
-          - name: 'database-3'
-            spec: 'playwright/e2e/database/'
-            description: 'Database and grid operations (shard 3 of 3)'
-            bdd: 'false'
-            shard: '3/3'
-          - name: 'database-bdd'
-            spec: >-
-              playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/row-subpage-breadcrumb.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/relative-date-comparisons.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/board-always-renders.feature.spec.js
-            description: 'Database row, undo/redo, Formula, Rollup and Board rendering BDD workflows'
-            bdd: 'true'
-            shard: ''
-          - name: 'rich-text-bdd'
-            spec: 'playwright/.features-gen/playwright/bdd/features/database/text-cell-rich-text.feature.spec.js'
-            description: 'Rich text in database Text cells and row titles: formatting, storage contract, mentions, clipboard'
-            bdd: 'true'
-            shard: ''
-          - name: 'form-timeline-bdd'
-            spec: >-
-              playwright/.features-gen/playwright/bdd/features/form/
-              playwright/.features-gen/playwright/bdd/features/database/form-chart-quota.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js
-            description: 'Form and Timeline creation and interactions'
-            bdd: 'true'
-            shard: ''
-          - name: 'gallery-bdd'
-            spec: >-
-              playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/editor/tab-return-scroll.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/feed.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/feed-readonly.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/feed-interactions.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/feed-search-lifecycle.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/feed-attribution-search.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/database/rollup-relation-live-update.feature.spec.js
-            description: 'Authentication, sidebar, database-row mention, migrated Gallery and Feed behavior, and rollup reactivity scenarios'
-            bdd: 'true'
-            shard: ''
-          - name: 'database-filters'
-            spec: 'playwright/e2e/database2 playwright/e2e/database3'
-            description: 'Database filters and field type switching'
-            bdd: 'false'
-            shard: ''
-          - name: 'space-permissions-bdd'
-            spec: >-
-              playwright/.features-gen/playwright/bdd/features/workspace/create-space-draft.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/workspace/space-custom-permissions.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/workspace/space-group-permission-resolution.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/workspace/space-permission-matrix-management.feature.spec.js
-              playwright/.features-gen/playwright/bdd/features/page/eva-more-actions-permissions.feature.spec.js
-            shard: ''
-            description: 'Create, manage, member, group, and action permission scenarios for spaces'
-            bdd: 'true'
-          - name: 'embedded'
-            spec: 'playwright/e2e/embeded'
-            description: 'Embedded database and image operations'
-            bdd: 'false'
-            shard: ''
-          - name: 'page'
-            spec: 'playwright/e2e/page'
-            description: 'Page management (create, delete, share, publish, paste)'
-            bdd: 'false'
-            shard: ''
-          - name: 'account-space-user'
-            spec: 'playwright/e2e/account playwright/e2e/space playwright/e2e/user playwright/e2e/app playwright/e2e/folder playwright/e2e/calendar'
-            description: 'Account, Space, User, App, Folder, and Calendar tests'
-            bdd: 'false'
-            shard: ''
+        test-group: ${{ fromJSON(needs.build.outputs.test-groups) }}
 
     name: '${{ matrix.test-group.name }}'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Validate compatibility runtime selection
+        id: cloud-input
+        if: matrix.test-group.name == 'template-interop'
+        env:
+          CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
+          IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
+          PUBLISHED_VERSION: ${{ inputs.cloud_version }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$CLOUD_SOURCE_SHA$IMAGE_RUN_ID" ]]; then
+            [[ "$CLOUD_SOURCE_SHA" =~ ^[a-f0-9]{40}$ && "$IMAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+            [[ -z "$PUBLISHED_VERSION" ]] || exit 1
+          fi
+          if [[ -z "$PUBLISHED_VERSION" ]]; then
+            [[ "$CI_TOOLS_REF" =~ ^[a-f0-9]{40}$ ]] || exit 1
+            echo 'needs-tools=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Desktop SDK under test
+        if: matrix.test-group.name == 'template-interop'
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-Premium
+          ref: ${{ inputs.desktop_ref || 'main' }}
+          token: ${{ secrets.CI_TOKEN }}
+          path: AppFlowy-Premium
+
+      - name: Resolve tested Desktop revision
+        id: desktop
+        if: matrix.test-group.name == 'template-interop'
+        run: echo "ref=$(git -C AppFlowy-Premium rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify CI runtime tools are reviewed on main
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CI_TOKEN }}
+        run: |
+          set -euo pipefail
+          merge_base=$(gh api "repos/AppFlowy-IO/AppFlowy-CI/compare/$CI_TOOLS_REF...main" \
+            --jq '.merge_base_commit.sha')
+          if [[ "$merge_base" != "$CI_TOOLS_REF" ]]; then
+            echo '::error::CI runtime tools must be an immutable commit already merged into AppFlowy-CI main'
+            exit 1
+          fi
+
+      - name: Check out the pinned CI runtime tools
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-CI
+          ref: ${{ env.CI_TOOLS_REF }}
+          token: ${{ secrets.CI_TOKEN }}
+          persist-credentials: false
+          path: .ci-runtime-tools
+
+      - name: Select verified prebuilt Cloud artifacts
+        id: cloud-selection
+        if: steps.cloud-input.outputs.needs-tools == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CI_TOKEN }}
+          CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
+          IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
+        run: |
+          python3 .ci-runtime-tools/.github/scripts/desktop_cloud_runtime.py select \
+            --desktop AppFlowy-Premium --profile web --ci-ref "$CI_TOOLS_REF" \
+            --cloud-source-sha "$CLOUD_SOURCE_SHA" --image-run-id "$IMAGE_RUN_ID"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -278,15 +356,16 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
       - name: Resolve latest Cloud release
+        if: steps.cloud-selection.outputs.enabled != 'true'
         run: |
-          digest=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_VERSION}" \
+          digest=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_IMAGE_TAG}" \
             --format '{{json .Manifest.Digest}}' | jq -er 'select(test("^sha256:[0-9a-f]{64}$"))')
-          cloud_image_version="${CLOUD_VERSION}@${digest}"
+          cloud_image_version="${CLOUD_IMAGE_TAG}@${digest}"
           labels=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${cloud_image_version}" \
             --format '{{ json .Image }}' | jq -c '.config.Labels')
           revision=$(jq -r '."org.opencontainers.image.revision" // empty' <<< "$labels")
           if [ -z "$revision" ]; then
-            echo "::error::appflowy_cloud_premium:${CLOUD_VERSION} has no source revision label"
+            echo "::error::appflowy_cloud_premium:${CLOUD_IMAGE_TAG} has no source revision label"
             exit 1
           fi
           echo "Testing AppFlowy Cloud $(jq -r '."org.opencontainers.image.version" // "unknown"' <<< "$labels") ($revision)"
@@ -328,16 +407,36 @@ jobs:
             openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
           echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
 
+      - name: Select Web backend fixture
+        run: |
+          override=$(bash .github/scripts/select_web_ci_compose.sh AppFlowy-Cloud-Premium)
+          if [[ "$override" == */docker-compose-web-ci.gateway.override.yml ]]; then
+            export WEB_CI_GATEWAY_ROUTES="$RUNNER_TEMP/web-ci-gateway-routes.conf"
+            python3 .github/scripts/web_ci_gateway_routes.py \
+              AppFlowy-Cloud-Premium/nginx/api-limits-ci.conf "$WEB_CI_GATEWAY_ROUTES"
+            echo "WEB_CI_GATEWAY_ROUTES=$WEB_CI_GATEWAY_ROUTES" >> "$GITHUB_ENV"
+          fi
+          # Validate extensions and dependencies before pulling or starting anything.
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$override" config --quiet)
+          echo "WEB_CI_COMPOSE_OVERRIDE=$override" >> "$GITHUB_ENV"
+
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
+          EXACT_CLOUD: ${{ steps.cloud-selection.outputs.enabled }}
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_IMAGE_VERSION }}
           APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
         run: |
+          if [[ "$EXACT_CLOUD" == true ]]; then
+            pnpm install --frozen-lockfile
+            exit 0
+          fi
           # Start Docker pull in background
-          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker appflowy_search) &
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" pull) &
           DOCKER_PID=$!
 
           # Get pnpm store path and install deps concurrently
@@ -346,7 +445,23 @@ jobs:
           # Wait for Docker pull to complete
           wait $DOCKER_PID
 
+      - name: Start the verified exact Cloud runtime
+        id: exact-cloud
+        if: steps.cloud-selection.outputs.enabled == 'true'
+        uses: ./.ci-runtime-tools/.github/actions/desktop-cloud-runtime
+        with:
+          cloud-source-sha: ${{ steps.cloud-selection.outputs.cloud-source-sha }}
+          image-run-id: ${{ steps.cloud-selection.outputs.image-run-id }}
+          desktop-ref: ${{ steps.desktop.outputs.ref }}
+          desktop-path: AppFlowy-Premium
+          cloud-path: AppFlowy-Cloud-Premium
+          ci-tools-ref: ${{ env.CI_TOOLS_REF }}
+          runtime-profile: web
+          compose-override: ${{ env.WEB_CI_COMPOSE_OVERRIDE }}
+          github-token: ${{ secrets.CI_TOKEN }}
+
       - name: Verify Cloud revision and report backend image versions
+        if: steps.cloud-selection.outputs.enabled != 'true'
         run: |
           cloud_image="appflowyinc/appflowy_cloud_premium:${CLOUD_IMAGE_VERSION}"
           actual_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$cloud_image")
@@ -396,10 +511,12 @@ jobs:
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
           RUST_LOG: appflowy_cloud=info
         run: |
-          docker compose \
-            -f docker-compose-web-ci.yml \
-            -f ../.github/docker-compose-web-ci.override.yml \
-            up -d
+          if [[ "${{ steps.cloud-selection.outputs.enabled }}" != true ]]; then
+            docker compose \
+              -f docker-compose-web-ci.yml \
+              -f "$WEB_CI_COMPOSE_OVERRIDE" \
+              up -d --no-build --pull never
+          fi
 
           echo "Waiting for backend services..."
           timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
@@ -408,14 +525,17 @@ jobs:
           done' && echo "Backend is ready" || (
             echo "Backend failed to start after 3 minutes"
             echo "Docker container status:"
-            docker compose -f docker-compose-web-ci.yml ps
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps
             echo "Docker logs:"
-            docker compose -f docker-compose-web-ci.yml logs --tail=50
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" logs --tail=50
             exit 1
           )
 
+          # Record Gateway and infrastructure image identities alongside Cloud.
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
+
           # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
-          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml ps -q postgres)
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps -q postgres)
           test -n "$test_postgres_container"
           echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
 
@@ -440,6 +560,48 @@ jobs:
             sleep 2
           done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
 
+      - name: Install Desktop SDK prerequisites
+        if: matrix.test-group.name == 'template-interop'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config clang libclang-dev cmake libssl-dev protobuf-compiler
+
+      - name: Install Rust for the Desktop SDK
+        if: matrix.test-group.name == 'template-interop'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.0
+
+      - name: Install Dart for Desktop protobuf generation
+        if: matrix.test-group.name == 'template-interop'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.11.5'
+
+      - name: Install Desktop protobuf compiler
+        if: matrix.test-group.name == 'template-interop'
+        run: dart pub global activate protoc_plugin 21.1.2
+
+      - name: Cache Desktop SDK build
+        if: matrix.test-group.name == 'template-interop'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: AppFlowy-Premium/frontend/rust-lib
+          cache-on-failure: true
+
+      - name: Build the actual Desktop SDK driver
+        if: matrix.test-group.name == 'template-interop'
+        working-directory: AppFlowy-Premium/frontend/rust-lib
+        env:
+          GH_TOKEN: ${{ secrets.CI_TOKEN }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+          CARGO_BUILD_JOBS: '2'
+          CARGO_PROFILE_DEV_DEBUG: '0'
+          CARGO_PROFILE_DEV_INCREMENTAL: 'false'
+        run: |
+          gh auth setup-git
+          cargo build --locked -p event-integration-test --example row_template_interop --features dart
+          echo "APPFLOWY_DESKTOP_INTEROP_BIN=$PWD/target/debug/examples/row_template_interop" >> "$GITHUB_ENV"
+          echo "Desktop under test: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Generate BDD tests
         if: ${{ matrix.test-group.bdd == 'true' }}
         run: pnpm exec bddgen test -c playwright.bdd.config.ts
@@ -452,17 +614,34 @@ jobs:
             test_args+=("--shard=$TEST_SHARD")
           fi
 
-          if [ "$TEST_BDD" = "true" ]; then
+          if [ "$TEST_GROUP" = "template-interop" ]; then
+            pnpm exec tsc --noEmit --project playwright/tsconfig.interop.json
+            pnpm test:interop:bootstrap
+            BASE_URL=http://127.0.0.1:3089 pnpm test:interop:desktop
+          elif [ "$TEST_BDD" = "true" ]; then
             pnpm exec playwright test -c playwright.bdd.config.ts "${test_args[@]}" $TEST_SPEC
           else
             pnpm exec playwright test "${test_args[@]}" $TEST_SPEC
           fi
         env:
           CI: true
+          TEST_GROUP: ${{ matrix.test-group.name }}
+          APPFLOWY_DESKTOP_API_URL: http://localhost
+          APPFLOWY_DESKTOP_GOTRUE_URL: http://localhost/gotrue
+          APPFLOWY_DESKTOP_WS_URL: ws://localhost/ws/v2
           BASE_URL: http://localhost:3000
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+
+      - name: Upload exact Cloud runtime manifest
+        if: always() && steps.cloud-input.outputs.needs-tools == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-cloud-manifest-${{ matrix.test-group.name }}
+          path: ${{ runner.temp }}/desktop-cloud-manifest.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Capture backend logs
         if: failure()
@@ -470,12 +649,13 @@ jobs:
         working-directory: AppFlowy-Cloud-Premium
         run: |
           mkdir -p ../test-results
-          compose="docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml"
-          $compose logs --no-color --timestamps appflowy_cloud appflowy_worker postgres > ../test-results/backend-services.log 2>&1
+          compose=(docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE")
+          # Include Gateway/ClickHouse when selected, without naming absent legacy services.
+          "${compose[@]}" logs --no-color --timestamps > ../test-results/backend-services.log 2>&1
           # Cloud reports only "AI service is temporarily unavailable"; keep the
           # AI container's own exit reason, which the job tears down with the stack.
-          $compose ps -a
-          $compose logs --no-color --timestamps ai > ../test-results/ai-service.log 2>&1
+          "${compose[@]}" ps -a
+          "${compose[@]}" logs --no-color --timestamps ai > ../test-results/ai-service.log 2>&1
           tail -n 80 ../test-results/ai-service.log
 
       - name: Report failed backend duplication tasks
@@ -483,11 +663,11 @@ jobs:
         continue-on-error: true
         working-directory: AppFlowy-Cloud-Premium
         run: |
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml images
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
 
           # The synchronous duplicate-document API returns only a generic 1017
           # error. Preserve the Worker failure reason before CI deletes its DB.
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml exec -T postgres \
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" exec -T postgres \
             sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1' <<'SQL'
           SELECT task_id, workspace_id, status, left(error, 2000) AS error, created_at
           FROM af_duplicate_task
@@ -564,4 +744,306 @@ jobs:
           fi
           pkill -f "bun deploy/server.ts" 2>/dev/null || true
 
-          cd AppFlowy-Cloud-Premium && docker compose down || true
+          if [[ -n "${WEB_CI_COMPOSE_OVERRIDE:-}" ]]; then
+            cd AppFlowy-Cloud-Premium && docker compose \
+              -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" down || true
+          fi
+
+  # The @large-database dashboard scenarios (dashboard-loading, dashboard-large-source):
+  # seeding the employees database takes minutes, so they run nightly and on demand.
+  dashboard-large-database:
+    name: 'dashboard-large-database (nightly)'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !inputs.interop_only
+    runs-on: ubuntu-24.04
+    needs: build
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Checkout AppFlowy-Cloud-Premium
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-Cloud-Premium
+          ref: ${{ env.CLOUD_REVISION }}
+          token: ${{ secrets.CI_TOKEN }}
+          path: AppFlowy-Cloud-Premium
+
+      - name: Setup AppFlowy Cloud
+        working-directory: AppFlowy-Cloud-Premium
+        env:
+          OPENAI_KEY: ${{ secrets.CI_OPENAI_API_KEY }}
+        run: |
+          cp deploy.env .env
+          sed -i 's/GOTRUE_EXTERNAL_GOOGLE_ENABLED=.*/GOTRUE_EXTERNAL_GOOGLE_ENABLED=true/' .env
+          sed -i 's|GOTRUE_MAILER_AUTOCONFIRM=.*|GOTRUE_MAILER_AUTOCONFIRM=true|' .env
+          sed -i 's|API_EXTERNAL_URL=.*|API_EXTERNAL_URL=http://localhost|' .env
+          sed -i "s|AI_OPENAI_API_KEY=.*|AI_OPENAI_API_KEY=${OPENAI_KEY}|" .env
+          sed -i 's|APPFLOWY_SPAM_DETECT_ENABLED=.*|APPFLOWY_SPAM_DETECT_ENABLED=false|' .env
+          echo '' >> .env
+          echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
+
+          # Replace the repository's expired example certificate with a short-lived
+          # localhost certificate. Node trusts this certificate; Chromium pins its
+          # public key so separate respondent contexts can use the same HTTPS API.
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout nginx/ssl/private_key.key \
+            -out nginx/ssl/certificate.crt
+          echo "NODE_EXTRA_CA_CERTS=$PWD/nginx/ssl/certificate.crt" >> "$GITHUB_ENV"
+          test_tls_spki=$(openssl x509 -in nginx/ssl/certificate.crt -pubkey -noout | \
+            openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+          echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Select Web backend fixture
+        run: |
+          override=$(bash .github/scripts/select_web_ci_compose.sh AppFlowy-Cloud-Premium)
+          if [[ "$override" == */docker-compose-web-ci.gateway.override.yml ]]; then
+            export WEB_CI_GATEWAY_ROUTES="$RUNNER_TEMP/web-ci-gateway-routes.conf"
+            python3 .github/scripts/web_ci_gateway_routes.py \
+              AppFlowy-Cloud-Premium/nginx/api-limits-ci.conf "$WEB_CI_GATEWAY_ROUTES"
+            echo "WEB_CI_GATEWAY_ROUTES=$WEB_CI_GATEWAY_ROUTES" >> "$GITHUB_ENV"
+          fi
+          # Validate extensions and dependencies before pulling or starting anything.
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$override" config --quiet)
+          echo "WEB_CI_COMPOSE_OVERRIDE=$override" >> "$GITHUB_ENV"
+
+      # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
+      - name: Install deps and pull Docker images (parallel)
+        env:
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
+        run: |
+          # Start Docker pull in background
+          (cd AppFlowy-Cloud-Premium && docker compose \
+            -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" pull) &
+          DOCKER_PID=$!
+
+          # Get pnpm store path and install deps concurrently
+          pnpm install --frozen-lockfile
+
+          # Wait for Docker pull to complete
+          wait $DOCKER_PID
+
+      - name: Verify backend image revisions
+        run: |
+          for service in appflowy_cloud appflowy_worker appflowy_search; do
+            image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
+            revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
+            if [ "$revision" != "$CLOUD_REVISION" ]; then
+              echo "::error::$image was built from $revision; expected $CLOUD_REVISION"
+              exit 1
+            fi
+          done
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cached browsers)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Setup environment
+        run: cp deploy.env .env
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: dist/
+
+      - name: Start Docker services
+        working-directory: AppFlowy-Cloud-Premium
+        env:
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
+          RUST_LOG: appflowy_cloud=info
+        run: |
+          docker compose \
+            -f docker-compose-web-ci.yml \
+            -f "$WEB_CI_COMPOSE_OVERRIDE" \
+            up -d --no-build --pull never
+
+          echo "Waiting for backend services..."
+          timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
+            echo "Waiting for backend... ($(date +%T))"
+            sleep 5
+          done' && echo "Backend is ready" || (
+            echo "Backend failed to start after 3 minutes"
+            echo "Docker container status:"
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps
+            echo "Docker logs:"
+            docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" logs --tail=50
+            exit 1
+          )
+
+          # Record Gateway and infrastructure image identities alongside Cloud.
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
+
+          # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" ps -q postgres)
+          test -n "$test_postgres_container"
+          echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Bun 1.4.0 corrupts this pnpm-managed package.json during the
+          # temporary SSR dependency install below. Keep CI on the last
+          # known-good release until that upstream regression is resolved.
+          bun-version: '1.3.14'
+
+      - name: Install Bun SSR dependencies
+        run: bun install cheerio pino pino-pretty
+
+      - name: Start SSR server
+        run: |
+          pnpm run dev:server &
+          echo $! > ssr-server.pid
+
+          timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do
+            echo "Waiting for SSR server... ($(date +%T))"
+            sleep 2
+          done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
+
+      - name: Generate BDD tests
+        run: pnpm exec bddgen test -c playwright.bdd.config.ts
+
+      - name: Run dashboard-large-database tests
+        shell: bash
+        # One worker: the scenarios measure load timings and share one seeded account.
+        # The hr-headcount use case seeds the whole 5,000-row fixture whatever
+        # EMPLOYEES_ROW_LIMIT says (its totals are those of the full fixture).
+        run: |
+          pnpm exec playwright test -c playwright.bdd.config.ts --workers=1 --grep @large-database \
+            playwright/.features-gen/playwright/bdd/features/database/dashboard-loading.feature.spec.js \
+            playwright/.features-gen/playwright/bdd/features/database/dashboard-large-source.feature.spec.js \
+            playwright/.features-gen/playwright/bdd/features/database/dashboard-usecases/hr-headcount.feature.spec.js
+        env:
+          CI: true
+          BASE_URL: http://localhost:3000
+          RUN_LARGE_DATABASE: '1'
+          # The 2,000 rows of the loading measurements (LOADING-DESIGN 4.2).
+          EMPLOYEES_ROW_LIMIT: '2000'
+
+      - name: Report failed backend duplication tasks
+        if: failure()
+        continue-on-error: true
+        working-directory: AppFlowy-Cloud-Premium
+        run: |
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" images
+
+          # The synchronous duplicate-document API returns only a generic 1017
+          # error. Preserve the Worker failure reason before CI deletes its DB.
+          docker compose -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" exec -T postgres \
+            sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1' <<'SQL'
+          SELECT task_id, workspace_id, status, left(error, 2000) AS error, created_at
+          FROM af_duplicate_task
+          WHERE error IS NOT NULL
+          ORDER BY created_at DESC
+          LIMIT 20;
+          SQL
+
+      - name: Test summary
+        if: always()
+        run: |
+          if [ ! -f playwright-report/report.json ]; then
+            echo "## dashboard-large-database — no report generated" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          node -e "
+            const r = require('./playwright-report/report.json');
+            const s = r.stats || {};
+            const passed = s.expected || 0;
+            const failed = s.unexpected || 0;
+            const flaky  = s.flaky || 0;
+            const skipped = s.skipped || 0;
+            const dur = ((s.duration || 0) / 1000).toFixed(1);
+            const icon = failed > 0 ? '❌' : '✅';
+
+            const lines = [];
+            lines.push('## ' + icon + ' dashboard-large-database — ' + passed + ' passed, ' + failed + ' failed' + (flaky ? ', ' + flaky + ' flaky' : '') + ' (' + dur + 's)');
+            lines.push('');
+
+            // collect failures from nested suites
+            const failures = [];
+            function walk(suites, path) {
+              for (const s of suites) {
+                const p = path ? path + ' > ' + s.title : s.title;
+                for (const spec of s.specs || []) {
+                  if (!spec.ok) failures.push({ suite: p, title: spec.title, file: spec.file });
+                }
+                walk(s.suites || [], p);
+              }
+            }
+            walk(r.suites || [], '');
+
+            if (failures.length) {
+              lines.push('### Failed Tests');
+              lines.push('');
+              for (const f of failures) {
+                lines.push('- **' + f.title + '** — _' + f.suite + '_');
+              }
+            }
+            process.stdout.write(lines.join('\n') + '\n');
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload test results
+        if: always()
+        uses: ./.github/actions/upload-test-artifact
+        with:
+          name: playwright-report-dashboard-large-database
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload test traces
+        if: failure()
+        uses: ./.github/actions/upload-test-artifact
+        with:
+          name: playwright-traces-dashboard-large-database
+          path: test-results/
+          retention-days: 3
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f ssr-server.pid ]; then
+            kill $(cat ssr-server.pid) 2>/dev/null || true
+          fi
+          pkill -f "bun deploy/server.ts" 2>/dev/null || true
+
+          if [[ -n "${WEB_CI_COMPOSE_OVERRIDE:-}" ]]; then
+            cd AppFlowy-Cloud-Premium && docker compose \
+              -f docker-compose-web-ci.yml -f "$WEB_CI_COMPOSE_OVERRIDE" down || true
+          fi

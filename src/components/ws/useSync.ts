@@ -158,8 +158,9 @@ export const useSync = (
   historyOptions?: { enabled?: boolean; capabilityLoaded?: boolean }
 ): SyncContextType => {
   const { sendMessage, lastMessage, readyState } = ws;
-  const { postMessage, lastBroadcastMessage, subscribeCollabMessages } = bc;
+  const { postMessage, lastBroadcastMessage, subscribeCollabMessages, subscribeServerManifests } = bc;
   const currentUser = useCurrentUserOptional();
+  const userId = currentUser?.uuid;
 
   // Extract specific values to use as primitive dependencies.
   // This prevents effect re-runs when unrelated fields of the parent object change.
@@ -172,6 +173,17 @@ export const useSync = (
   // Passed to every sub-hook so they share the same Maps/Sets without prop-drilling
   // 13 individual refs.
   const refs = useSyncRefs();
+  const retryScopeRef = useRef({ workspaceId, userId, readyState });
+
+  useLayoutEffect(() => {
+    retryScopeRef.current = { workspaceId, userId, readyState };
+  }, [workspaceId, userId, readyState]);
+  const canRetry = useCallback(() => {
+    const scope = retryScopeRef.current;
+
+    return scope.workspaceId === workspaceId && scope.userId === userId &&
+      scope.readyState === WS_READY_STATE_OPEN;
+  }, [workspaceId, userId]);
 
   refs.latestUserRef.current = currentUser;
   const beforeDatabaseSendRef = useRef<(id: string, type: Types, marker?: string, rootVersionHint?: string) => Promise<boolean>>(async () => false);
@@ -235,7 +247,8 @@ export const useSync = (
     notifyLocalEdit,
     notifyManifestSync,
     historyOptions ? beforeDatabaseSend : undefined,
-    prepareDatabaseContext
+    prepareDatabaseContext,
+    canRetry
   );
   const databaseRestore = useDatabaseHistoryRestoreSync({
     refs, workspaceId, eventEmitter, userId: currentUser?.uuid,
@@ -318,7 +331,8 @@ export const useSync = (
     registerSyncContext,
     scheduleDeferredCleanup,
     historyOptions ? beforeDatabaseSend : undefined,
-    subscribeCollabMessages
+    subscribeCollabMessages,
+    subscribeServerManifests
   );
 
   const applyHttpFullSyncResult = useCallback(

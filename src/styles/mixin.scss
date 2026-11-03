@@ -17,6 +17,31 @@
   scrollbar-width: none; // For Firefox
 }
 
+// Scroll containers that can sit inside a styled scroller: while the scroller
+// is hovered, their thumb takes its colour. Keep in sync with
+// NESTED_SCROLLERS in postcss/scope-scrollbar-hover.cjs
+// (src/styles/__tests__/css-shape.test.ts checks it).
+$nested-scrollers: '.overflow-auto, .overflow-scroll, .overflow-x-auto, .overflow-x-scroll, .overflow-y-auto, .overflow-y-scroll, .appflowy-scroller, .appflowy-scrollbar, .appflowy-custom-scroller, .simple-table-scroll-container';
+
+// The thumb colour of a scroller and of the scroll containers inside it.
+// Never `&:hover *::-webkit-scrollbar-thumb`: a universal subject under :hover
+// makes Blink restyle the whole subtree of every hovered element that any
+// :hover rule tests (group rows, widgets, cards), whatever its class.
+// - `&:hover :where(...)`: the listed scroll containers inside the hovered
+//   scroller, as the universal form did;
+// - `&:hover::-webkit-scrollbar-thumb` and `& *:hover::-webkit-scrollbar-thumb`:
+//   Blink reads a :hover in the compound of a scrollbar pseudo-element as the
+//   hover of that scrollbar part, so these colour a hovered thumb, the
+//   scroller's own or any scroll container's inside it.
+// `:where()` and `*:hover` keep the specificity of the selector they replace.
+@mixin hover-thumb {
+  &:hover::-webkit-scrollbar-thumb,
+  &:hover :where(#{$nested-scrollers})::-webkit-scrollbar-thumb,
+  & *:hover::-webkit-scrollbar-thumb {
+    @content;
+  }
+}
+
 @mixin hidden-scrollbar-style {
   ::-webkit-scrollbar, &::-webkit-scrollbar {
     width: 8px;
@@ -24,12 +49,9 @@
     background-color: transparent;
   }
 
-  &:hover {
-
-    &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
-      border-radius: 4px;
-      background-color: transparent;
-    }
+  @include hover-thumb {
+    border-radius: 4px;
+    background-color: transparent;
   }
 }
 
@@ -39,11 +61,8 @@
     height: 8px;
   }
 
-  &:hover {
-
-    &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
-      border-radius: 4px;
-      background-color: var(--fill-content-hover);
-    }
+  @include hover-thumb {
+    border-radius: 4px;
+    background-color: var(--fill-content-hover);
   }
 }

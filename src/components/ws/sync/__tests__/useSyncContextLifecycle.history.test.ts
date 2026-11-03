@@ -75,6 +75,13 @@ test.each([Types.Database, Types.DatabaseRow])(
     await act(async () => permit(true));
     expect(send.mock.calls.every(([message]) => !message.collabMessage.update)).toBe(true);
     expect(broadcast.mock.calls.every(([message]) => !message.collabMessage.update)).toBe(true);
+    // The initial active context may persist its captured generation; the outbox
+    // owns restore verification before sending. A retired callback may not enqueue more.
+    expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(1);
+    expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      objectId, collabType, databaseRestoreId: 'old-generation',
+    }), { broadcast: false, source: 'manifest' });
+    jest.mocked(enqueueOutboxUpdate).mockClear();
     send.mockClear();
     broadcast.mockClear();
 
@@ -91,14 +98,70 @@ test.each([Types.Database, Types.DatabaseRow])(
       handleMessage(newContext, request);
       newDoc.getMap(YjsEditorKey.data_section).set('title', 'fresh edit');
     });
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0].collabMessage.update.databaseRestoreId).toBe('restored-generation');
-    expect(broadcast).toHaveBeenCalledWith(send.mock.calls[0][0]);
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(2);
     expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
       objectId, collabType, databaseRestoreId: 'restored-generation',
     }));
+    expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      objectId, collabType, databaseRestoreId: 'restored-generation',
+    }), { broadcast: false, source: 'manifest' });
     oldDoc.destroy();
     newDoc.destroy();
     unmount();
+  }
+);
+
+test.each(['offline', 'read-only', 'reset'] as const)(
+  'a recovery waiting for restore authority rechecks %s before sending', async (transition) => {
+    jest.useFakeTimers();
+    const beforeSend = jest.fn(async () => true);
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    let online = true;
+    const { result, unmount } = renderHook(() => {
+      const refs = useSyncRefs();
+
+      return {
+        refs,
+        ...useSyncContextLifecycle(refs, send, broadcast, undefined, undefined, beforeSend, undefined, () => online),
+      };
+    });
+    const doc: YDoc = new Y.Doc({ guid: objectId });
+
+    doc.databaseRestoreId = '11111111-1111-4111-8111-111111111111';
+    doc.getMap('root').set('title', 'retained upload');
+    let context!: SyncContext;
+    let permit!: (allowed: boolean) => void;
+
+    try {
+      await act(async () => {
+        context = result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+        handleMessage(context, { objectId, syncRequest: { stateVector: Uint8Array.of(0) } });
+      });
+      send.mockClear();
+      broadcast.mockClear();
+      beforeSend.mockClear();
+      beforeSend.mockReturnValue(new Promise((resolve) => { permit = resolve; }));
+      await act(async () => { await jest.advanceTimersByTimeAsync(10 * 60_000); });
+      // A slow authority check must not accumulate one in-flight promise per retry.
+      expect(beforeSend).toHaveBeenCalledTimes(1);
+      expect(beforeSend).toHaveBeenCalledWith(objectId, Types.DatabaseRow, doc.databaseRestoreId);
+      if (transition === 'offline') online = false;
+      if (transition === 'reset') result.current.refs.resettingObjectIds.current.add(objectId);
+      if (transition === 'read-only') {
+        handleMessage(context, { objectId, accessChanged: { canRead: true, canWrite: false } });
+      }
+
+      await act(async () => permit(true));
+      expect(send).not.toHaveBeenCalled();
+      expect(broadcast).not.toHaveBeenCalled();
+    } finally {
+      doc.destroy();
+      unmount();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   }
 );

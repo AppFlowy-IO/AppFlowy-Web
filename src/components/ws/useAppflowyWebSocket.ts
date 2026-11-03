@@ -2,8 +2,10 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
+import { CollabSendWindow } from '@/application/realtime/send-window';
+import { isAuthRefreshFailure } from '@/application/services/js-services/http/auth-refresh-error';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
-import { getTokenParsed, invalidToken } from '@/application/session/token';
+import { captureTokenSession, getTokenParsed, invalidToken, isTokenSessionCurrent } from '@/application/session/token';
 import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -36,89 +38,8 @@ const SLOW_POLL_INTERVAL = 60000; // 60s slow-poll after exhausting fast attempt
 const RECONNECT_NONCE_COOLDOWN = 5000; // 5s minimum between nonce-based reconnections
 const WS_READY_STATE_CONNECTING = 0;
 const WS_READY_STATE_CLOSED = 3;
-const AUTH_FAILURE_STATUS_CODES = new Set([400, 401, 403]);
-const AUTH_FAILURE_ERROR_MARKERS = [
-  'invalid_grant',
-  'invalid refresh token',
-  'refresh token is invalid',
-  'refresh token has expired',
-  'session_not_found',
-  'session not found',
-  'token expired',
-  'token has expired',
-  'revoked',
-];
 
 type ReconnectAuthStatus = 'ready' | 'auth-failed' | 'transient-failed';
-
-const getRefreshFailureText = (error: unknown): string => {
-  if (typeof error === 'string') {
-    return error.toLowerCase();
-  }
-
-  if (typeof error !== 'object' || error === null) {
-    return '';
-  }
-
-  const typedError = error as {
-    message?: unknown;
-    response?: {
-      data?: unknown;
-    };
-  };
-  const texts: string[] = [];
-
-  if (typeof typedError.message === 'string') {
-    texts.push(typedError.message);
-  }
-
-  const responseData = typedError.response?.data;
-
-  if (typeof responseData === 'string') {
-    texts.push(responseData);
-  } else if (typeof responseData === 'object' && responseData !== null) {
-    const payload = responseData as {
-      error?: unknown;
-      message?: unknown;
-      msg?: unknown;
-      error_description?: unknown;
-    };
-
-    if (typeof payload.error === 'string') {
-      texts.push(payload.error);
-    }
-
-    if (typeof payload.message === 'string') {
-      texts.push(payload.message);
-    }
-
-    if (typeof payload.msg === 'string') {
-      texts.push(payload.msg);
-    }
-
-    if (typeof payload.error_description === 'string') {
-      texts.push(payload.error_description);
-    }
-  }
-
-  return texts.join(' ').toLowerCase();
-};
-
-const isAuthRefreshFailure = (error: unknown): boolean => {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-
-  const status = (error as { response?: { status?: unknown } }).response?.status;
-
-  if (typeof status === 'number' && AUTH_FAILURE_STATUS_CODES.has(status)) {
-    return true;
-  }
-
-  const message = getRefreshFailureText(error);
-
-  return AUTH_FAILURE_ERROR_MARKERS.some((marker) => message.includes(marker));
-};
 
 export type AppflowyWebSocketType = {
   /**
@@ -133,6 +54,8 @@ export type AppflowyWebSocketType = {
    * @param keep - Should the message be cached if the WebSocket is not open? (default: true)
    */
   sendMessage: (msg: messages.IMessage, keep?: boolean) => void;
+  canSendUpdate?: (objectId?: string) => boolean;
+  subscribeSendReady?: (listener: () => void) => () => void;
   /**
    * The current ready state of the WebSocket.
    * It can be one of the following values:
@@ -185,6 +108,8 @@ export interface Options {
   connect?: boolean;
   /** Keep the elected cross-tab socket alive while its owner tab is hidden. */
   reconnectWhenHidden?: boolean;
+  /** Opt in only when the Web server-info response advertises UpdateAck support. */
+  supportsUpdateAck?: boolean;
 }
 
 export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType => {
@@ -228,7 +153,6 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const slowPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastNonceBumpRef = useRef(0);
   const lastCloseCodeRef = useRef<number | null>(null);
-  const tokenRefreshInFlightRef = useRef<Promise<ReconnectAuthStatus> | null>(null);
   const retryScheduledRef = useRef(false);
   const isMountedRef = useRef(true);
 
@@ -272,41 +196,36 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
     if (!isExpired) return 'ready';
 
-    if (tokenRefreshInFlightRef.current) {
-      return tokenRefreshInFlightRef.current;
-    }
-
     if (!tokenData.refresh_token) {
       return 'auth-failed';
     }
 
-    tokenRefreshInFlightRef.current = refreshToken(tokenData.refresh_token)
-      .then((newToken) => {
-        return newToken?.access_token ? 'ready' : 'transient-failed';
-      })
-      .catch((e) => {
-        if (isAuthRefreshFailure(e)) {
-          Log.warn('Token refresh rejected during WebSocket reconnect', e);
-          return 'auth-failed';
-        }
+    // GoTrue already shares refresh work by refresh token. A hook-local promise
+    // would let a new login accidentally join the previous login's rejection.
+    try {
+      const newToken = await refreshToken(tokenData.refresh_token);
 
-        Log.warn('Transient token refresh failure during WebSocket reconnect', e);
-        return 'transient-failed';
-      })
-      .finally(() => {
-        tokenRefreshInFlightRef.current = null;
-      });
+      return newToken?.access_token ? 'ready' : 'transient-failed';
+    } catch (e) {
+      if (isAuthRefreshFailure(e)) {
+        Log.warn('Token refresh rejected during WebSocket reconnect');
+        return 'auth-failed';
+      }
 
-    return tokenRefreshInFlightRef.current;
+      Log.warn('Transient token refresh failure during WebSocket reconnect');
+      return 'transient-failed';
+    }
   }, [options.token]);
 
   const triggerNonceReconnect = useCallback(
     (reason: string, resetRecovery = false) => {
       void (async () => {
+        const session = captureTokenSession();
         const authStatus = await ensureFreshTokenForReconnect();
 
-        // Guard: component may have unmounted while awaiting token refresh
-        if (!isMountedRef.current) return;
+        // Refresh can settle after unmount or after a different login replaces
+        // this one. Neither its failure nor its success belongs to that login.
+        if (!isMountedRef.current || (!options.token && !isTokenSessionCurrent(session))) return;
 
         if (authStatus !== 'ready') {
           if (authStatus === 'auth-failed') {
@@ -340,6 +259,21 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const triggerNonceReconnectRef = useRef(triggerNonceReconnect);
 
   triggerNonceReconnectRef.current = triggerNonceReconnect;
+
+  const rawSendRef = useRef<(message: messages.IMessage, keep: boolean) => void>(() => {
+    throw new Error('WebSocket sender is not initialized');
+  });
+  const decodedMessages = useMemo(() => new WeakMap<MessageEvent, messages.Message>(), []);
+  const sendWindow = useMemo(() => new CollabSendWindow({
+    send: (message, keep) => rawSendRef.current(message, keep),
+    onUpdateStalled: () => {
+      Log.warn('[sync] Workspace send window stalled', { workspaceId: options.workspaceId, clientId, deviceId });
+      // share=true returns a protected WebSocket proxy whose close() is a no-op.
+      // Replacing the URL through the existing recovery path closes it via its owner.
+      triggerNonceReconnectRef.current('update-response-timeout', true);
+    },
+    onManifestTimeout: (objectId) => Log.warn('[sync] Manifest response timed out', { objectId }),
+  }), [options.workspaceId, clientId, deviceId]);
 
   const { lastMessage, sendMessage, readyState, getWebSocket } = useWebSocket(
     socketUrl,
@@ -417,6 +351,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       // Connection event callback
       onOpen: () => {
         Log.info('✅ WebSocket connection opened');
+        sendWindow.setConnection(true, options.supportsUpdateAck === true);
         setAutomaticRetryScheduled(false);
         setReconnectAttempt(0);
         lastCloseCodeRef.current = null;
@@ -430,8 +365,23 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       },
 
       onClose: (event) => {
+        sendWindow.disconnect();
         lastCloseCodeRef.current = event.code;
         Log.info('❌ WebSocket connection closed', event);
+      },
+
+      // React can coalesce lastMessage renders. Retire every transport ACK in the socket
+      // callback, before React scheduling, so a burst cannot leak send-window reservations.
+      onMessage: (event) => {
+        if (typeof event.data === 'string') return;
+        try {
+          const decoded = messages.Message.decode(new Uint8Array(event.data));
+
+          decodedMessages.set(event, decoded);
+          if (decoded.collabMessage) sendWindow.receive(decoded.collabMessage);
+        } catch (error) {
+          Log.warn('[sync] Could not process realtime flow-control response', error);
+        }
       },
 
       onError: (event) => {
@@ -456,6 +406,18 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     },
     shouldConnect
   );
+
+  useLayoutEffect(() => {
+    rawSendRef.current = (message, keep) => {
+      const protobufMessage = messages.Message.encode(message).finish();
+
+      sendMessage(protobufMessage, shouldConnectRef.current ? keep : false);
+    };
+
+    sendWindow.setConnection(shouldConnect && readyState === 1, options.supportsUpdateAck === true);
+  }, [sendMessage, sendWindow, shouldConnect, readyState, options.supportsUpdateAck]);
+
+  useLayoutEffect(() => () => sendWindow.disconnect(), [sendWindow]);
 
   const tryDeferredReconnect = useCallback(
     (reason: 'online' | 'visibility') => {
@@ -521,17 +483,18 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     (message: messages.IMessage, keep = true): void => {
       Log.debug('sending sync message:', message);
 
-      const protobufMessage = messages.Message.encode(message).finish();
+      if (!shouldConnectRef.current) {
+        rawSendRef.current(message, false);
+        return;
+      }
 
-      // Followers route protocol messages through BroadcastChannel. Do not
-      // retain a second in-memory socket queue while this tab is not leader.
-      // The latest-value ref keeps this callback stable for SyncContexts that
-      // outlive a follower-to-leader handoff while still enabling buffering as
-      // soon as this tab owns the replacement socket.
-      sendMessage(protobufMessage, shouldConnectRef.current ? keep : false);
+      sendWindow.send(message, keep);
     },
-    [sendMessage]
+    [sendWindow]
   );
+
+  const canSendUpdate = useCallback((objectId?: string) => sendWindow.canSendUpdate(objectId), [sendWindow]);
+  const subscribeSendReady = useCallback((listener: () => void) => sendWindow.subscribeReady(listener), [sendWindow]);
 
   const manualReconnect = useCallback(() => {
     if (!shouldConnect || readyState !== WS_READY_STATE_CLOSED) return;
@@ -550,8 +513,8 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   }, [triggerNonceReconnect, shouldConnect, readyState]);
 
   const lastProtobufMessage = useMemo(
-    () => (lastMessage ? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
-    [lastMessage]
+    () => (lastMessage ? decodedMessages.get(lastMessage) ?? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
+    [lastMessage, decodedMessages]
   );
 
   // Depend on the primitive fields, not the options object identity: callers
@@ -578,11 +541,13 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     () => ({
       lastMessage: lastProtobufMessage,
       sendMessage: sendProtobufMessage,
+      canSendUpdate,
+      subscribeSendReady,
       readyState: effectiveReadyState,
       options: resolvedOptions,
       reconnectAttempt,
       reconnect: manualReconnect,
     }),
-    [lastProtobufMessage, sendProtobufMessage, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
+    [lastProtobufMessage, sendProtobufMessage, canSendUpdate, subscribeSendReady, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
   );
 };

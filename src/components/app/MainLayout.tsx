@@ -109,7 +109,9 @@ function MainLayoutContent() {
             />
           )}
 
-          <ErrorBoundary FallbackComponent={SomethingError}>{main}</ErrorBoundary>
+          <ErrorBoundary FallbackComponent={SomethingError} resetKeys={[viewId]}>
+            {main}
+          </ErrorBoundary>
         </AFScroller>
         <SideBar
           onResizeDrawerWidth={setDrawerWidth}

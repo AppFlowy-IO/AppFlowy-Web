@@ -72,6 +72,9 @@ jest.mock('@/application/services/domains/view', () => ({
     children: [],
   }),
 }));
+jest.mock('@/components/app/hooks/useDashboardCreationGate', () => ({
+  useDashboardCreationGate: () => ({ available: true }),
+}));
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
   useDatabaseViewCreation: (options: unknown) => {
     mockCreationOptions(options);
@@ -137,7 +140,7 @@ describe('slash database view admission', () => {
     listener.mockRestore();
   });
 
-  it.each(['timeline', 'linkedTimeline', 'chart', 'linkedChart'])(
+  it.each(['timeline', 'linkedTimeline', 'dashboard', 'linkedDashboard', 'chart', 'linkedChart'])(
     '%s shows a crown and opens checkout without touching the editor',
     (key) => {
       mockSearch = key;
@@ -149,7 +152,11 @@ describe('slash database view admission', () => {
       expect(mockCheckout).toHaveBeenCalledTimes(1);
       expect(mockClosePanel).toHaveBeenCalledTimes(1);
       expect(mockCheckCreation).toHaveBeenCalledWith(
-        key.toLowerCase().includes('chart') ? ViewLayout.Chart : ViewLayout.Timeline
+        key.toLowerCase().includes('chart')
+          ? ViewLayout.Chart
+          : key.toLowerCase().includes('dashboard')
+          ? ViewLayout.Dashboard
+          : ViewLayout.Timeline
       );
       expect(mockRemoveContent).not.toHaveBeenCalled();
       expect(mockEditor.flushLocalChanges).not.toHaveBeenCalled();

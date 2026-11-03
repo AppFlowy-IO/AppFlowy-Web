@@ -7,4 +7,10 @@ module.exports = {
   'dialog': 'var(--custom-shadow-md)',
   'toast': 'var(--custom-shadow-md)',
   'tooltip': 'var(--custom-shadow-md)',
+  // Dashboard tokens (`dashboard-tokens.css`): the card shadow with its 1px ring, the chart tooltip,
+  // the drill-down dialog (with the card ring) and the record side peek.
+  'dash-card': 'var(--dash-card-shadow), 0 0 0 1px var(--dash-card-ring)',
+  'dash-tooltip': 'var(--chart-tooltip-shadow)',
+  'dash-drilldown': 'var(--dash-drilldown-shadow), 0 0 0 1px var(--dash-card-ring)',
+  'dash-side-peek': 'var(--dash-side-peek-shadow)',
 };
