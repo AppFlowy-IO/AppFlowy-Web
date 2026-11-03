@@ -108,6 +108,22 @@ describe('ViewList', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('keeps the selected image result through a final reorder and opens its updated matching block', () => {
+    const onClose = jest.fn();
+    const other: SearchViewListItem = { id: 'other-page:', view: view({ view_id: 'other-page', name: 'Other page' }) };
+    const list = (items: SearchViewListItem[]) => (
+      <ViewList title='Best matches' items={items} loading={false} query='revenue' onClose={onClose} />
+    );
+    const { rerender } = render(list([imageResult, other]));
+
+    fireEvent.keyDown(document, { key: 'Tab', keyCode: 9, which: 9 });
+    rerender(list([other, { ...imageResult, blockId: 'final-image-block' }]));
+    fireEvent.keyDown(document, { key: 'Enter', keyCode: 13, which: 13 });
+
+    expect(mockToView).toHaveBeenCalledWith('page-id', 'final-image-block');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the selected result at its block with the keyboard, and a row as a row', () => {
     const row: SearchViewListItem = {
       id: 'grid-id:row-id',

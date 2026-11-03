@@ -1,5 +1,5 @@
 import { debounce } from 'lodash-es';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SearchService, ViewService } from '@/application/services/domains';
@@ -7,7 +7,9 @@ import type {
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
   SearchSummary,
+  SearchSummaryResult,
 } from '@/application/services/domains/search';
+import { SearchStreamUnsupportedError } from '@/application/services/domains/search';
 import { View } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { notify } from '@/components/_shared/notify';
@@ -16,8 +18,10 @@ import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { describeEvidence, evidenceBlockId, primaryEvidence } from '@/components/app/search/search-evidence';
+import { SearchPresentationObservation } from '@/components/app/search/search-presentation-observation';
 import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
+import { getErrorMessage } from '@/utils/errors';
 
 const SearchAIOverview = lazy(() =>
   import('@/components/app/search/SearchAIOverview').then(({ SearchAIOverview }) => ({ default: SearchAIOverview }))
@@ -145,11 +149,13 @@ function createSearchStreamId(prefix: string): string {
 function BestMatch({
   onClose,
   searchValue,
+  queryStartedAt,
   askingAI,
   onAskAI,
 }: {
   onClose: () => void;
   searchValue: string;
+  queryStartedAt?: number;
   askingAI: boolean;
   onAskAI: (query: string, sources?: AIChatRagSource[]) => void;
 }) {
@@ -169,8 +175,16 @@ function BestMatch({
   const [loading, setLoading] = useState<boolean>(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
+  const [finalSnapshot, setFinalSnapshot] = useState(false);
+  const presentationRef = useRef<SearchPresentationObservation | null>(null);
+  const presentationInput = useRef<{ workspaceId?: string; aiEnabled: boolean; query: string; startedAt?: number }>();
+  const [resultIdentity, setResultIdentity] = useState('');
+  const activeSearch = useRef<AbortController | null>(null);
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const identity = `${currentWorkspaceId || ''}:${searchValue}`;
+  const currentResults = resultIdentity === identity;
   const searchSeqRef = useRef(0);
   const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
 
@@ -200,6 +214,7 @@ function BestMatch({
   );
 
   const items = useMemo<SearchViewListItem[]>(() => {
+    if (!currentResults) return [];
     const targets = new Map<string, { view: View; item: SearchDocumentResponseItem }>();
 
     for (const item of searchResults) {
@@ -237,98 +252,202 @@ function BestMatch({
         preview: previewLines(item.content || item.preview),
       };
     });
-  }, [outline, resultViews, searchResults, t]);
+  }, [currentResults, outline, resultViews, searchResults, t]);
 
   const handleSearch = useCallback(
     async (searchTerm: string) => {
       if (!currentWorkspaceId) return;
-      const searchSeq = searchSeqRef.current + 1;
+      activeSearch.current?.abort();
+      const controller = new AbortController();
 
-      searchSeqRef.current = searchSeq;
+      activeSearch.current = controller;
+      const searchSeq = ++searchSeqRef.current;
+      const isCurrent = () => searchSeqRef.current === searchSeq && !controller.signal.aborted;
+
+      setResultIdentity(`${currentWorkspaceId}:${searchTerm}`);
       setSummary(null);
       setSummarySourceViews(new Map());
       setResultViews(new Map());
       setSummaryLoading(false);
-      if (!searchTerm) {
-        setSearchResults([]);
-        setHasMore(false);
-        setNextOffset(null);
-        setLoading(false);
-        setLoadingMore(false);
-        return;
-      }
-
-      setLoading(true);
       setLoadingMore(false);
+      setHydrating(false);
+      setFinalSnapshot(false);
       setSearchResults([]);
       setHasMore(false);
       setNextOffset(null);
+      setLoading(Boolean(searchTerm.trim()));
+      if (!searchTerm.trim()) return;
 
-      const summaryRequest = aiEnabled
-        ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm).catch(() => null)
-        : null;
+      let results: SearchDocumentResponseItem[] = [];
+      let revision = 0;
+      let keywordWindowFull = false;
+      let usedLegacySearch = false;
+      let legacySummaryPromise: Promise<SearchSummaryResult | null> | undefined;
+      const routes = new Map<string, Promise<View | undefined>>();
+      const presentation = presentationRef.current;
+      // Publish rows before optional metadata reads finish. Each phase replaces the list; late
+      // keyword hydration may add neither rows nor routing metadata to a newer final snapshot.
+      const publish = (snapshot: SearchDocumentResponseItem[], isFinal: boolean) => {
+        if (!isCurrent()) return;
+        const snapshotRevision = ++revision;
+        const routeKey = (item: SearchDocumentResponseItem) =>
+          JSON.stringify([item.object_id, item.database_view_id, item.database_id]);
+        const previousRoutes = new Map(results.map((item) => [searchResultKey(item), routeKey(item)]));
 
-      try {
-        const page = await SearchService.searchWorkspaceDocumentPage(
-          currentWorkspaceId,
-          searchTerm,
-          0,
-          keywordSearchStreamId
+        results = mergeSearchResults([], snapshot);
+        const retainedKeys = new Set(
+          results.filter((item) => previousRoutes.get(searchResultKey(item)) === routeKey(item)).map(searchResultKey)
         );
 
-        if (searchSeqRef.current !== searchSeq) return;
+        setSearchResults(results);
+        setFinalSnapshot(isFinal);
+        // Retain routing for unchanged rows so a final reorder cannot briefly remove the
+        // selected row while its already-resolved metadata promise runs again.
+        setResultViews((previous) => new Map([...previous].filter(([key]) => retainedKeys.has(key))));
+        setHydrating(true);
+        const reads = results.map(async (item) => {
+          const key = routeKey(item);
+          let request = routes.get(key);
 
-        const res = mergeSearchResults([], page.items || []);
-        const shouldGenerateSummary = summaryRequest !== null;
-        const views = await loadResultViews(res);
+          if (!request) {
+            request = Promise.resolve(
+              resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId)
+            );
+            routes.set(key, request);
+          }
 
-        if (searchSeqRef.current !== searchSeq) return;
+          const view = await request;
 
-        setSearchResults(res);
-        setResultViews(views);
-        setHasMore(canLoadMoreSearchResults(page, 0));
-        setNextOffset(page.next_offset ?? null);
-        setSummaryLoading(shouldGenerateSummary);
+          if (view && isCurrent() && revision === snapshotRevision) {
+            setResultViews((previous) => new Map(previous).set(searchResultKey(item), view));
+          }
+        });
+
+        void Promise.allSettled(reads).then(() => {
+          if (isCurrent() && revision === snapshotRevision) setHydrating(false);
+        });
+      };
+
+      try {
+        presentation?.issue();
+        try {
+          const completion = await SearchService.searchWorkspaceDocumentStream(currentWorkspaceId, searchTerm, {
+            signal: controller.signal,
+            requestStreamId: keywordSearchStreamId,
+            mode: aiEnabled ? 'hybrid' : 'keyword',
+            onSnapshot: (snapshot) => {
+              if (snapshot.phase === 'keyword') keywordWindowFull = snapshot.items.length >= 10;
+              publish(snapshot.items, snapshot.phase === 'final');
+            },
+          });
+
+          if (!isCurrent()) return;
+          if (completion.outcome === 'superseded') {
+            presentation?.terminate('superseded');
+            revision += 1;
+            setHydrating(false);
+            setSearchResults([]);
+            setResultViews(new Map());
+            return;
+          }
+
+          presentation?.received(completion.outcome);
+
+          // The stream has no keyword cursor. Continue lazily from keyword offset zero so no
+          // range is skipped when semantic hits displaced keyword hits in the final top results.
+          setHasMore(keywordWindowFull || results.length >= 10);
+          setNextOffset(0);
+        } catch (error) {
+          if (!isCurrent()) return;
+          if (!(error instanceof SearchStreamUnsupportedError)) throw error;
+          usedLegacySearch = true;
+          presentation?.useLegacy();
+          // Legacy automatic context is independent of the keyword page. Start both
+          // together, and handle rejection now even if the page later fails or is cancelled.
+          if (aiEnabled) {
+            legacySummaryPromise = SearchService.generateSearchSummary(
+              currentWorkspaceId,
+              searchTerm,
+              controller.signal
+            ).catch(() => null);
+          }
+
+          const page = await SearchService.searchWorkspaceDocumentPage(
+            currentWorkspaceId,
+            searchTerm,
+            0,
+            keywordSearchStreamId,
+            controller.signal
+          );
+
+          if (!isCurrent()) return;
+          presentation?.received('complete');
+          publish(page.items || [], true);
+          setHasMore(canLoadMoreSearchResults(page, 0));
+          setNextOffset(page.next_offset ?? null);
+        }
+
+        if (!isCurrent()) return;
         setLoading(false);
 
-        if (shouldGenerateSummary) {
-          const summaryResult = await summaryRequest;
+        if (aiEnabled && (usedLegacySearch || results.length > 0)) {
+          setSummaryLoading(true);
+          // Completed stream IDs let the summary endpoint reload its own content without
+          // repeating vector retrieval. Older servers retain their existing automatic context.
+          const summaryResult = usedLegacySearch
+            ? await legacySummaryPromise
+            : await SearchService.generateSearchSummaryForDocuments(
+                currentWorkspaceId,
+                searchTerm,
+                results.map((item) => item.object_id),
+                controller.signal
+              ).catch(() => null);
 
-          if (searchSeqRef.current !== searchSeq) return;
-
+          if (!isCurrent()) return;
           const nextSummary = summaryResult?.summaries[0] || null;
           const sourceViews = nextSummary
-            ? await loadSummarySourceViews(outlineRef.current || [], currentWorkspaceId, nextSummary.sources, res)
+            ? await loadSummarySourceViews(outlineRef.current || [], currentWorkspaceId, nextSummary.sources, results)
             : new Map<string, View>();
 
-          if (searchSeqRef.current !== searchSeq) return;
-
+          if (!isCurrent()) return;
           setSummarySourceViews(sourceViews);
           setSummary(nextSummary);
           setSummaryLoading(false);
         }
-        // eslint-disable-next-line
-      } catch (e: any) {
-        if (searchSeqRef.current !== searchSeq) return;
-        notify.error(e.message);
+      } catch (error) {
+        if (!isCurrent()) return;
+        presentation?.terminate('error');
+        revision += 1;
+        setHydrating(false);
+        notify.error(getErrorMessage(error));
         setSearchResults([]);
+        setResultViews(new Map());
         setSummary(null);
         setSummaryLoading(false);
         setHasMore(false);
         setNextOffset(null);
       } finally {
-        if (searchSeqRef.current === searchSeq) {
+        if (isCurrent()) {
           setLoading(false);
-          setLoadingMore(false);
         }
       }
     },
-    [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId]
+    [aiEnabled, currentWorkspaceId, keywordSearchStreamId]
   );
 
   const handleLoadMore = useCallback(async () => {
-    if (!currentWorkspaceId || !searchValue || loading || loadingMore || !hasMore || nextOffset === null) return;
+    if (
+      !currentResults ||
+      !currentWorkspaceId ||
+      !searchValue ||
+      loading ||
+      loadingMore ||
+      !hasMore ||
+      nextOffset === null
+    )
+      return;
 
+    presentationRef.current?.finishInitialWindow();
     const searchSeq = searchSeqRef.current;
 
     setLoadingMore(true);
@@ -338,24 +457,24 @@ function BestMatch({
         currentWorkspaceId,
         searchValue,
         nextOffset,
-        keywordSearchStreamId
+        keywordSearchStreamId,
+        activeSearch.current?.signal
       );
 
       if (searchSeqRef.current !== searchSeq) return;
 
       const mergedResults = mergeSearchResults(searchResults, page.items || []);
+
+      setSearchResults(mergedResults);
       const views = await loadResultViews(page.items || []);
 
       if (searchSeqRef.current !== searchSeq) return;
-
-      setSearchResults(mergedResults);
       setResultViews((previous) => new Map([...previous, ...views]));
       setHasMore(canLoadMoreSearchResults(page, nextOffset));
       setNextOffset(page.next_offset ?? null);
-      // eslint-disable-next-line
-    } catch (e: any) {
-      if (searchSeqRef.current !== searchSeq) return;
-      notify.error(e.message);
+    } catch (error) {
+      if (searchSeqRef.current !== searchSeq || activeSearch.current?.signal.aborted) return;
+      notify.error(getErrorMessage(error));
     } finally {
       if (searchSeqRef.current === searchSeq) {
         setLoadingMore(false);
@@ -363,6 +482,7 @@ function BestMatch({
     }
   }, [
     loadResultViews,
+    currentResults,
     currentWorkspaceId,
     hasMore,
     keywordSearchStreamId,
@@ -377,19 +497,52 @@ function BestMatch({
     return debounce(handleSearch, 300);
   }, [handleSearch]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const previous = presentationInput.current;
+    const changedInput = !previous || previous.query !== searchValue || previous.startedAt !== queryStartedAt;
+    const changedContext = previous && (previous.workspaceId !== currentWorkspaceId || previous.aiEnabled !== aiEnabled);
+    // A workspace/mode switch starts new work even when the input itself did not change.
+    const startedAt = changedContext && !changedInput ? performance.now() : queryStartedAt ?? performance.now();
+
+    presentationInput.current = {
+      workspaceId: currentWorkspaceId,
+      aiEnabled,
+      query: searchValue,
+      startedAt: queryStartedAt,
+    };
+    const observation =
+      currentWorkspaceId && searchValue.trim()
+        ? new SearchPresentationObservation({
+            startedAt,
+            mode: aiEnabled ? 'hybrid' : 'keyword',
+            report: (metrics) => {
+              void SearchService.reportSearchPresentationMetrics(currentWorkspaceId, metrics);
+            },
+          })
+        : null;
+
+    presentationRef.current = observation;
     void debounceSearch(searchValue);
 
     return () => {
       debounceSearch.cancel();
+      activeSearch.current?.abort();
+      observation?.terminate('cancelled');
       // Ignore old responses immediately, including during the next debounce
       // interval and after the search dialog has unmounted.
       searchSeqRef.current += 1;
     };
-  }, [searchValue, debounceSearch]);
+  }, [aiEnabled, currentWorkspaceId, queryStartedAt, searchValue, debounceSearch]);
+
+  useLayoutEffect(() => {
+    presentationRef.current?.committedRows(
+      currentResults && items.length > 0,
+      currentResults && finalSnapshot && !hydrating && (items.length > 0 || !loading)
+    );
+  }, [currentResults, finalSnapshot, hydrating, items, loading]);
 
   const overviewSources = useMemo<SearchOverviewSource[]>(() => {
-    if (!summary) return [];
+    if (!currentResults || !summary) return [];
 
     const resultByObjectId = new Map(searchResults.map((item) => [item.object_id, item]));
     const resultByRowId = new Map(
@@ -431,18 +584,23 @@ function BestMatch({
 
       return sources;
     }, []);
-  }, [outline, resultViews, searchResults, summary, summarySourceViews, t]);
+  }, [currentResults, outline, resultViews, searchResults, summary, summarySourceViews, t]);
 
-  const summarySourceCount = new Set(summary?.sources || []).size;
+  const visibleSummary = currentResults ? summary : null;
+  const searchPending = currentResults
+    ? loading || (hydrating && items.length === 0)
+    : Boolean(currentWorkspaceId && searchValue.trim());
+  const summarySourceCount = new Set(visibleSummary?.sources || []).size;
   const canAskFollowUp = summarySourceCount > 0 && overviewSources.length === summarySourceCount;
 
   return (
     <ViewList
-      items={loading ? undefined : items}
-      loading={loading}
+      items={items}
+      loading={searchPending}
+      selectionKey={identity}
       query={searchValue}
       title={t('commandPalette.bestMatches')}
-      hasMore={hasMore}
+      hasMore={currentResults && !loading && hasMore}
       loadingMore={loadingMore}
       onClose={onClose}
       onLoadMore={handleLoadMore}
@@ -451,10 +609,10 @@ function BestMatch({
           <Suspense fallback={null}>
             <SearchAIOverview
               askingAI={askingAI}
-              loading={loading || summaryLoading}
+              loading={searchPending || (currentResults && summaryLoading)}
               query={searchValue}
               sources={overviewSources}
-              summary={summary}
+              summary={visibleSummary}
               canAskFollowUp={canAskFollowUp}
               onClose={onClose}
               onAskAI={(sources) => onAskAI(searchValue, sources)}
