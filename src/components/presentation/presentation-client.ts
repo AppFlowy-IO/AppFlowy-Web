@@ -1,7 +1,7 @@
 /** Cloud presentation workflows: request identity, job polling and UI projections. */
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
-import { presentationQuotaReason } from './presentation-policy';
 
+import { presentationQuotaReason } from './presentation-policy';
 import {
   artifactToDeck, generationRequest, isMapArtifact, reviewedStyleToStyle, serverOptions, sourceSelections,
   sourceToSnapshot, styleReference, type GenerateInput,
@@ -260,10 +260,17 @@ export async function runGeneration(input: GenerateInput, signal?: AbortSignal, 
 
 /** Reads an authorized saved result without submitting a generation operation. */
 export async function openReusableGeneration(input: GenerateInput, signal?: AbortSignal): Promise<GenerationResult> {
+  const result = await tryOpenReusableGeneration(input, signal);
+
+  if (!result) throw new PresentationAPIError('The source or settings changed. Generate a new result.', 'SOURCE_REVISION_CONFLICT', 409);
+  return result;
+}
+
+/** Revalidate and open a matching saved result before spending a new model call. */
+export async function tryOpenReusableGeneration(input: GenerateInput, signal?: AbortSignal): Promise<GenerationResult | null> {
   const job = await findReusableResult(input.scope, generationRequest(input, crypto.randomUUID()), signal);
 
-  if (!job) throw new PresentationAPIError('The source or settings changed. Generate a new result.', 'SOURCE_REVISION_CONFLICT', 409);
-  return loadGenerationResult(input, job, signal);
+  return job ? loadGenerationResult(input, job, signal) : null;
 }
 
 async function loadGenerationResult(input: GenerateInput, job: JobStatus, signal?: AbortSignal): Promise<GenerationResult> {

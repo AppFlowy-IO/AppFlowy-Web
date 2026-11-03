@@ -1,10 +1,10 @@
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 
-const PRESENTATION_ENTRY_ENABLED = false;
+const PRESENTATION_ENTRY_ENABLED = true;
 
 /**
- * Keep the Present button hidden in page and modal headers. When enabled, it remains
- * available only on official AppFlowy Cloud after server info confirms the hosting mode.
+ * Show the Present button in page and modal headers after server info confirms
+ * official AppFlowy Cloud hosting.
  */
 export function usePresentationEntryEnabled(): boolean {
   return useIsOfficialHosted() && PRESENTATION_ENTRY_ENABLED;

@@ -16,6 +16,7 @@ import MindMapViewer from './MindMapViewer';
 import {
   createGenerationRunner,
   openReusableGeneration,
+  tryOpenReusableGeneration,
   editMap,
   exportDeck,
   loadPresentation,
@@ -33,13 +34,13 @@ import PresentationLoading, { MindMapLoading, PresentationState } from './Presen
 import PresentationPaywall from './PresentationPaywall';
 import { describeSlideSources } from './slide-sources';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
-import SlidesWorkflow, { type SlidesWorkflowProps } from './SlidesWorkflow';
+import SlidesWorkflow, { type PreparedSlideGeneration, type SlidesWorkflowProps } from './SlidesWorkflow';
 import { flattenBlocks, splitDocument } from './source';
 import { hasStoryPlanChanges, prepareStoryPlan } from './story-plan';
 import StyleSettings from './StyleSettings';
 import { Action, Notice } from './ui';
-import { useReusableGeneration } from './useReusableGeneration';
 import { usePresentationStatusRefresh } from './usePresentationStatusRefresh';
+import { useReusableGeneration } from './useReusableGeneration';
 import { regenerationReference } from './workflow-state';
 
 import type {
@@ -187,7 +188,6 @@ export default function PresentationStudio({
   const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [outlineError, setOutlineError] = useState<SlidesWorkflowProps['outlineError']>();
   const [busy, setBusy] = useState(false);
-  const [preparingSource, setPreparingSource] = useState(false);
   // Polling reports a new job object each time; only its state is shown, so an unchanged state does not render.
   const [jobState, setJobState] = useState<JobStatus['state']>();
   const generation = useRef<AbortController>();
@@ -234,7 +234,6 @@ export default function PresentationStudio({
     reuseInput,
     loadedIdentity === identity &&
       canWrite &&
-      !preparingSource &&
       (compactSetup || mode === 'mindmap') &&
       !style.requiresReview &&
       style.reviewed !== false &&
@@ -332,28 +331,6 @@ export default function PresentationStudio({
       generation.current?.abort();
     };
   }, [scope, userId, initialDeck, initialAction, initialMode, identity, presentMindMap, loadAttempt]);
-
-  // Entering settings revalidates the page with the restored extraction options. Opening a saved
-  // preview does neither source extraction nor AI assessment, and unverified does not mean stale.
-  useEffect(() => {
-    if (!compactSetup || loadedIdentity !== identity || !canWrite) return;
-    const controller = new AbortController();
-
-    setPreparingSource(true);
-    void loadSourceSnapshot(workspaceId, snapshot.pageId, options, controller.signal, style)
-      .then((value) => {
-        if (!controller.signal.aborted) setSnapshot({ ...value, kind: snapshot.kind });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) report(error);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPreparingSource(false);
-      });
-    return () => controller.abort();
-    // Extraction identity depends on the selected page and source options, not slide cosmetics.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compactSetup, loadedIdentity, identity, canWrite, options.includeProperties, options.allowWebSearch]);
 
   // The saved AI map view never shows the page structure, so it does not request one.
   const structuralVisible = (mapPresentationOpen || mode === 'mindmap') && !showAIMap;
@@ -535,7 +512,42 @@ export default function PresentationStudio({
     }
   }
 
-  async function generate(task: 'slides' | 'mindmap', slide?: Slide, editedPlan?: StoryPlan) {
+  // Settings only collect intent. Source extraction, saved-result reuse and assessment begin
+  // together after Generate, using one fresh source for the entire submitted selection.
+  async function prepareSlides(signal: AbortSignal): Promise<PageSnapshot | null> {
+    const source = {
+      ...(await loadSourceSnapshot(workspaceId, snapshot.pageId, options, signal, style)),
+      kind: snapshot.kind,
+    };
+
+    if (signal.aborted) return null;
+    const selectedNarrative =
+      narrativeSelection?.sourceRevision === source.revision ? narrativeSelection.reference : undefined;
+    const result = await tryOpenReusableGeneration({
+      scope, task: 'slides', source, options, style,
+      ...(selectedNarrative && { narrative: selectedNarrative }),
+    }, signal);
+
+    if (signal.aborted) return null;
+    if (result?.deck) {
+      setSnapshot(source);
+      setStatus(result.status);
+      openDeck(result.deck, !!options.reviewOutline);
+      return null;
+    }
+
+    return source;
+  }
+
+  async function generate(
+    task: 'slides' | 'mindmap',
+    slide?: Slide,
+    editedPlan?: StoryPlan,
+    prepared?: PreparedSlideGeneration
+  ) {
+    const options = prepared?.options ?? preferences.current.options;
+    const style = prepared?.style ?? preferences.current.style;
+
     if (busy || !status) return;
     const count = editedPlan?.slides.length ?? (slide ? 1 : options.slideCountMode === 'auto' ? 1 : options.slideCount);
     const custom = serverOptions(options, style).slideCountMode === 'custom';
@@ -575,7 +587,7 @@ export default function PresentationStudio({
     setOutlineError(undefined);
     try {
       const sourceSnapshot = {
-        ...(await loadSourceSnapshot(workspaceId, snapshot.pageId, options, controller.signal, style)),
+        ...(prepared?.source ?? await loadSourceSnapshot(workspaceId, snapshot.pageId, options, controller.signal, style)),
         kind: snapshot.kind,
       };
 
@@ -957,7 +969,7 @@ export default function PresentationStudio({
                   busy={busy}
                   reuse={{
                     available: !!reuse.job,
-                    checking: preparingSource || !snapshot.serverSource || reuse.checking,
+                    checking: reuse.checking,
                     error: reuse.error,
                     onOpen: () => void openExisting(),
                     onRetry: reuse.refresh,
@@ -978,8 +990,9 @@ export default function PresentationStudio({
                     else setOutlineDraft(undefined);
                     setStage(next);
                   }}
-                  onGenerate={(slide) => {
-                    void generate('slides', slide);
+                  onPrepareGeneration={prepareSlides}
+                  onGenerate={(slide, prepared) => {
+                    void generate('slides', slide, undefined, prepared);
                   }}
                   onSource={(id) => {
                     if (sourceMatches) source(id);
@@ -1010,11 +1023,11 @@ export default function PresentationStudio({
                     return result;
                   }}
                   onStyles={() => setMode('styles')}
-                  canGenerate={canGenerate && !preparingSource && !!snapshot.serverSource}
+                  canGenerate={canGenerate}
                   canImportTemplates={canWrite}
                   canRegenerate={canWrite && !busy}
                   canAssess={
-                    !!status && canWrite && !preparingSource && !!snapshot.serverSource && status.remainingSlides > 0
+                    !!status && canWrite && status.remainingSlides > 0
                   }
                   promptBundleVersion={status?.promptBundleVersion}
                   assessmentCache={assessmentCache.current}

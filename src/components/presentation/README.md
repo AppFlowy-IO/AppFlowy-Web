@@ -2,7 +2,7 @@
 
 This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
 
-The **Present** button is currently hidden in page and modal headers by `PRESENTATION_ENTRY_ENABLED` in [`feature-flags.ts`](./feature-flags.ts). When enabled, the entry also requires server info to confirm official AppFlowy Cloud hosting.
+The **Present** button is enabled in page and modal headers by `PRESENTATION_ENTRY_ENABLED` in [`feature-flags.ts`](./feature-flags.ts). The entry requires server info to confirm official AppFlowy Cloud hosting.
 
 ## Run locally
 
@@ -46,14 +46,17 @@ page, without preparing sources or assessing them. Regenerate opens settings; a 
 opens settings directly. Share-provided decks render immediately from their existing plan/scene.
 Loading, preview and settings share one dialog with fixed viewport-bounded dimensions. The footer
 stays at the bottom while the settings body scrolls; its progress line has reserved space.
-The settings panel prepares current evidence with the saved options and restores the saved job's
-assessment when its source, extraction options, purpose, reviewed template and prompt bundle match.
-Completed assessments also survive panel visits in a bounded studio cache. Built-in palette and
-slide-count changes invalidate generated-result reuse but do not repeat source analysis or interrupt
-an assessment already in flight. Changed evidence or analysis inputs require a new assessment.
-Once analysis is valid, a background saved-result lookup keeps Generate enabled. An explicit click
-waits for that lookup: a match opens the saved deck, a miss generates, and an error does neither.
-Changing settings cancels a pending click so it cannot submit an obsolete selection.
+Opening settings and editing options perform no source preparation or AI assessment. **Generate**
+first prepares current evidence with the selected options, checks for an unchanged saved result,
+and then assesses the source before submitting generation. A matching result opens without an
+assessment or generation request. The same prepared source and selected design pass into generation,
+avoiding a second preparation read. Analysis shows progress after the click; an ambiguous source
+asks for a purpose, and answering it waits for another Generate click before reassessing.
+Completed assessments survive panel visits in a bounded studio cache and saved jobs. Reuse requires
+matching source revisions, extraction options, purpose, reviewed template and prompt bundle.
+Changing settings or leaving the panel cancels the submitted analysis and ignores late replies.
+Existing background saved-result lookups never start assessment; an explicit click waits for their
+result before opening or analyzing the selected source.
 
 Session writes are scheduled by preference edits and merge only those fields into the latest saved
 payload. Opening a studio does not clear deck/narrative references or another mode's map style.

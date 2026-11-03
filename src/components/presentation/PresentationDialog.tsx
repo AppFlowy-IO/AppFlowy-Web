@@ -105,7 +105,7 @@ export default function PresentationDialog({
     async (signal?: AbortSignal): Promise<SourceRead> => {
       if (!sourceReadable) throw new Error('You no longer have access to this source page.');
       if (mode === 'slides') {
-        // Saved decks carry their own scene. Prepare current evidence only in the setup panel.
+        // Saved decks carry their own scene. Prepare current evidence only after Generate.
         return {
           kind: 'server',
           snapshot: {

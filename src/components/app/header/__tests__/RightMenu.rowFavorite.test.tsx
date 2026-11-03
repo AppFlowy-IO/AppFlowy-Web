@@ -466,11 +466,11 @@ describe('RightMenu Present entry', () => {
     );
   }
 
-  it('hides Present on official AppFlowy Cloud', () => {
+  it('shows Present for the current document on official AppFlowy Cloud', () => {
     mockOfficialHosted = true;
     renderDocumentRoute();
 
-    expect(screen.queryByTestId('present-entry')).toBeNull();
+    expect(screen.getByTestId('present-entry').getAttribute('data-view-id')).toBe('document');
     expect(screen.getByTestId('share-button')).toBeTruthy();
   });
 

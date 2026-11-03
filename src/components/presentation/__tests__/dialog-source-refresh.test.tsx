@@ -210,6 +210,53 @@ test('a rename keeps an open AI Slides studio and its running generation', async
   unmount();
 });
 
+test('AI Slides prepares and analyzes sources only after Generate, then submits that same source once', async () => {
+  let finishSource!: () => void;
+  let finishAssessment!: () => void;
+
+  mockRequest.mockImplementation((config) => {
+    if (config.url.endsWith('/sources')) return new Promise((resolve) => {
+      finishSource = () => resolve(mockWire(config));
+    });
+    if (config.url.endsWith('/slides/assess')) return new Promise((resolve) => {
+      finishAssessment = () => resolve(mockWire(config));
+    });
+    return mockWire(config);
+  });
+  const { unmount } = render(<PresentEntry viewId='document' slidesOnly />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
+  await screen.findByRole('region', { name: 'Create presentation settings' });
+  const generate = screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' });
+
+  await waitFor(() => expect(generate.disabled).toBe(false));
+  expect(requests('POST', '/sources')).toBe(0);
+  expect(requests('POST', '/slides/assess')).toBe(0);
+  fireEvent.click(screen.getByRole('switch', { name: 'Allow web search' }));
+  fireEvent.click(screen.getByRole('button', { name: '4', exact: true }));
+  await flush();
+  expect(requests('POST', '/sources')).toBe(0);
+  expect(requests('POST', '/slides/assess')).toBe(0);
+
+  fireEvent.click(generate);
+  await waitFor(() => expect(requests('POST', '/sources')).toBe(1));
+  expect(screen.getByText('Analyzing your sources…')).toBeTruthy();
+  expect(generate.disabled).toBe(true);
+  expect(requests('POST', '/slides/assess')).toBe(0);
+  await act(async () => finishSource());
+  await waitFor(() => expect(requests('POST', '/slides/assess')).toBe(1));
+  expect(requests('POST', '/generate')).toBe(0);
+  await act(async () => finishAssessment());
+  await waitFor(() => expect(requests('POST', '/generate')).toBe(1));
+  expect(requests('POST', '/sources')).toBe(1);
+  expect(requests('POST', '/slides/assess')).toBe(1);
+  const submitted = mockRequest.mock.calls.find(([config]) => config.url.endsWith('/generate'))![0].data;
+
+  expect(submitted.options).toMatchObject({ allowWebSearch: true, slideCount: 4 });
+  expect(submitted.sources).toEqual([{ pageId: 'document', expectedRevision: 'native-document' }]);
+  unmount();
+});
+
 test('a permission re-check keeps the open AI Slides studio and its source analysis', async () => {
   // Analysis is debounced after source preparation; a busy test runner can need more than a second.
   const generateEnabled = () =>
