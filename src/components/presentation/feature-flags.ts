@@ -1,9 +1,11 @@
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 
+const PRESENTATION_ENTRY_ENABLED = false;
+
 /**
- * The Present button shows only on official AppFlowy Cloud. Self-hosted servers never see it, and
- * neither does anyone while server info is loading or unavailable, so it cannot flash for them.
+ * Keep the Present button hidden in page and modal headers. When enabled, it remains
+ * available only on official AppFlowy Cloud after server info confirms the hosting mode.
  */
 export function usePresentationEntryEnabled(): boolean {
-  return useIsOfficialHosted();
+  return useIsOfficialHosted() && PRESENTATION_ENTRY_ENABLED;
 }

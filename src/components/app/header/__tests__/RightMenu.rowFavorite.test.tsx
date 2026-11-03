@@ -410,11 +410,12 @@ describe('RightMenu Present entry', () => {
     );
   }
 
-  it('shows Present on official AppFlowy Cloud', () => {
+  it('hides Present on official AppFlowy Cloud', () => {
     mockOfficialHosted = true;
     renderDocumentRoute();
 
-    expect(screen.getByTestId('present-entry').getAttribute('data-view-id')).toBe('document');
+    expect(screen.queryByTestId('present-entry')).toBeNull();
+    expect(screen.getByTestId('share-button')).toBeTruthy();
   });
 
   it('hides Present on self-hosted servers and while hosting is unknown', () => {
