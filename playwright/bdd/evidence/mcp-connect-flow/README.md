@@ -12,21 +12,44 @@
 | `08-public-setup.png` | The signed-out setup page at `/oauth/mcp/setup` |
 | `09-owner-settings-off-connections-kept.png` | AI apps turned off again: the connection is kept and can still be disconnected |
 
-Provenance: these screenshots and the PR's live 16-scenario run came from a local Playwright script
-that is not committed. 02, 05 and 08 were captured on 2026-11-01 by one run (headless Chromium).
-01, 03, 04, 06, 07 and 09 were recaptured on 2026-11-02, after the Settings tab was renamed to MCP,
-by one more run (1360×900). Both ran against a local stack on a single origin,
-`http://localhost:18180`. AppFlowy Cloud and the MCP service
-were built from AppFlowy-Cloud-Premium branch `feat/mcp-connect-flow` and served behind that
-repository's bundled `nginx/nginx.conf`. AppFlowy Web came from this branch's Vite dev server. The
-accounts and workspace are test fixtures in a disposable database. The script turned AI apps on and
-off by writing the same system-configuration row as Admin → AI apps (MCP).
+Provenance: `capture.spec.ts` in this directory wrote all nine files on 2026-11-03, through its own
+config, `capture.config.ts` (headless Chromium, 1360×900, device scale 1). One run wrote 01, 02 and
+04–09. 03 grows the viewport to the consent card's height (1360×1189), so the frame includes the
+approval notice and Approve and allow; a second run of the same script wrote it with
+`MCP_CAPTURE_FRAMES=03` after that fix. Both runs used a local stack on a single origin,
+`http://localhost:18180`, behind nginx: AppFlowy Cloud and the MCP service built from
+AppFlowy-Cloud-Premium PR #1521 at commit `97d942b1a`, and AppFlowy Web from this branch's Vite dev
+server (`3f088841`). Each run signs up a fresh owner and a fresh member in a disposable database.
+The owner's new workspace gets the Pro fixture subscription (`grantWorkspaceProSubscription`),
+because the hosted build allows a Free workspace only one member.
 
-What the repository can rerun: the specs in `playwright/e2e/mcp` (see `doc/MCP.md`) cover an owner
-approving, connecting, using and disconnecting a local app, Cancel returning `access_denied`
+The script switches AI apps through `PUT /api/admin/mcp/policy` with `expected_revision`. That
+stack's Cloud is a hosted build, whose plan has no MCP tab, so the API answered 403
+`mcp_not_entitled`. The script then wrote the same `af_system_config` row (`mcp_enabled`) through
+`docker exec … psql`, and put the starting value back at the end (`true` on that stack). The owner
+changes the workspace's approval policy (06, 07) in Settings → MCP. The journey:
+
+1. AI apps off: Settings → MCP (01), and a consent request that reaches the page (02).
+2. AI apps on: the owner approves and allows `Claude Code (e2e)`, a local app on a loopback
+   redirect (03), copies the server URL in Settings → MCP (04), and the app creates a document and
+   a grid through `create-pages` that open in Web (05). The signed-out setup page (08).
+3. A member asks for approval of `Gemini CLI (e2e)` (06). The owner turns on Any app, the member
+   connects it, and the owner requires approval again (07).
+4. AI apps off again: the owner's connection is kept (09).
+
+To rerun it (only against a disposable stack: it turns AI apps off and on for the whole server):
+
+```sh
+BASE_URL=http://localhost:18180 APPFLOWY_BASE_URL=http://localhost:18180 \
+APPFLOWY_GOTRUE_BASE_URL=http://localhost:18180/gotrue APPFLOWY_WS_BASE_URL=ws://localhost:18180/ws/v2 \
+APPFLOWY_MCP_BASE_URL=http://localhost:18180 GOTRUE_ADMIN_EMAIL=… GOTRUE_ADMIN_PASSWORD=… \
+APPFLOWY_TEST_POSTGRES_CONTAINER=<the stack's postgres container> \
+pnpm exec playwright test -c playwright/bdd/evidence/mcp-connect-flow/capture.config.ts
+```
+
+No CI job or e2e suite runs it: no other Playwright config reaches this directory.
+
+Also rerunnable: the specs in `playwright/e2e/mcp` (see `doc/MCP.md`) cover an owner approving,
+connecting, using and disconnecting a local app, Cancel returning `access_denied`
 (`oauth-consent.spec.ts`), and copying the URL from Settings → MCP, connecting with it and creating
-pages that appear in Web (`connect-and-create-pages.spec.ts`). They capture none of these files and
-do not cover the off state, a member's request → approve → connect, requiring approval again, or
-turning AI apps off and on again. A script for those should switch AI apps through
-`PUT /api/admin/mcp/policy` (with `expected_revision`) and restore the previous value afterwards,
-since a saved setting outlives the run.
+pages that appear in Web (`connect-and-create-pages.spec.ts`). They capture none of these files.
