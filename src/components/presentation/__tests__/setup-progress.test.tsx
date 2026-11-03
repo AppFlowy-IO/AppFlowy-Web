@@ -67,6 +67,41 @@ function setupProps(): SlidesWorkflowProps {
 
 const generateButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' });
 
+test('opening settings and changing options do not analyze sources before Generate is clicked', async () => {
+  jest.useFakeTimers();
+  try {
+    const base = setupProps();
+
+    jest.mocked(assessPresentation).mockReset().mockResolvedValue(clear);
+    const Setup = () => {
+      const [options, onOptions] = React.useState(base.options);
+
+      return <SlideGenerationSetup props={{ ...base, options, onOptions }} scope={{ workspaceId: 'workspace', pageId: 'page' }} />;
+    };
+
+    render(<Setup />);
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+    expect(assessPresentation).not.toHaveBeenCalled();
+    expect(screen.queryByText('Analyzing your sources…')).toBeNull();
+    expect(generateButton().disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Allow web search' }));
+    fireEvent.click(screen.getByRole('button', { name: '4', exact: true }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+    expect(assessPresentation).not.toHaveBeenCalled();
+
+    fireEvent.click(generateButton());
+    await act(async () => { await Promise.resolve(); });
+    expect(assessPresentation).toHaveBeenCalledTimes(1);
+    expect(assessPresentation).toHaveBeenCalledWith(expect.objectContaining({
+      options: expect.objectContaining({ allowWebSearch: true, slideCount: 4 }),
+    }), expect.any(AbortSignal));
+    expect(base.onGenerate).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('web search requires an explicit toggle and preserves the other generation settings', () => {
   const props = setupProps();
   const view = render(<SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
@@ -79,6 +114,29 @@ test('web search requires an explicit toggle and preserves the other generation 
   view.rerender(<SlideGenerationSetup props={{ ...props, options: { ...props.options, allowWebSearch: true } }} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
   fireEvent.click(toggle);
   expect(props.onOptions).toHaveBeenLastCalledWith({ ...props.options, allowWebSearch: false });
+});
+
+test('a failed source preparation can be retried without assessing or submitting its missing source', async () => {
+  const base = setupProps();
+  const prepare = jest.fn().mockRejectedValueOnce(new Error('Source unavailable')).mockResolvedValue(base.snapshot);
+
+  jest.mocked(assessPresentation).mockReset().mockResolvedValue(clear);
+  render(<SlideGenerationSetup props={{
+    ...base, snapshot: { ...base.snapshot, serverSource: undefined, revision: '' }, onPrepareGeneration: prepare,
+  }} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
+  expect(prepare).not.toHaveBeenCalled();
+  expect(screen.queryByText('Add some document content before generating.')).toBeNull();
+  await act(async () => { fireEvent.click(generateButton()); });
+  expect(screen.getByText('Source unavailable')).toBeTruthy();
+  expect(assessPresentation).not.toHaveBeenCalled();
+  expect(base.onGenerate).not.toHaveBeenCalled();
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry analysis' })); });
+  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(assessPresentation).toHaveBeenCalledTimes(1);
+  expect(base.onGenerate).toHaveBeenCalledWith(undefined, {
+    source: base.snapshot, options: base.options, style: base.style,
+  });
 });
 
 test('web search assessments stay separate, ignore late opted-in replies and reuse each prepared source', async () => {
@@ -103,6 +161,9 @@ test('web search assessments stay separate, ignore late opted-in replies and reu
     const toggle = () => fireEvent.click(screen.getByRole('switch', { name: 'Allow web search' }));
 
     await settle();
+    expect(assess).not.toHaveBeenCalled();
+    fireEvent.click(generateButton());
+    await settle();
     expect(assess).toHaveBeenCalledTimes(1);
     expect(assess.mock.calls[0][0]).toMatchObject({ options: { allowWebSearch: false }, source: { revision: 'native' } });
     expect(generateButton().disabled).toBe(false);
@@ -110,8 +171,11 @@ test('web search assessments stay separate, ignore late opted-in replies and reu
     assess.mockReturnValueOnce(new Promise((resolve) => { finishResearch = resolve; }));
     toggle();
     await settle();
+    expect(assess).toHaveBeenCalledTimes(1);
+    fireEvent.click(generateButton());
+    await settle();
     expect(assess.mock.calls[1][0]).toMatchObject({ options: { allowWebSearch: true }, source: { revision: 'researched' } });
-    expect(generateButton().disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generating…' }).disabled).toBe(true);
     toggle();
     await settle();
     expect(generateButton().disabled).toBe(false);
@@ -121,6 +185,7 @@ test('web search assessments stay separate, ignore late opted-in replies and reu
     expect(screen.queryByText('Obsolete web question')).toBeNull();
     expect(cache.size).toBe(1);
     toggle();
+    fireEvent.click(generateButton());
     await settle();
     expect(assess).toHaveBeenCalledTimes(3);
     expect(cache.size).toBe(2);
@@ -128,6 +193,8 @@ test('web search assessments stay separate, ignore late opted-in replies and reu
     fireEvent.click(screen.getByRole('button', { name: '4', exact: true }));
     await settle();
     toggle();
+    await settle();
+    fireEvent.click(generateButton());
     await settle();
     toggle();
     await settle();
@@ -138,19 +205,25 @@ test('web search assessments stay separate, ignore late opted-in replies and reu
   }
 });
 
-test('above the disabled Generate button, the footer says the sources are being analyzed', async () => {
+test('clicking Generate disables duplicate submission and shows source analysis progress', async () => {
   jest.useFakeTimers();
   try {
     let finish!: (value: never) => void;
 
-    jest.mocked(assessPresentation).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    jest.mocked(assessPresentation).mockReset().mockReturnValue(new Promise((resolve) => (finish = resolve)));
     render(<SlideGenerationSetup props={setupProps()} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
+    expect(screen.queryByText('Analyzing your sources…')).toBeNull();
+    fireEvent.click(generateButton());
 
     const progress = screen.getByText('Analyzing your sources…');
 
     expect(progress.getAttribute('role')).toBe('status');
     expect(progress.closest('footer')).not.toBeNull();
-    expect(generateButton().disabled).toBe(true);
+    const pending = screen.getByRole<HTMLButtonElement>('button', { name: 'Generating…' });
+
+    expect(pending.disabled).toBe(true);
+    fireEvent.click(pending);
+    expect(assessPresentation).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       jest.advanceTimersByTime(400);
@@ -212,12 +285,15 @@ test('settings changes return to Generate and wait for the saved-result check be
     const view = render(<SlideGenerationSetup props={{ ...props, reuse }} scope={scope} />);
 
     view.rerender(<SlideGenerationSetup props={{ ...props, options: { ...props.options, tone: 'professional' }, reuse: { ...reuse, available: false, checking: true } }} scope={scope} />);
-    expect(generateButton().disabled).toBe(true);
+    expect(generateButton().disabled).toBe(false);
     await act(async () => { jest.advanceTimersByTime(1000); });
     expect(assessPresentation).not.toHaveBeenCalled();
     expect(screen.queryByText('Analyzing your sources…')).toBeNull();
     view.rerender(<SlideGenerationSetup props={{ ...props, reuse: { ...reuse, available: false } }} scope={scope} />);
     await act(async () => { jest.advanceTimersByTime(400); });
+    expect(assessPresentation).not.toHaveBeenCalled();
+    fireEvent.click(generateButton());
+    await act(async () => { await Promise.resolve(); });
     expect(assessPresentation).toHaveBeenCalledTimes(1);
     expect(generateButton().disabled).toBe(false);
   } finally { jest.useRealTimers(); }
@@ -270,10 +346,12 @@ test.each([false, true])('count changes keep the ready button enabled while chec
     await act(async () => { await jest.advanceTimersByTimeAsync(200); });
     await act(async () => { finish(null); });
     expect(button.disabled).toBe(false);
-    expect(assessPresentation).toHaveBeenCalledTimes(1);
+    expect(assessPresentation).not.toHaveBeenCalled();
     expect(base.onGenerate).not.toHaveBeenCalled();
     expect(screen.queryByText('Analyzing your sources…')).toBeNull();
     fireEvent.click(button);
+    await act(async () => { await Promise.resolve(); });
+    expect(assessPresentation).toHaveBeenCalledTimes(1);
     expect(base.onGenerate).toHaveBeenCalledTimes(1);
   } finally { jest.useRealTimers(); }
 });
@@ -298,6 +376,7 @@ test.each(['match', 'miss', 'error'] as const)('clicking during a lookup waits f
     view.rerender(<SlideGenerationSetup scope={scope} props={{
       ...selected, reuse: { ...reuse, available: outcome === 'match', error: outcome === 'error' ? 'Lookup failed' : undefined },
     }} />);
+    await act(async () => { await Promise.resolve(); });
     expect(reuse.onOpen).toHaveBeenCalledTimes(outcome === 'match' ? 1 : 0);
     expect(base.onGenerate).toHaveBeenCalledTimes(outcome === 'miss' ? 1 : 0);
   } finally { jest.useRealTimers(); }

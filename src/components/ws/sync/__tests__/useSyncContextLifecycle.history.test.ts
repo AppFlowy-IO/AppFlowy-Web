@@ -75,6 +75,13 @@ test.each([Types.Database, Types.DatabaseRow])(
     await act(async () => permit(true));
     expect(send.mock.calls.every(([message]) => !message.collabMessage.update)).toBe(true);
     expect(broadcast.mock.calls.every(([message]) => !message.collabMessage.update)).toBe(true);
+    // The initial active context may persist its captured generation; the outbox
+    // owns restore verification before sending. A retired callback may not enqueue more.
+    expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(1);
+    expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      objectId, collabType, databaseRestoreId: 'old-generation',
+    }), { broadcast: false, source: 'manifest' });
+    jest.mocked(enqueueOutboxUpdate).mockClear();
     send.mockClear();
     broadcast.mockClear();
 
@@ -91,12 +98,15 @@ test.each([Types.Database, Types.DatabaseRow])(
       handleMessage(newContext, request);
       newDoc.getMap(YjsEditorKey.data_section).set('title', 'fresh edit');
     });
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0].collabMessage.update.databaseRestoreId).toBe('restored-generation');
-    expect(broadcast).toHaveBeenCalledWith(send.mock.calls[0][0]);
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(2);
     expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
       objectId, collabType, databaseRestoreId: 'restored-generation',
     }));
+    expect(enqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      objectId, collabType, databaseRestoreId: 'restored-generation',
+    }), { broadcast: false, source: 'manifest' });
     oldDoc.destroy();
     newDoc.destroy();
     unmount();

@@ -5,7 +5,6 @@ import { deleteCollabDB } from '@/application/db';
 import {
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
-  shouldRouteUpdateThroughOutbox,
   waitForDrain,
 } from '@/application/sync-outbox';
 import { CollabOrigin, Types, YDoc } from '@/application/types';
@@ -183,7 +182,7 @@ export const confirmManifestSync = (ctx: SyncContext, message: collab.ISyncReque
 };
 
 const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest, authoritative: boolean): void => {
-  const { doc, emit } = ctx;
+  const { doc } = ctx;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
 
@@ -208,43 +207,19 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest, autho
   ctx.onLocalUpdate?.(doc.guid);
   if (isEmptyUpdateV1(update) || ctx.manifestRecovery?.writeAllowed === false) return;
 
-  // A manifest response can contain years of locally retained Yjs history.
-  // If it exceeds the server-advertised realtime frame limit, persist it and
-  // let the serialized outbox use the bounded HTTP slow lane. Emitting here
-  // would close the WebSocket before any fallback could run.
-  if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
-    void enqueueOutboxUpdate(
-      {
-        objectId: doc.guid,
-        collabType: ctx.collabType,
-        version: doc.version ?? null,
-        databaseRestoreId: doc.databaseRestoreId,
-        payload: update,
-        beforeStateVector: stateVector,
-      },
-      { broadcast: false, source: 'manifest' }
-    );
-
-    return;
-  }
-
-  // send the update containing new data back to the server. This is a
-  // manifest-style diff, so the causal `before` vector is the server's own
-  // advertised state (what it told us it has). No after vector — the server
-  // derives its own post-update state and never trusts a client-provided one.
-  emit({
-    collabMessage: {
+  // Catch-up replies share the durable outbox's workspace-wide pacing with ordinary edits.
+  // A direct emit here bypasses admission and can flood the server across hundreds of docs.
+  void enqueueOutboxUpdate(
+    {
       objectId: doc.guid,
       collabType: ctx.collabType,
-      update: {
-        flags: UpdateFlags.Lib0v1,
-        payload: update,
-        version: doc.version,
-        databaseRestoreId: doc.databaseRestoreId,
-        beforeStateVector: stateVector,
-      },
+      version: doc.version ?? null,
+      databaseRestoreId: doc.databaseRestoreId,
+      payload: update,
+      beforeStateVector: stateVector,
     },
-  });
+    { broadcast: false, source: 'manifest' }
+  );
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {

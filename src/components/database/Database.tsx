@@ -2092,7 +2092,8 @@ function Database(props: Database2Props) {
       // documents are loaded through the publish navigation/cache path.
       // Then a mobile context opens records full screen, and otherwise the
       // view's "Open pages in" decides (WP13 §3.8): a dashboard widget or a
-      // drill-down or Calendar opens a side peek by default, other views the centre peek.
+      // drill-down, and every view layout except Timeline, opens a side peek by
+      // default; Timeline opens the centre peek.
       const opening = resolveRecordOpening({
         readOnly,
         isDocumentBlock: Boolean(_isDocumentBlock),

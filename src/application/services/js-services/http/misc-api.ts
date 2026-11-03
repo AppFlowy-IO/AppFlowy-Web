@@ -8,6 +8,28 @@ import { RepeatedChatMessage } from '@/components/chat';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
+/** Where an image or PDF that matched the query is stored. */
+export interface SearchResourceLocator {
+  workspace_id: string;
+  parent_dir: string;
+  file_id: string;
+  is_public?: boolean;
+}
+
+/** Why a result matched through an image or PDF rather than its own text. */
+export interface SearchEvidence {
+  kind: 'image' | 'pdf';
+  processor_id: string;
+  /**
+   * The image or PDF within the result: a document's image block ID (`<block id>:<index>` for a
+   * gallery image), or a database row's `<field id>:<file id>`.
+   */
+  resource_id: string;
+  locator: SearchResourceLocator;
+  /** The generated text that matched the query. */
+  matched_text?: string | null;
+}
+
 export interface SearchDocumentResponseItem {
   object_id: string;
   workspace_id: string;
@@ -17,6 +39,8 @@ export interface SearchDocumentResponseItem {
   database_view_id?: string | null;
   database_id?: string | null;
   database_row_id?: string | null;
+  /** Present when the result matched through an image or PDF; older servers omit it. */
+  evidence?: SearchEvidence[];
 }
 
 export interface SearchDocumentPageResponse {

@@ -1,137 +1,145 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useLayoutEffect } from 'react';
 
 import { ViewLayout } from '@/application/types';
+import type { View } from '@/application/types';
 
-import ViewList, { SearchViewListItem } from '../ViewList';
+import ViewList, { type SearchViewListItem } from '../ViewList';
 
-const mockNavigateToView = jest.fn();
-const mockOnClose = jest.fn();
+const mockToView = jest.fn();
 
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) =>
+      ({ 'commandPalette.foundInImage': 'Found in an image', 'commandPalette.foundInPdf': 'Found in a PDF' }[key] ??
+      options?.defaultValue ??
+      key),
+  }),
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useToView: () => mockNavigateToView,
+  useAppOutline: () => [],
+  useToView: () => mockToView,
 }));
 
-jest.mock('@/components/app/search/ListItem', () => ({
+jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
   __esModule: true,
-  default: ({ itemId, selected }: { itemId: string; selected: boolean }) => (
-    <div data-item-id={itemId} data-testid={itemId} aria-selected={selected} />
+  default: () => <span />,
+}));
+
+jest.mock('@/components/_shared/image-render/ImageRender', () => ({
+  ImageRender: ({ src, onError }: { src: string; onError?: () => void }) => (
+    <img data-testid='evidence-thumbnail' src={src} alt='' onError={onError} />
   ),
 }));
 
-function item(id: string, rowId?: string): SearchViewListItem {
+function view(overrides: Partial<View> = {}): View {
   return {
-    id,
-    rowId,
-    view: {
-      view_id: `view-${id}`,
-      name: id,
-      icon: null,
-      layout: ViewLayout.Document,
-      extra: null,
-      children: [],
-      is_published: false,
-      is_private: false,
-    },
+    view_id: 'page-id',
+    name: 'Launch plan',
+    icon: null,
+    layout: ViewLayout.Document,
+    extra: null,
+    children: [],
+    is_published: false,
+    is_private: false,
+    ...overrides,
   };
 }
 
-function list(items: SearchViewListItem[], query = 'search', selectionKey = query) {
-  return (
-    <ViewList
-      title='Results'
-      items={items}
-      query={query}
-      selectionKey={selectionKey}
-      loading={false}
-      onClose={mockOnClose}
-    />
-  );
+function renderList(items: SearchViewListItem[], onClose = jest.fn()) {
+  render(<ViewList title='Best matches' items={items} loading={false} query='revenue' onClose={onClose} />);
+  return onClose;
 }
 
-function press(key: 'ArrowDown' | 'Enter') {
-  const keyCode = key === 'Enter' ? 13 : 40;
+const imageResult: SearchViewListItem = {
+  id: 'page-id:',
+  view: view(),
+  blockId: 'image-block',
+  preview: 'Page text that is not shown',
+  evidence: {
+    kind: 'image',
+    matchedText: 'Quarterly revenue chart',
+    imageUrl: '/api/file_storage/workspace-id/v1/blob/page-id/chart.png',
+  },
+};
 
-  fireEvent.keyDown(document, { key, keyCode, which: keyCode });
-}
-
-describe('ViewList keyboard selection', () => {
+describe('ViewList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // jsdom has no layout; the list scrolls the selected result into view.
     Element.prototype.scrollIntoView = jest.fn();
   });
 
-  it('keeps the selected target when a final snapshot replaces and reorders results', () => {
-    const { rerender } = render(list([item('a', 'row-a'), item('b')]));
+  it('shows the matched image and its text instead of the page preview', () => {
+    renderList([imageResult]);
 
-    press('ArrowDown');
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('true');
-    rerender(list([item('b'), item('a', 'row-a')]));
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('true');
-    press('Enter');
-    expect(mockNavigateToView).toHaveBeenCalledWith('view-a', 'row-a');
-    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    const evidence = screen.getByTestId('search-result-evidence');
+
+    expect(evidence.getAttribute('data-kind')).toBe('image');
+    expect(evidence.textContent).toContain('Found in an image');
+    expect(evidence.textContent).toContain('Quarterly revenue chart');
+    expect(screen.getByTestId('evidence-thumbnail').getAttribute('src')).toBe(imageResult.evidence?.imageUrl);
+    expect(screen.queryByText('Page text that is not shown')).toBeNull();
   });
 
-  it('clears selection when the query changes even if the same target remains', () => {
-    const { rerender } = render(list([item('a')]));
+  it('shows the thumbnail of another matched image in the same page after one failed to load', () => {
+    const list = (items: SearchViewListItem[]) => (
+      <ViewList title='Best matches' items={items} loading={false} query='revenue' onClose={jest.fn()} />
+    );
+    const { rerender } = render(list([imageResult]));
 
-    press('ArrowDown');
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('true');
-    rerender(list([item('a')], 'another query'));
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('false');
-    press('Enter');
-    expect(mockNavigateToView).not.toHaveBeenCalled();
-    expect(mockOnClose).not.toHaveBeenCalled();
+    fireEvent.error(screen.getByTestId('evidence-thumbnail'));
+    expect(screen.queryByTestId('evidence-thumbnail')).toBeNull();
+
+    // A new query keeps the item for the same page mounted, and it matched a different image.
+    const forecast = '/api/file_storage/workspace-id/v1/blob/page-id/forecast.png';
+
+    rerender(list([{ ...imageResult, evidence: { kind: 'image', matchedText: 'Revenue forecast', imageUrl: forecast } }]));
+    expect(screen.getByTestId('evidence-thumbnail').getAttribute('src')).toBe(forecast);
   });
 
-  it('clears selection when the workspace session changes with the same query', () => {
-    const { rerender } = render(list([item('a')], 'search', 'workspace-a:search'));
+  it('opens the page at the matched image when the result is clicked', () => {
+    const onClose = renderList([imageResult]);
 
-    press('ArrowDown');
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('true');
-    rerender(list([item('a')], 'search', 'workspace-b:search'));
-    press('Enter');
-    expect(mockNavigateToView).not.toHaveBeenCalled();
-    expect(mockOnClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Launch plan'));
+
+    expect(mockToView).toHaveBeenCalledWith('page-id', 'image-block');
+    expect(onClose).toHaveBeenCalled();
   });
 
-  it('does not substitute another target or restore selection after the selected result disappears', () => {
-    const { rerender } = render(list([item('a'), item('b')]));
+  it('keeps the selected image result through a final reorder and opens its updated matching block', () => {
+    const onClose = jest.fn();
+    const other: SearchViewListItem = { id: 'other-page:', view: view({ view_id: 'other-page', name: 'Other page' }) };
+    const list = (items: SearchViewListItem[]) => (
+      <ViewList title='Best matches' items={items} loading={false} query='revenue' onClose={onClose} />
+    );
+    const { rerender } = render(list([imageResult, other]));
 
-    press('ArrowDown');
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('true');
-    rerender(list([item('b')]));
-    press('Enter');
-    expect(mockNavigateToView).not.toHaveBeenCalled();
-    expect(mockOnClose).not.toHaveBeenCalled();
-    rerender(list([item('a'), item('b')]));
-    press('Enter');
-    expect(mockNavigateToView).not.toHaveBeenCalled();
-    press('ArrowDown');
-    press('Enter');
-    expect(mockNavigateToView).toHaveBeenCalledWith('view-a', undefined);
+    fireEvent.keyDown(document, { key: 'Tab', keyCode: 9, which: 9 });
+    rerender(list([other, { ...imageResult, blockId: 'final-image-block' }]));
+    fireEvent.keyDown(document, { key: 'Enter', keyCode: 13, which: 13 });
+
+    expect(mockToView).toHaveBeenCalledWith('page-id', 'final-image-block');
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the committed query before passive effects run', () => {
-    function Search({ query, enterOnCommit = false }: { query: string; enterOnCommit?: boolean }) {
-      useLayoutEffect(() => {
-        if (enterOnCommit) press('Enter');
-      }, [enterOnCommit, query]);
-      return list([item('a')], query);
-    }
+  it('opens the selected result at its block with the keyboard, and a row as a row', () => {
+    const row: SearchViewListItem = {
+      id: 'grid-id:row-id',
+      view: view({ view_id: 'grid-id', name: 'Receipts', layout: ViewLayout.Grid }),
+      rowId: 'row-id',
+      evidence: { kind: 'pdf', matchedText: 'Fuel invoice' },
+    };
 
-    const { rerender } = render(<Search query='search' />);
+    renderList([imageResult, row]);
+    expect(screen.getAllByTestId('search-result-evidence')[1].textContent).toContain('Found in a PDF');
 
-    press('ArrowDown');
-    expect(screen.getByTestId('a').getAttribute('aria-selected')).toBe('true');
-    rerender(<Search query='another query' enterOnCommit />);
-    expect(mockNavigateToView).not.toHaveBeenCalled();
-    expect(mockOnClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Tab', keyCode: 9, which: 9 });
+    fireEvent.keyDown(document, { key: 'Enter', keyCode: 13, which: 13 });
+    expect(mockToView).toHaveBeenLastCalledWith('page-id', 'image-block');
+
+    fireEvent.click(screen.getByText('Receipts'));
+    expect(mockToView).toHaveBeenLastCalledWith('grid-id', 'row-id');
   });
 });

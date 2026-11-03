@@ -14,7 +14,7 @@ import { useCollabMessageHandler } from '../useCollabMessageHandler';
 jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn(async () => true) }));
 jest.mock('@/application/database-blob', () => ({ invalidateDatabaseRowDocSeed: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ cacheCanonicalRowDoc: jest.fn() }));
-jest.mock('@/application/sync-outbox', () => ({ shouldRouteUpdateThroughOutbox: () => false }));
+jest.mock('@/application/sync-outbox', () => ({ enqueueOutboxUpdate: jest.fn(async () => true) }));
 
 const objectId = '11111111-1111-4111-8111-111111111111';
 const version = '22222222-2222-4222-8222-222222222222';

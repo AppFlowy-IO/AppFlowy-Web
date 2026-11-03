@@ -1,7 +1,7 @@
 /** Cloud presentation workflows: request identity, job polling and UI projections. */
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
-import { presentationQuotaReason } from './presentation-policy';
 
+import { presentationQuotaReason } from './presentation-policy';
 import {
   artifactToDeck, generationRequest, isMapArtifact, reviewedStyleToStyle, serverOptions, sourceSelections,
   sourceToSnapshot, styleReference, type GenerateInput,
@@ -49,7 +49,23 @@ export async function loadSavedDeck(scope: PresentationScope, id: string, versio
   const artifact = await readArtifact<ServerSlidePlan>(scope, id, version, signal);
 
   if (!Array.isArray(artifact.content.slides)) throw new PresentationAPIError('This artifact is not a presentation.', 'ARTIFACT_KIND_MISMATCH', 400);
-  return artifactToDeck(artifact, await (scene ?? getArtifactScene(scope, artifact.id, artifact.version, signal)));
+  const deck = artifactToDeck(artifact, await (scene ?? getArtifactScene(scope, artifact.id, artifact.version, signal)));
+
+  return restoreDeckStyle(scope, deck, undefined, signal);
+}
+
+/** A scene captures appearance, while the immutable style owns layouts and editable template slots. */
+async function restoreDeckStyle(scope: PresentationScope, deck: SavedDeck, knownStyle?: PresentationStyle, signal?: AbortSignal): Promise<SavedDeck> {
+  const reference = deck.style.serverStyle?.reference;
+
+  if (!reference) return deck;
+  const known = knownStyle?.serverStyle;
+
+  if (knownStyle && known?.reference.id === reference.id && known.reference.version === reference.version && known.templateSlides.length)
+    return { ...deck, style: knownStyle };
+  const style = reviewedStyleToStyle((await readArtifact<ReviewedStyle>(scope, reference.id, reference.version, signal)).content);
+
+  return { ...deck, style };
 }
 
 /** Read catalog metadata without rendering scenes for decks the user has not opened. */
@@ -260,10 +276,17 @@ export async function runGeneration(input: GenerateInput, signal?: AbortSignal, 
 
 /** Reads an authorized saved result without submitting a generation operation. */
 export async function openReusableGeneration(input: GenerateInput, signal?: AbortSignal): Promise<GenerationResult> {
+  const result = await tryOpenReusableGeneration(input, signal);
+
+  if (!result) throw new PresentationAPIError('The source or settings changed. Generate a new result.', 'SOURCE_REVISION_CONFLICT', 409);
+  return result;
+}
+
+/** Revalidate and open a matching saved result before spending a new model call. */
+export async function tryOpenReusableGeneration(input: GenerateInput, signal?: AbortSignal): Promise<GenerationResult | null> {
   const job = await findReusableResult(input.scope, generationRequest(input, crypto.randomUUID()), signal);
 
-  if (!job) throw new PresentationAPIError('The source or settings changed. Generate a new result.', 'SOURCE_REVISION_CONFLICT', 409);
-  return loadGenerationResult(input, job, signal);
+  return job ? loadGenerationResult(input, job, signal) : null;
 }
 
 async function loadGenerationResult(input: GenerateInput, job: JobStatus, signal?: AbortSignal): Promise<GenerationResult> {
@@ -276,7 +299,8 @@ async function loadGenerationResult(input: GenerateInput, job: JobStatus, signal
 
   if ('slides' in artifact.content) {
     const scene = await (deckScene ?? getArtifactScene(input.scope, artifact.id, artifact.version, signal));
-    const deck = artifactToDeck(artifact as Artifact<ServerSlidePlan>, scene, input.source, input.options);
+    const deck = await restoreDeckStyle(input.scope,
+      artifactToDeck(artifact as Artifact<ServerSlidePlan>, scene, input.source, input.options), input.style, signal);
 
     return { job, artifact, result: artifact.content, status, deck };
   }
