@@ -110,6 +110,20 @@ export async function getViewPdfBlob(
 }
 
 /**
+ * The server names the export after the page, so a page whose title was cleared
+ * arrives as a bare ".pdf" (which Chrome saves as "pdf.pdf"). Name it the way
+ * the app shows such a page instead.
+ */
+export function withUntitledFallback(filename: string, untitledName: string): string {
+  const extensionStart = filename.lastIndexOf('.');
+  const stem = extensionStart >= 0 ? filename.slice(0, extensionStart) : filename;
+
+  if (stem.trim()) return filename;
+
+  return `${untitledName}${extensionStart >= 0 ? filename.slice(extensionStart) : ''}`;
+}
+
+/**
  * Parse RFC 6266 Content-Disposition. Prefers `filename*=UTF-8''...` when present
  * (handles non-ASCII titles), falls back to plain `filename="..."`.
  */
