@@ -52,6 +52,9 @@ and then assesses the source before submitting generation. A matching result ope
 assessment or generation request. The same prepared source and selected design pass into generation,
 avoiding a second preparation read. Analysis shows progress after the click; an ambiguous source
 asks for a purpose, and answering it waits for another Generate click before reassessing.
+When the selected request exceeds the allowance, **Find saved presentation** still checks for a
+matching result on click. A match opens for free; a miss stops before assessment or generation.
+Source preparation remains unavailable until status loads or when edit access is missing.
 Completed assessments survive panel visits in a bounded studio cache and saved jobs. Reuse requires
 matching source revisions, extraction options, purpose, reviewed template and prompt bundle.
 Changing settings or leaving the panel cancels the submitted analysis and ignores late replies.

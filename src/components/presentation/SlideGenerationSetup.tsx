@@ -172,9 +172,12 @@ export default function SlideGenerationSetup({
   const [requestedSelection, setRequestedSelection] = useState<string>();
   const waitingForResult = requestedSelection === selectionKey;
   const submitting = busy || waitingForResult || assessing;
+  const canPrepare = !!props.onPrepareGeneration;
+  const canGenerateSelection = canGenerate && canAssess && !limitMessage && !customDenied;
+  const savedResultsOnly = canPrepare && !canGenerateSelection;
   const ready =
     hasSource &&
-    (props.reuse?.available || (canGenerate && canAssess && !limitMessage && !customDenied)) &&
+    (props.reuse?.available || canPrepare || canGenerateSelection) &&
     !props.reuse?.error &&
     !busy &&
     (!assessing || props.reuse?.available) &&
@@ -190,7 +193,7 @@ export default function SlideGenerationSetup({
       assessmentRequest.current?.abort();
       assessmentRequest.current = undefined;
     };
-  }, [selectionKey, canAssess]);
+  }, [selectionKey, canGenerateSelection, canPrepare]);
 
   // Only an explicit click waits for a background lookup. If a match arrives, Open must win
   // over artifact regeneration, which deliberately bypasses reuse on the server.
@@ -233,7 +236,7 @@ export default function SlideGenerationSetup({
   };
 
   async function analyzeAndGenerate() {
-    if (!scope || !canAssess || assessmentRequest.current) return;
+    if (!scope || (!canPrepare && !canGenerateSelection) || assessmentRequest.current) return;
     const controller = new AbortController();
 
     assessmentRequest.current = controller;
@@ -244,6 +247,12 @@ export default function SlideGenerationSetup({
       const source = props.onPrepareGeneration ? await props.onPrepareGeneration(controller.signal) : snapshot;
 
       if (!source || controller.signal.aborted) return;
+      // Opening an existing result is free. A miss must still respect AI admission before assessment.
+      if (!canGenerateSelection) {
+        setNotice('No saved presentation matches these settings.');
+        return;
+      }
+
       const key = assessmentIdentity(source.revision);
       const saved = savedDeck?.assessment && savedDeck.options && key === assessmentIdentity(
         savedDeck.sourceRevision, savedDeck.options, savedDeck.style, savedDeck.assessment.promptBundleVersion
@@ -816,7 +825,7 @@ export default function SlideGenerationSetup({
           <Notice>
             {notice}{' '}
             {!assessing && (
-              <Action onClick={generate}>Retry analysis</Action>
+              <Action onClick={generate}>{savedResultsOnly ? 'Check again' : 'Retry analysis'}</Action>
             )}
           </Notice>
         ))}
@@ -831,7 +840,9 @@ export default function SlideGenerationSetup({
                 className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
               />
               {assessing
-                ? 'Analyzing your sources…'
+                ? savedResultsOnly
+                  ? 'Checking saved presentations…'
+                  : 'Analyzing your sources…'
                 : waitingForResult
                 ? 'Preparing your presentation…'
                 : busy
@@ -861,9 +872,13 @@ export default function SlideGenerationSetup({
           {submitting
             ? props.reuse?.available
               ? 'Opening…'
+              : savedResultsOnly
+              ? 'Checking…'
               : 'Generating…'
             : props.reuse?.available
             ? 'Open presentation'
+            : savedResultsOnly
+            ? 'Find saved presentation'
             : plan
             ? 'Regenerate presentation'
             : 'Generate presentation'}

@@ -990,7 +990,7 @@ export default function PresentationStudio({
                     else setOutlineDraft(undefined);
                     setStage(next);
                   }}
-                  onPrepareGeneration={prepareSlides}
+                  onPrepareGeneration={canUseAI ? prepareSlides : undefined}
                   onGenerate={(slide, prepared) => {
                     void generate('slides', slide, undefined, prepared);
                   }}

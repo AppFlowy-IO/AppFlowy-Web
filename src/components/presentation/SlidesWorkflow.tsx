@@ -74,7 +74,10 @@ export interface SlidesWorkflowProps {
   stage: SlidesStage;
   onStage: (stage: SlidesStage) => void;
   onGenerate: (slide?: Slide, prepared?: PreparedSlideGeneration) => void;
-  /** Resolve fresh evidence on Generate; null means an unchanged saved result was opened. */
+  /**
+   * Available when source reads and saved-result opening are allowed, independent of AI allowance.
+   * Resolve fresh evidence on click; null means an unchanged saved result was opened.
+   */
   onPrepareGeneration?: (signal: AbortSignal) => Promise<PageSnapshot | null>;
   onSource: (id: string) => void;
   onApplyOutline: () => Promise<void>;

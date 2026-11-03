@@ -7,12 +7,15 @@ import { CoverType, type ViewCover } from '@/application/types';
 // Compile lazy chunks before the first interaction's coverage deadline.
 import '../DocumentPresenter';
 import '../PresentationDialog';
-import '../PresentationStudio';
+import PresentationStudio from '../PresentationStudio';
 import PresentEntry from '../PresentEntry';
 import { cachedSavedDecks, forgetSavedDecks, listCachedSavedDecks } from '../saved-deck-cache';
+import { artifactToDeck } from '../server-adapter';
 import { APPFLOWY_SLIDE_THEMES } from '../slide-themes';
 
-import type { SourceEnvelope, Theme } from '../server-contract';
+import type { Artifact, ServerSlidePlan, SourceEnvelope, Theme } from '../server-contract';
+import type { DeckScene } from '../server-scene';
+import type { PageSnapshot } from '../types';
 
 mockResizeObserver();
 
@@ -256,6 +259,84 @@ test('AI Slides prepares and analyzes sources only after Generate, then submits 
   expect(submitted.sources).toEqual([{ pageId: 'document', expectedRevision: 'native-document' }]);
   unmount();
 });
+
+test.each(['match', 'miss', 'permission revoked'] as const)(
+  'zero allowance checks saved results only on click and keeps AI work blocked: %s',
+  async (outcome) => {
+    const artifact: Artifact<ServerSlidePlan> = {
+      id: 'saved-deck', workspaceId: 'workspace', version: 1,
+      content: {
+        schemaVersion: 1, title: 'Saved presentation',
+        slides: [{ id: 'slide', title: 'Saved slide', message: '', points: [], layout: 'title', sourceIds: [], notes: '', warnings: [] }],
+      },
+      resultHash: 'saved-hash', sourceRevision: 'server-envelope-document', generationJobId: 'job',
+      origin: 'ai', createdAt: '2026-11-03T00:00:00Z',
+      mapStyle: { structure: 'right-facing', branchLine: 'rounded' },
+      promptBundleVersion: 'bundle', compiledPromptChecksum: null, providerModel: null,
+    };
+    const scene: DeckScene = {
+      schemaVersion: 1, width: 1280, height: 720, title: artifact.content.title,
+      style: { id: '00000000-0000-0000-0000-000000000000', version: 1 },
+      theme: mockTheme, warnings: [],
+      slides: [{ id: 'slide', layout: 'title', background: 'FFFFFF', notes: '', sourceIds: [], warnings: [], elements: [] }],
+    };
+    const placeholder: PageSnapshot = {
+      pageId: 'document', title: 'Live document', kind: 'document', revision: '', blocks: [], properties: [], warnings: [],
+    };
+    const initialDeck = artifactToDeck(artifact, scene);
+    let finishSource!: () => void;
+    const reply = (data: unknown) => Promise.resolve({ status: 200, data: { code: 0, data, message: 'OK' }, headers: {} });
+
+    mockRequest.mockImplementation(async (config) => {
+      if (config.url.endsWith('/status')) {
+        const response = await mockWire(config);
+
+        return { ...response, data: { ...response.data, data: { ...response.data.data as object, remainingSlides: 0, maxSlides: 0 } } };
+      }
+
+      if (config.url.endsWith('/sources') && outcome === 'permission revoked') return new Promise((resolve) => {
+        finishSource = () => resolve(mockWire(config));
+      });
+      if (config.url.endsWith('/reusable')) return reply(outcome === 'match'
+        ? { ...mockJob('succeeded'), artifactId: artifact.id, resultVersion: artifact.version }
+        : null);
+      if (config.url.endsWith('/artifacts/saved-deck')) return reply(artifact);
+      if (config.url.endsWith('/scene')) return reply(scene);
+      return mockWire(config);
+    });
+    const view = render(<PresentationStudio workspaceId='workspace' userId='user' snapshot={placeholder} canWrite initialDeck={initialDeck} />);
+
+    await screen.findByRole('heading', { name: 'Saved presentation' });
+    await waitFor(() => expect(requests('GET', '/status')).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate', exact: true }));
+    await screen.findByRole('region', { name: 'Create presentation settings' });
+    const check = screen.getByRole<HTMLButtonElement>('button', { name: 'Find saved presentation' });
+
+    await waitFor(() => expect(check.disabled).toBe(false));
+    expect(requests('POST', '/sources')).toBe(0);
+    expect(requests('POST', '/reusable')).toBe(0);
+    fireEvent.click(check);
+    if (outcome === 'match') await screen.findByRole('heading', { name: 'Saved presentation' });
+    else if (outcome === 'miss') {
+      await screen.findByText('No saved presentation matches these settings.');
+      expect(check.disabled).toBe(false);
+    } else {
+      await waitFor(() => expect(finishSource).toBeDefined());
+      expect(screen.getByText('Checking saved presentations…')).toBeTruthy();
+      const sourceRequest = mockRequest.mock.calls.find(([config]) => config.url.endsWith('/sources'))![0];
+
+      view.rerender(<PresentationStudio workspaceId='workspace' userId='user' snapshot={placeholder} canWrite={false} initialDeck={initialDeck} />);
+      expect(sourceRequest.signal.aborted).toBe(true);
+      await act(async () => finishSource());
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Regenerate presentation' }).disabled).toBe(true);
+    }
+
+    expect(requests('POST', '/sources')).toBe(1);
+    expect(requests('POST', '/reusable')).toBe(outcome === 'permission revoked' ? 0 : 1);
+    expect(requests('POST', '/slides/assess')).toBe(0);
+    expect(requests('POST', '/generate')).toBe(0);
+  }
+);
 
 test('a permission re-check keeps the open AI Slides studio and its source analysis', async () => {
   // Analysis is debounced after source preparation; a busy test runner can need more than a second.
