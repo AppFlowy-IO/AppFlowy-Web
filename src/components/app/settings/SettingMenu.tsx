@@ -47,11 +47,6 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
         label: t('settings.connections.menuLabel'),
         IconComponent: ConnectionsIcon,
       },
-      {
-        value: SettingMenuItem.AI_PRESENTATION,
-        label: 'AI Settings',
-        IconComponent: ConnectionsIcon,
-      },
       ...(showBilling
         ? [
             {

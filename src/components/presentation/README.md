@@ -2,7 +2,7 @@
 
 This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
 
-The **Present** button in page and modal headers shows only on official AppFlowy Cloud. `usePresentationEntryEnabled` in [`feature-flags.ts`](./feature-flags.ts) reads the server's hosting mode, so self-hosted deployments never see it, and nobody sees it until server info confirms the official cloud.
+The **Present** button is currently hidden in page and modal headers by `PRESENTATION_ENTRY_ENABLED` in [`feature-flags.ts`](./feature-flags.ts). When enabled, the entry also requires server info to confirm official AppFlowy Cloud hosting.
 
 ## Run locally
 
@@ -13,10 +13,8 @@ pnpm dev --host 127.0.0.1 --port 5182 --strictPort
 
 Use the app's normal server configuration and sign in at `/app`. The configured Cloud deployment must provide the presentation endpoints. This worktree does not start a model provider, mock backend, Cloud proxy, or unauthenticated presentation lab.
 
-- **Present** beside Share opens document presentation, mind maps, or AI Slides.
 - **Share → AI Slides** lists up to 30 authorized workspace presentations. Catalog cards read titles and slide counts with at most four artifact reads in flight; slide scenes load only for the deck opened by Preview, Present or Download. A failed artifact stays local to its card. This is a workspace catalog, not a current-page list. Successful metadata lists are reused for a minute per user; Retry, or closing an AI presentation dialog, lists it again.
-- **Settings → AI Settings → Presentation Styles** manages uploaded templates and their reviewed versions.
-- Prompt maintenance is a separate administrative screen. The server checks administrator access; normal generation never sends a system prompt or provider configuration from the browser.
+- Presentation style management and prompt administration remain implemented without an entry in the Settings dialog. The server checks administrator access; normal generation never sends a system prompt or provider configuration from the browser.
 
 ## Server integration
 
