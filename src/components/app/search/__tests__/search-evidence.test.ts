@@ -45,12 +45,19 @@ describe('search evidence', () => {
       matchedText: 'Quarterly revenue chart',
       imageUrl: 'https://cloud.example/api/file_storage/workspace-id/v1/blob/page-id/chart.png',
     });
+    expect(describeEvidence(evidence({ kind: 'pdf', matched_text: null }))).toEqual({ kind: 'pdf' });
+  });
+
+  it('shows public image thumbnails from the public blob namespace', () => {
     const published = evidence({
       locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png', is_public: true },
     });
 
-    expect(describeEvidence(published).imageUrl).toBeUndefined();
-    expect(describeEvidence(evidence({ kind: 'pdf', matched_text: null }))).toEqual({ kind: 'pdf' });
+    expect(describeEvidence(published)).toEqual({
+      kind: 'image',
+      matchedText: 'Quarterly revenue chart',
+      imageUrl: 'https://cloud.example/api/file_storage/workspace-id/public/v1/blob/page-id/chart.png',
+    });
   });
 
   it('opens a page at the matched image block, and a row as a row', () => {

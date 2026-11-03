@@ -23,10 +23,9 @@ export function describeEvidence(evidence: SearchEvidence): SearchResultEvidence
   return {
     kind: evidence.kind,
     matchedText: evidence.matched_text?.trim() || undefined,
-    // Published files live in another namespace; the result keeps its text without a thumbnail.
     imageUrl:
-      evidence.kind === 'image' && !locator.is_public
-        ? getAppFlowyBlobUrl(locator.workspace_id, locator.parent_dir, locator.file_id)
+      evidence.kind === 'image'
+        ? getAppFlowyBlobUrl(locator.workspace_id, locator.parent_dir, locator.file_id, locator.is_public)
         : undefined,
   };
 }
