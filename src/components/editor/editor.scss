@@ -952,7 +952,7 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
     [data-block-type='bulleted_list'],
     [data-block-type='numbered_list'],
     [data-block-type='todo_list']
-  ):not(.callout-content *)
+  )
   > div
   > .text-element
   > .text-block-icon {

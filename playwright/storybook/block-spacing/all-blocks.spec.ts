@@ -50,8 +50,14 @@ for (const width of [1200, 600]) {
     }
 
     for (const type of ['bulleted_list', 'numbered_list', 'todo_list']) {
-      await expect(block(`all-${type}`).locator('.text-block-icon')).toHaveCSS('width', '26px');
-      await expect(block(`all-${type}`).locator('.text-block-icon')).toHaveCSS('height', '22px');
+      for (const id of [`all-${type}`, `all-callout-${type}`]) {
+        const marker = block(id).locator('.text-block-icon');
+
+        await expect(marker).toHaveCSS('width', '26px');
+        await expect(marker).toHaveCSS('flex-basis', '26px');
+        await expect(marker).toHaveCSS('height', '22px');
+        await expect(marker).toHaveCSS('min-height', '22px');
+      }
     }
 
     await expect(block('all-gallery-loaded').locator('.embed-block')).toHaveCSS('padding', '0px');

@@ -54,7 +54,12 @@ function allBlocksValue(): Descendant[] {
         ? { view_id: 'spacing-child-page' }
         : type === BlockType.CalloutBlock
         ? { icon: '💡', icon_type: 'emoji', version: 1 }
-        : {}
+        : {},
+      type === BlockType.CalloutBlock
+        ? [BlockType.BulletedListBlock, BlockType.NumberedListBlock, BlockType.TodoListBlock].map((listType) =>
+            block(listType, `all-callout-${listType}`)
+          )
+        : []
     )
   );
   const column = (id: string) =>
