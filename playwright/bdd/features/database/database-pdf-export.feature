@@ -48,3 +48,27 @@ Feature: Export a database to PDF with readable paper settings
     And I export the database to PDF
     Then the PDF export targets the Grid tab
     And the exported PDF has every column of the grid
+
+  # Desktop's mixed-field check: a tick and a select tag stay beside their row.
+  Scenario: Ticks and select tags stay beside their own rows
+    Given the first and third rows are checked and every row has its own Status tag
+    When I open Export as from the database Share menu
+    And I export the database to PDF
+    Then the downloaded PDF shows ticks and Status tags beside their own rows only
+
+  # Desktop's twenty-column fixture. Needs AppFlowy-Cloud-Premium#1539, which
+  # renders database views in readable column bands on the chosen paper. Opt in
+  # with RUN_CLOUD_DATABASE_PDF_LAYOUT=1 until CI's Cloud image includes it.
+  @cloud-database-pdf-layout
+  Scenario Outline: A twenty-column database exports readable <paper> <orientation> pages
+    Given the database has 20 columns and 16 rows of distinct values written through the server
+    When I open Export as from the database Share menu
+    And I choose <paper> paper in <orientation>
+    And I export the database to PDF
+    Then every page of the downloaded PDF is <paper> paper in <orientation>
+    And the downloaded PDF has every cell beside its row name, continuing columns on more pages
+
+    Examples:
+      | paper | orientation |
+      | A4    | portrait    |
+      | A3    | landscape   |

@@ -3,14 +3,18 @@ import { readFile } from 'node:fs/promises';
 import { Download, expect, Page, Route } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-import { RowMetaKey } from '../../../src/application/database-yjs/database.type';
+import { FieldType, RowMetaKey } from '../../../src/application/database-yjs/database.type';
 import { getMetaIdMap } from '../../../src/application/database-yjs/row_meta';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { apiGet, apiPost, browserAccessToken } from '../../support/dashboard-shared-helpers';
 import { loginAndCreateGrid } from '../../support/filter-test-helpers';
 import {
   activeDatabaseViewId,
   addGalleryView,
+  createFieldDirect,
   getActiveDatabaseFields,
+  getActiveRowIds,
+  setCellDirect,
   switchToDatabaseView,
 } from '../../support/gallery-test-helpers';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
@@ -25,6 +29,15 @@ import { choosePeekMenuItem, expectPeekOpen } from '../../support/side-peek-help
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
+
+// PDF points per millimetre, and each paper's portrait size in points.
+const PT_PER_MM = 72 / 25.4;
+const PAPER_POINTS: Record<string, [number, number]> = {
+  A4: [210 * PT_PER_MM, 297 * PT_PER_MM],
+  A3: [297 * PT_PER_MM, 420 * PT_PER_MM],
+  Letter: [612, 792],
+  Legal: [612, 1008],
+};
 
 // POST /api/export/view/{workspace}/{view}/pdf — the second id is what the server renders.
 const PDF_EXPORT_URL = /\/api\/export\/view\/[^/]+\/([^/]+)\/pdf(\?|$)/;
@@ -43,6 +56,12 @@ interface PdfExportState {
   gridViewId?: string;
   galleryViewId?: string;
   gridFieldNames?: string[];
+  /** Each fixture row's name, with the values it holds in view order. */
+  fixtureRows?: { name: string; values: string[] }[];
+  fixtureHeaders?: string[];
+  /** Mixed-field fixture: which rows are checked and which tag each row has. */
+  checkedRows?: string[];
+  tagByRow?: Record<string, string>;
 }
 
 const states = new WeakMap<Page, PdfExportState>();
@@ -271,13 +290,20 @@ async function exportFromPanel(page: Page): Promise<void> {
   }
 }
 
+interface SavedPdfText {
+  str: string;
+  x: number;
+  y: number;
+}
+
 interface SavedPdfPage {
   width: number;
   height: number;
   text: string;
+  items: SavedPdfText[];
 }
 
-/** Reopens a downloaded PDF and reads each page's size and text. */
+/** Reopens a downloaded PDF and reads each page's size, text and text positions. */
 async function readSavedPdf(download: Download): Promise<SavedPdfPage[]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const data = new Uint8Array(await readFile((await download.path())!));
@@ -287,13 +313,39 @@ async function readSavedPdf(download: Download): Promise<SavedPdfPage[]> {
   for (let index = 1; index <= document.numPages; index += 1) {
     const pdfPage = await document.getPage(index);
     const content = await pdfPage.getTextContent();
-    const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+    const items = content.items.flatMap((item) =>
+      'str' in item && item.str.trim() ? [{ str: item.str.trim(), x: item.transform[4], y: item.transform[5] }] : []
+    );
 
-    pages.push({ width: pdfPage.view[2], height: pdfPage.view[3], text });
+    pages.push({ width: pdfPage.view[2], height: pdfPage.view[3], text: items.map((item) => item.str).join(' '), items });
   }
 
   await document.destroy();
   return pages;
+}
+
+/** The row whose name is printed nearest to `y` on this page. */
+function nearestRowName(page: SavedPdfPage, rowNames: string[], y: number): string | undefined {
+  let nearest: { name: string; distance: number } | undefined;
+
+  for (const item of page.items) {
+    if (!rowNames.includes(item.str)) continue;
+    const distance = Math.abs(item.y - y);
+
+    if (!nearest || distance < nearest.distance) nearest = { name: item.str, distance };
+  }
+
+  return nearest?.name;
+}
+
+async function databaseApi(page: Page): Promise<{ token: string; base: string; databaseId: string }> {
+  const token = await browserAccessToken(page);
+  const workspaceId = new URL(page.url()).pathname.split('/')[2];
+  const databaseId = await page.evaluate(() =>
+    String((window as any).__TEST_DATABASE_CONTEXT__.databaseDoc.getMap('data').get('database').get('id'))
+  );
+
+  return { token, base: `/api/workspace/${workspaceId}/database/${databaseId}`, databaseId };
 }
 
 When('I export it to PDF from the Share menu', async ({ page }) => {
@@ -452,4 +504,189 @@ Then('the downloaded PDF is named {string}', async ({ page }, filename: string) 
 
   expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   await caption(page, `✓ Downloaded "${download.suggestedFilename()}" (a valid PDF)`);
+});
+
+Given(
+  'the database has {int} columns and {int} rows of distinct values written through the server',
+  async ({ page, request }, columns: number, rows: number) => {
+    const state = stateOf(page);
+    const { token, base } = await databaseApi(page);
+    const existing = (await getActiveDatabaseFields(page)).map((field) => field.name);
+    const added = Array.from({ length: columns - existing.length }, (_, index) => `Header${String(index + 1).padStart(2, '0')}End`);
+
+    for (const name of added) {
+      await apiPost(request, token, `${base}/fields`, { name, field_type: FieldType.RichText });
+    }
+
+    state.fixtureHeaders = [...existing, ...added];
+    state.fixtureRows = [];
+    const rowIds: string[] = [];
+
+    for (let row = 0; row < rows; row += 1) {
+      const name = `Row${String(row).padStart(2, '0')}NameEnd`;
+      const values = added.map((_, column) => `Row${String(row).padStart(2, '0')}Col${String(column + 1).padStart(2, '0')}End`);
+      const cells = Object.fromEntries([['Name', name], ...added.map((header, column) => [header, values[column]])]);
+
+      rowIds.push(
+        await apiPost<string>(request, token, `${base}/row`, { cells, document: null, parse_link_as_link_preview: false })
+      );
+      state.fixtureRows.push({ name, values: [name, ...values] });
+    }
+
+    // Export reads the server's copy: wait until it returns every row with its last value.
+    const lastHeader = added[added.length - 1];
+
+    await expect
+      .poll(
+        async () => {
+          const details = await apiGet<{ cells: Record<string, unknown> }[]>(
+            request,
+            token,
+            `${base}/row/detail?ids=${rowIds.join(',')}`
+          );
+
+          return details.map(({ cells }) => `${String(cells.Name)}|${String(cells[lastHeader])}`).sort();
+        },
+        { timeout: 60_000, message: 'waiting for the fixture rows to reach the server' }
+      )
+      .toEqual(state.fixtureRows.map(({ name, values }) => `${name}|${values[values.length - 1]}`).sort());
+
+    // Reopen the page so the grid shows what the server holds.
+    await page.reload();
+    await expect.poll(async () => (await getActiveDatabaseFields(page)).length, { timeout: 30_000 }).toBe(columns);
+    await expect
+      .poll(async () => (await getActiveRowIds(page)).length, { timeout: 30_000 })
+      .toBeGreaterThanOrEqual(rows);
+    await caption(page, `${columns} columns × ${rows} rows written through the server`);
+  }
+);
+
+Given(
+  'the first and third rows are checked and every row has its own Status tag',
+  async ({ page, request }) => {
+    const state = stateOf(page);
+    const fields = await getActiveDatabaseFields(page);
+    const nameField = fields.find((field) => field.isPrimary)!;
+    const doneField = fields.find((field) => field.type === FieldType.Checkbox)!;
+    const rowIds = await getActiveRowIds(page);
+    const tags = ['Alpha', 'Beta', 'Gamma'];
+    const statusField = await createFieldDirect(page, {
+      fieldType: FieldType.SingleSelect,
+      name: 'Status',
+      selectOptions: tags.map((tag) => ({ id: tag.toLowerCase(), name: tag })),
+    });
+
+    expect(rowIds.length, 'the new grid has three rows').toBe(3);
+    state.fixtureRows = [];
+    state.checkedRows = [];
+    state.tagByRow = {};
+    for (const [index, rowId] of rowIds.entries()) {
+      const name = `Mixed${index + 1}End`;
+
+      await setCellDirect(page, rowId, nameField.id, FieldType.RichText, name);
+      await setCellDirect(page, rowId, statusField, FieldType.SingleSelect, tags[index].toLowerCase());
+      if (index !== 1) {
+        await setCellDirect(page, rowId, doneField.id, FieldType.Checkbox, 'Yes');
+        state.checkedRows.push(name);
+      }
+
+      state.tagByRow[name] = tags[index];
+      state.fixtureRows.push({ name, values: [name] });
+    }
+
+    // Export reads the server's copy: wait until every cell has reached it.
+    const { token, base } = await databaseApi(page);
+
+    await expect
+      .poll(
+        async () => {
+          const details = await apiGet<{ cells: Record<string, unknown> }[]>(
+            request,
+            token,
+            `${base}/row/detail?ids=${rowIds.join(',')}`
+          );
+
+          return details
+            .map(({ cells }) => {
+              const done = cells[doneField.name];
+              const checked = done === true || done === 'Yes' || done === 'true';
+
+              return [String(cells.Name), String(cells.Status), String(checked)].join('|');
+            })
+            .sort();
+        },
+        { timeout: 30_000, message: 'waiting for the mixed-field cells to reach the server' }
+      )
+      .toEqual(
+        state.fixtureRows
+          .map(({ name }) => [name, state.tagByRow![name], state.checkedRows!.includes(name) ? 'true' : 'false'].join('|'))
+          .sort()
+      );
+    await caption(page, 'Rows 1 and 3 are checked; each row has its own Status tag');
+  }
+);
+
+Then('every page of the downloaded PDF is {word} paper in {word}', async ({ page }, paper: string, orientation: string) => {
+  const [width, height] = PAPER_POINTS[paper];
+  const [expectedWidth, expectedHeight] = orientation === 'landscape' ? [height, width] : [width, height];
+  const pages = await readSavedPdf(stateOf(page).download!);
+
+  for (const [index, pdfPage] of pages.entries()) {
+    expect(Math.abs(pdfPage.width - expectedWidth), `page ${index + 1} width`).toBeLessThan(0.5);
+    expect(Math.abs(pdfPage.height - expectedHeight), `page ${index + 1} height`).toBeLessThan(0.5);
+  }
+
+  await caption(page, `✓ All ${pages.length} pages are ${paper} ${orientation}`);
+});
+
+Then(
+  'the downloaded PDF has every cell beside its row name, continuing columns on more pages',
+  async ({ page }) => {
+    const { download, fixtureRows, fixtureHeaders } = stateOf(page);
+    const pages = await readSavedPdf(download!);
+    const rowNames = fixtureRows!.map((row) => row.name);
+
+    expect(pages.length, 'wide tables continue on more pages instead of shrinking').toBeGreaterThan(1);
+    for (const [index, pdfPage] of pages.entries()) {
+      // Every page repeats the name column, so each page identifies its rows.
+      for (const name of rowNames) expect(pdfPage.text, `page ${index + 1} lists ${name}`).toContain(name);
+      expect(pdfPage.text, `page ${index + 1} repeats the Name header`).toContain('Name');
+    }
+
+    for (const header of fixtureHeaders!) {
+      expect(pages.some((pdfPage) => pdfPage.items.some((item) => item.str === header)), `header ${header}`).toBe(true);
+    }
+
+    for (const { name, values } of fixtureRows!) {
+      for (const value of values.slice(1)) {
+        const placements = pages.flatMap((pdfPage) =>
+          pdfPage.items.filter((item) => item.str === value).map((item) => nearestRowName(pdfPage, rowNames, item.y))
+        );
+
+        expect(placements, `${value} appears once, beside ${name}`).toEqual([name]);
+      }
+    }
+
+    await caption(page, `✓ ${fixtureRows!.length * fixtureRows![0].values.length} cells beside their rows on ${pages.length} pages`);
+  }
+);
+
+Then('the downloaded PDF shows ticks and Status tags beside their own rows only', async ({ page }) => {
+  const { download, fixtureRows, checkedRows, tagByRow } = stateOf(page);
+  const rowNames = fixtureRows!.map((row) => row.name);
+  const pages = await readSavedPdf(download!);
+  const ticks = pages.flatMap((pdfPage) =>
+    pdfPage.items.filter((item) => item.str === '✓').map((item) => nearestRowName(pdfPage, rowNames, item.y))
+  );
+
+  expect(ticks.sort(), 'rows with a tick').toEqual([...checkedRows!].sort());
+  for (const [name, tag] of Object.entries(tagByRow!)) {
+    const placements = pages.flatMap((pdfPage) =>
+      pdfPage.items.filter((item) => item.str === tag).map((item) => nearestRowName(pdfPage, rowNames, item.y))
+    );
+
+    expect(placements, `the ${tag} tag sits beside ${name}`).toEqual([name]);
+  }
+
+  await caption(page, `✓ Ticks beside ${checkedRows!.join(' and ')}; each Status tag beside its row`);
 });
