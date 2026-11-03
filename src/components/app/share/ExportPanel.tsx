@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { BillingService } from '@/application/services/domains';
-import { getViewPdfBlob } from '@/application/services/js-services/http/export-api';
+import { getViewPdfBlob, withUntitledFallback } from '@/application/services/js-services/http/export-api';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
@@ -14,10 +14,23 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { downloadBlob } from '@/utils/download';
 
-function ExportPanel({ viewId }: { viewId: string }) {
+/**
+ * What the Export tab exports when it differs from the shared view. A full-page
+ * database row shares through its database but must export its own row
+ * document.
+ */
+export interface ExportTarget {
+  /** Undefined while the target is still resolving; export stays disabled. */
+  viewId?: string;
+  /** Runs before the export request, e.g. so a row document has its title. */
+  prepare?: () => Promise<void>;
+}
+
+function ExportPanel({ viewId, exportTarget }: { viewId: string; exportTarget?: ExportTarget }) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
-  const viewIdResolved = view?.view_id;
+  const exportViewId = exportTarget ? exportTarget.viewId : view?.view_id;
+  const prepareExport = exportTarget?.prepare;
   const workspaceId = useCurrentWorkspaceId();
   const getSubscriptions = useGetSubscriptions();
   const { isPro, isLoading, hasError } = useWorkspaceSubscriptionPlan({ getSubscriptions, workspaceId });
@@ -29,13 +42,14 @@ function ExportPanel({ viewId }: { viewId: string }) {
   const exportingRef = useRef<boolean>(false);
 
   const handleExportPdf = useCallback(async () => {
-    if (!workspaceId || !viewIdResolved || exportingRef.current) return;
+    if (!workspaceId || !exportViewId || exportingRef.current) return;
 
     exportingRef.current = true;
     setExporting(true);
     showBlockingLoader(`${t('shareAction.exportPdfExporting')}...`);
     try {
-      const { blob, filename } = await getViewPdfBlob(workspaceId, viewIdResolved, {
+      await prepareExport?.();
+      const { blob, filename } = await getViewPdfBlob(workspaceId, exportViewId, {
         includeNested: isPro ? includeLinkedPages : false,
         // Mirror desktop: embedded databases are a Pro feature
         // (share_bloc.dart:447 shouldIncludeEmbeddedDatabases = isProPlan).
@@ -43,7 +57,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
         includeDatabase: isPro,
       });
 
-      downloadBlob(blob, filename);
+      downloadBlob(blob, withUntitledFallback(filename, t('menuAppHeader.defaultNewPageName')));
       toast.success(t('shareAction.exportPdfSuccess'));
     } catch (e) {
       const message = (e as { message?: string })?.message ?? t('shareAction.exportPdfError');
@@ -54,7 +68,16 @@ function ExportPanel({ viewId }: { viewId: string }) {
       setExporting(false);
       hideBlockingLoader();
     }
-  }, [workspaceId, viewIdResolved, isPro, includeLinkedPages, t, showBlockingLoader, hideBlockingLoader]);
+  }, [
+    workspaceId,
+    exportViewId,
+    prepareExport,
+    isPro,
+    includeLinkedPages,
+    t,
+    showBlockingLoader,
+    hideBlockingLoader,
+  ]);
 
   // Free users on AppFlowy Cloud get redirected to the Pro upgrade flow when they
   // try to enable "Include linked pages". Self-hosted users have isPro=true (set
@@ -98,7 +121,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
           size='sm'
           data-testid='export-pdf-button'
           onClick={handleExportPdf}
-          disabled={exporting || !workspaceId || !view}
+          disabled={exporting || !workspaceId || !exportViewId}
           loading={exporting}
         >
           {exporting ? t('shareAction.exportPdfExporting') : t('shareAction.exportPdf')}
