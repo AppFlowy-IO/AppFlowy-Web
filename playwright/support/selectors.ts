@@ -753,6 +753,9 @@ export const ExportSelectors = {
   panel: (page: Page) => page.getByTestId('export-panel'),
   pdfButton: (page: Page) => page.getByTestId('export-pdf-button'),
   includeLinkedPagesSwitch: (page: Page) => page.getByTestId('export-include-linked-pages-switch'),
+  pageSizeTrigger: (page: Page) => page.getByTestId('export-pdf-page-size-trigger'),
+  pageSizeOption: (page: Page, pageSize: string) => page.getByTestId(`export-pdf-page-size-${pageSize}`),
+  landscapeSwitch: (page: Page) => page.getByTestId('export-pdf-landscape-switch'),
 };
 
 /**
