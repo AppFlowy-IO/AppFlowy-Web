@@ -15,6 +15,7 @@ import { findView } from '@/components/_shared/outline/utils';
 import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { describeEvidence, evidenceBlockId, primaryEvidence } from '@/components/app/search/search-evidence';
 import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
 
@@ -105,15 +106,23 @@ function mergeSearchResults(
   current: SearchDocumentResponseItem[],
   next: SearchDocumentResponseItem[]
 ): SearchDocumentResponseItem[] {
-  const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   const merged: SearchDocumentResponseItem[] = [];
 
   for (const item of [...current, ...next]) {
     const key = searchResultKey(item);
+    const index = indexByKey.get(key);
 
-    if (seen.has(key)) continue;
+    if (index !== undefined) {
+      // Keep why a later page of the same result matched, such as one of its images.
+      if (item.evidence?.length) {
+        merged[index] = { ...merged[index], evidence: [...(merged[index].evidence ?? []), ...item.evidence] };
+      }
 
-    seen.add(key);
+      continue;
+    }
+
+    indexByKey.set(key, merged.length);
     merged.push(item);
   }
 
@@ -191,8 +200,7 @@ function BestMatch({
   );
 
   const items = useMemo<SearchViewListItem[]>(() => {
-    const seenTargets = new Set<string>();
-    const items: SearchViewListItem[] = [];
+    const targets = new Map<string, { view: View; item: SearchDocumentResponseItem }>();
 
     for (const item of searchResults) {
       const view = resolveSearchResultView(outline || [], item) || resultViews.get(searchResultKey(item));
@@ -201,20 +209,34 @@ function BestMatch({
       if (!view || isSpaceView(view)) continue;
       const targetId = `${view.view_id}:${rowId || ''}`;
 
-      if (seenTargets.has(targetId)) continue;
-      seenTargets.add(targetId);
-      const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
+      const existing = targets.get(targetId);
 
-      items.push({
-        id: targetId,
-        view,
-        rowId,
-        title: rowId ? `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}` : undefined,
-        preview: previewLines(item.content || item.preview),
-      });
+      if (existing) {
+        // Distinct search objects can open the same page or row. Keep all their
+        // evidence before selecting the match to display and navigate to.
+        if (item.evidence?.length) {
+          existing.item = { ...existing.item, evidence: [...(existing.item.evidence ?? []), ...item.evidence] };
+        }
+      } else {
+        targets.set(targetId, { view, item });
+      }
     }
 
-    return items;
+    return Array.from(targets, ([id, { view, item }]) => {
+      const rowId = item.database_row_id || undefined;
+      const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
+      const evidence = primaryEvidence(item);
+
+      return {
+        id,
+        view,
+        rowId,
+        blockId: evidenceBlockId(item, evidence),
+        evidence: evidence ? describeEvidence(evidence) : undefined,
+        title: rowId ? `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}` : undefined,
+        preview: previewLines(item.content || item.preview),
+      };
+    });
   }, [outline, resultViews, searchResults, t]);
 
   const handleSearch = useCallback(

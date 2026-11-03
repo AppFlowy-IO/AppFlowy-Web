@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import type { SearchEvidence } from '@/application/services/domains/search';
 import { ViewLayout } from '@/application/types';
 import type { View } from '@/application/types';
 
@@ -21,6 +22,7 @@ let mockOverviewSources: Array<{
   ownerDatabaseId?: string;
 }> = [];
 let mockCanAskFollowUp = false;
+let mockListItems: Array<Record<string, unknown>> = [];
 const mockT = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
 
 jest.mock('react-i18next', () => ({
@@ -66,15 +68,18 @@ jest.mock('@/components/app/search/ViewList', () => ({
     items?: Array<{ id: string; view: { name: string } }>;
     hasMore?: boolean;
     onLoadMore?: () => void;
-  }) => (
-    <div data-testid='view-list'>
-      {header ? <div data-testid='search-header'>{header}</div> : null}
-      {items?.map((item) => (
-        <div key={item.id}>{item.view.name}</div>
-      ))}
-      {hasMore && <button onClick={onLoadMore}>Load more</button>}
-    </div>
-  ),
+  }) => {
+    mockListItems = items ?? [];
+    return (
+      <div data-testid='view-list'>
+        {header ? <div data-testid='search-header'>{header}</div> : null}
+        {items?.map((item) => (
+          <div key={item.id}>{item.view.name}</div>
+        ))}
+        {hasMore && <button onClick={onLoadMore}>Load more</button>}
+      </div>
+    );
+  },
 }));
 
 function createView(overrides: Partial<View> = {}): View {
@@ -102,6 +107,7 @@ describe('BestMatch', () => {
     mockWorkspaceId = 'workspace-id';
     mockOverviewSources = [];
     mockCanAskFollowUp = false;
+    mockListItems = [];
     mockUseAIEnabled.mockReturnValue(true);
     mockSearchWorkspaceDocumentPage.mockResolvedValue({
       has_more: false,
@@ -127,6 +133,121 @@ describe('BestMatch', () => {
 
     expect(screen.getByTestId('search-header')).toBeTruthy();
     expect(await screen.findByTestId('ai-overview')).toBeTruthy();
+  });
+
+  it('opens a result that matched through an image at the image block', async () => {
+    mockAppOutline = [createView({ view_id: 'page-id', name: 'Launch plan' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          object_id: 'page-id',
+          evidence: [
+            {
+              kind: 'image',
+              processor_id: 'image_understanding',
+              resource_id: 'image-block',
+              locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+              matched_text: 'Quarterly revenue chart',
+            },
+          ],
+        },
+      ],
+      next_offset: null,
+    });
+    renderBestMatch('revenue');
+
+    await screen.findByText('Launch plan');
+    expect(mockListItems[0]).toMatchObject({
+      blockId: 'image-block',
+      evidence: { kind: 'image', matchedText: 'Quarterly revenue chart' },
+    });
+  });
+
+  it.each([
+    { target: 'page', rowId: undefined, paginated: false, firstKind: undefined },
+    { target: 'page', rowId: undefined, paginated: false, firstKind: 'pdf' },
+    { target: 'database row', rowId: 'row-id', paginated: false, firstKind: undefined },
+    { target: 'page', rowId: undefined, paginated: true, firstKind: undefined },
+    { target: 'database row', rowId: 'row-id', paginated: true, firstKind: 'pdf' },
+  ] as const)(
+    'preserves later image evidence for the same $target with distinct object IDs (paginated: $paginated, first: $firstKind)',
+    async ({ rowId, paginated, firstKind }) => {
+      const view = createView({ view_id: 'page-id', name: 'Launch plan' });
+      const image: SearchEvidence = {
+        kind: 'image',
+        processor_id: 'image_understanding',
+        resource_id: rowId ? 'field-id:chart.png' : 'image-block',
+        locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+        matched_text: 'Quarterly revenue chart',
+      };
+      const first = {
+        object_id: 'page-id',
+        database_row_id: rowId,
+        evidence: firstKind ? [{ ...image, kind: firstKind, processor_id: 'native_pdf' }] : undefined,
+      };
+      const later = { object_id: 'document-id', database_row_id: rowId, evidence: [image] };
+
+      mockAppOutline = [view];
+      mockGetView.mockResolvedValue(view);
+      if (paginated) {
+        mockSearchWorkspaceDocumentPage
+          .mockResolvedValueOnce({ has_more: true, items: [first], next_offset: 10 })
+          .mockResolvedValueOnce({ has_more: false, items: [later], next_offset: null });
+      } else {
+        mockSearchWorkspaceDocumentPage.mockResolvedValue({
+          has_more: false,
+          items: [first, later],
+          next_offset: null,
+        });
+      }
+
+      renderBestMatch('revenue');
+      await screen.findByText('Launch plan');
+      if (paginated) fireEvent.click(screen.getByText('Load more'));
+
+      await waitFor(() =>
+        expect(mockListItems[0]).toMatchObject({
+          rowId,
+          blockId: rowId ? undefined : 'image-block',
+          evidence: { kind: 'image', matchedText: 'Quarterly revenue chart' },
+        })
+      );
+      expect(mockListItems).toHaveLength(1);
+    }
+  );
+
+  it('keeps the image a later page matched in a result an earlier page listed', async () => {
+    mockAppOutline = [createView({ view_id: 'page-id', name: 'Launch plan' })];
+    mockSearchWorkspaceDocumentPage
+      .mockResolvedValueOnce({ has_more: true, items: [{ object_id: 'page-id' }], next_offset: 10 })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            object_id: 'page-id',
+            evidence: [
+              {
+                kind: 'image',
+                processor_id: 'image_understanding',
+                resource_id: 'image-block',
+                locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+                matched_text: 'Quarterly revenue chart',
+              },
+            ],
+          },
+        ],
+        next_offset: null,
+      });
+    renderBestMatch('revenue');
+
+    await screen.findByText('Launch plan');
+    expect(mockListItems[0].evidence).toBeUndefined();
+    fireEvent.click(screen.getByText('Load more'));
+    await waitFor(() =>
+      expect(mockListItems[0]).toMatchObject({ blockId: 'image-block', evidence: { kind: 'image' } })
+    );
+    expect(mockListItems).toHaveLength(1);
   });
 
   it('updates renamed results without repeating the query or losing loaded pages', async () => {
