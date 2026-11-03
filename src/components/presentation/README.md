@@ -104,6 +104,11 @@ Space activation on buttons and ignore handled events, modified keys and other d
 
 Story-plan editing preserves the saved artifact version and source revision. Accepting an unchanged initial outline opens the already-generated artifact. Applying a changed outline regenerates through Cloud. Map text and appearance edits use expected-version checks; rejected writes retain the accepted content. The root map label remains the approved source title. Structural maps also come from Cloud: loading, failure and retry states never synthesize a replacement map in the browser.
 
+Reopening an imported-template deck restores its exact immutable style version, including layouts,
+text slots and analysis; scene theme tokens alone do not constitute a complete template. A new
+generation reuses the already-resolved style when its reference matches, avoiding another read.
+Words baked into template images remain artwork; only native text slots can be rewritten.
+
 Canonical source references resolve through the server evidence envelope. A historical deck/map whose source envelope cannot be proven to match the open page remains viewable but cannot silently reuse that page's citations or regeneration evidence. The artifact catalog supports a captured source-page filter. Full regeneration after a page edit creates a new deck; targeted slide/story edits still require matching evidence.
 
 Template uploads produce candidates requiring explicit review. Review preserves the imported template geometry, assets and mandatory footer, then saves a new server version. Ordinary generation-setup import/review omits `company` and remains available on Free up to 5 MiB. Settings' company configuration save sends `company: true` to `PUT /styles/{id}/review`; Cloud requires paid access and workspace ownership. `company` is a top-level artifact/catalog flag, not a field inside `ReviewedStyle`. Omitting it on subsequent reviews cannot demote an existing company style; edits remain gated. Owners may delete company styles after downgrade. Existing deck previews never require company-style configuration access. Logo uploads and global workspace-default assignment have no matching operation here.
