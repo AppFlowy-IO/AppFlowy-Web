@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import type { SearchEvidence } from '@/application/services/domains/search';
 import { ViewLayout } from '@/application/types';
 import type { View } from '@/application/types';
 
@@ -162,6 +163,59 @@ describe('BestMatch', () => {
       evidence: { kind: 'image', matchedText: 'Quarterly revenue chart' },
     });
   });
+
+  it.each([
+    { target: 'page', rowId: undefined, paginated: false, firstKind: undefined },
+    { target: 'page', rowId: undefined, paginated: false, firstKind: 'pdf' },
+    { target: 'database row', rowId: 'row-id', paginated: false, firstKind: undefined },
+    { target: 'page', rowId: undefined, paginated: true, firstKind: undefined },
+    { target: 'database row', rowId: 'row-id', paginated: true, firstKind: 'pdf' },
+  ] as const)(
+    'preserves later image evidence for the same $target with distinct object IDs (paginated: $paginated, first: $firstKind)',
+    async ({ rowId, paginated, firstKind }) => {
+      const view = createView({ view_id: 'page-id', name: 'Launch plan' });
+      const image: SearchEvidence = {
+        kind: 'image',
+        processor_id: 'image_understanding',
+        resource_id: rowId ? 'field-id:chart.png' : 'image-block',
+        locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+        matched_text: 'Quarterly revenue chart',
+      };
+      const first = {
+        object_id: 'page-id',
+        database_row_id: rowId,
+        evidence: firstKind ? [{ ...image, kind: firstKind, processor_id: 'native_pdf' }] : undefined,
+      };
+      const later = { object_id: 'document-id', database_row_id: rowId, evidence: [image] };
+
+      mockAppOutline = [view];
+      mockGetView.mockResolvedValue(view);
+      if (paginated) {
+        mockSearchWorkspaceDocumentPage
+          .mockResolvedValueOnce({ has_more: true, items: [first], next_offset: 10 })
+          .mockResolvedValueOnce({ has_more: false, items: [later], next_offset: null });
+      } else {
+        mockSearchWorkspaceDocumentPage.mockResolvedValue({
+          has_more: false,
+          items: [first, later],
+          next_offset: null,
+        });
+      }
+
+      renderBestMatch('revenue');
+      await screen.findByText('Launch plan');
+      if (paginated) fireEvent.click(screen.getByText('Load more'));
+
+      await waitFor(() =>
+        expect(mockListItems[0]).toMatchObject({
+          rowId,
+          blockId: rowId ? undefined : 'image-block',
+          evidence: { kind: 'image', matchedText: 'Quarterly revenue chart' },
+        })
+      );
+      expect(mockListItems).toHaveLength(1);
+    }
+  );
 
   it('keeps the image a later page matched in a result an earlier page listed', async () => {
     mockAppOutline = [createView({ view_id: 'page-id', name: 'Launch plan' })];
