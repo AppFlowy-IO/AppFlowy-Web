@@ -310,7 +310,7 @@
     },
     "theme-select": {
       "$type": "color",
-      "$value": "{Blue.alpha-blue-500-15}"
+      "$value": "{Blue.alpha-blue-500-10}"
     },
     "text-select": {
       "$type": "color",
@@ -359,6 +359,14 @@
     "warning-light-hover": {
       "$type": "color",
       "$value": "{Orange.200}"
+    },
+    "warning-thick": {
+      "$type": "color",
+      "$value": "{Orange.600}"
+    },
+    "warning-thick-hover": {
+      "$type": "color",
+      "$value": "{Orange.700}"
     },
     "error-light": {
       "$type": "color",
@@ -449,6 +457,11 @@
     "overlay": {
       "$type": "color",
       "$value": "{Neutral.alpha-black-60}"
+    },
+    "layer-02-gradient": {
+      "$type": "color",
+      "$value": "{Neutral.alpha-white-0}",
+      "$description": "Modal Window"
     }
   },
   "Surface_Container": {

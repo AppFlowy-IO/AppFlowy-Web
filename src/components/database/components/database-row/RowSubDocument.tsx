@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 
 import { useReadOnly } from '@/application/database-yjs';
 import { PublishRowSubDocument } from '@/components/publish/PublishRowSubDocument';
@@ -21,13 +21,22 @@ interface RowSubDocumentProps {
  * - Publish mode (readOnly=true): Uses PublishRowSubDocument (simple, cache-based)
  * - App mode (readOnly=false): Uses DatabaseRowSubDocument (full sync, create, update)
  *
- * This separation follows the single responsibility principle and avoids
- * if-else branches within the components.
+ * Once the editable document is mounted for a row, it stays mounted if access
+ * becomes read-only. A permission notification clears the page's capabilities
+ * until the server answers, so access can drop and return within a second.
+ * Swapping renderers for that window remounted the document: its editor was
+ * replaced by a skeleton and the row page scrolled to the top. The editable
+ * renderer already follows `readOnly` in place, including a lasting downgrade.
  */
 export const RowSubDocument = memo(({ rowId, contentPadding, onRegisterPendingMetaFlush }: RowSubDocumentProps) => {
   const readOnly = useReadOnly();
+  const [editableRowId, setEditableRowId] = useState<string | null>(readOnly ? null : rowId);
 
-  if (readOnly) {
+  if (!readOnly && editableRowId !== rowId) {
+    setEditableRowId(rowId);
+  }
+
+  if (readOnly && editableRowId !== rowId) {
     return <PublishRowSubDocument rowId={rowId} contentPadding={contentPadding} />;
   }
 

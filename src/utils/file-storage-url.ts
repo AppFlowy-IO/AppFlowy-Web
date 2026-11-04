@@ -140,6 +140,11 @@ export function isAppFlowyAuthenticatedFileUrl(url: string): boolean {
   return isAppFlowyPublicFormUploadUrl(url) || isAppFlowyFileStorageUrl(url);
 }
 
+/** The file storage URL of a blob in its private or public namespace. */
+export function getAppFlowyBlobUrl(workspaceId: string, parentDir: string, fileId: string, isPublic = false): string {
+  return `${getFileStorageBaseUrl()}/${workspaceId}/${isPublic ? 'public/' : ''}v1/blob/${parentDir}/${fileId}`;
+}
+
 /**
  * Constructs URL for file retrieval
  * @param workspaceId - The workspace ID

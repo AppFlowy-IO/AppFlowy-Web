@@ -3,7 +3,7 @@
  * AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY
  * 
  * Generated from: semantic.dark.json
- * Generated time: 2025-10-28T03:13:52.623Z
+ * Generated time: 2026-11-03T14:16:04.880Z
  * 
  * To modify these values, edit the source JSON files and run the token conversion script:
  * node scripts/system-token/convert-tokens.cjs
@@ -96,6 +96,8 @@
   --fill-success-thick-hover: #248569;
   --fill-warning-light: #7a3108;
   --fill-warning-light-hover: #93450e;
+  --fill-warning-thick: #db7e21;
+  --fill-warning-thick-hover: #ffa02e;
   --fill-error-light: #6e0a1e;
   --fill-error-light-hover: #8c101c;
   --fill-error-thick: #e71d32;
@@ -117,6 +119,7 @@
   --surface-layer-04-hover: #3d404f;
   --surface-inverse: #3d404f;
   --surface-overlay: #00000099;
+  --surface-layer-02-gradient: #2b2d3700;
   --surface-container-layer-00: #272930;
   --surface-container-layer-01: #32343f;
   --surface-container-layer-02: #3d404f;
@@ -302,26 +305,26 @@
   --block-bg-color-18: #6e234366;
   --block-bg-color-19: #58585866;
   --block-bg-color-20: #4c596666;
-  --block-bg-hover-color-1: #9e3b3b66;
-  --block-bg-hover-color-2: #a54b2466;
-  --block-bg-hover-color-3: #9a570c66;
-  --block-bg-hover-color-4: #90600066;
-  --block-bg-hover-color-5: #86680066;
-  --block-bg-hover-color-6: #62730066;
-  --block-bg-hover-color-7: #63700066;
-  --block-bg-hover-color-8: #45651466;
-  --block-bg-hover-color-9: #2b6c2066;
-  --block-bg-hover-color-10: #127b4766;
-  --block-bg-hover-color-11: #00727e66;
-  --block-bg-hover-color-12: #0c5b9e66;
-  --block-bg-hover-color-13: #2a51a066;
-  --block-bg-hover-color-14: #4545a666;
-  --block-bg-hover-color-15: #6435a866;
-  --block-bg-hover-color-16: #772f9666;
-  --block-bg-hover-color-17: #8a348566;
-  --block-bg-hover-color-18: #6e234366;
-  --block-bg-hover-color-19: #58585866;
-  --block-bg-hover-color-20: #4c596666;
+  --block-bg-hover-color-1: #cc4e4e66;
+  --block-bg-hover-color-2: #d6724066;
+  --block-bg-hover-color-3: #db8f2c66;
+  --block-bg-hover-color-4: #e0a41666;
+  --block-bg-hover-color-5: #e0bb0066;
+  --block-bg-hover-color-6: #adb20466;
+  --block-bg-hover-color-7: #92a82266;
+  --block-bg-hover-color-8: #75a82866;
+  --block-bg-hover-color-9: #49a33b66;
+  --block-bg-hover-color-10: #1c996366;
+  --block-bg-hover-color-11: #008e9e66;
+  --block-bg-hover-color-12: #0877cc66;
+  --block-bg-hover-color-13: #3267d166;
+  --block-bg-hover-color-14: #5555e066;
+  --block-bg-hover-color-15: #8153db66;
+  --block-bg-hover-color-16: #9e4cc766;
+  --block-bg-hover-color-17: #b240af66;
+  --block-bg-hover-color-18: #c2427966;
+  --block-bg-hover-color-19: #6e6e6e66;
+  --block-bg-hover-color-20: #666f8066;
   --block-text-color-1: #fad9d9;
   --block-text-color-2: #fadfd2;
   --block-text-color-3: #fae5ca;

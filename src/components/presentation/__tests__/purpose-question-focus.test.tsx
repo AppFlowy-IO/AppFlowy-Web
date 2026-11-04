@@ -86,8 +86,9 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
-test('the purpose field keeps focus and every character while each answer is reassessed', async () => {
+test('typing a purpose keeps focus and does not reassess until Generate is clicked again', async () => {
   render(<Setup />);
+  fireEvent.click(generateButton());
   await advance(400);
   const input = screen.getByLabelText<HTMLInputElement>('Presentation purpose');
   const purpose = 'Choose a vendor';
@@ -95,7 +96,7 @@ test('the purpose field keeps focus and every character while each answer is rea
   input.focus();
   for (let length = 1; length <= purpose.length; length++) {
     fireEvent.change(input, { target: { value: purpose.slice(0, length) } });
-    // One pause is long enough for a reassessment to land mid-answer.
+    // Pausing mid-answer must not start another model request.
     await advance(length === 6 ? 400 : 100);
     expect(screen.getByLabelText('Presentation purpose')).toBe(input);
     expect(document.activeElement).toBe(input);
@@ -103,18 +104,20 @@ test('the purpose field keeps focus and every character while each answer is rea
   }
 
   expect(input.value).toBe(purpose);
-  // The previous answer stays until the new one lands; generation waits for it.
-  expect(generateButton().disabled).toBe(true);
+  expect(generateButton().disabled).toBe(false);
+  expect(assessPresentation).toHaveBeenCalledTimes(1);
+  fireEvent.click(generateButton());
   await advance(400);
   expect(generateButton().disabled).toBe(false);
   expect(document.activeElement).toBe(input);
-  expect(assessPresentation).toHaveBeenCalledTimes(3);
-  expect(jest.mocked(assessPresentation).mock.calls[2][0].options.purpose).toBe(purpose);
+  expect(assessPresentation).toHaveBeenCalledTimes(2);
+  expect(jest.mocked(assessPresentation).mock.calls[1][0].options.purpose).toBe(purpose);
 });
 
 test('a new source revision asks again instead of keeping the previous question', async () => {
   const view = render(<Setup />);
 
+  fireEvent.click(generateButton());
   await advance(400);
   fireEvent.change(screen.getByLabelText('Presentation purpose'), { target: { value: 'Choose a vendor' } });
   await advance(400);
@@ -124,4 +127,5 @@ test('a new source revision asks again instead of keeping the previous question'
   await advance(400);
   expect(screen.queryByLabelText('Presentation purpose')).toBeNull();
   expect(generateButton().disabled).toBe(false);
+  expect(assessPresentation).toHaveBeenCalledTimes(1);
 });

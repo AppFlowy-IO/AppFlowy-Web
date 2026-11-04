@@ -25,6 +25,8 @@ function Fixture() {
         map={map}
         mapStyle={{ structure: 'balanced', branchLine: 'curved' }}
         canGenerate={false}
+        // PresentationStudio always passes a label, including to a presented map.
+        generateLabel='Generate with AI'
         onGenerate={noop}
         onSlides={noop}
         onClosePresentation={direct ? () => setOpen(false) : undefined}

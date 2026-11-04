@@ -259,7 +259,7 @@ test('a deck supplied by Share displays while studio metadata is pending without
   expect(saveSession).not.toHaveBeenCalled();
 });
 
-test('page entry opens its saved deck, and Regenerate alone opens source preparation and settings', async () => {
+test('page entry opens its saved deck, and Regenerate opens settings without source preparation', async () => {
   jest.mocked(loadPresentation).mockResolvedValue({ status, session: null, styles: [], warnings: [], deck } as never);
   open();
   await waitFor(() => expect(screen.getByTestId('stage').textContent).toBe('preview'));
@@ -267,8 +267,8 @@ test('page entry opens its saved deck, and Regenerate alone opens source prepara
   expect(loadSourceSnapshot).not.toHaveBeenCalled();
   expect(saveSession).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Regenerate'));
-  await waitFor(() => expect(loadSourceSnapshot).toHaveBeenCalledTimes(1));
   expect(screen.getByTestId('stage').textContent).toBe('setup');
+  expect(loadSourceSnapshot).not.toHaveBeenCalled();
 });
 
 test('regenerating a changed page starts a new deck rather than overwriting an incompatible version', async () => {

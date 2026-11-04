@@ -747,7 +747,7 @@ export interface SourceRequest {
 let blobDiffRequestType: ProtobufType | null = null;
 
 /** Read a blob/diff request body with the protocol's schema (the generated module is built for the app bundler). */
-function classifyBlobRequest(body: Buffer | null | undefined): BlobRequestKind {
+export function classifyBlobRequest(body: Buffer | null | undefined): BlobRequestKind {
   if (!blobDiffRequestType) {
     const schema = fileURLToPath(new URL('../../src/proto/database_blob.proto', import.meta.url));
 

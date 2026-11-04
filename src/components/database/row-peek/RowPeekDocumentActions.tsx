@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import {
   useDatabase,
@@ -73,10 +73,10 @@ function DocumentActions({
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const documentId = meta?.documentId || rowDocumentIdFromRowId(rowId);
-  const beforeFavorite = useCallback(async () => {
-    if (!databaseId || !documentId || !row || !fieldId || !(await prepare())) {
-      throw new Error('Row is not ready to favorite');
-    }
+  // Commits a focused title, then registers the row page under the row title so
+  // server-side favorites and exports see it. Resolves false when not ready.
+  const prepareRowDocument = useCallback(async () => {
+    if (!databaseId || !documentId || !row || !fieldId || !(await prepare())) return false;
 
     const created = await ensureRowDocumentView(workspaceId, documentId, {
       database_id: databaseId,
@@ -84,13 +84,27 @@ function DocumentActions({
       row_id: rowId,
     });
 
-    if (!created) throw new Error('Unable to prepare row document');
+    if (!created) return false;
     // Read after the commit barrier so a focused title's final draft is used.
     const savedTitle = row?.get(YjsDatabaseKey.cells)?.get(fieldId)?.get(YjsDatabaseKey.data);
     const title = typeof savedTitle === 'string' ? savedTitle.trim() : '';
 
     if (title) await syncRowDocumentViewName(workspaceId, documentId, title);
+    return true;
   }, [databaseId, databaseViewId, documentId, fieldId, prepare, row, rowId, workspaceId]);
+  const beforeFavorite = useCallback(async () => {
+    if (!(await prepareRowDocument())) throw new Error('Row is not ready to favorite');
+  }, [prepareRowDocument]);
+  // Like Desktop, the peek exports the row page; preparing it only improves the title.
+  const exportTarget = useMemo(
+    () => ({
+      viewId: documentId,
+      prepare: async () => {
+        await prepareRowDocument();
+      },
+    }),
+    [documentId, prepareRowDocument]
+  );
 
   return (
     <>
@@ -99,7 +113,7 @@ function DocumentActions({
       <ShareButton
         viewId={databasePageId}
         hidePublish
-        hideExport
+        exportTarget={exportTarget}
         shareUrl={shareUrl}
         className='row-peek-share mx-0 ml-2 h-8 rounded-[6px] font-medium'
       />

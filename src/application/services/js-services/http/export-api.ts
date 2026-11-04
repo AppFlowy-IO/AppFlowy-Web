@@ -5,11 +5,23 @@ import { getConfigValue } from '@/utils/runtime-config';
 import { readBinaryErrorResponse } from './binary-error';
 import { APIError, APIResponse, executeAPIRequest, getAxios, handleAPIError } from './core';
 
+/** Paper sizes the server accepts for a standalone database PDF. */
+export const DATABASE_PDF_PAGE_SIZES = ['a4', 'a3', 'letter', 'legal'] as const;
+
+export type DatabasePdfPageSize = (typeof DATABASE_PDF_PAGE_SIZES)[number];
+
 export interface ExportPdfOptions {
   includeNested?: boolean;
   includeDatabase?: boolean;
   includeImages?: boolean;
   maxDepth?: number;
+  /**
+   * Paper for a database view export; wide tables continue on more pages.
+   * Documents ignore it. Omitted, the server uses A4.
+   */
+  pageSize?: DatabasePdfPageSize;
+  /** Landscape paper for a database view export. Omitted, portrait. */
+  landscape?: boolean;
 }
 
 export interface ExportPdfResult {
@@ -17,7 +29,7 @@ export interface ExportPdfResult {
   filename: string;
 }
 
-const DEFAULT_OPTIONS: Required<ExportPdfOptions> = {
+const DEFAULT_OPTIONS: Required<Omit<ExportPdfOptions, 'pageSize' | 'landscape'>> = {
   includeNested: true,
   includeDatabase: true,
   includeImages: true,
@@ -76,6 +88,9 @@ export async function getViewPdfBlob(
         include_database: merged.includeDatabase,
         include_images: merged.includeImages,
         max_depth: merged.maxDepth,
+        // Sent only for database exports, so document requests stay unchanged.
+        ...(merged.pageSize !== undefined && { page_size: merged.pageSize }),
+        ...(merged.landscape !== undefined && { landscape: merged.landscape }),
       },
       responseType: 'blob',
       validateStatus: (status) => status < 400,
@@ -107,6 +122,31 @@ export async function getViewPdfBlob(
 
     throw handleAPIError(error);
   }
+}
+
+/**
+ * The server names the export after the page, so a page whose title was cleared
+ * arrives as a bare ".pdf" (which Chrome saves as "pdf.pdf"). Name it the way
+ * the app shows such a page instead.
+ */
+export function withUntitledFallback(filename: string, untitledName: string): string {
+  const extensionStart = filename.lastIndexOf('.');
+  const stem = extensionStart >= 0 ? filename.slice(0, extensionStart) : filename;
+
+  if (stem.trim()) return filename;
+
+  return `${untitledName}${extensionStart >= 0 ? filename.slice(extensionStart) : ''}`;
+}
+
+/**
+ * Replace the server's file stem with `stem`, keeping the server's extension
+ * (the export may be a PDF or a ZIP). An empty stem keeps the server's name.
+ */
+export function withFileStem(filename: string, stem: string): string {
+  if (!stem.trim()) return filename;
+  const extensionStart = filename.lastIndexOf('.');
+
+  return `${stem}${extensionStart >= 0 ? filename.slice(extensionStart) : ''}`;
 }
 
 /**

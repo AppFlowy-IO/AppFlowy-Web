@@ -1,4 +1,3 @@
-import { getErrorMessage } from '@/utils/errors';
 import { Dialog, InputBase } from '@mui/material';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +23,7 @@ import ViewList from '@/components/app/search/ViewList';
 import { findAncestors } from '@/components/chat/lib/views';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getErrorMessage } from '@/utils/errors';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 const BestMatch = lazy(() => import('@/components/app/search/BestMatch'));
@@ -34,11 +34,11 @@ function getFallbackAIChatParent(outline: View[] | undefined) {
   return outline.find(isSpaceView) || outline[0];
 }
 
-
 export function Search() {
   const [open, setOpen] = useState<boolean>(false);
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
+  const [queryStartedAt, setQueryStartedAt] = useState<number>();
   const [askingAI, setAskingAI] = useState<boolean>(false);
   const outline = useAppOutline();
   const currentViewId = useAppViewId();
@@ -193,7 +193,10 @@ export function Search() {
 
             <InputBase
               value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
+              onChange={(e) => {
+                setQueryStartedAt(performance.now());
+                setSearchValue(e.target.value);
+              }}
               autoFocus={true}
               className={'flex-1'}
               fullWidth={true}
@@ -218,7 +221,13 @@ export function Search() {
           <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
         ) : (
           <Suspense fallback={<ViewList loading title={t('commandPalette.bestMatches')} onClose={handleClose} />}>
-            <BestMatch askingAI={askingAI} searchValue={searchValue} onAskAI={handleAskAI} onClose={handleClose} />
+            <BestMatch
+              askingAI={askingAI}
+              queryStartedAt={queryStartedAt}
+              searchValue={searchValue}
+              onAskAI={handleAskAI}
+              onClose={handleClose}
+            />
           </Suspense>
         )}
       </Dialog>

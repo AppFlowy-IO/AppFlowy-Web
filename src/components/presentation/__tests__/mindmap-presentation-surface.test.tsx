@@ -49,15 +49,21 @@ test('enlarging a map shown in the studio still opens it full screen above the p
 });
 
 
-test('the full-screen map exposes Open for a match and Generate after a setting changes', () => {
+test('a presented map shows only the map, without a generate action', () => {
   const actions = { ...handlers(), canGenerate: true };
   const close = jest.fn();
   const view = render(<MindMapViewer map={map} {...actions} generateLabel='Open mind map' onClosePresentation={close} />);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open mind map' }));
-  expect(actions.onGenerate).toHaveBeenCalledTimes(1);
-  view.rerender(<MindMapViewer map={map} {...actions} generateLabel='Generate with AI' onClosePresentation={close} />);
   expect(screen.queryByRole('button', { name: 'Open mind map' })).toBeNull();
+  view.rerender(<MindMapViewer map={map} {...actions} generateLabel='Generate with AI' onClosePresentation={close} />);
+  expect(screen.queryByRole('button', { name: 'Generate with AI' })).toBeNull();
+  expect(actions.onGenerate).not.toHaveBeenCalled();
+});
+
+test('the studio page keeps its generate action', () => {
+  const actions = { ...handlers(), canGenerate: true };
+
+  render(<MindMapViewer map={map} {...actions} generateLabel='Generate with AI' />);
   fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }));
-  expect(actions.onGenerate).toHaveBeenCalledTimes(2);
+  expect(actions.onGenerate).toHaveBeenCalledTimes(1);
 });

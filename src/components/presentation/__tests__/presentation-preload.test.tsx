@@ -26,6 +26,7 @@ jest.mock('../PresentationStudio', () => {
 
 // The menu reads page and workspace access to explain unavailable AI options.
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: () => true,
   useAppView: (id: string) => ({ view_id: id }),
   useUserWorkspaceInfoOptional: () => undefined,
 }));

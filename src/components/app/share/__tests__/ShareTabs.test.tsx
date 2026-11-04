@@ -13,6 +13,7 @@ let mockHasLoadedPermission = true;
 let mockIsLoadingPermission = false;
 let mockIsLoadingPeople = false;
 let mockOutlineViewAvailable = true;
+let mockAIEnabled = true;
 
 jest.mock('@/components/presentation/AISlidesSharePanel', () => ({
   __esModule: true,
@@ -27,6 +28,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: () => mockAIEnabled,
   useAppView: (viewId: string) => (mockOutlineViewAvailable ? { view_id: viewId, is_published: false } : undefined),
 }));
 
@@ -121,11 +123,35 @@ describe('ShareTabs publish availability', () => {
     mockUpdateGroupInAccessList.mockClear();
     mockPublishPanelProps.mockClear();
     mockUseViewActionPermissions.mockClear();
+    mockAISlidesPanelProps.mockClear();
     mockCanShare = true;
     mockHasLoadedPermission = true;
     mockIsLoadingPermission = false;
     mockIsLoadingPeople = false;
     mockOutlineViewAvailable = true;
+    mockAIEnabled = true;
+  });
+
+  it('hides AI Slides when server AI is disabled without loading the presentation panel', () => {
+    mockAIEnabled = false;
+    render(<ShareTabs opened viewId='page' presentationViewId='page' onPresentationRequest={jest.fn()} onClose={jest.fn()} />);
+    expect(screen.queryByRole('tab', { name: 'AI Slides' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'shareAction.shareTab' })).toBeTruthy();
+    expect(screen.getByTestId('share-panel')).toBeTruthy();
+    expect(mockAISlidesPanelProps).not.toHaveBeenCalled();
+  });
+
+  it('returns to Share if AI is disabled while AI Slides is selected', async () => {
+    const props = { opened: true, viewId: 'page', presentationViewId: 'page', onPresentationRequest: jest.fn(), onClose: jest.fn() };
+    const view = render(<ShareTabs {...props} />);
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI Slides' }), { button: 0, ctrlKey: false });
+    await screen.findByTestId('ai-slides-panel');
+    mockAIEnabled = false;
+    view.rerender(<ShareTabs {...props} />);
+    expect(screen.queryByRole('tab', { name: 'AI Slides' })).toBeNull();
+    expect(screen.queryByTestId('ai-slides-panel')).toBeNull();
+    expect(screen.getByTestId('share-panel')).toBeTruthy();
   });
 
   it('keeps Share available while removing Publish when requested', () => {

@@ -8,8 +8,8 @@ import { captureTokenSession, getTokenParsed, invalidTokenForSession, isTokenSes
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
-import { applyErrorCapability } from './error-capability';
 import { isAuthRefreshFailure } from './auth-refresh-error';
+import { applyErrorCapability } from './error-capability';
 import { initGrantService, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
 
@@ -20,7 +20,11 @@ declare module 'axios' {
     authSessionWitness?: TokenSessionWitness;
     /** A safe read gets at most one retry after authentication recovery. */
     authRefreshAttempted?: boolean;
+    /** Best-effort telemetry must not refresh credentials or invalidate its caller's login. */
+    skipAuthRefresh?: boolean;
     skipResponseCache?: boolean;
+    /** Streaming reads can incur work even when their response is interrupted. Never replay them. */
+    skipTransportRetry?: boolean;
   }
 }
 
@@ -524,6 +528,7 @@ export function initAPIService(config: AFCloudConfig) {
       const refresh_token = token.refresh_token;
 
       if (isExpired) {
+        if (config.skipAuthRefresh) throw new Error('Request requires a current access token');
         try {
           const newToken = await refreshToken(refresh_token);
 
@@ -560,11 +565,21 @@ export function initAPIService(config: AFCloudConfig) {
     const request = axiosError.config;
     const session = request?.authSessionWitness;
 
+    // Fetch streams rejected before authentication recovery still own a response body.
+    // Close that denied response before rotating credentials or replaying the safe read.
+    if (axiosError.response?.status === 401 && request?.responseType === 'stream') {
+      const body: unknown = axiosError.response.data;
+
+      if (body && typeof body === 'object' && 'cancel' in body && typeof body.cancel === 'function') {
+        void Promise.resolve(body.cancel()).catch(() => undefined);
+      }
+    }
+
     // An anonymous public request has no login to invalidate. In particular,
     // emitting SESSION_INVALID here restarts catalog consumers and can turn
     // one mistaken public-page request into an endless stream of 401s.
     if (axiosError.response?.status !== 401 || !request || !session ||
-      !isTokenSessionCurrent(session) || request.authRefreshAttempted || request.signal?.aborted) {
+      !isTokenSessionCurrent(session) || request.skipAuthRefresh || request.authRefreshAttempted || request.signal?.aborted) {
       return Promise.reject(error);
     }
 
@@ -682,6 +697,7 @@ export function initAPIService(config: AFCloudConfig) {
     const config = error.config as RetryableAxiosConfig | undefined;
 
     if (!config) return Promise.reject(error);
+    if (config.skipTransportRetry) return Promise.reject(error);
     // Creation activation must surface its first failed current-state read.
     if (config.atomicCreationOwner) return Promise.reject(error);
 

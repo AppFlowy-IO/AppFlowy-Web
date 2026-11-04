@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { loadPresentation, loadSavedDeck, serverOptions } from '../presentation-client';
 import ServerSlideCanvas, { ServerSlideSceneProvider } from '../ServerSlideCanvas';
 
-import type { Artifact, ServerSlidePlan } from '../server-contract';
+import type { Artifact, ReviewedStyle, ServerSlidePlan } from '../server-contract';
 import type { DeckScene } from '../server-scene';
 import type { AxiosRequestConfig } from 'axios';
 
@@ -100,6 +100,30 @@ beforeEach(() => {
   mockRequest.mockReset().mockImplementation(async (config: AxiosRequestConfig) => route(config));
   URL.createObjectURL = jest.fn(() => 'blob:image');
   URL.revokeObjectURL = jest.fn();
+});
+
+test('reopening a template deck restores the exact saved style version and layout slots', async () => {
+  const reference = { id: 'saved-style', version: 2 };
+  const style: ReviewedStyle = {
+    reference, theme: scene.theme,
+    templateSlides: [{ id: 'cover', title: 'Cover', text: 'Reference', textSlots: { title: 'Reference' }, elements: [] }],
+  };
+
+  mockRequest.mockImplementation(async (config: AxiosRequestConfig) => {
+    if (config.url?.endsWith('/scene')) return { status: 200, data: { code: 0, data: { ...scene, style: reference } }, headers: {} };
+    if (config.url?.endsWith('/artifacts/saved-style')) {
+      expect(config.params).toEqual({ version: 2 });
+      return { status: 200, data: { code: 0, data: { ...artifact, id: reference.id, version: 2, content: style } }, headers: {} };
+    }
+
+    return route(config);
+  });
+  const deck = await loadSavedDeck(scope, 'deck', 3);
+
+  expect(deck.style.serverStyle).toEqual(style);
+  expect(deck.style.serverVersion).toBe(2);
+  expect(sceneReads()).toHaveLength(1);
+  expect(assetReads()).toHaveLength(0);
 });
 
 test('previews a loaded deck from the scene read with it and fetches only its images', async () => {

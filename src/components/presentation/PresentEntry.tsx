@@ -1,7 +1,7 @@
 import { lazy, Suspense, useRef, useState } from 'react';
 
 import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
-import { useAppView, useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppView, useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { Button } from '@/components/ui/button';
 
@@ -20,6 +20,7 @@ export default function PresentEntry({
 }: PresentationSourceProps & { slidesOnly?: boolean }) {
   const [mode, setMode] = useState<Mode>();
   const [menuOpen, setMenuOpen] = useState(false);
+  const aiEnabled = useAIEnabled();
   const deck = source.deck;
   const trigger = useRef<HTMLButtonElement>(null);
   const permissionViewId = source.permissionViewId ?? source.viewId;
@@ -35,10 +36,13 @@ export default function PresentEntry({
     ? undefined
     : presentationAIAccessReason({ role, canWrite, permissionsLoaded: menuOpen && hasLoadedViewActionPermissions });
   const open = (next: Mode) => {
+    if (next !== 'document' && !aiEnabled) return;
     // Fetch the dialog and the chosen mode's chunk together instead of one after the other.
     preloadPresentation(next);
     setMode(next);
   };
+
+  if (slidesOnly && !aiEnabled) return null;
 
   return (
     <>
@@ -51,6 +55,7 @@ export default function PresentEntry({
         <PresentationMenu
           ref={trigger}
           onSelect={open}
+          aiEnabled={aiEnabled}
           aiUnavailableReason={aiUnavailableReason}
           onOpenChange={setMenuOpen}
         />

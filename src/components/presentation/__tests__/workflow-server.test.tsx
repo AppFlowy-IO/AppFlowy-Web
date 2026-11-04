@@ -316,10 +316,10 @@ test.each([
     mapArtifact: { id: 'saved-narrative', version: 4, sourceRevision: mapRevision },
   });
   (loadSourceSnapshot as jest.Mock).mockResolvedValue({ ...source, revision: refreshedRevision });
-  // Settle both restored session state and the immediate source-preparation read.
+  // Restoring settings uses the initial source; the click revalidates its current revision.
   await act(async () => { open(); });
   await waitFor(() => expect(screen.getByText('Generate').disabled).toBe(false));
-  expect(screen.getByTestId('narrative').textContent).toBe(String(mapRevision === refreshedRevision));
+  expect(screen.getByTestId('narrative').textContent).toBe(String(mapRevision === source.revision));
   fireEvent.click(screen.getByText('Generate'));
   await waitFor(() => expect(run).toHaveBeenCalled());
   expect(run.mock.calls[0][0].narrative).toEqual(included ? { id: 'saved-narrative', version: 4 } : undefined);

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import { PageService } from '@/application/services/domains';
 import { UIVariant } from '@/application/types';
+import type { ExportTarget } from '@/components/app/share/ExportPanel';
 import { RowPeekDocumentActions } from '@/components/database/row-peek/RowPeekDocumentActions';
 
 let mockVariant = UIVariant.App;
@@ -42,26 +43,33 @@ jest.mock('@/components/app/header/Users', () => ({
     <div data-testid='collaborators' data-view-id={viewId} data-limit={maxVisibleUsers} />
   ),
 }));
+let mockExportTarget: ExportTarget | undefined;
+
 jest.mock('@/components/app/share/ShareButton', () => ({
   ShareButton: ({
     viewId,
     shareUrl,
     hidePublish,
-    hideExport,
+    hideExport = false,
+    exportTarget,
   }: {
     viewId: string;
     shareUrl?: string;
     hidePublish: boolean;
-    hideExport: boolean;
-  }) => (
-    <div
-      data-testid='share'
-      data-view-id={viewId}
-      data-url={shareUrl}
-      data-hide-publish={hidePublish}
-      data-hide-export={hideExport}
-    />
-  ),
+    hideExport?: boolean;
+    exportTarget?: ExportTarget;
+  }) => {
+    mockExportTarget = exportTarget;
+    return (
+      <div
+        data-testid='share'
+        data-view-id={viewId}
+        data-url={shareUrl}
+        data-hide-publish={hidePublish}
+        data-hide-export={hideExport}
+      />
+    );
+  },
 }));
 
 function Fixture({ rowId = 'first' }: { rowId?: string }) {
@@ -78,6 +86,7 @@ function Fixture({ rowId = 'first' }: { rowId?: string }) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockExportTarget = undefined;
   mockVariant = UIVariant.App;
   mockDatabaseId = 'database-id';
   mockTitle = 'Original title';
@@ -97,10 +106,48 @@ it('uses row collaborators and links, while inheriting access from the database'
   expect(share.getAttribute('data-view-id')).toBe('database-page');
   expect(share.getAttribute('data-url')).toContain('v=board-view&r=first');
   expect(share.getAttribute('data-hide-publish')).toBe('true');
-  expect(share.getAttribute('data-hide-export')).toBe('true');
   rerender(<Fixture rowId='second' />);
   expect(screen.getByTestId('collaborators').getAttribute('data-view-id')).toBe('document-second');
   expect(screen.getByTestId('share').getAttribute('data-url')).toContain('r=second');
+});
+
+// Like Desktop, both peeks export the row page, never the database it shares through.
+it('offers Export for the row page instead of the database', () => {
+  const { rerender } = render(<Fixture />);
+
+  expect(screen.getByTestId('share').getAttribute('data-hide-export')).toBe('false');
+  expect(mockExportTarget?.viewId).toBe('document-first');
+  rerender(<Fixture rowId='second' />);
+  expect(mockExportTarget?.viewId).toBe('document-second');
+});
+
+it('commits and materializes the row with its saved title before exporting', async () => {
+  mockPrepare.mockImplementation(async () => {
+    mockTitle = '  Committed draft  ';
+    return true;
+  });
+  render(<Fixture />);
+  await act(async () => {
+    await mockExportTarget?.prepare?.();
+  });
+  expect(ensureRowDocumentView).toHaveBeenCalledWith('workspace', 'document-first', {
+    database_id: 'database-id',
+    database_view_id: 'board-view',
+    row_id: 'first',
+  });
+  expect(syncRowDocumentViewName).toHaveBeenCalledWith('workspace', 'document-first', 'Committed draft');
+  expect(mockPrepare.mock.invocationCallOrder[0]).toBeLessThan(
+    jest.mocked(ensureRowDocumentView).mock.invocationCallOrder[0]
+  );
+});
+
+it('still exports when the row page cannot be prepared', async () => {
+  mockPrepare.mockResolvedValue(false);
+  render(<Fixture />);
+  await act(async () => {
+    await expect(mockExportTarget?.prepare?.()).resolves.toBeUndefined();
+  });
+  expect(syncRowDocumentViewName).not.toHaveBeenCalled();
 });
 
 it('commits and materializes the row before favoriting it with the saved title', async () => {

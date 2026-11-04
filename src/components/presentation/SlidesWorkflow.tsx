@@ -51,6 +51,13 @@ import { usePresentationFullscreen } from './usePresentationFullscreen';
 
 import type { JobStatus } from './server-contract';
 
+/** The exact source and settings assessed for one Generate click. */
+export interface PreparedSlideGeneration {
+  source: PageSnapshot;
+  options: GenerationOptions;
+  style: PresentationStyle;
+}
+
 export interface SlidesWorkflowProps {
   snapshot: PageSnapshot;
   sourceSnapshot?: PageSnapshot;
@@ -66,7 +73,12 @@ export interface SlidesWorkflowProps {
   onPlan: Dispatch<SetStateAction<StoryPlan>>;
   stage: SlidesStage;
   onStage: (stage: SlidesStage) => void;
-  onGenerate: (slide?: Slide) => void;
+  onGenerate: (slide?: Slide, prepared?: PreparedSlideGeneration) => void;
+  /**
+   * Available when source reads and saved-result opening are allowed, independent of AI allowance.
+   * Resolve fresh evidence on click; null means an unchanged saved result was opened.
+   */
+  onPrepareGeneration?: (signal: AbortSignal) => Promise<PageSnapshot | null>;
   onSource: (id: string) => void;
   onApplyOutline: () => Promise<void>;
   hasOutlineChanges: boolean;

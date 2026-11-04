@@ -27,6 +27,8 @@ const choices = [
 
 interface PresentationMenuProps {
   onSelect: (mode: PresentationChoice) => void;
+  /** Server-disabled AI actions are omitted; document presentation remains available. */
+  aiEnabled?: boolean;
   /** Why AI mind maps and slides are unavailable here; those rows stay visible and explain it on hover. */
   aiUnavailableReason?: string;
   onOpenChange?: (open: boolean) => void;
@@ -34,8 +36,9 @@ interface PresentationMenuProps {
 
 /** Uses the same row, text, icon sizing and hover treatment as the page actions menu. */
 const PresentationMenu = forwardRef<HTMLButtonElement, PresentationMenuProps>(
-  ({ onSelect, aiUnavailableReason, onOpenChange }, ref) => {
+  ({ onSelect, aiEnabled = true, aiUnavailableReason, onOpenChange }, ref) => {
     const narrow = useMediaQuery('(max-width: 640px)');
+    const visibleChoices = aiEnabled ? choices : choices.filter((choice) => choice.mode === 'document');
 
     return (
       <DropdownMenu
@@ -54,7 +57,7 @@ const PresentationMenu = forwardRef<HTMLButtonElement, PresentationMenuProps>(
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' aria-label='Present menu' className='font-normal'>
-          {choices.map((choice, index) => {
+          {visibleChoices.map((choice, index) => {
             // Not Radix `disabled`: that removes pointer events, and the row must still explain itself on hover.
             const unavailable = choice.mode !== 'document' ? aiUnavailableReason : undefined;
 
@@ -93,7 +96,7 @@ const PresentationMenu = forwardRef<HTMLButtonElement, PresentationMenuProps>(
                   aria-label={unavailable ? `${choice.description} ${unavailable}` : choice.description}
                   side={narrow ? 'bottom' : 'left'}
                   align={narrow ? 'end' : 'center'}
-                  sideOffset={narrow ? (choices.length - index - 1) * 32 + 20 : 12}
+                  sideOffset={narrow ? (visibleChoices.length - index - 1) * 32 + 20 : 12}
                   collisionPadding={12}
                   className='w-[312px] max-w-[calc(100vw-24px)] gap-2.5 whitespace-normal break-normal p-3'
                 >

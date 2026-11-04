@@ -77,6 +77,7 @@ const mockToView = jest.fn(async () => undefined);
 let mockCover: ViewCover | undefined;
 const mockPermissions = { canRead: true, canWrite: true, hasLoadedViewActionPermissions: true };
 let mockWorkspaceRole: string | undefined = 'Member';
+let mockAIEnabled = true;
 const mockPermissionHook = jest.fn((..._args: unknown[]) => mockPermissions);
 const mockContent = {
   type: 'page',
@@ -96,6 +97,7 @@ const mockContent = {
 };
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: () => mockAIEnabled,
   useAppView: (id: string) => ({
     view_id: id,
     name: 'Live document',
@@ -132,6 +134,7 @@ beforeEach(() => {
   mockPermissions.canRead = true;
   mockPermissions.canWrite = true;
   mockWorkspaceRole = 'Member';
+  mockAIEnabled = true;
   mockCover = undefined;
   setActiveRowPage(null);
   mockUserId = 'user';
@@ -140,12 +143,47 @@ beforeEach(() => {
   mockRequest.mockImplementation(mockWire);
 });
 
+it('hides AI presentation actions when server AI is disabled and keeps document presentation available', async () => {
+  mockAIEnabled = false;
+  render(<PresentEntry viewId='document' />);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+  const documentItem = await screen.findByRole('menuitem', { name: 'Present document' });
+
+  expect(screen.queryByRole('menuitem', { name: 'Present AI mind map' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Generate AI ppt' })).toBeNull();
+  fireEvent.click(documentItem);
+  expect(await screen.findByLabelText('Slide 1 of 2')).toBeTruthy();
+  expect(mockRequest).not.toHaveBeenCalled();
+});
+
+it('hides the direct AI generation button when server AI is disabled', () => {
+  mockAIEnabled = false;
+  render(<PresentEntry viewId='document' slidesOnly />);
+  expect(screen.queryByRole('button', { name: 'Generate AI ppt' })).toBeNull();
+  expect(mockRequest).not.toHaveBeenCalled();
+});
+
+it('updates AI menu visibility when the server capability changes', async () => {
+  mockAIEnabled = false;
+  const view = render(<PresentEntry viewId='document' />);
+
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+  await screen.findByRole('menuitem', { name: 'Present document' });
+  expect(screen.queryByRole('menuitem', { name: 'Generate AI ppt' })).toBeNull();
+  mockAIEnabled = true;
+  view.rerender(<PresentEntry viewId='document' />);
+  expect(screen.getByRole('menuitem', { name: 'Generate AI ppt' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Present AI mind map' })).toBeTruthy();
+  expect(mockRequest).not.toHaveBeenCalled();
+});
+
 it('opens compact AI ppt settings on the authorized page and closes back to the page', async () => {
   render(<PresentEntry viewId='document' slidesOnly />);
   fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
   await screen.findByRole('region', { name: 'Create presentation settings' }, { timeout: 5000 });
   expect(mockLoadView).not.toHaveBeenCalled();
-  expect(mockRequest).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/presentation/workspace/sources', method: 'POST', data: expect.objectContaining({ sources: [{ pageId: 'document' }] }) }));
+  expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/api/presentation/workspace/sources' }));
+  expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/api/presentation/workspace/slides/assess' }));
   expect(screen.queryByLabelText('Test scenario')).toBeNull();
   expect(screen.queryByText('Q3 Product Review')).toBeNull();
   expect(screen.getByText('Live document')).toBeTruthy();
@@ -189,7 +227,7 @@ it('opens Present AI mind map directly in the enlarged view and closes back to t
 
   expect(canvas.classList.contains('ps-map-expanded')).toBe(true);
   expect(screen.queryByRole('navigation', { name: 'Page presentation tools' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Generate with AI' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Generate with AI' })).toBeNull();
   fireEvent.keyDown(canvas, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Interactive mind map' })).toBeNull());
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
@@ -366,9 +404,13 @@ it('cancels old-actor source reads and never renders their late content after id
   const rendered = render(<PresentEntry viewId='document' slidesOnly />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Generate AI ppt' }));
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   await waitFor(() => expect(finishOld).toBeDefined());
   mockUserId = 'new-user';
   rendered.rerender(<PresentEntry viewId='document' slidesOnly />);
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
   expect(await screen.findByText('New actor source')).toBeTruthy();
   expect(oldSignal?.aborted).toBe(true);
   await act(async () => { finishOld?.({ status: 200, data: { code: 0, data: { ...mockSource(), title: 'Old private actor content' } }, headers: {} }); });
