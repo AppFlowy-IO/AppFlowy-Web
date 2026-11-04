@@ -870,6 +870,8 @@
       "loading": "Loading MCP settings",
       "unavailableTitle": "AI app connections aren't available",
       "unavailableDescription": "This AppFlowy server doesn't have the MCP service configured, or it can't be reached right now.",
+      "licenseRequiredTitle": "Upgrade required",
+      "licenseRequiredDescription": "MCP needs an AppFlowy One or Team license on this self-hosted server. Ask your administrator to upgrade the license in the admin console. Connections you already have are kept and work again once the license includes MCP.",
       "disabledTitle": "AI app connections are turned off",
       "disabledDescription": "AI app connections are turned off on this AppFlowy server, so AI apps can't use AppFlowy right now. Ask your administrator to turn them on. Your connections are kept and work again as soon as AI app connections are back on. You can still disconnect them below.",
       "retry": "Try again",

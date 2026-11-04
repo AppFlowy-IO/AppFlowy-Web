@@ -122,6 +122,20 @@ describe('Settings AI apps entry', () => {
     expect(screen.getByTestId('settings-menu-connections')).toBeTruthy();
   });
 
+  it('lists MCP on a self-hosted server whose license does not include it, to ask for an upgrade', () => {
+    setServerInfo({ status: 'available', info: { enable_page_history: true, mcp_status: 'license_required' } });
+    renderSettings();
+
+    expect(screen.getByTestId('settings-menu-ai_apps')).toBeTruthy();
+  });
+
+  it('ignores an mcp_status it does not know, as an older Web would', () => {
+    setServerInfo({ status: 'available', info: { enable_page_history: true, mcp_status: 'something_newer' } });
+    renderSettings();
+
+    expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
+  });
+
   it('lazily opens the panel for the current workspace', async () => {
     setServerInfo(serverInfo('https://mcp.example.com'));
     renderSettings();
