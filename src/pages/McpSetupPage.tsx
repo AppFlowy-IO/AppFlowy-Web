@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { MCP_SETTINGS_PATH } from '@/application/mcp/setup';
 import { toMcpServerUrl } from '@/application/services/domains/mcp';
 import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { useMcpConfiguration } from '@/components/mcp/useMcpConfiguration';
 import { Progress } from '@/components/ui/progress';
@@ -31,15 +32,15 @@ export function McpSetupPage() {
 
   return (
     <div className='flex min-h-screen w-full flex-col bg-background-primary' data-testid='mcp-setup-page'>
-      <header className='flex h-[60px] w-full shrink-0 items-center p-4'>
+      <header className='flex h-[60px] w-full shrink-0 items-center px-5 py-4'>
         <Link to='/app' className='h-full w-[141px]' aria-label='AppFlowy'>
           <AppFlowyLogo className='h-full w-full' />
         </Link>
       </header>
-      <main className='flex w-full flex-1 justify-center px-4 pb-16 pt-6'>
-        <div className='flex w-full min-w-0 max-w-[680px] flex-col gap-6'>
+      <main className='flex w-full flex-1 justify-center px-4 pb-16 pt-5'>
+        <div className='flex w-full min-w-0 max-w-[680px] flex-col gap-5'>
           <div className='flex flex-col gap-2'>
-            <h1 className='text-2xl font-semibold text-text-primary'>{title}</h1>
+            <h1 className='text-2xl font-semibold leading-9 text-text-primary'>{title}</h1>
             <p className='text-sm text-text-secondary'>{t('mcp.setup.pageDescription')}</p>
           </div>
           {configuration.status === 'loading' ? (
@@ -62,7 +63,7 @@ export function McpSetupPage() {
               <p className='text-sm text-text-secondary'>{t('mcp.setup.signInNote')}</p>
               <Link
                 to={MCP_SETTINGS_PATH}
-                className='w-fit text-sm font-medium text-text-action hover:text-text-action-hover hover:underline'
+                className='w-fit text-sm font-medium text-text-action hover:text-text-action-hover'
                 data-testid='mcp-setup-manage-link'
               >
                 {t('mcp.setup.manageLink')}
@@ -71,10 +72,11 @@ export function McpSetupPage() {
           ) : (
             <div
               role='status'
-              className='rounded-400 border border-border-primary p-4 text-sm text-text-secondary'
+              className='flex items-start gap-3 rounded-400 bg-fill-info-light py-4 pl-4 pr-3 text-sm text-text-primary'
               data-testid='mcp-setup-not-configured'
             >
-              {t('mcp.setup.notConfigured')}
+              <InfoIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-info-thick' />
+              <span className='min-w-0'>{t('mcp.setup.notConfigured')}</span>
             </div>
           )}
         </div>

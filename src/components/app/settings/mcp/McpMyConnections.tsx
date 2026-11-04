@@ -78,7 +78,6 @@ export function McpMyConnections({ state, onDisconnect, overview }: McpMyConnect
                 <PanelScopeBadge scope={connection.scope} />
                 <Button
                   variant='outline'
-                  size='sm'
                   disabled={Boolean(disconnecting)}
                   onClick={() => {
                     setTarget(connection);

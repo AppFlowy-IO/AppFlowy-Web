@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { MCP_SETUP_PAGE_PATH, type McpScope } from '@/application/mcp/setup';
 import type { McpClientInfo, McpMemberStatus } from '@/application/services/domains/mcp';
 import type { Workspace } from '@/application/types';
+import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
 import { McpClientAvatar } from '@/components/mcp/McpClientAvatar';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,13 @@ import {
 } from './consentModel';
 import { McpConsentAccount } from './McpConsentAccount';
 import { McpConsentDetails } from './McpConsentDetails';
-import { CONSENT_FOCUS_RING, McpConsentLayout } from './McpConsentLayout';
+import {
+  CONSENT_CHECK_MARK,
+  CONSENT_CHECKBOX,
+  CONSENT_CHECKBOX_TARGET,
+  CONSENT_FOCUS_RING,
+  McpConsentLayout,
+} from './McpConsentLayout';
 import { McpConsentNotice } from './McpConsentNotice';
 import { McpConsentScopes } from './McpConsentScopes';
 import { McpConsentWorkspacePicker } from './McpConsentWorkspacePicker';
@@ -27,7 +34,7 @@ import { type ConsentAction } from './useMcpConsent';
 
 // The client name is rendered by React inside the translated sentence; i18next only sees this marker.
 const NAME_MARKER = '\u2063';
-const ACTION_BUTTON_CLASS = cn('sm:flex-1', CONSENT_FOCUS_RING);
+const ACTION_BUTTON_CLASS = cn('w-full', CONSENT_FOCUS_RING);
 
 function ConsentTitle({ name }: { name: string }) {
   const { t } = useTranslation();
@@ -40,7 +47,7 @@ function ConsentTitle({ name }: { name: string }) {
   );
 
   return (
-    <h1 className='break-words text-xl font-semibold text-text-primary' data-testid='mcp-consent-title'>
+    <h1 className='break-words text-xl font-bold text-text-primary' data-testid='mcp-consent-title'>
       {markerIndex < 0 ? (
         <>
           <span className='block'>{nameNode}</span>
@@ -124,7 +131,7 @@ export function McpConsentView({
 
   return (
     <McpConsentLayout data-testid='mcp-consent-page' aria-busy={submitting || undefined}>
-      <div className='flex flex-col items-center gap-4 text-center'>
+      <div className='flex flex-col items-center gap-6 text-center'>
         <McpClientAvatar client={client} size='lg' />
         <ConsentTitle name={name} />
       </div>
@@ -143,17 +150,20 @@ export function McpConsentView({
       <div className='flex flex-col gap-3'>
         <McpConsentScopes scopes={scopes} onToggle={onToggleScope} disabled={submitting} />
         {readOnly && (
-          <p className='text-xs text-text-secondary' data-testid='mcp-consent-read-only-hint'>
+          <p className='text-xs leading-[18px] text-text-secondary' data-testid='mcp-consent-read-only-hint'>
             {t('mcp.consent.readOnlyHint', values)}
           </p>
         )}
-        <p className='text-xs text-text-secondary'>{t('mcp.consent.accessNote')}</p>
+        <p className='text-xs leading-[18px] text-text-secondary'>{t('mcp.consent.accessNote')}</p>
         {/* A new tab, so this request stays open; no referrer, since this URL carries OAuth parameters. */}
         <a
           href={MCP_SETUP_PAGE_PATH}
           target='_blank'
           rel='noopener noreferrer'
-          className={cn('w-fit rounded-200 text-xs text-text-action hover:underline', CONSENT_FOCUS_RING)}
+          className={cn(
+            'w-fit rounded-200 text-xs leading-[18px] text-text-action hover:text-text-action-hover',
+            CONSENT_FOCUS_RING
+          )}
           data-testid='mcp-consent-learn-more'
         >
           {t('mcp.consent.learnMore')}
@@ -173,16 +183,21 @@ export function McpConsentView({
 
       {statusError && (
         <McpConsentNotice tone='error' data-testid='mcp-consent-status-error' data-reason={statusError}>
-          <p role='alert'>{t(consentErrorMessageKey(statusError))}</p>
-          <Button
-            variant='outline'
-            size='sm'
-            className={cn('w-fit', CONSENT_FOCUS_RING)}
-            onClick={onRetryStatus}
-            data-testid='mcp-consent-status-retry'
-          >
-            {t('mcp.consent.tryAgain')}
-          </Button>
+          {/* Figma Message Box 8540:9055: the Filled S action sits 8 px right of the text, centred on its first line. */}
+          <div className='flex items-start gap-2'>
+            <p role='alert' className='min-w-0 flex-1'>
+              {t(consentErrorMessageKey(statusError))}
+            </p>
+            <Button
+              variant='destructive'
+              size='sm'
+              className={cn('-my-1 shrink-0', CONSENT_FOCUS_RING, 'focus-visible:ring-offset-fill-error-light')}
+              onClick={onRetryStatus}
+              data-testid='mcp-consent-status-retry'
+            >
+              {t('mcp.consent.tryAgain')}
+            </Button>
+          </div>
         </McpConsentNotice>
       )}
 
@@ -217,34 +232,26 @@ export function McpConsentView({
 
       {mustAcknowledge && hostToAcknowledge && (
         <McpConsentNotice tone='warning' data-testid='mcp-consent-acknowledge-host'>
-          <label className='flex cursor-pointer items-start gap-2'>
-            <input
-              type='checkbox'
-              checked={acknowledged}
-              disabled={submitting}
-              onChange={(event) => setAcknowledged(event.target.checked)}
-              className='mt-0.5 h-4 w-4 shrink-0 accent-fill-theme-thick'
-              data-testid='mcp-consent-acknowledge'
-            />
-            <span className='min-w-0 break-words'>
+          <label className={cn('flex items-start gap-1', submitting ? 'cursor-default' : 'cursor-pointer')}>
+            <span className={CONSENT_CHECKBOX_TARGET}>
+              <input
+                type='checkbox'
+                checked={acknowledged}
+                disabled={submitting}
+                onChange={(event) => setAcknowledged(event.target.checked)}
+                className={CONSENT_CHECKBOX}
+                data-testid='mcp-consent-acknowledge'
+              />
+              <CheckIcon aria-hidden='true' className={CONSENT_CHECK_MARK} />
+            </span>
+            <span className={cn('min-w-0 break-words', submitting && 'text-text-tertiary')}>
               {t('mcp.consent.acknowledgeHost', { host: hostToAcknowledge, ...RAW_INTERPOLATION })}
             </span>
           </label>
         </McpConsentNotice>
       )}
 
-      <div className='flex flex-col-reverse gap-3 sm:flex-row'>
-        <Button
-          variant='outline'
-          size='lg'
-          className={ACTION_BUTTON_CLASS}
-          onClick={onDeny}
-          disabled={submitting}
-          loading={busy === 'deny'}
-          data-testid='mcp-consent-deny'
-        >
-          {t('mcp.consent.cancel')}
-        </Button>
+      <div className='flex flex-col gap-3'>
         {action === 'approve-and-allow' ? (
           <Button
             size='lg'
@@ -279,6 +286,17 @@ export function McpConsentView({
             {busy === 'allow' ? t('mcp.consent.submitting') : t('mcp.consent.allow')}
           </Button>
         )}
+        <Button
+          variant='outline'
+          size='lg'
+          className={ACTION_BUTTON_CLASS}
+          onClick={onDeny}
+          disabled={submitting}
+          loading={busy === 'deny'}
+          data-testid='mcp-consent-deny'
+        >
+          {t('mcp.consent.cancel')}
+        </Button>
       </div>
     </McpConsentLayout>
   );

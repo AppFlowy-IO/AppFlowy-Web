@@ -9,7 +9,7 @@ import {
   type McpClientSummary,
   type McpWorkspaceConnection,
 } from '@/application/services/domains/mcp';
-import { ReactComponent as ArrowRightIcon } from '@/assets/icons/alt_arrow_right_small.svg';
+import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down_small.svg';
 import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
@@ -190,7 +190,10 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                   <PanelClientIdentity client={request} className='flex-1'>
                     {isMcpAppApprovalKey(requestKey) && (
                       // Approving a recognized app approves it as an app.
-                      <span className='text-xs text-text-secondary' data-testid='mcp-access-request-scope'>
+                      <span
+                        className='text-xs leading-[18px] text-text-secondary'
+                        data-testid='mcp-access-request-scope'
+                      >
                         {t('settings.mcp.approveCoversAllInstalls', {
                           name: mcpClientName(request, t),
                           ...RAW_INTERPOLATION,
@@ -198,7 +201,10 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                       </span>
                     )}
                     {requestedBy && (
-                      <span className='text-xs text-text-secondary' data-testid='mcp-access-request-requesters'>
+                      <span
+                        className='text-xs leading-[18px] text-text-secondary'
+                        data-testid='mcp-access-request-requesters'
+                      >
                         {requestedBy}
                       </span>
                     )}
@@ -206,23 +212,21 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                   </PanelClientIdentity>
                   <div className='flex shrink-0 items-center gap-2'>
                     <Button
-                      size='sm'
-                      disabled={busy}
-                      loading={isPending(pending, 'approve', approveTarget)}
-                      onClick={() => void approve(approveTarget, requestKey)}
-                      data-testid={`mcp-approve-request-${index}`}
-                    >
-                      {t('settings.mcp.approve')}
-                    </Button>
-                    <Button
-                      size='sm'
-                      variant='ghost'
+                      variant='outline'
                       disabled={busy}
                       loading={isPending(pending, 'dismiss', requestKey)}
                       onClick={() => void dismiss(requestKey)}
                       data-testid={`mcp-dismiss-request-${index}`}
                     >
                       {t('settings.mcp.dismiss')}
+                    </Button>
+                    <Button
+                      disabled={busy}
+                      loading={isPending(pending, 'approve', approveTarget)}
+                      onClick={() => void approve(approveTarget, requestKey)}
+                      data-testid={`mcp-approve-request-${index}`}
+                    >
+                      {t('settings.mcp.approve')}
                     </Button>
                   </div>
                 </li>
@@ -256,11 +260,14 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                   >
                     <PanelClientIdentity client={approval} className='flex-1'>
                       {appLevel && (
-                        <span className='text-xs text-text-primary' data-testid='mcp-approved-client-scope'>
+                        <span
+                          className='text-xs leading-[18px] text-text-secondary'
+                          data-testid='mcp-approved-client-scope'
+                        >
                           {t('settings.mcp.allInstalls', { name: mcpClientName(approval, t), ...RAW_INTERPOLATION })}
                         </span>
                       )}
-                      <div className='flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-text-secondary'>
+                      <div className='flex flex-wrap items-center gap-x-1.5 text-xs leading-[18px] text-text-secondary'>
                         {approver && (
                           <span data-testid='mcp-approved-client-approver'>
                             {t('settings.mcp.approvedBy', { name: approver, ...RAW_INTERPOLATION })}
@@ -272,13 +279,15 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                     </PanelClientIdentity>
                     <div className='flex shrink-0 items-center gap-3'>
                       {count !== undefined && (
-                        <span className='text-xs text-text-secondary' data-testid='mcp-approved-client-connections'>
+                        <span
+                          className='text-xs leading-[18px] text-text-secondary'
+                          data-testid='mcp-approved-client-connections'
+                        >
                           {t('settings.mcp.activeConnections', { count })}
                         </span>
                       )}
                       <Button
                         variant='outline'
-                        size='sm'
                         disabled={busy}
                         onClick={() => ask({ kind: 'revoke', approval })}
                         data-testid={`mcp-revoke-client-${index}`}
@@ -311,7 +320,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                 data-user-uuid={userUuid}
               >
                 <div className='flex min-w-0 items-center justify-between gap-4 px-4 pb-1 pt-3'>
-                  <div className='flex min-w-0 flex-col gap-0.5'>
+                  <div className='flex min-w-0 flex-col'>
                     <span
                       className='truncate text-sm font-medium text-text-primary'
                       title={member.name}
@@ -321,7 +330,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                     </span>
                     {member.email && (
                       <span
-                        className='truncate text-xs text-text-secondary'
+                        className='truncate text-xs leading-[18px] text-text-secondary'
                         title={member.email}
                         data-testid='mcp-member-connection-email'
                       >
@@ -330,7 +339,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                     )}
                   </div>
                   <span
-                    className='inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-border-primary bg-fill-content px-2 py-0.5 text-xs text-text-secondary'
+                    className='shrink-0 whitespace-nowrap text-xs leading-[18px] text-text-secondary'
                     data-testid='mcp-member-connection-count'
                   >
                     {t('settings.mcp.connectionCount', { count: rows.length })}
@@ -353,7 +362,6 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                         <PanelScopeBadge scope={connection.scope} />
                         <Button
                           variant='outline'
-                          size='sm'
                           disabled={busy}
                           onClick={() => ask({ kind: 'disconnect', connection })}
                           data-testid={`mcp-member-disconnect-${index}`}
@@ -382,7 +390,7 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
         onDisconnectAll={() => ask({ kind: 'disconnectAll' })}
       />
 
-      <p className='text-xs text-text-secondary' data-testid='mcp-propagation-note'>
+      <p className='text-xs leading-[18px] text-text-secondary' data-testid='mcp-propagation-note'>
         {t('settings.mcp.propagationNote')}
       </p>
 
@@ -452,9 +460,10 @@ function ApprovalPolicy({
           <label
             key={option}
             className={cn(
-              'flex min-w-0 items-start gap-3 rounded-400 border px-4 py-3 transition-colors',
-              checked ? 'border-border-theme-thick bg-fill-theme-select' : 'border-border-primary',
-              disabled ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-fill-content-hover'
+              'flex min-w-0 items-start gap-3 rounded-300 border px-4 py-3 transition-colors',
+              checked ? 'border-border-theme-thick' : 'border-border-primary',
+              disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+              !disabled && !checked && 'hover:border-border-primary-hover'
             )}
           >
             <input
@@ -464,19 +473,27 @@ function ApprovalPolicy({
               checked={checked}
               onChange={() => onChoose(option)}
               aria-describedby={descriptionId}
-              className='mt-0.5 h-4 w-4 shrink-0 accent-fill-theme-thick'
+              className='m-[3px] h-3.5 w-3.5 shrink-0 cursor-[inherit] appearance-none rounded-full border-[1.25px] border-border-primary bg-fill-content transition-colors checked:border-4 checked:border-fill-theme-thick checked:bg-icon-on-fill focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-theme-thick enabled:hover:border-border-primary-hover enabled:checked:hover:border-fill-theme-thick-hover disabled:checked:opacity-40 [&:disabled:not(:checked)]:bg-fill-content-hover'
               data-testid={`mcp-approval-mode-${option}`}
             />
-            <span className='flex min-w-0 flex-col gap-0.5'>
-              <span className='flex flex-wrap items-center gap-2 text-sm font-medium text-text-primary'>
+            <span className='flex min-w-0 flex-col'>
+              <span
+                className={cn(
+                  'flex flex-wrap items-center gap-2 text-sm font-medium',
+                  disabled ? 'text-text-tertiary' : 'text-text-primary'
+                )}
+              >
                 {t(APPROVAL_MODE_TEXT[option].title)}
                 {option === 'verified_and_approved' && (
-                  <span className='rounded-full border border-border-primary px-2 py-0.5 text-xs font-normal text-text-secondary'>
+                  <span className='whitespace-nowrap rounded-full bg-fill-info-light px-2 py-px text-sm font-normal text-text-info-on-fill'>
                     {t('settings.mcp.approvalModeRecommended')}
                   </span>
                 )}
               </span>
-              <span id={descriptionId} className='text-xs text-text-secondary'>
+              <span
+                id={descriptionId}
+                className={cn('text-xs leading-[18px]', disabled ? 'text-text-tertiary' : 'text-text-secondary')}
+              >
                 {t(APPROVAL_MODE_TEXT[option].description)}
               </span>
             </span>
@@ -667,19 +684,17 @@ function DisconnectAll({ disabled, onDisconnectAll }: { disabled: boolean; onDis
 
   return (
     <div
-      className='flex items-center justify-between gap-4 rounded-400 border border-border-error-thick px-4 py-3'
+      className='flex items-center justify-between gap-4 rounded-400 border border-border-primary px-4 py-3'
       data-testid='mcp-disconnect-all'
     >
       <div className='flex min-w-0 flex-col gap-1'>
         <span className='text-sm font-medium text-text-primary'>{t('settings.mcp.disconnectAllLabel')}</span>
-        <p id={descriptionId} className='text-xs text-text-secondary'>
+        <p id={descriptionId} className='text-xs leading-[18px] text-text-secondary'>
           {t('settings.mcp.disconnectAllDescription')}
         </p>
       </div>
       <Button
         variant='destructive-outline'
-        size='sm'
-        className='shrink-0'
         disabled={disabled}
         aria-describedby={descriptionId}
         onClick={onDisconnectAll}
@@ -717,14 +732,14 @@ function ApproveById({
         aria-expanded={open}
         aria-controls={open ? contentId : undefined}
         onClick={() => setOpen((value) => !value)}
-        className='flex w-full items-center gap-2 rounded-400 px-4 py-3 text-left text-sm font-medium text-text-primary outline-none hover:bg-fill-content-hover focus-visible:ring-2 focus-visible:ring-border-theme-thick'
+        className='flex w-full items-center justify-between gap-2 rounded-400 px-4 py-3 text-left text-sm font-medium text-text-primary outline-none hover:bg-fill-content-hover focus-visible:ring-2 focus-visible:ring-border-theme-thick'
         data-testid='mcp-approve-by-id-toggle'
       >
-        <ArrowRightIcon
-          aria-hidden='true'
-          className={cn('h-5 w-5 shrink-0 text-icon-secondary transition-transform', open && 'rotate-90')}
-        />
         {t('settings.mcp.advancedTitle')}
+        <ChevronDownIcon
+          aria-hidden='true'
+          className={cn('h-5 w-5 shrink-0 text-icon-secondary transition-transform', open && 'rotate-180')}
+        />
       </button>
       {open && (
         <form
@@ -738,7 +753,7 @@ function ApproveById({
             });
           }}
         >
-          <p id={descriptionId} className='text-xs text-text-secondary'>
+          <p id={descriptionId} className='text-xs leading-[18px] text-text-secondary'>
             {t('settings.mcp.advancedDescription')}
           </p>
           <div className='flex min-w-0 items-center gap-2'>

@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { McpConnectedApp } from '@/application/mcp/setupApps';
-import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
+import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 
 import { SETUP_APP_TEXT_KEYS } from './setupAppText';
 
@@ -27,11 +27,11 @@ export function McpConnectedApps({ apps }: { apps: readonly McpConnectedApp[] })
           return (
             <li
               key={app.key}
-              className='inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-border-primary bg-fill-content px-2 py-0.5 text-xs text-text-primary'
+              className='inline-flex min-w-0 max-w-full items-center gap-1 rounded-200 bg-surface-container-layer-02 px-1 py-px text-sm text-text-primary'
               data-testid='mcp-setup-connected-app'
               data-app={app.setupApp}
             >
-              <CheckIcon aria-hidden='true' className='h-3.5 w-3.5 shrink-0 text-icon-success-thick' />
+              <TickIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-success-thick' />
               <span className='truncate' title={name}>
                 {name}
               </span>

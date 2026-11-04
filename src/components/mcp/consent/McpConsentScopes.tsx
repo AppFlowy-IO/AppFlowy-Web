@@ -2,7 +2,10 @@ import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { MCP_SCOPES, type McpScope } from '@/application/mcp/setup';
+import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
 import { cn } from '@/lib/utils';
+
+import { CONSENT_CHECK_MARK, CONSENT_CHECKBOX, CONSENT_CHECKBOX_TARGET } from './McpConsentLayout';
 
 const SCOPE_TEXT = {
   read: { title: 'mcp.consent.scopeReadTitle', description: 'mcp.consent.scopeReadDescription' },
@@ -32,23 +35,28 @@ export function McpConsentScopes({ scopes, onToggle, disabled }: McpConsentScope
         return (
           <label
             key={scope}
-            className={cn(
-              'flex items-start gap-3 rounded-300 px-1 py-1.5',
-              locked || disabled ? 'cursor-default' : 'cursor-pointer'
-            )}
+            className={cn('flex items-start gap-1 py-0.5', locked || disabled ? 'cursor-default' : 'cursor-pointer')}
           >
-            <input
-              type='checkbox'
-              checked={locked || scopes.includes(scope)}
-              disabled={locked}
-              onChange={(event) => onToggle(scope, event.target.checked)}
-              aria-describedby={descriptionId}
-              className='mt-0.5 h-4 w-4 shrink-0 accent-fill-theme-thick'
-              data-testid={`mcp-consent-scope-${scope}`}
-            />
+            <span className={CONSENT_CHECKBOX_TARGET}>
+              <input
+                type='checkbox'
+                checked={locked || scopes.includes(scope)}
+                disabled={locked}
+                onChange={(event) => onToggle(scope, event.target.checked)}
+                aria-describedby={descriptionId}
+                className={CONSENT_CHECKBOX}
+                data-testid={`mcp-consent-scope-${scope}`}
+              />
+              <CheckIcon aria-hidden='true' className={CONSENT_CHECK_MARK} />
+            </span>
             <span className='flex min-w-0 flex-col'>
-              <span className='text-sm text-text-primary'>{t(SCOPE_TEXT[scope].title)}</span>
-              <span id={descriptionId} className='text-xs text-text-secondary'>
+              <span className={cn('text-sm', disabled ? 'text-text-tertiary' : 'text-text-primary')}>
+                {t(SCOPE_TEXT[scope].title)}
+              </span>
+              <span
+                id={descriptionId}
+                className={cn('text-xs leading-[18px]', disabled ? 'text-text-tertiary' : 'text-text-secondary')}
+              >
                 {t(SCOPE_TEXT[scope].description)}
               </span>
             </span>

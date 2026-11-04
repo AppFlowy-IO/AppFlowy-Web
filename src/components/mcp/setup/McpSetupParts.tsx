@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { McpSnippetId } from '@/application/mcp/setup';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
-import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -28,7 +28,7 @@ export function RichText({ text }: { text: string }) {
         index % 2 === 1 ? (
           <code
             key={index}
-            className='whitespace-nowrap rounded-100 bg-fill-content-hover px-1 py-px font-mono text-[0.85em]'
+            className='whitespace-nowrap rounded-100 bg-fill-content-visible px-1 py-px font-mono text-[0.85em]'
           >
             {part}
           </code>
@@ -65,13 +65,13 @@ export function SetupNote({ title, text, testId }: { title: string; text: string
   return (
     <div
       role='note'
-      className='flex items-start gap-2 rounded-300 border border-border-primary bg-fill-content px-3 py-2.5 text-sm'
+      className='flex items-start gap-3 rounded-400 bg-fill-info-light py-4 pl-4 pr-3 text-sm text-text-primary'
       data-testid={testId}
     >
-      <InfoIcon aria-hidden='true' className='mt-px h-4 w-4 shrink-0 text-icon-info-thick' />
-      <div className='flex min-w-0 flex-col gap-0.5'>
-        <span className='font-medium text-text-primary'>{title}</span>
-        <span className='text-text-secondary'>
+      <InfoIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-info-thick' />
+      <div className='flex min-w-0 flex-col gap-1'>
+        <span className='font-medium'>{title}</span>
+        <span>
           <RichText text={text} />
         </span>
       </div>
@@ -92,7 +92,7 @@ export function SetupSnippet({ id, text, onCopy }: { id: McpSnippetId; text: str
         <code>{text}</code>
       </pre>
       <Button variant='outline' size='sm' onClick={() => void onCopy(text)} data-testid={`mcp-copy-snippet-${id}`}>
-        <CopyIcon className='h-4 w-4' />
+        <CopyIcon className='h-5 w-5' />
         {t('mcp.setup.copy')}
       </Button>
     </div>

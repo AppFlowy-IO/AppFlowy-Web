@@ -10,9 +10,9 @@ export interface McpScopeBadgeProps {
 }
 
 const LEVELS: Record<McpScopeLevel, { label: 'scopeRead' | 'scopeWrite' | 'scopeFull'; className: string }> = {
-  read: { label: 'scopeRead', className: 'border-border-primary bg-fill-content text-text-secondary' },
-  write: { label: 'scopeWrite', className: 'border-border-info-thick bg-fill-info-light text-text-info' },
-  full: { label: 'scopeFull', className: 'border-border-warning-thick bg-fill-warning-light text-text-warning' },
+  read: { label: 'scopeRead', className: 'bg-fill-content-visible text-text-secondary' },
+  write: { label: 'scopeWrite', className: 'bg-fill-info-light text-text-info-on-fill' },
+  full: { label: 'scopeFull', className: 'bg-fill-warning-light text-text-warning-on-fill' },
 };
 
 /** "Read only", "Read and write" or "Full access" for a granted scope. */
@@ -24,7 +24,7 @@ export function McpScopeBadge({ scope, className }: McpScopeBadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium',
+        'inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full px-2 py-px text-sm font-normal',
         levelClassName,
         className
       )}

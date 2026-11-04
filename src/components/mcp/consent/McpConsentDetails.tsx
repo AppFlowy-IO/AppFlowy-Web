@@ -46,21 +46,24 @@ export function McpConsentDetails({ client, redirectUri }: McpConsentDetailsProp
           <McpClientIdentity showAvatar={false} variant='publisher' client={client} />
         </DetailRow>
         <DetailRow label={t('mcp.consent.returnsTo')} testId='mcp-consent-returns-to'>
-          <span
-            className='min-w-0 truncate font-medium text-text-primary'
-            title={redirectUri}
-            data-testid='mcp-consent-redirect-host'
-          >
-            {target?.label ?? redirectUri}
-          </span>
-          {onThisComputer && (
+          {/* Stacked like the publisher row's McpClientIdentity: the host above its badge. */}
+          <div className='flex min-w-0 flex-col gap-1'>
             <span
-              className='inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full border border-border-primary bg-fill-content px-2 py-0.5 text-xs text-text-secondary'
-              data-testid='mcp-consent-local-app'
+              className='min-w-0 truncate font-medium text-text-primary'
+              title={redirectUri}
+              data-testid='mcp-consent-redirect-host'
             >
-              {t('settings.mcp.localApp')}
+              {target?.label ?? redirectUri}
             </span>
-          )}
+            {onThisComputer && (
+              <span
+                className='inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full bg-fill-content-visible px-2 py-px text-sm text-text-secondary'
+                data-testid='mcp-consent-local-app'
+              >
+                {t('settings.mcp.localApp')}
+              </span>
+            )}
+          </div>
         </DetailRow>
       </dl>
       {onThisComputer && (

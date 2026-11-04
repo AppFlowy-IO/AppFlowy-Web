@@ -2,7 +2,8 @@ import { createContext, ReactNode, useContext, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { McpConnectionDetails, McpTimestamp } from '@/application/services/domains/mcp';
-import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
+import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { McpClientIdentity, type McpClientIdentityProps } from '@/components/mcp/McpClientIdentity';
 import { McpScopeBadge } from '@/components/mcp/McpScopeBadge';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
@@ -34,7 +35,7 @@ export function PanelSection({
   return (
     <section aria-labelledby={titleId} className='flex min-w-0 flex-col gap-4' data-testid={testId}>
       <div className='flex flex-col gap-1'>
-        <h3 id={titleId} className='text-base font-semibold text-text-primary'>
+        <h3 id={titleId} className='text-base font-semibold leading-[22px] text-text-primary'>
           {title}
         </h3>
         {description && <p className='text-sm text-text-secondary'>{description}</p>}
@@ -71,7 +72,7 @@ export const ROW_CLASS = 'flex min-w-0 items-center justify-between gap-4 px-4 p
 export function EmptyState({ testId, children }: { testId?: string; children: ReactNode }) {
   return (
     <p
-      className='rounded-400 border border-dashed border-border-primary px-4 py-5 text-center text-sm text-text-secondary'
+      className='rounded-400 border border-border-primary px-4 py-5 text-center text-sm text-text-secondary'
       data-testid={testId}
     >
       {children}
@@ -83,7 +84,7 @@ export function SectionLoading() {
   const { t } = useTranslation();
 
   return (
-    <div role='status' aria-label={t('settings.mcp.loading')} className='flex justify-center py-6'>
+    <div role='status' aria-label={t('settings.mcp.loading')} className='flex justify-center py-5'>
       <Progress variant='primary' />
     </div>
   );
@@ -99,11 +100,14 @@ export function SectionError({ onRetry, testId }: { onRetry: () => void; testId?
   return (
     <div
       role='alert'
-      className='flex items-center justify-between gap-4 rounded-400 border border-border-primary px-4 py-3 text-sm'
+      className='flex items-start gap-2 rounded-400 bg-fill-error-light py-3 pl-4 pr-3 text-sm'
       data-testid={testId}
     >
-      <p className='min-w-0 text-text-error'>{t('settings.mcp.loadFailed')}</p>
-      <Button variant='outline' size='sm' onClick={onRetry} data-testid={testId ? `${testId}-retry` : undefined}>
+      <div className='flex min-w-0 flex-1 items-start gap-3 py-1'>
+        <ErrorIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-error-thick' />
+        <p className='min-w-0 text-text-primary'>{t('settings.mcp.loadFailed')}</p>
+      </div>
+      <Button variant='destructive' size='sm' onClick={onRetry} data-testid={testId ? `${testId}-retry` : undefined}>
         {t('settings.mcp.retry')}
       </Button>
     </div>
@@ -114,10 +118,10 @@ export function Notice({ testId, children }: { testId?: string; children: ReactN
   return (
     <div
       role='note'
-      className='flex items-start gap-2 rounded-400 border border-border-info-thick bg-fill-info-light px-4 py-3 text-sm text-text-primary'
+      className='flex items-start gap-3 rounded-400 bg-fill-info-light py-4 pl-4 pr-3 text-sm text-text-primary'
       data-testid={testId}
     >
-      <InfoIcon aria-hidden='true' className='mt-px h-4 w-4 shrink-0 text-icon-info-thick' />
+      <InfoIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-info-thick' />
       <span className='min-w-0'>{children}</span>
     </div>
   );
@@ -138,7 +142,11 @@ export function PanelScopeBadge({ scope }: { scope?: string | null }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span tabIndex={0} className='inline-flex w-fit shrink-0 cursor-help rounded-full' data-testid='mcp-scope'>
+        <span
+          tabIndex={0}
+          className='inline-flex w-fit shrink-0 cursor-help rounded-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+          data-testid='mcp-scope'
+        >
           <McpScopeBadge scope={scope} />
         </span>
       </TooltipTrigger>
@@ -164,13 +172,17 @@ export function ConnectionDetails({
   const lastUsed = mcpDate(connection.last_used_at);
 
   return (
-    <div className='flex min-w-0 flex-col gap-0.5'>
+    <div className='flex min-w-0 flex-col'>
       {device && (
-        <span className='truncate text-xs text-text-primary' title={device} data-testid={`${testIdPrefix}-device`}>
+        <span
+          className='truncate text-xs leading-[18px] text-text-secondary'
+          title={device}
+          data-testid={`${testIdPrefix}-device`}
+        >
           {device}
         </span>
       )}
-      <div className='flex flex-wrap items-center gap-x-1.5 gap-y-0.5'>
+      <div className='flex flex-wrap items-center gap-x-1.5'>
         <McpTime
           value={connection.connected_at}
           label={(time) => t('settings.mcp.connectedAt', { time, ...RAW_INTERPOLATION })}
@@ -179,7 +191,7 @@ export function ConnectionDetails({
         {lastUsed && (
           <>
             {mcpDate(connection.connected_at) && (
-              <span aria-hidden='true' className='text-xs text-text-secondary'>
+              <span aria-hidden='true' className='text-xs leading-[18px] text-text-secondary'>
                 ·
               </span>
             )}
@@ -248,7 +260,7 @@ export function McpTime({
         <time
           dateTime={date.toISOString()}
           tabIndex={0}
-          className='w-fit cursor-default text-xs text-text-secondary'
+          className='w-fit cursor-default rounded-100 text-xs leading-[18px] text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
           data-testid={testId}
         >
           {label ? label(relative) : relative}

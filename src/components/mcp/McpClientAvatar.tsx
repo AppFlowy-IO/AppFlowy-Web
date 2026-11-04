@@ -8,7 +8,7 @@ export type McpClientAvatarSize = 'sm' | 'md' | 'lg';
 
 export interface McpClientAvatarProps {
   client?: Pick<McpClientSummary, 'client_name' | 'client_host' | 'app_name' | 'verified_app' | 'logo_uri'> | null;
-  /** 24, 32 (default) or 48 px. */
+  /** 24, 32 (default) or 64 px. */
   size?: McpClientAvatarSize;
   className?: string;
 }
@@ -16,7 +16,14 @@ export interface McpClientAvatarProps {
 const SIZE_CLASSES: Record<McpClientAvatarSize, string> = {
   sm: 'h-6 w-6 text-xs',
   md: 'h-8 w-8 text-sm',
-  lg: 'h-12 w-12 text-xl',
+  lg: 'h-16 w-16 text-2xl',
+};
+
+/** Workspace avatar radius: 6 px at S and M; at XL 16 px for initials and 12 px for a logo. */
+const RADIUS_CLASSES: Record<McpClientAvatarSize, { initials: string; image: string }> = {
+  sm: { initials: 'rounded-200', image: 'rounded-200' },
+  md: { initials: 'rounded-200', image: 'rounded-200' },
+  lg: { initials: 'rounded-500', image: 'rounded-400' },
 };
 
 /**
@@ -29,15 +36,20 @@ export function McpClientAvatar({ client, size = 'md', className }: McpClientAva
   const logo = safeHttpUrl(client?.logo_uri);
   const [failedLogo, setFailedLogo] = useState<string>();
   const initial = Array.from(getMcpClientDisplayName(client) ?? '?')[0].toUpperCase();
+  const showLogo = Boolean(logo && logo !== failedLogo);
+  // Variant classes come before `className` so a caller can still override them.
   const classes = cn(
-    'flex shrink-0 items-center justify-center overflow-hidden rounded-300 border border-border-primary',
+    'flex shrink-0 items-center justify-center overflow-hidden',
     SIZE_CLASSES[size],
+    showLogo
+      ? cn(RADIUS_CLASSES[size].image, 'border border-border-primary bg-fill-content')
+      : cn(RADIUS_CLASSES[size].initials, 'bg-badge-color-20-light-2 font-normal text-badge-color-20-thick-3'),
     className
   );
 
-  if (logo && logo !== failedLogo) {
+  if (showLogo) {
     return (
-      <span className={cn(classes, 'bg-surface-primary')} aria-hidden='true' data-testid='mcp-client-avatar'>
+      <span className={classes} aria-hidden='true' data-testid='mcp-client-avatar'>
         <img
           src={logo}
           alt=''
@@ -52,11 +64,7 @@ export function McpClientAvatar({ client, size = 'md', className }: McpClientAva
   }
 
   return (
-    <span
-      className={cn(classes, 'bg-fill-content-hover font-medium text-text-secondary')}
-      aria-hidden='true'
-      data-testid='mcp-client-avatar'
-    >
+    <span className={classes} aria-hidden='true' data-testid='mcp-client-avatar'>
       {initial}
     </span>
   );

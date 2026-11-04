@@ -17,6 +17,7 @@ import {
   type McpSetupConnection,
 } from '@/application/mcp/setupApps';
 import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
+import { ReactComponent as AiIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ArrowUpRightIcon } from '@/assets/icons/arrow_up_right.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { notify } from '@/components/_shared/notify';
@@ -33,13 +34,14 @@ import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/utils/copy';
 
 /**
- * Cards of at least 12rem and at most three per row: the Settings dialog and
- * the setup page show three columns, phones one. `dense` lets the cards after
+ * Cards of at least 14rem and at most three per row, so a card's description
+ * beside its monogram keeps to two lines: the Settings dialog shows three
+ * columns, the 680 px setup page two, phones one. `dense` lets the cards after
  * an expanded one fill its row, so its steps (a full-width item that follows
  * it in the DOM) open right under that row.
  */
 const GALLERY_GRID_CLASS =
-  'grid grid-flow-row-dense grid-cols-[repeat(auto-fill,minmax(max(12rem,calc((100%_-_1.5rem)/3)),1fr))] gap-3';
+  'grid grid-flow-row-dense grid-cols-[repeat(auto-fill,minmax(max(14rem,calc((100%_-_1.5rem)/3)),1fr))] gap-3';
 
 export interface McpSetupGuideProps {
   /**
@@ -125,7 +127,7 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
         }}
         data-testid={`mcp-setup-app-action-${app}`}
       >
-        <CopyIcon className='h-4 w-4' />
+        <CopyIcon className='h-5 w-5' />
         {label}
       </Button>
     );
@@ -174,8 +176,8 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-5', className)} data-testid='mcp-setup-guide'>
-      <div className='flex flex-col gap-1.5'>
-        <label htmlFor={inputId} className='text-sm font-medium text-text-primary'>
+      <div className='flex flex-col gap-1'>
+        <label htmlFor={inputId} className='text-xs font-medium leading-[18px] text-text-secondary'>
           {t('mcp.setup.serverUrl')}
         </label>
         <div className='flex min-w-0 items-center gap-2'>
@@ -188,16 +190,19 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
             onFocus={(event) => event.currentTarget.select()}
           />
           <Button variant='outline' onClick={() => void copy(url)} data-testid='mcp-copy-endpoint'>
-            <CopyIcon className='h-4 w-4' />
+            <CopyIcon className='h-5 w-5' />
             {t('mcp.setup.copy')}
           </Button>
         </div>
       </div>
 
-      <div className='flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-400 border border-border-primary bg-fill-content px-4 py-3'>
-        <p className='min-w-0 flex-1 basis-60 text-sm text-text-secondary'>{t('mcp.setup.promptHint')}</p>
+      <div className='flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-400 bg-fill-content-visible py-3 pl-4 pr-3'>
+        <div className='flex min-w-0 flex-1 basis-60 items-start gap-3 py-1'>
+          <AiIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-primary' />
+          <p className='min-w-0 flex-1 text-sm text-text-primary'>{t('mcp.setup.promptHint')}</p>
+        </div>
         <Button variant='outline' size='sm' onClick={copyPrompt} data-testid='mcp-copy-setup-prompt'>
-          <CopyIcon className='h-4 w-4' />
+          <CopyIcon className='h-5 w-5' />
           {t('mcp.setup.copyPrompt')}
         </Button>
       </div>
@@ -232,7 +237,7 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
                   className='col-span-full flex min-w-0 flex-col gap-3 rounded-400 border border-border-primary p-4'
                   data-testid={`mcp-client-panel-${app}`}
                 >
-                  <p id={titleId} className='text-sm font-semibold text-text-primary'>
+                  <p id={titleId} className='text-sm font-medium text-text-primary'>
                     {t('mcp.setup.stepsTitle', { name, ...RAW_INTERPOLATION })}
                   </p>
                   <McpSetupAppSteps app={app} snippets={snippets} onCopy={copy} />
@@ -264,7 +269,7 @@ function ExternalAction({
     <Button asChild variant='outline' size='sm'>
       <a href={href} target='_blank' rel='noopener noreferrer' onClick={onOpen} data-testid={testId}>
         {children}
-        <ArrowUpRightIcon aria-hidden='true' className='h-4 w-4' />
+        <ArrowUpRightIcon aria-hidden='true' className='h-5 w-5' />
       </a>
     </Button>
   );

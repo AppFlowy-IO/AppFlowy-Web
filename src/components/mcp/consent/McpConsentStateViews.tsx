@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
-import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
+import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
+import { ReactComponent as WarningLogo } from '@/assets/icons/warning_logo.svg';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -41,10 +41,10 @@ export function McpConsentErrorView({ reason, onRetry, account, cancel }: McpCon
 
   return (
     <McpConsentLayout data-testid='mcp-consent-error' data-reason={reason} aria-busy={cancelling || undefined}>
-      <div className='flex flex-col items-center gap-3 text-center'>
-        <ErrorIcon className='h-10 w-10 text-icon-error-thick' aria-hidden='true' />
-        <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.errorTitle')}</h1>
-        <p role='alert' className='text-sm text-text-secondary' data-testid='mcp-consent-error-message'>
+      <div className='flex flex-col items-center gap-6 text-center'>
+        <WarningLogo className='h-16 w-16' aria-hidden='true' />
+        <h1 className='text-xl font-bold text-text-primary'>{t('mcp.consent.errorTitle')}</h1>
+        <p role='alert' className='max-w-80 text-sm text-text-primary' data-testid='mcp-consent-error-message'>
           {t(consentErrorMessageKey(reason))}
         </p>
       </div>
@@ -54,7 +54,7 @@ export function McpConsentErrorView({ reason, onRetry, account, cancel }: McpCon
         </McpConsentNotice>
       )}
       {(onRetry || cancel) && (
-        <div className='flex flex-col gap-3'>
+        <div className='flex w-full max-w-80 flex-col gap-3 self-center'>
           {onRetry && (
             <Button
               size='lg'
@@ -83,7 +83,12 @@ export function McpConsentErrorView({ reason, onRetry, account, cancel }: McpCon
           )}
         </div>
       )}
-      {account && <McpConsentAccount {...account} disabled={account.disabled || cancelling} />}
+      {account && (
+        // Figma landing page 4841:879: the footer sits 40 px below the form (the column's 24 + 16).
+        <div className='mt-4'>
+          <McpConsentAccount {...account} disabled={account.disabled || cancelling} />
+        </div>
+      )}
     </McpConsentLayout>
   );
 }
@@ -94,10 +99,10 @@ export function McpConsentDoneView({ name }: { name: string }) {
 
   return (
     <McpConsentLayout data-testid='mcp-consent-done'>
-      <div className='flex flex-col items-center gap-3 text-center'>
-        <SuccessIcon className='h-10 w-10 text-icon-success-thick' aria-hidden='true' />
-        <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.doneTitle')}</h1>
-        <p role='status' className='text-sm text-text-secondary'>
+      <div className='flex flex-col items-center gap-6 text-center'>
+        <SuccessLogo className='h-16 w-16' aria-hidden='true' />
+        <h1 className='text-xl font-bold text-text-primary'>{t('mcp.consent.doneTitle')}</h1>
+        <p role='status' className='max-w-80 text-sm text-text-primary'>
           {t('mcp.consent.doneDescription', { name, ...RAW_INTERPOLATION })}
         </p>
       </div>
@@ -115,10 +120,10 @@ export function McpConsentCancelledView({ name }: { name: string }) {
 
   return (
     <McpConsentLayout data-testid='mcp-consent-cancelled'>
-      <div className='flex flex-col items-center gap-3 text-center'>
-        <InfoIcon className='h-10 w-10 text-icon-info-thick' aria-hidden='true' />
-        <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.cancelledTitle')}</h1>
-        <p role='status' className='text-sm text-text-secondary'>
+      <div className='flex flex-col items-center gap-6 text-center'>
+        <InfoIcon className='h-16 w-16 text-icon-info-thick' aria-hidden='true' />
+        <h1 className='text-xl font-bold text-text-primary'>{t('mcp.consent.cancelledTitle')}</h1>
+        <p role='status' className='max-w-80 text-sm text-text-primary'>
           {t('mcp.consent.cancelledDescription', { name, ...RAW_INTERPOLATION })}
         </p>
       </div>
@@ -132,10 +137,10 @@ export function McpConsentRequestSentView({ name }: { name: string }) {
 
   return (
     <McpConsentLayout data-testid='mcp-consent-request-sent'>
-      <div className='flex flex-col items-center gap-3 text-center'>
-        <SuccessIcon className='h-10 w-10 text-icon-success-thick' aria-hidden='true' />
-        <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.requestSentTitle')}</h1>
-        <p role='status' className='text-sm text-text-secondary'>
+      <div className='flex flex-col items-center gap-6 text-center'>
+        <SuccessLogo className='h-16 w-16' aria-hidden='true' />
+        <h1 className='text-xl font-bold text-text-primary'>{t('mcp.consent.requestSentTitle')}</h1>
+        <p role='status' className='max-w-80 text-sm text-text-primary'>
           {t('mcp.consent.requestSentDescription', { name, ...RAW_INTERPOLATION })}
         </p>
       </div>
@@ -153,10 +158,10 @@ export function McpConsentExpiredView({ name }: { name?: string }) {
 
   return (
     <McpConsentLayout data-testid='mcp-consent-expired'>
-      <div className='flex flex-col items-center gap-3 text-center'>
-        <TimeIcon className='h-10 w-10 text-icon-warning-thick' aria-hidden='true' />
-        <h1 className='text-xl font-semibold text-text-primary'>{t('mcp.consent.expiredTitle')}</h1>
-        <p role='status' className='text-sm text-text-secondary' data-testid='mcp-consent-expired-message'>
+      <div className='flex flex-col items-center gap-6 text-center'>
+        <TimeIcon className='h-16 w-16 text-icon-warning-thick' aria-hidden='true' />
+        <h1 className='text-xl font-bold text-text-primary'>{t('mcp.consent.expiredTitle')}</h1>
+        <p role='status' className='max-w-80 text-sm text-text-primary' data-testid='mcp-consent-expired-message'>
           {name
             ? t('mcp.consent.expiredDescription', { name, ...RAW_INTERPOLATION })
             : t('mcp.consent.expiredDescriptionUnnamed')}
@@ -175,10 +180,10 @@ export function McpConsentFramedView() {
 
   return (
     <div
-      className='flex min-h-screen w-full items-center justify-center bg-background-primary p-6'
+      className='flex min-h-screen w-full items-center justify-center bg-background-primary p-4'
       data-testid='mcp-consent-framed'
     >
-      <p role='alert' className='max-w-[480px] text-center text-sm text-text-primary'>
+      <p role='alert' className='max-w-[400px] text-center text-sm text-text-primary'>
         {t('mcp.consent.framed')}
       </p>
     </div>

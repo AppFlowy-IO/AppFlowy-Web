@@ -39,7 +39,8 @@ export interface McpClientIdentityProps {
   className?: string;
 }
 
-const BADGE_CLASS = 'inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs';
+const BADGE_CLASS =
+  'inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full px-2 py-px text-sm font-normal';
 
 /**
  * Who an AI app is: its name (or host, or "Unknown app"), its host, whether
@@ -84,7 +85,7 @@ export function McpClientIdentity({
           {title}
         </span>
         {client && (
-          <div className='flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-text-secondary'>
+          <div className='flex min-w-0 flex-wrap items-center gap-1.5 text-xs leading-[18px] text-text-secondary'>
             {name && host && (
               <span className='truncate' title={host} data-testid='mcp-client-identity-host'>
                 {host}
@@ -97,7 +98,7 @@ export function McpClientIdentity({
                     tabIndex={0}
                     className={cn(
                       BADGE_CLASS,
-                      'cursor-help border-border-success-thick bg-fill-success-light text-text-success'
+                      'cursor-help bg-fill-success-light text-text-success-on-fill outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
                     )}
                     data-testid='mcp-client-verified-app-badge'
                   >
@@ -113,7 +114,10 @@ export function McpClientIdentity({
                 <TooltipTrigger asChild>
                   <span
                     tabIndex={0}
-                    className={cn(BADGE_CLASS, 'cursor-help border-border-primary bg-fill-content text-text-secondary')}
+                    className={cn(
+                      BADGE_CLASS,
+                      'cursor-help bg-fill-content-visible text-text-secondary outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                    )}
                     data-testid='mcp-client-native-app-badge'
                   >
                     {t('settings.mcp.localApp')}
@@ -125,7 +129,7 @@ export function McpClientIdentity({
               </Tooltip>
             ) : client.client_kind === 'cimd' ? (
               <span
-                className={cn(BADGE_CLASS, 'border-border-success-thick bg-fill-success-light text-text-success')}
+                className={cn(BADGE_CLASS, 'bg-fill-success-light text-text-success-on-fill')}
                 data-testid='mcp-client-verified-badge'
               >
                 {t('settings.mcp.verified')}
@@ -135,7 +139,10 @@ export function McpClientIdentity({
                 <TooltipTrigger asChild>
                   <span
                     tabIndex={0}
-                    className={cn(BADGE_CLASS, 'cursor-help border-border-primary bg-fill-content text-text-secondary')}
+                    className={cn(
+                      BADGE_CLASS,
+                      'cursor-help bg-fill-content-visible text-text-secondary outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                    )}
                     data-testid='mcp-client-unverified-badge'
                   >
                     {t('settings.mcp.unverified')}
@@ -148,7 +155,7 @@ export function McpClientIdentity({
             )}
             {client.loopback_only && !nativeApp && !publisher && (
               <span
-                className={cn(BADGE_CLASS, 'border-border-primary bg-fill-content text-text-secondary')}
+                className={cn(BADGE_CLASS, 'bg-fill-content-visible text-text-secondary')}
                 data-testid='mcp-client-local-badge'
               >
                 {t('settings.mcp.localApp')}

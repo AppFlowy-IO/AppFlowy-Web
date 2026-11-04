@@ -52,10 +52,10 @@ export function McpConsentWorkspacePicker({
           <label
             key={workspace.id}
             className={cn(
-              'flex min-w-0 items-center gap-3 rounded-400 border px-3 py-2 transition-colors',
-              checked ? 'border-border-theme-thick bg-fill-theme-select' : 'border-border-primary',
-              guest || disabled ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-fill-content-hover',
-              guest && 'opacity-60'
+              'flex min-w-0 items-center gap-3 rounded-300 border px-4 py-3 transition-colors',
+              checked ? 'border-border-theme-thick' : 'border-border-primary',
+              guest || disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+              !checked && !guest && !disabled && 'hover:border-border-primary-hover'
             )}
           >
             <input
@@ -66,26 +66,32 @@ export function McpConsentWorkspacePicker({
               disabled={guest}
               onChange={() => onSelect(workspace.id)}
               aria-describedby={guest ? hintId : undefined}
-              className='h-4 w-4 shrink-0 accent-fill-theme-thick'
+              className='m-[3px] h-3.5 w-3.5 shrink-0 cursor-[inherit] appearance-none rounded-full border-[1.25px] border-border-primary bg-fill-content transition-colors checked:border-4 checked:border-fill-theme-thick checked:bg-icon-on-fill focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-theme-thick enabled:hover:border-border-primary-hover enabled:checked:hover:border-fill-theme-thick-hover disabled:checked:opacity-40 [&:disabled:not(:checked)]:bg-fill-content-hover'
               data-testid={`mcp-consent-workspace-option-${workspace.id}`}
             />
-            <Avatar shape='square' size='sm' className='shrink-0'>
+            <Avatar shape='square' size='md' className={cn('shrink-0', guest && 'opacity-40')}>
               <AvatarFallback name={workspace.name}>
                 {workspace.icon ? <span className='text-base'>{workspace.icon}</span> : workspace.name}
               </AvatarFallback>
             </Avatar>
             <span className='flex min-w-0 flex-col'>
-              <span className='truncate text-sm text-text-primary' title={workspace.name}>
+              <span
+                className={cn(
+                  'truncate text-sm font-medium',
+                  guest || disabled ? 'text-text-tertiary' : 'text-text-primary'
+                )}
+                title={workspace.name}
+              >
                 {workspace.name}
               </span>
               {guest ? (
-                <span id={hintId} className='text-xs text-text-secondary'>
+                <span id={hintId} className='text-xs leading-[18px] text-text-tertiary'>
                   {t('mcp.consent.guestWorkspace')}
                 </span>
               ) : (
                 role && (
                   <span
-                    className='text-xs text-text-secondary'
+                    className={cn('text-xs leading-[18px]', disabled ? 'text-text-tertiary' : 'text-text-secondary')}
                     data-testid={`mcp-consent-workspace-role-${workspace.id}`}
                   >
                     {role}

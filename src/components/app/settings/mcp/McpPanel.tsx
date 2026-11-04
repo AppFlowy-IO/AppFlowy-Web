@@ -8,6 +8,9 @@ import {
   type McpMemberStatus,
   type McpMyConnection,
 } from '@/application/services/domains/mcp';
+import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
+import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
@@ -112,7 +115,7 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   if (disabled) {
     // Nothing can connect; the caller's own connections stay so they can still be removed.
     body = (
-      <div className='flex flex-col gap-8'>
+      <div className='flex flex-col gap-5'>
         <DisabledNotice />
         <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} overview={overview} />
       </div>
@@ -146,7 +149,7 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
     );
   } else if (!status.eligible) {
     body = (
-      <div className='flex flex-col gap-8'>
+      <div className='flex flex-col gap-5'>
         <IneligibleNotice status={status} />
         {(mine.connections.length > 0 || mineFailedOnce) && (
           <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} />
@@ -155,7 +158,7 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
     );
   } else {
     body = (
-      <div className='flex flex-col gap-8'>
+      <div className='flex flex-col gap-5 divide-y divide-border-primary [&>:not(:first-child)]:pt-5'>
         <PanelSection
           title={t('settings.mcp.connectTitle')}
           description={t('settings.mcp.connectDescription')}
@@ -235,7 +238,7 @@ function ApprovedForWorkspace({ apps, mode }: { apps: readonly McpApprovedApp[];
             >
               <PanelClientIdentity client={app} className='flex-1'>
                 {isMcpAppApprovalKey(app.approval_key) && (
-                  <span className='text-xs text-text-secondary' data-testid='mcp-approved-app-scope'>
+                  <span className='text-xs leading-[18px] text-text-secondary' data-testid='mcp-approved-app-scope'>
                     {t('settings.mcp.allInstalls', { name: mcpClientName(app, t), ...RAW_INTERPOLATION })}
                   </span>
                 )}
@@ -255,11 +258,14 @@ function DisabledNotice() {
   return (
     <div
       role='status'
-      className='flex flex-col gap-1 rounded-400 border border-border-primary p-5'
+      className='flex items-start gap-3 rounded-400 bg-fill-warning-light py-4 pl-4 pr-3'
       data-testid='mcp-panel-disabled'
     >
-      <h3 className='text-base font-semibold text-text-primary'>{t('settings.mcp.disabledTitle')}</h3>
-      <p className='text-sm text-text-secondary'>{t('settings.mcp.disabledDescription')}</p>
+      <WarningIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-warning-thick' />
+      <div className='flex min-w-0 flex-col gap-1'>
+        <h3 className='text-sm font-medium text-text-primary'>{t('settings.mcp.disabledTitle')}</h3>
+        <p className='text-sm text-text-primary'>{t('settings.mcp.disabledDescription')}</p>
+      </div>
     </div>
   );
 }
@@ -271,12 +277,15 @@ function IneligibleNotice({ status }: { status: McpMemberStatus }) {
   return (
     <div
       role='status'
-      className='flex flex-col gap-1 rounded-400 border border-border-primary p-5'
+      className='flex items-start gap-3 rounded-400 bg-fill-info-light py-4 pl-4 pr-3'
       data-testid='mcp-panel-ineligible'
       data-reason={reason ?? undefined}
     >
-      <h3 className='text-base font-semibold text-text-primary'>{t('settings.mcp.ineligibleTitle')}</h3>
-      {reason && <p className='text-sm text-text-secondary'>{t(`settings.mcp.ineligible_${reason}`)}</p>}
+      <InfoIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-info-thick' />
+      <div className='flex min-w-0 flex-col gap-1'>
+        <h3 className='text-sm font-medium text-text-primary'>{t('settings.mcp.ineligibleTitle')}</h3>
+        {reason && <p className='text-sm text-text-primary'>{t(`settings.mcp.ineligible_${reason}`)}</p>}
+      </div>
     </div>
   );
 }
@@ -301,12 +310,17 @@ function PanelFailure({
   return (
     <div
       role='alert'
-      className='flex flex-col items-start gap-3 rounded-400 border border-border-primary p-5'
+      className='flex items-start gap-2 rounded-400 bg-fill-error-light py-3 pl-4 pr-3'
       data-testid={testId}
     >
-      <h3 className='text-base font-semibold text-text-primary'>{title}</h3>
-      <p className='text-sm text-text-secondary'>{description}</p>
-      <Button variant='outline' onClick={() => void onRetry()} data-testid='mcp-panel-retry'>
+      <div className='flex min-w-0 flex-1 items-start gap-3 py-1'>
+        <ErrorIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-error-thick' />
+        <div className='flex min-w-0 flex-1 flex-col gap-1'>
+          <h3 className='text-sm font-medium text-text-primary'>{title}</h3>
+          <p className='text-sm text-text-primary'>{description}</p>
+        </div>
+      </div>
+      <Button variant='destructive' size='sm' onClick={() => void onRetry()} data-testid='mcp-panel-retry'>
         {t('settings.mcp.retry')}
       </Button>
     </div>

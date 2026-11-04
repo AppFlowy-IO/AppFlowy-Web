@@ -40,7 +40,7 @@ export function McpSetupTroubleshooting() {
         data-testid='mcp-setup-troubleshooting-toggle'
       >
         <span className='flex min-w-0 items-center gap-2'>
-          <HelpIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-icon-secondary' />
+          <HelpIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-primary' />
           {t('mcp.setup.trouble.title')}
         </span>
         <ChevronDownIcon

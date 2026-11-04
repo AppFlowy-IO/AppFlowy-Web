@@ -1,7 +1,7 @@
 import { HTMLAttributes } from 'react';
 
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
-import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
+import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
 import { cn } from '@/lib/utils';
 
@@ -10,17 +10,17 @@ export type McpConsentNoticeTone = 'info' | 'warning' | 'error';
 const TONES = {
   info: {
     Icon: InfoIcon,
-    className: 'border-border-info-thick bg-fill-info-light',
+    className: 'bg-fill-info-light',
     iconClassName: 'text-icon-info-thick',
   },
   warning: {
     Icon: WarningIcon,
-    className: 'border-border-warning-thick bg-fill-warning-light',
+    className: 'bg-fill-warning-light',
     iconClassName: 'text-icon-warning-thick',
   },
   error: {
     Icon: ErrorIcon,
-    className: 'border-border-error-thick bg-fill-error-light',
+    className: 'bg-fill-error-light',
     iconClassName: 'text-icon-error-thick',
   },
 } as const;
@@ -29,7 +29,7 @@ export interface McpConsentNoticeProps extends HTMLAttributes<HTMLDivElement> {
   tone?: McpConsentNoticeTone;
 }
 
-/** A short note on the consent card: approval state, the localhost warning or an error. */
+/** A short note on the consent page: approval state, the localhost warning or an error. */
 export function McpConsentNotice({ tone = 'info', children, className, ...props }: McpConsentNoticeProps) {
   const { Icon, className: toneClassName, iconClassName } = TONES[tone];
 
@@ -37,7 +37,7 @@ export function McpConsentNotice({ tone = 'info', children, className, ...props 
     <div
       {...props}
       className={cn(
-        'flex items-start gap-2 rounded-400 border px-3 py-2.5 text-sm text-text-primary',
+        'flex items-start gap-3 rounded-400 py-4 pl-4 pr-3 text-sm text-text-primary',
         toneClassName,
         className
       )}

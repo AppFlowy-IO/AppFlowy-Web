@@ -2,7 +2,6 @@ import { useTranslation } from 'react-i18next';
 
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 
 import { CONSENT_FOCUS_RING } from './McpConsentLayout';
 
@@ -19,19 +18,20 @@ export function McpConsentAccount({ email, onSwitch, disabled }: McpConsentAccou
   const { t } = useTranslation();
 
   return (
-    <div
-      className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm'
-      data-testid='mcp-consent-account'
-    >
+    <div className='flex flex-col items-center text-center text-sm' data-testid='mcp-consent-account'>
       {email && (
-        <span className='min-w-0 truncate text-text-secondary' title={email} data-testid='mcp-consent-signed-in'>
+        <span
+          className='min-w-0 max-w-full truncate text-text-secondary'
+          title={email}
+          data-testid='mcp-consent-signed-in'
+        >
           {t('mcp.consent.signedInAs', { email, ...RAW_INTERPOLATION })}
         </span>
       )}
       <Button
         variant='link'
         size='sm'
-        className={cn('px-0', CONSENT_FOCUS_RING)}
+        className={CONSENT_FOCUS_RING}
         onClick={onSwitch}
         disabled={disabled}
         data-testid='mcp-consent-switch-account'
