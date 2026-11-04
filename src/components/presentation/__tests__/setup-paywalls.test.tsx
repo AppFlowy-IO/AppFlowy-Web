@@ -15,15 +15,17 @@ jest.mock('../SlideCountDropdown', () => ({ __esModule: true, default: () => nul
 const upgrade = jest.fn();
 const generate = jest.fn();
 const openCached = jest.fn();
+const prepare = jest.fn();
 
-function Setup({ remaining = 4, custom = false, cached = false }: { remaining?: number; custom?: boolean; cached?: boolean }) {
+function Setup({ remaining = 4, custom = false, cached = false, prepareSource = false, isPro = false }: { remaining?: number; custom?: boolean; cached?: boolean; prepareSource?: boolean; isPro?: boolean }) {
   const [options, setOptions] = useState<GenerationOptions>({ designMode: 'auto', slideCountMode: 'fixed', slideCountSelection: custom ? 'custom' : 'preset', slideCount: custom ? 4 : 8,
     audience: '', instructions: 'Keep this instruction', allowWebSearch: false, includeProperties: false });
   const props = {
     snapshot: { pageId: 'page', revision: 'revision', title: 'Source', blocks: [], properties: [], serverSource: {} },
     options, onOptions: setOptions, style: APPFLOWY_SLIDE_THEMES[0], styles: APPFLOWY_SLIDE_THEMES, onStyle: jest.fn(),
-    canGenerate: remaining > 0, canAssess: remaining > 0, remainingSlides: remaining, maxSlides: remaining, isPro: false, customSlideCount: false,
+    canGenerate: remaining > 0, canAssess: remaining > 0, remainingSlides: remaining, maxSlides: remaining, isPro, customSlideCount: false,
     onUpgrade: upgrade, onGenerate: generate,
+    onPrepareGeneration: prepareSource ? prepare : undefined,
     reuse: { available: cached, checking: false, onOpen: openCached },
   } as unknown as SlidesWorkflowProps;
 
@@ -36,6 +38,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   jest.mocked(assessPresentation).mockResolvedValue({ assessment: { condition: 'clear', recommendedSlideCount: 4 } } as never);
+  prepare.mockResolvedValue({ pageId: 'page', revision: 'revision', serverSource: {} });
 });
 afterEach(() => jest.useRealTimers());
 
@@ -43,8 +46,8 @@ test('eight requested with four left offers smaller count and Upgrade without lo
   render(<Setup />);
   await settle();
   expect(screen.getByText(/4 slides remaining.*Auto or a smaller/)).toBeTruthy();
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Upgrade to Pro' }));
+  expect(screen.queryByRole('button', { name: 'Generate presentation' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Upgrade workspace' }));
   expect(upgrade).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('status', { name: 'Saved instructions' }).textContent).toBe('Keep this instruction');
   fireEvent.click(screen.getByRole('button', { name: '4', exact: true }));
@@ -58,7 +61,7 @@ test('restored Custom4 on Free is gated before assessment or generation', async 
   render(<Setup custom />);
   await settle();
   expect(screen.getByText(/Custom slide counts require Pro/)).toBeTruthy();
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Upgrade workspace' }).disabled).toBe(false);
   expect(assessPresentation).not.toHaveBeenCalled();
   expect(generate).not.toHaveBeenCalled();
 });
@@ -67,9 +70,64 @@ test('zero slides does not gate opening a reusable result or spend another gener
   render(<Setup remaining={0} cached />);
   await settle();
   expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Upgrade workspace' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Open presentation' }));
   await settle();
   expect(openCached).toHaveBeenCalledTimes(1);
   expect(generate).not.toHaveBeenCalled();
   expect(assessPresentation).not.toHaveBeenCalled();
+});
+
+test('zero slides makes workspace upgrade the primary action without requesting analysis', async () => {
+  render(<Setup remaining={0} prepareSource />);
+  await settle();
+  expect(screen.getByText('Slide limit reached')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Upgrade workspace' }));
+  expect(upgrade).toHaveBeenCalledTimes(1);
+  expect(prepare).not.toHaveBeenCalled();
+  expect(assessPresentation).not.toHaveBeenCalled();
+  expect(generate).not.toHaveBeenCalled();
+});
+
+test('an exhausted allowance never asks the user to search for an already-checked saved result', async () => {
+  render(<Setup remaining={0} prepareSource />);
+  await settle();
+  expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Find saved presentation' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Upgrade workspace' }));
+  expect(upgrade).toHaveBeenCalledTimes(1);
+  expect(assessPresentation).not.toHaveBeenCalled();
+  expect(prepare).not.toHaveBeenCalled();
+  expect(generate).not.toHaveBeenCalled();
+});
+
+test('switching away from an oversized template restores generation for the allowed design', async () => {
+  render(<Setup remaining={100} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Import template', exact: true }));
+  const file = Object.defineProperty(new File(['pptx'], 'large.pptx'), 'size', { value: 6 * 1024 * 1024 });
+
+  fireEvent.change(screen.getByLabelText('Import presentation template'), { target: { files: [file] } });
+  expect(screen.getByRole('button', { name: 'Upgrade workspace' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Let AI choose' }));
+  await settle();
+  expect(screen.queryByRole('button', { name: 'Upgrade workspace' })).toBeNull();
+  expect(screen.queryByText('The Free plan allows PowerPoint templates up to 5 MB.')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
+  await settle();
+  expect(generate).toHaveBeenCalledTimes(1);
+});
+
+test('updated plan access clears an earlier server upgrade denial', async () => {
+  jest.mocked(assessPresentation).mockRejectedValueOnce(Object.assign(new Error('Upgrade required'), { status: 402 }));
+  const view = render(<Setup remaining={100} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
+  await settle();
+  expect(screen.getByRole('button', { name: 'Upgrade workspace' })).toBeTruthy();
+  view.rerender(<Setup remaining={100} isPro />);
+  await settle();
+  expect(screen.queryByRole('button', { name: 'Upgrade workspace' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
+  await settle();
+  expect(generate).toHaveBeenCalledTimes(1);
 });

@@ -126,8 +126,11 @@ test('a ready page-structure map is not requested again for another view or an e
     <PresentationStudio workspaceId='workspace' userId='user' snapshot={source()} initialMode='mindmap' canWrite />
   );
 
+  expect((await screen.findByTestId('server-map')).textContent).toBe('Saved map');
+  expect(loadStructuralMap).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'From page structure' }));
   expect((await screen.findByTestId('server-map')).textContent).toBe('Page structure');
-  fireEvent.click(await screen.findByRole('button', { name: 'Saved mind map' }));
+  fireEvent.click(screen.getByRole('button', { name: 'AI mind map' }));
   expect(shown().textContent).toBe('Saved map');
   fireEvent.click(screen.getByRole('button', { name: 'From page structure' }));
   expect(shown().textContent).toBe('Page structure');
@@ -145,16 +148,18 @@ test('a ready page-structure map is not requested again for another view or an e
 
 test('another map starts with fresh viewer state while edits to the same map keep it', async () => {
   render(<PresentationStudio workspaceId='workspace' userId='user' snapshot={source()} initialMode='mindmap' canWrite />);
-  const structure = await screen.findByTestId('server-map');
+  const savedView = await screen.findByTestId('server-map');
 
-  expect(structure.dataset.mount).toBe('1');
-  fireEvent.click(await screen.findByRole('button', { name: 'Saved mind map' }));
+  expect(savedView.dataset.mount).toBe('1');
+  fireEvent.click(screen.getByRole('button', { name: 'From page structure' }));
+  await screen.findByText('Page structure');
+  fireEvent.click(screen.getByRole('button', { name: 'AI mind map' }));
   expect(shown().textContent).toBe('Saved map');
-  expect(shown().dataset.mount).toBe('2');
+  expect(shown().dataset.mount).toBe('3');
   jest.mocked(editMap).mockResolvedValue(artifact('saved-map', 'Edited map', 3));
   await act(async () => {
     await mockViewerProps!.onMapChange!(artifact('saved-map', 'Edited map').content);
   });
   expect(shown().textContent).toBe('Edited map');
-  expect(shown().dataset.mount).toBe('2');
+  expect(shown().dataset.mount).toBe('3');
 });
