@@ -971,7 +971,8 @@ export default function PresentationStudio({
         <main className='ps-content'>
           {notice &&
             (upgradeRequired ? <PresentationPaywall message={notice} onUpgrade={upgrade} /> : <Notice>{notice}</Notice>)}
-          {busy && !compactSetup && (
+          {/* A presented mind map shows its own loading surface; closing it cancels or returns here. */}
+          {busy && !compactSetup && !mapPresentationOpen && (
             <Notice>
               {jobState ? `Presentation ${jobState}…` : 'Preparing your presentation…'}{' '}
               <Action
