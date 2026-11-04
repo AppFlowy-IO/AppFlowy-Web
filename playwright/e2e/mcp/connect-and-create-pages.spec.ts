@@ -306,8 +306,9 @@ test.describe('Connect an AI app with the URL from AppFlowy Web', () => {
       await expect(sidebarGrid).toBeVisible({ timeout: 30000 });
       await expect(sidebarGrid).toContainText(gridName);
 
-      // And the AI app is listed as the user's connection.
+      // And the AI app is listed as the user's connection, under Manage AI apps.
       await page.goto('/app?setting=AI_APPS', { waitUntil: 'domcontentloaded' });
+      await page.getByTestId('mcp-tab-manage').click({ timeout: 30000 });
       await expect(
         page.getByTestId('mcp-my-connections').getByTestId('mcp-my-connection-row').filter({ hasText: CLIENT_NAME })
       ).toHaveCount(1, { timeout: 30000 });

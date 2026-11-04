@@ -543,10 +543,12 @@ async function createPagesThroughMcp(
 // AppFlowy Web
 // ---------------------------------------------------------------------------
 
-async function openMcpSettings(page: Page): Promise<void> {
+/** Settings → MCP; `tab` picks Connect AI apps or Manage AI apps (the panel opens on Connect). */
+async function openMcpSettings(page: Page, tab?: 'connect' | 'manage'): Promise<void> {
   await page.goto('/app?setting=AI_APPS', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('mcp-panel')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('mcp-panel-loading')).toHaveCount(0, { timeout: 30000 });
+  if (tab) await page.getByTestId(`mcp-tab-${tab}`).click();
 }
 
 async function chooseWorkspace(page: Page, workspaceId: string): Promise<void> {
@@ -646,8 +648,12 @@ test('capture the AI apps (MCP) connect-flow screenshots', async ({ browser, req
       expect(tokens.workspace_id).toBe(workspaceId);
 
       await test.step('04: Settings → MCP with the server URL copied', async () => {
-        await openMcpSettings(owner.page);
-        await expect(owner.page.getByTestId('mcp-setup-connected-apps')).toContainText(CLAUDE_CODE, { timeout: 15000 });
+        await openMcpSettings(owner.page, 'manage');
+        await expect(owner.page.getByTestId('mcp-my-connection-row').filter({ hasText: CLAUDE_CODE })).toBeVisible({
+          timeout: 15000,
+        });
+        // The frame shows Connect AI apps, where the server URL is.
+        await owner.page.getByTestId('mcp-tab-connect').click();
         const shown = await owner.page.getByTestId('mcp-endpoint-value').inputValue();
 
         await owner.page.getByTestId('mcp-copy-endpoint').click();
@@ -694,8 +700,8 @@ test('capture the AI apps (MCP) connect-flow screenshots', async ({ browser, req
     });
 
     await test.step('07: the owner requires approval again after members connected', async () => {
-      // The owner lets members connect any app, through Settings → MCP.
-      await openMcpSettings(owner.page);
+      // The owner lets members connect any app, through Settings → MCP → Manage AI apps.
+      await openMcpSettings(owner.page, 'manage');
       await owner.page.getByTestId('mcp-approval-mode-any').click();
       await owner.page.getByTestId('mcp-confirm-allow-all').click();
       await expect(owner.page.getByTestId('mcp-approval-mode-any')).toBeChecked({ timeout: 15000 });
@@ -710,7 +716,7 @@ test('capture the AI apps (MCP) connect-flow screenshots', async ({ browser, req
       await member.page.getByTestId('mcp-consent-allow').click();
       await finishAuthorization(request, server, geminiCli, pending);
 
-      await openMcpSettings(owner.page);
+      await openMcpSettings(owner.page, 'manage');
       await expect(owner.page.getByTestId('mcp-member-connection-row').filter({ hasText: GEMINI_CLI })).toHaveCount(1, {
         timeout: 15000,
       });

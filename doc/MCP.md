@@ -166,37 +166,29 @@ destinations (`AuthContinuationKind`: public Form links and MCP consent requests
 is the same on Settings → MCP and on the public `/oauth/mcp/setup` page. From the top:
 
 - **Server URL** with Copy (`mcp-endpoint-value`, `mcp-copy-endpoint`).
-- **Copy setup prompt** (`mcp-copy-setup-prompt`): `buildMcpSetupPrompt` in
-  `src/application/mcp/setupPrompt.ts` writes a prompt for an AI agent with this deployment's
-  server URL, the exact add command or config for each app (the guide's own builders), what the
-  user does in the browser (sign in, choose a workspace, approve, or Request approval), a check
-  (`get-self`, then report the name and email), the one-workspace rule, and the absolute
-  `/oauth/mcp/setup` URL for apps the agent cannot configure (Claude, ChatGPT). The prompt is
-  English on purpose (a model reads it) and versioned (`MCP_SETUP_PROMPT_VERSION`, bump it when
-  the instructions change).
-- **Connected apps (N)** with one chip per app, only when the caller's connections are passed
-  (Settings; the public page knows no workspace). `summarizeConnectedApps` in
-  `src/application/mcp/setupApps.ts` counts every device and registration of a recognized app
-  once (`app:<app_id>`); other clients group by their own name, else their client ID. Chips follow
-  the gallery's card order, then name like dashboard labels (`compareDashboardText`: folded with
-  `normalizeDashboardText`, then as written, by code unit; no locale collation, as Desktop sorts
-  them), unnamed last.
-- **App gallery** (`mcp-setup-gallery`): Claude, ChatGPT, Claude Code, Codex, Cursor, VS Code,
-  Gemini CLI, Windsurf / Antigravity and Other app (`MCP_SETUP_APPS`). Each card has a lettered
+- No **Copy setup prompt** row: the guide does not offer it. `buildMcpSetupPrompt` in
+  `src/application/mcp/setupPrompt.ts` stays (versioned by `MCP_SETUP_PROMPT_VERSION`), because the
+  golden file Desktop checks against (`__tests__/setupGolden.test.ts`) still covers it.
+- No separate list of connected apps: the cards' **Connected** badges (below) say which gallery
+  apps are connected, and Settings lists every connection under Your connections. The badges
+  appear only when the caller's connections are passed (Settings; the public page knows no
+  workspace). `summarizeConnectedApps` in `src/application/mcp/setupApps.ts` counts every device
+  and registration of a recognized app once (`app:<app_id>`); other clients group by their own
+  name, else their client ID.
+- **App gallery** (`mcp-setup-gallery`): Claude, ChatGPT, Claude Code, Codex, VS Code and Other
+  app (`MCP_SETUP_APPS`). Cursor, Gemini CLI and Windsurf / Antigravity have no card on Web (they
+  connect through Other app); Desktop still shows them, and their builders stay in
+  `src/application/mcp/setup.ts` for the golden file. Each card has a lettered
   tile (no third-party logos), a one-line description, one primary action (Open Claude / Open
-  ChatGPT in a new tab, the Cursor and VS Code install deeplinks, or Copy command / config / URL)
+  ChatGPT in a new tab, the VS Code install deeplink, or Copy command / URL)
   and a **Connected** badge when one of the connections has the card's verified catalog `app_id`
-  (`claude`, `chatgpt`, `claude-code`, `codex`, `cursor`, `vscode`) with `verified_app: true`
-  (see [App identity](#app-identity)). A self-asserted client name never earns the badge, and
-  Gemini CLI, Windsurf/Antigravity and Other app never show it (their clients are not
-  recognizable). Clicking a card (or its action) expands its steps below the
+  (`claude`, `chatgpt`, `claude-code`, `codex`, `vscode`) with `verified_app: true`
+  (see [App identity](#app-identity)). A self-asserted client name never earns the badge, Other
+  app never shows it (its clients are not recognizable), and a catalog app without a card (Cursor)
+  badges nothing. Clicking a card (or its action) expands its steps below the
   card's row, one card at a time (`mcp-client-tab-<app>` with `aria-expanded`,
   `mcp-client-panel-<app>`); the grid packs densely so the rest of the row stays in place.
-  The Cursor deeplink names the server `appflowy`, like every snippet, so it does not add a second
-  entry next to a manual one.
-- **Having trouble?** (`mcp-setup-troubleshooting`), collapsed: reconnecting each app, a pending
-  approval, one workspace per connection (add a second entry such as `appflowy-work`), read-only
-  grants, `command not found`, and organizations that turn custom connectors off.
+- No **Having trouble?** section.
 
 The vendor steps follow each vendor's documentation as of 2026-11 (the Notion parity research
 lists the sources): Claude's Customize → Connectors → + Add → Add custom connector with "Sign in
@@ -204,8 +196,8 @@ now" and "Use Claude's published identity (Recommended)", plus Organization sett
 → Add → Custom → Web for Team and Enterprise owners; ChatGPT's custom app or custom MCP server
 under Settings → Apps (Plugins on some plans), worded loosely because the labels vary by plan,
 plus the admin note for Business, Enterprise and Edu; Claude Code's `--scope user` / `--scope
-project`; Codex's `codex mcp login`, `config.toml` (user and project) and the app/IDE path;
-`serverUrl` for Windsurf and Antigravity. Re-check them with vendor releases. Translated text
+project`; Codex's `codex mcp login`, `config.toml` (user and project) and the app/IDE path.
+Re-check them with vendor releases. Translated text
 marks commands and paths with backticks, which `RichText` renders as inline code.
 
 ## Settings → MCP
@@ -237,14 +229,27 @@ member status:
   listed when it has any, so it can still revoke them, and once their list fails to load the section
   stays with its error and Retry. An owner the email gate excludes gets no Workspace access (see
   [Not in v1](#not-in-v1)), and the panel clears their pending-request menu badge.
-- **Connect an AI app**: `McpSetupGuide` with `status.endpoint` and the caller's connections in this
-  workspace (for "Connected apps (N)" and the cards' Connected badges); members also see a notice
+- **Two tabs** (`mcp-tabs`, Figma Tab button as on Settings → People), for an eligible account
+  only: **Connect AI apps** (`mcp-tab-connect`, the default) and **Manage AI apps**
+  (`mcp-tab-manage`). Both panels stay mounted and the inactive one gets the `hidden` attribute, so
+  switching keeps an expanded card, a typed client ID and scroll positions. An owner's Manage tab
+  shows the pending approval request count (`mcp-tab-manage-badge`, read as "N pending approval
+  requests"), like the menu badge; the panel always opens on Connect.
+- **Connect AI apps**: `McpSetupGuide` with `status.endpoint` and the caller's connections in this
+  workspace (for the cards' Connected badges), then "Want to bring Google Drive or Google Calendar
+  into AppFlowy? Connections →" (`mcp-connections-hint`, `mcp-open-connections`), which switches
+  Settings to Connections (`onOpenConnections`; left out without it); members also see a notice
   when some apps need an owner's approval. Under `verified_and_approved` (the member status's
   `approval_mode`) it says that verified web apps like Claude and ChatGPT connect without approval
   and other apps, including ones on the member's computer, need one (`approvalNoticeVerified`).
-- **Your connections**: one row per connection, that is per device or account (token family): the
-  app, the device label the app sent at sign-in (`mcp-my-connection-device`), "Connected …" and
-  "Last used …" (`last_used_at`, updated at most every 5 minutes), and the scope badge, whose
+- **Manage AI apps** holds Your connections, then Approved for this workspace (members) or
+  Workspace access (owners).
+- **Your connections**: one row per connection, that is per device or account (token family).
+  Every Settings row (`McpClientIdentity`, `app` variant) reads as three groups: the app's name
+  with its trust badge beside it; its host, then the device label the app sent at sign-in
+  (`mcp-my-connection-device`), as "chatgpt.com · codex-mcp-client 0.166"; then the row's own
+  caption lines, here "Connected …" and "Last used …" (`last_used_at`, updated at most every 5
+  minutes). The scope badge sits with Disconnect on the right; its
   tooltip says "To change access, reconnect the app" (`PanelScopeBadge`). Disconnect asks first and
   removes that device only (`DELETE /api/mcp/me/workspaces/{id}/connections?client_id=&family_id=`);
   the confirmation says other connections keep working when there are any. A legacy record without
@@ -252,10 +257,9 @@ member status:
   rule once for both lists and both confirmations (`mcpDisconnectRemoves`, `mcpOthersKeepWorking`;
   an owner's disconnect stays within the member). Above the list,
   "You have N apps connected across M workspaces" comes from `GET /api/mcp/me/connections`, with
-  apps grouped exactly like the setup guide's "Connected apps (N)" (`summarizeConnectedApps`: once
-  per recognized app, an unrecognized app once per name). The guide counts this workspace only, so
-  the summary's number is larger whenever another workspace has an app this one lacks; that is not
-  a mismatch to fix. The summary is left out when that call fails and for an account the member
+  apps grouped like the setup guide's Connected badges (`summarizeConnectedApps`: once per
+  recognized app, an unrecognized app once per name). The guide only knows this workspace, so the
+  summary can count apps whose cards are not badged here; that is not a mismatch to fix. The summary is left out when that call fails and for an account the member
   status calls ineligible.
 - **Approved for this workspace**, for members while some apps need approval and the server sends
   `approved_apps` (C5): the approved apps by name only, with "All {app} installs" for app-level
@@ -578,9 +582,9 @@ against the wire types: a fixture missing a field the server always sends fails 
 | `setupApps.test.ts`, `setupPrompt.test.ts` | Card order and catalog mapping; connected apps counted per app, never matched by a self-asserted name; the setup prompt's version, commands, browser steps, `get-self` check and setup page link |
 | `mcp-api.test.ts` | Bearer header, no refresh token in any body, query-form client IDs, error mapping, refresh and retry once on 401, owner disconnect refusing an empty filter, URL resolution order (override, server-info `mcp_url`, not configured), loading, keeping the answer through failed refreshes, `auto_approved_clients`, the approval policy body (`approval_mode` alone), server-shaped fixtures, a missing list rejected as `invalid_response`, an unknown approval policy read as undefined in the member status and the settings, retries bound to the same user, per-device (`family_id`) and `all=true` disconnects, app-level keys (approve, revoke, dismiss), connections across workspaces, `approved_apps`, `mcpApprovalKey`, `mcp_disabled` (from the reason or the error code) kept apart from outages |
 | `src/application/session/__tests__/sign_in.test.ts` | Form and MCP consent continuations: OAuth parameters kept out of login and callback URLs, return within the TTL, expired view after it, unrelated later login, cross-tab magic link, password recovery, legacy cleanup, only the canonical consent path (not case or percent-encoded variants) |
-| `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges and "Connected apps (N)", setup prompt, Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
+| `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges, no setup prompt or Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
 | `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, NotFound at a percent-encoded path, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
-| `src/components/app/settings/mcp/**` | Panel states, member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted like "Connected apps (N)"), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared) |
+| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared) |
 | `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count or a newer load's), deep links that wait for server-info, routes |
 | `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
 | `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers (Web-CI's docker-runtime-test also fetches `/oauth/mcp/authorize` from both images and checks them) |

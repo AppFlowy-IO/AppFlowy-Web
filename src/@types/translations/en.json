@@ -866,7 +866,7 @@
     "mcp": {
       "menuLabel": "MCP",
       "title": "MCP",
-      "description": "Connect AI apps like Claude, ChatGPT, Cursor and VS Code to this workspace through the AppFlowy MCP server. They can only access what you can access.",
+      "description": "Connect AI apps like Claude, ChatGPT, Codex and VS Code to this workspace through the AppFlowy MCP server. They can only access what you can access.",
       "loading": "Loading MCP settings",
       "unavailableTitle": "AI app connections aren't available",
       "unavailableDescription": "This AppFlowy server doesn't have the MCP service configured, or it can't be reached right now.",
@@ -876,6 +876,9 @@
       "ineligibleTitle": "AI apps aren't available for your account",
       "ineligible_email_not_allowed": "Your administrator only allows certain accounts to connect AI apps.",
       "ineligible_guest_not_allowed": "Guests can't connect AI apps to this workspace.",
+      "connectTab": "Connect AI apps",
+      "manageTab": "Manage AI apps",
+      "connectionsHint": "Want to bring Google Drive or Google Calendar into AppFlowy?",
       "connectTitle": "Connect an AI app",
       "connectDescription": "Add this server URL to your AI app. When it asks you to sign in, choose this workspace and approve access.",
       "approvalNotice": "Some AI apps need approval from a workspace owner before you can connect them. You can request approval when you connect.",
@@ -5463,21 +5466,15 @@
     "serverInfoRetrying": "Can't reach the AppFlowy server right now. Trying again…",
     "setup": {
       "pageTitle": "Connect AI apps to AppFlowy",
-      "pageDescription": "Use AppFlowy from Claude, ChatGPT, Cursor, VS Code and other AI apps through the Model Context Protocol (MCP).",
+      "pageDescription": "Use AppFlowy from Claude, ChatGPT, Codex, VS Code and other AI apps through the Model Context Protocol (MCP).",
       "serverUrl": "MCP server URL",
       "copy": "Copy",
       "copied": "Copied to clipboard",
       "notConfigured": "AI app connections aren't configured on this AppFlowy server.",
       "manageLink": "Manage your connections in AppFlowy",
       "signInNote": "When your AI app asks you to sign in, AppFlowy opens a page where you choose a workspace and approve access.",
-      "promptHint": "Setting up with an AI agent? Copy a prompt that tells it how to connect to this server.",
-      "copyPrompt": "Copy setup prompt",
-      "promptCopied": "Setup prompt copied. Paste it into your AI agent.",
-      "connectedApps": "Connected apps ({{count}})",
       "connected": "Connected",
-      "unknownApp": "Unknown app",
       "copyCommand": "Copy command",
-      "copyConfig": "Copy config",
       "copyUrl": "Copy URL",
       "stepsTitle": "Set up {{name}}",
       "claude": {
@@ -5519,13 +5516,6 @@
         "config": "Or add this to `~/.codex/config.toml` (or to `.codex/config.toml` in a project, to share it with your team), then run the sign-in command:",
         "app": "In the Codex app or IDE extension, open Settings → MCP servers → Add server, choose Streamable HTTP, paste the server URL and select Authenticate."
       },
-      "cursor": {
-        "name": "Cursor",
-        "description": "One-click install, then sign in",
-        "install": "Add to Cursor",
-        "afterInstall": "After installing, open Cursor's MCP settings, find `appflowy` and select Connect (or Needs login) to sign in.",
-        "manual": "Or add this to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):"
-      },
       "vscode": {
         "name": "VS Code",
         "description": "One-click install, then sign in",
@@ -5533,44 +5523,11 @@
         "signIn": "When VS Code asks to sign in to AppFlowy, allow it, then approve access in the AppFlowy window.",
         "cli": "Or run on macOS or Linux:"
       },
-      "gemini": {
-        "name": "Gemini CLI",
-        "description": "One command in your terminal",
-        "step1": "Run:",
-        "step2": "Then run `/mcp auth appflowy` inside Gemini CLI."
-      },
-      "windsurf": {
-        "name": "Windsurf / Antigravity",
-        "description": "A serverUrl entry in the MCP config",
-        "step1": "Windsurf and Antigravity use `serverUrl` for remote servers. Add this to the app's MCP config (`mcp_config.json`; in Windsurf, Settings → MCP → View raw config):",
-        "step2": "Save the file, refresh the app's MCP servers, then sign in when it asks."
-      },
       "other": {
         "name": "Other app",
         "description": "Any app that supports remote MCP servers",
         "remote": "For apps that support remote MCP servers, add the server URL or this configuration:",
         "stdio": "For apps that only support local (stdio) servers, use the mcp-remote bridge:"
-      },
-      "trouble": {
-        "title": "Having trouble?",
-        "reconnectTitle": "Reconnect an app",
-        "reconnectClaude": "Claude: Customize → Connectors → AppFlowy → Disconnect, then Connect.",
-        "reconnectChatgpt": "ChatGPT: find the AppFlowy app in ChatGPT's settings, disconnect it, then connect again.",
-        "reconnectClaudeCode": "Claude Code: run `/mcp`, choose `appflowy` and select Re-authenticate.",
-        "reconnectCodex": "Codex: run `codex mcp login appflowy`.",
-        "reconnectCursor": "Cursor: in its MCP settings, select Connect or Needs login next to `appflowy`.",
-        "reconnectVscode": "VS Code: run MCP: List Servers from the Command Palette, choose `appflowy` and restart it.",
-        "reconnectGemini": "Gemini CLI: run `/mcp auth appflowy`.",
-        "approvalTitle": "Waiting for approval",
-        "approval": "If AppFlowy says the app needs approval, select Request approval. Once a workspace owner approves it in Settings → MCP, connect again from the app.",
-        "workspaceTitle": "One workspace per connection",
-        "workspace": "Each connection works with the one workspace you choose when you sign in. To switch, disconnect and connect again. To use two workspaces, add AppFlowy a second time under another name, such as `appflowy-work`, and choose the other workspace when you sign in.",
-        "pathTitle": "Command not found",
-        "path": "If your terminal can't find `claude`, `codex`, `gemini` or `code`, install that app's command-line tool or add it to your PATH, then open a new terminal and run the command again. For VS Code, run Shell Command: Install 'code' command in PATH from the Command Palette.",
-        "blockedTitle": "Custom connectors are turned off",
-        "blocked": "If Claude or ChatGPT says your organization doesn't allow custom connectors or apps, ask its admin to add AppFlowy for everyone. Members then connect it and sign in to AppFlowy.",
-        "readOnlyTitle": "The app can read but not create or edit",
-        "readOnly": "Connect the app again and keep Create and add (and Edit and delete, if you need it) selected when you approve access."
       }
     },
     "consent": {

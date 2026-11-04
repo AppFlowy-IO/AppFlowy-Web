@@ -10,22 +10,12 @@ function connection(overrides: Partial<McpSetupConnection> & Pick<McpSetupConnec
   return { client_name: null, client_host: null, app_id: null, app_name: null, verified_app: false, ...overrides };
 }
 
-const cursor = (clientId: string) =>
-  connection({ client_id: clientId, client_name: 'Cursor', app_id: 'cursor', app_name: 'Cursor', verified_app: true });
+const vscode = (clientId: string) =>
+  connection({ client_id: clientId, client_name: 'VS Code', app_id: 'vscode', app_name: 'VS Code', verified_app: true });
 
 describe('MCP setup gallery', () => {
   it('lists the cards in display order', () => {
-    expect(MCP_SETUP_APPS).toEqual([
-      'claude',
-      'chatgpt',
-      'claude-code',
-      'codex',
-      'cursor',
-      'vscode',
-      'gemini',
-      'windsurf',
-      'other',
-    ]);
+    expect(MCP_SETUP_APPS).toEqual(['claude', 'chatgpt', 'claude-code', 'codex', 'vscode', 'other']);
   });
 
   it.each([
@@ -33,8 +23,9 @@ describe('MCP setup gallery', () => {
     ['chatgpt', 'chatgpt'],
     ['claude-code', 'claude-code'],
     ['codex', 'codex'],
-    ['cursor', 'cursor'],
     ['vscode', 'vscode'],
+    // Recognized by the catalog, but the gallery has no card for it.
+    ['cursor', undefined],
     ['raycast', undefined],
     ['perplexity', undefined],
     ['gemini', undefined],
@@ -53,16 +44,16 @@ describe('summarizeConnectedApps', () => {
   });
 
   it('counts every device and registration of a recognized app once', () => {
-    const apps = summarizeConnectedApps([cursor('dcr-1'), cursor('dcr-2'), cursor('dcr-1')]);
+    const apps = summarizeConnectedApps([vscode('dcr-1'), vscode('dcr-2'), vscode('dcr-1')]);
 
-    expect(apps).toEqual([{ key: 'app:cursor', setupApp: 'cursor', name: 'Cursor' }]);
+    expect(apps).toEqual([{ key: 'app:vscode', setupApp: 'vscode', name: 'VS Code' }]);
   });
 
   it('orders gallery apps by card, then other apps by name, then unnamed ones', () => {
     const apps = summarizeConnectedApps([
       connection({ client_id: 'loopback-1', client_host: null }),
       connection({ client_id: 'dcr-zed', client_name: 'Zed' }),
-      cursor('dcr-cursor'),
+      vscode('dcr-vscode'),
       connection({
         client_id: 'https://raycast.example/meta.json',
         app_id: 'raycast',
@@ -81,7 +72,7 @@ describe('summarizeConnectedApps', () => {
 
     expect(apps.map(({ key }) => key)).toEqual([
       'app:claude-code',
-      'app:cursor',
+      'app:vscode',
       'name:gemini cli mcp client',
       'app:raycast',
       'name:zed',
@@ -89,7 +80,7 @@ describe('summarizeConnectedApps', () => {
     ]);
     expect(apps.map(({ setupApp }) => setupApp)).toEqual([
       'claude-code',
-      'cursor',
+      'vscode',
       undefined,
       undefined,
       undefined,
@@ -97,13 +88,13 @@ describe('summarizeConnectedApps', () => {
     ]);
     expect(apps.map(({ name }) => name)).toEqual([
       'Claude Code',
-      'Cursor',
+      'VS Code',
       'Gemini CLI MCP Client',
       'Raycast',
       'Zed',
       undefined,
     ]);
-    expect([...connectedSetupApps(apps)]).toEqual(['claude-code', 'cursor']);
+    expect([...connectedSetupApps(apps)]).toEqual(['claude-code', 'vscode']);
   });
 
   // Folded (case and accents ignored), then as written, both by code unit, like dashboard labels
@@ -174,13 +165,13 @@ describe('summarizeConnectedApps', () => {
 
   it('keeps a recognized app and a look-alike apart', () => {
     const apps = summarizeConnectedApps([
-      cursor('dcr-real'),
-      connection({ client_id: 'dcr-fake', client_name: 'Cursor', client_host: 'localhost' }),
+      vscode('dcr-real'),
+      connection({ client_id: 'dcr-fake', client_name: 'VS Code', client_host: 'localhost' }),
     ]);
 
     expect(apps.map(({ key, setupApp }) => [key, setupApp])).toEqual([
-      ['app:cursor', 'cursor'],
-      ['name:cursor', undefined],
+      ['app:vscode', 'vscode'],
+      ['name:vs code', undefined],
     ]);
   });
 

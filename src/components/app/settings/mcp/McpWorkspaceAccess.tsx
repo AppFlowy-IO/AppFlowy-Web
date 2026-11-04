@@ -33,7 +33,7 @@ import {
   mcpRequestedBy,
 } from './format';
 import {
-  ConnectionDetails,
+  ConnectionTimes,
   DisconnectDescription,
   EmptyState,
   McpTime,
@@ -355,8 +355,14 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
                       data-user-uuid={connection.user_uuid}
                       data-family-id={connection.family_id ?? undefined}
                     >
-                      <PanelClientIdentity client={connection} avatarSize='sm' className='flex-1'>
-                        <ConnectionDetails connection={connection} testIdPrefix='mcp-member-connection' />
+                      <PanelClientIdentity
+                        client={connection}
+                        detail={mcpDeviceLabel(connection)}
+                        detailTestId='mcp-member-connection-device'
+                        avatarSize='sm'
+                        className='flex-1'
+                      >
+                        <ConnectionTimes connection={connection} testIdPrefix='mcp-member-connection' />
                       </PanelClientIdentity>
                       <div className='flex shrink-0 items-center gap-3'>
                         <PanelScopeBadge scope={connection.scope} />

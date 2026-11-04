@@ -78,36 +78,12 @@ export function McpSetupAppSteps({ app, snippets, onCopy }: McpSetupAppStepsProp
           <SetupText muted text={t('mcp.setup.codex.app')} />
         </>
       );
-    case 'cursor':
-      return (
-        <>
-          <SetupText text={t('mcp.setup.cursor.afterInstall')} testId='mcp-setup-cursor-after-install' />
-          <SetupText text={t('mcp.setup.cursor.manual')} />
-          {snippet('cursor-json')}
-        </>
-      );
     case 'vscode':
       return (
         <>
           <SetupText text={t('mcp.setup.vscode.signIn')} />
           <SetupText text={t('mcp.setup.vscode.cli')} />
           {snippet('vscode-cli')}
-        </>
-      );
-    case 'gemini':
-      return (
-        <>
-          <SetupText text={t('mcp.setup.gemini.step1')} />
-          {snippet('gemini')}
-          <SetupText text={t('mcp.setup.gemini.step2')} />
-        </>
-      );
-    case 'windsurf':
-      return (
-        <>
-          <SetupText text={t('mcp.setup.windsurf.step1')} />
-          {snippet('server-url-json')}
-          <SetupText text={t('mcp.setup.windsurf.step2')} />
         </>
       );
     case 'other':

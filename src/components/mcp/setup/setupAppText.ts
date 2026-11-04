@@ -6,9 +6,6 @@ export const SETUP_APP_TEXT_KEYS = {
   chatgpt: 'chatgpt',
   'claude-code': 'claudeCode',
   codex: 'codex',
-  cursor: 'cursor',
   vscode: 'vscode',
-  gemini: 'gemini',
-  windsurf: 'windsurf',
   other: 'other',
 } as const satisfies Record<McpSetupAppId, string>;

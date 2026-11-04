@@ -138,7 +138,11 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
           workspaceId &&
           (showAiApps ? (
             <Suspense fallback={<PanelFallback label={t('settings.mcp.loading')} />}>
-              <McpPanel key={workspaceId} workspaceId={workspaceId} />
+              <McpPanel
+                key={workspaceId}
+                workspaceId={workspaceId}
+                onOpenConnections={() => setSelectedItem(SettingMenuItem.CONNECTIONS)}
+              />
             </Suspense>
           ) : (
             <PanelFallback label={t('settings.mcp.loading')} />
