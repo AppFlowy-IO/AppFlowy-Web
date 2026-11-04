@@ -372,13 +372,17 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    server-info is loaded anyway (inside `/app`) and names a different origin, the Web keeps the
    override and logs a console warning naming both.
 2. **`mcp_url` from AppFlowy Cloud's `/api/server-info`** (web projection), set from Cloud's
-   `APPFLOWY_MCP_BASE_URL`, the same variable the MCP service reads, so one compose `.env` serves
-   both; when it is unset, Cloud advertises its own `APPFLOWY_BASE_URL` (the same-domain default).
+   `APPFLOWY_MCP_BASE_URL` only, the same variable the MCP service reads, so one compose `.env`
+   serves both. Unlike the MCP service, which falls back to `APPFLOWY_BASE_URL` for its own origin,
+   Cloud never does: without the variable it knows no MCP service and advertises none.
    Cloud advertises it whenever it knows that origin and has loaded its MCP policy, whether MCP is
    on or off ([Enable MCP switch](#enable-mcp-switch)), so it is auto-discovery like `web_url`:
    while MCP is off the Web still reaches the service to show that and to let members disconnect.
-   A deployment that does not run the MCP service still advertises the same-domain default, and
-   Settings → MCP then shows the service as unavailable. The value is read through
+   A deployment without the MCP service leaves the variable off Cloud and the Web (AppFlowy
+   Cloud's bundled Compose and Helm files set both wherever they deploy MCP), so the Web treats
+   MCP as not configured (item 3) and hides it.
+   Settings → MCP shows the service as unavailable only when Cloud, or the Web's own override,
+   names an origin where nothing answers. The value is read through
    the shared server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's
    refresh loop provides it, and the public consent and setup pages run the loop themselves
    (`useMcpConfiguration({ loadServerInfo: true })`).
@@ -392,14 +396,14 @@ spinner then says the AppFlowy server can't be reached and the page keeps trying
 (`mcp.serverInfoRetrying`); a signed-out user is sent to sign in only once it answers.
 `unsupported` (a server without `/api/server-info`) means not configured. Once server-info has
 answered, a later refresh that fails or is pending keeps that answer, so an open page does not lose
-the service on a transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`;
-only Cloud falls back as described above.
+the service on a transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`,
+and neither does Cloud.
 
 **MCP service** — for the browser flow to work:
 
 - `APPFLOWY_MCP_BASE_URL` is the service's own public origin: the OAuth issuer (`iss`) and the
-  canonical resource `<origin>/mcp`. AppFlowy Cloud reads the same variable to advertise
-  `mcp_url`; a Web override, if any, must name the same origin.
+  canonical resource `<origin>/mcp`. AppFlowy Cloud reads the same variable, and only that one,
+  to advertise `mcp_url`; a Web override, if any, must name the same origin.
 - `APPFLOWY_WEB_URL` must be the Web origin. Unset, it defaults to the MCP origin, consent redirects
   land on the MCP service itself and the service logs a startup warning. It also builds the
   `resource_documentation` link (`/oauth/mcp/setup`) and the server icon.
@@ -440,8 +444,11 @@ while it is turned off, below, with an `error_description` that names the licens
 Cloud is always licensed.
 
 Cloud's server-info says so in `mcp_status` (`enabled`, `disabled`, or `license_required`;
-`getMcpServerStatus` reads it and treats a value it does not know as unknown). With
-`license_required`, Settings shows the MCP tab even without an MCP URL, and the panel asks for a
+`getMcpServerStatus` reads it and treats a value it does not know as unknown). Cloud sends
+`mcp_status` only where MCP is deployed (it knows an MCP origin): a deployment without the MCP
+service sends neither `mcp_url` nor `mcp_status`, so Settings hides the MCP tab there whatever the
+license. With `license_required`, Settings shows the MCP tab even without an MCP URL (as before
+Cloud has loaded its MCP policy), and the panel asks for a
 license upgrade ("Upgrade required", as for the other features a license unlocks) instead of
 offering setup or the turned-off notice. The member's own connections stay listed when the MCP
 service answers, so they can still be disconnected.
