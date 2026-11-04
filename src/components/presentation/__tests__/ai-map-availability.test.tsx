@@ -228,13 +228,22 @@ describe('Present AI mind map', () => {
   test('keeps one loading surface through saved lookup and AI generation', async () => {
     let finishLoad!: (value: never) => void;
     let finishGeneration!: (value: unknown) => void;
+    let reportJob!: (job: { state: string }) => void;
 
     jest.mocked(loadPresentation).mockReturnValue(new Promise((resolve) => (finishLoad = resolve)));
-    mockRunGeneration.mockReturnValue(new Promise((resolve) => (finishGeneration = resolve)));
+    mockRunGeneration.mockImplementation((_input, _signal, onJob) => {
+      reportJob = onJob;
+      return new Promise((resolve) => (finishGeneration = resolve));
+    });
     render(<PresentationStudio {...present()} />);
     expect(screen.getByText('Loading mind map…')).toBeTruthy();
     await act(async () => finishLoad(loaded(available)));
     expect(screen.getByText('Loading mind map…')).toBeTruthy();
+    expect(screen.queryByText(/Preparing your presentation/)).toBeNull();
+    act(() => reportJob({ state: 'running' }));
+    expect(screen.getByText('Loading mind map…')).toBeTruthy();
+    expect(screen.queryByText(/Presentation running/)).toBeNull();
+    expect(screen.queryByText('Cancel')).toBeNull();
     const artifact = map('generated', 'AI generated map', 'ai');
 
     await act(async () => finishGeneration({ map: artifact.content, artifact, status: available }));
