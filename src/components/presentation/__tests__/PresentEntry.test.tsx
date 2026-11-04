@@ -77,6 +77,7 @@ const mockToView = jest.fn(async () => undefined);
 let mockCover: ViewCover | undefined;
 const mockPermissions = { canRead: true, canWrite: true, hasLoadedViewActionPermissions: true };
 let mockWorkspaceRole: string | undefined = 'Member';
+let mockAIEnabled = true;
 const mockPermissionHook = jest.fn((..._args: unknown[]) => mockPermissions);
 const mockContent = {
   type: 'page',
@@ -96,6 +97,7 @@ const mockContent = {
 };
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: () => mockAIEnabled,
   useAppView: (id: string) => ({
     view_id: id,
     name: 'Live document',
@@ -132,12 +134,47 @@ beforeEach(() => {
   mockPermissions.canRead = true;
   mockPermissions.canWrite = true;
   mockWorkspaceRole = 'Member';
+  mockAIEnabled = true;
   mockCover = undefined;
   setActiveRowPage(null);
   mockUserId = 'user';
   mockSession = null;
   mockSavedMap = undefined;
   mockRequest.mockImplementation(mockWire);
+});
+
+it('hides AI presentation actions when server AI is disabled and keeps document presentation available', async () => {
+  mockAIEnabled = false;
+  render(<PresentEntry viewId='document' />);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+  const documentItem = await screen.findByRole('menuitem', { name: 'Present document' });
+
+  expect(screen.queryByRole('menuitem', { name: 'Present AI mind map' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Generate AI ppt' })).toBeNull();
+  fireEvent.click(documentItem);
+  expect(await screen.findByLabelText('Slide 1 of 2')).toBeTruthy();
+  expect(mockRequest).not.toHaveBeenCalled();
+});
+
+it('hides the direct AI generation button when server AI is disabled', () => {
+  mockAIEnabled = false;
+  render(<PresentEntry viewId='document' slidesOnly />);
+  expect(screen.queryByRole('button', { name: 'Generate AI ppt' })).toBeNull();
+  expect(mockRequest).not.toHaveBeenCalled();
+});
+
+it('updates AI menu visibility when the server capability changes', async () => {
+  mockAIEnabled = false;
+  const view = render(<PresentEntry viewId='document' />);
+
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+  await screen.findByRole('menuitem', { name: 'Present document' });
+  expect(screen.queryByRole('menuitem', { name: 'Generate AI ppt' })).toBeNull();
+  mockAIEnabled = true;
+  view.rerender(<PresentEntry viewId='document' />);
+  expect(screen.getByRole('menuitem', { name: 'Generate AI ppt' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Present AI mind map' })).toBeTruthy();
+  expect(mockRequest).not.toHaveBeenCalled();
 });
 
 it('opens compact AI ppt settings on the authorized page and closes back to the page', async () => {

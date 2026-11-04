@@ -133,6 +133,7 @@ jest.mock('@/application/session/token', () => ({
   isTokenSessionCurrent: () => true,
 }));
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: () => true,
   useAppView: (id: string) => ({ view_id: id, name: mockName, extra: { cover: mockCover } }),
   useCurrentWorkspaceId: () => 'workspace',
   useCurrentWorkspaceIdOptional: () => 'workspace',

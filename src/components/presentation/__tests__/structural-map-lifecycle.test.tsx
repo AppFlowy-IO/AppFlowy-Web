@@ -173,6 +173,22 @@ test('readers view an authorized saved AI map without creating a structure or ge
   expect(mockRunGeneration).not.toHaveBeenCalled();
 });
 
+test.each([false, true])('readers explicitly open an authorized saved page-structure map (presenting: %s)', async (presentMindMap) => {
+  const saved = artifact('Authorized saved structure');
+
+  jest.mocked(loadPresentation).mockResolvedValue({
+    status, session: null, styles: [], map: saved.content, mapArtifact: saved,
+  } as never);
+  render(<PresentationStudio {...props()} canWrite={false} presentMindMap={presentMindMap} />);
+  await screen.findByText(/You need edit access to this page/);
+  fireEvent.click(screen.getByRole('button', { name: presentMindMap ? 'Use page structure' : 'From page structure' }));
+  expect((await screen.findByTestId('server-map')).textContent).toBe('Authorized saved structure');
+  expect(mockViewerProps?.onMapChange).toBeUndefined();
+  expect(loadStructuralMap).not.toHaveBeenCalled();
+  expect(mockRunGeneration).not.toHaveBeenCalled();
+  expect(saveSession).not.toHaveBeenCalled();
+});
+
 test.each(['workspace', 'actor', 'page', 'revision'] as const)(
   'hides a previous artifact immediately on %s change and ignores its delayed response',
   async (change) => {

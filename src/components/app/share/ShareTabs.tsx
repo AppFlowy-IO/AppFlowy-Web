@@ -6,7 +6,7 @@ import type { ExportTarget } from '@/components/app/share/ExportPanel';
 import type { SavedDeck, DeckAction } from '@/components/presentation/types';
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
 import { ReactComponent as Templates } from '@/assets/icons/template.svg';
-import { useAppView } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppView } from '@/components/app/app.hooks';
 import PublishPanel from '@/components/app/share/PublishPanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
@@ -60,8 +60,10 @@ function ShareTabs({
 }) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
+  const aiEnabled = useAIEnabled();
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
-  const activeValue = hidePublish && value === TabKey.PUBLISH ? TabKey.SHARE : value;
+  const activeValue = (hidePublish && value === TabKey.PUBLISH) || (!aiEnabled && value === TabKey.AI_SLIDES)
+    ? TabKey.SHARE : value;
   // RightMenu uses hidePublish for full-page database rows. Their access list
   // comes from the containing database and must not be mutated from the row.
   const disablePersonAccessChanges = hidePublish;
@@ -106,7 +108,7 @@ function ShareTabs({
         label: t('shareAction.exportAsTab'),
         Panel: ExportPanel,
       },
-      onPresentationRequest &&
+      aiEnabled && onPresentationRequest &&
         (presentationViewId || (!presentationIsRow && view?.layout === ViewLayout.Document)) && {
           value: TabKey.AI_SLIDES,
           label: 'AI Slides',
@@ -132,6 +134,7 @@ function ShareTabs({
       }>;
     }>;
   }, [
+    aiEnabled,
     currentUser?.email,
     hideExport,
     hidePublish,

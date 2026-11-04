@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
 
+import type { Page } from '@playwright/test';
+
+async function openFixture(page: Page, query: string) {
+  await page.goto(`/presentation-limits-fixture?${query}`);
+  // A cold dev server must finish loading the fixture before checking its actions.
+  await page.getByRole('region', { name: 'Create presentation settings' }).waitFor({ timeout: 30_000 });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/**', () => { throw new Error('Presentation limit UI must not call business APIs.'); });
   await page.route('**/presentation-limits-fixture*', (route) => route.fulfill({
@@ -22,7 +30,7 @@ for (const theme of ['light', 'dark']) {
       const errors: string[] = [];
 
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.goto(`/presentation-limits-fixture?theme=${theme}&remaining=4`);
+      await openFixture(page, `theme=${theme}&remaining=4`);
       await expect(page.getByRole('button', { name: 'Upgrade workspace' })).toBeEnabled();
       await expect(page.getByRole('button', { name: 'Find saved presentation' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0);
@@ -44,7 +52,7 @@ for (const theme of ['light', 'dark']) {
 
 for (const role of ['owner', 'member']) {
   test(`zero allowance uses the existing ${role} workspace-upgrade flow`, async ({ page }) => {
-    await page.goto(`/presentation-limits-fixture?remaining=0&role=${role}`);
+    await openFixture(page, `remaining=0&role=${role}`);
     await expect(page.getByText('Slide limit reached')).toBeVisible();
     await page.getByRole('textbox', { name: 'Additional instructions', exact: true }).fill('Keep my draft when upgrading');
     await page.getByRole('button', { name: 'Upgrade workspace' }).click();
@@ -55,7 +63,7 @@ for (const role of ['owner', 'member']) {
 }
 
 test('a matching saved result opens with zero slides and no upgrade prompt', async ({ page }) => {
-  await page.goto('/presentation-limits-fixture?remaining=0&cached=true');
+  await openFixture(page, 'remaining=0&cached=true');
   await expect(page.getByRole('button', { name: 'Upgrade workspace' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Open presentation' }).click();
   await expect(page.getByText('Saved presentation opened')).toBeVisible();

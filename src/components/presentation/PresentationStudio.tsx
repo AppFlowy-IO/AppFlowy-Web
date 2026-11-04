@@ -196,14 +196,19 @@ export default function PresentationStudio({
   const [sourceNode, setSourceNode] = useState<string>();
   const [unlinkedSource, setUnlinkedSource] = useState<string>();
   const structuralKey = JSON.stringify([identity, snapshot.revision, options.includeProperties]);
-  const mapContext = useRef({ key: structuralKey, canWrite });
+  const mapView = JSON.stringify([identity, mode, showAIMap, mapPresentationOpen]);
+  const mapContext = useRef({ key: structuralKey, canWrite, view: mapView });
 
-  // An already accepted edit may finish after navigation; it must not select a previous source.
-  mapContext.current = { key: structuralKey, canWrite };
+  // Late results must respect the current source, permissions and selected view.
+  mapContext.current = { key: structuralKey, canWrite, view: mapView };
   const structuralResult = structuralState?.key === structuralKey ? structuralState : undefined;
-  const structuralArtifact =
-    canWrite && snapshot.serverSource && structuralResult?.state === 'ready' ? structuralResult.artifact : undefined;
-  const savedMapArtifact = loadedIdentity === identity && mapArtifact?.origin !== 'structural' ? mapArtifact : undefined;
+  const loadedMapArtifact = loadedIdentity === identity ? mapArtifact : undefined;
+  const savedStructuralArtifact = loadedMapArtifact?.origin === 'structural' ? loadedMapArtifact : undefined;
+  // Readers can open an existing structure; writers derive one for the current source and options.
+  const structuralArtifact = canWrite
+    ? snapshot.serverSource && structuralResult?.state === 'ready' ? structuralResult.artifact : undefined
+    : savedStructuralArtifact;
+  const savedMapArtifact = loadedMapArtifact?.origin !== 'structural' ? loadedMapArtifact : undefined;
   const currentArtifact = showAIMap ? savedMapArtifact : structuralArtifact;
   const currentMap = currentArtifact?.content;
   const mapReferences = useMemo(
@@ -477,6 +482,7 @@ export default function PresentationStudio({
   async function openExisting(present = true) {
     if (busy || !reuse.job) return;
     const controller = new AbortController();
+    const requestedView = mapContext.current.view;
 
     generation.current = controller;
     setBusy(true);
@@ -490,6 +496,8 @@ export default function PresentationStudio({
       if (result.deck) openDeck(result.deck, !!options.reviewOutline);
       else if (result.map) {
         setMapArtifact(result.artifact as Artifact<MindMap>);
+        // Keep the result available without undoing a view choice made while it loaded.
+        if (mapContext.current.view !== requestedView || !mapContext.current.canWrite) return;
         setShowAIMap(true);
         setMapPresentationOpen(present);
         persistSelection(
@@ -573,6 +581,7 @@ export default function PresentationStudio({
     }
 
     const controller = new AbortController();
+    const requestedView = mapContext.current.view;
 
     generation.current = controller;
     setBusy(true);
@@ -629,6 +638,7 @@ export default function PresentationStudio({
         openDeck(result.deck, !editedPlan && !slide && !!options.reviewOutline);
       } else if (result.map) {
         setMapArtifact(result.artifact as Artifact<MindMap>);
+        if (mapContext.current.view !== requestedView || !mapContext.current.canWrite) return;
         setShowAIMap(true);
         setMode('mindmap');
         persistSelection(
@@ -854,7 +864,7 @@ export default function PresentationStudio({
         setMode('slides');
       }}
       onSource={(id) => {
-        if (showAIMap && savedMapArtifact?.sourceRevision !== snapshot.revision) {
+        if (currentArtifact?.sourceRevision !== snapshot.revision) {
           setUnlinkedSource(id);
           return;
         }
@@ -904,7 +914,7 @@ export default function PresentationStudio({
                 {reuse.job ? 'Open mind map' : 'Generate AI mind map'}
               </Button>
             )}
-            {showAIMap && canWrite && !mapStatus.loading && (
+            {showAIMap && (canWrite || !!savedStructuralArtifact) && !mapStatus.loading && (
               <Button variant='outline' onClick={() => setShowAIMap(false)}>
                 Use page structure
               </Button>
@@ -1096,7 +1106,7 @@ export default function PresentationStudio({
                   </button>
                 </div>
               </div>
-              {showAIMap && savedMapArtifact && savedMapArtifact.sourceRevision !== snapshot.revision && (
+              {currentArtifact && currentArtifact.sourceRevision !== snapshot.revision && (
                 <Notice>
                   This saved map uses another source revision. Its references will not navigate to this page.
                 </Notice>

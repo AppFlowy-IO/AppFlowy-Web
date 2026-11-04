@@ -17,13 +17,13 @@ const generate = jest.fn();
 const openCached = jest.fn();
 const prepare = jest.fn();
 
-function Setup({ remaining = 4, custom = false, cached = false, prepareSource = false }: { remaining?: number; custom?: boolean; cached?: boolean; prepareSource?: boolean }) {
+function Setup({ remaining = 4, custom = false, cached = false, prepareSource = false, isPro = false }: { remaining?: number; custom?: boolean; cached?: boolean; prepareSource?: boolean; isPro?: boolean }) {
   const [options, setOptions] = useState<GenerationOptions>({ designMode: 'auto', slideCountMode: 'fixed', slideCountSelection: custom ? 'custom' : 'preset', slideCount: custom ? 4 : 8,
     audience: '', instructions: 'Keep this instruction', allowWebSearch: false, includeProperties: false });
   const props = {
     snapshot: { pageId: 'page', revision: 'revision', title: 'Source', blocks: [], properties: [], serverSource: {} },
     options, onOptions: setOptions, style: APPFLOWY_SLIDE_THEMES[0], styles: APPFLOWY_SLIDE_THEMES, onStyle: jest.fn(),
-    canGenerate: remaining > 0, canAssess: remaining > 0, remainingSlides: remaining, maxSlides: remaining, isPro: false, customSlideCount: false,
+    canGenerate: remaining > 0, canAssess: remaining > 0, remainingSlides: remaining, maxSlides: remaining, isPro, customSlideCount: false,
     onUpgrade: upgrade, onGenerate: generate,
     onPrepareGeneration: prepareSource ? prepare : undefined,
     reuse: { available: cached, checking: false, onOpen: openCached },
@@ -99,4 +99,35 @@ test('an exhausted allowance never asks the user to search for an already-checke
   expect(assessPresentation).not.toHaveBeenCalled();
   expect(prepare).not.toHaveBeenCalled();
   expect(generate).not.toHaveBeenCalled();
+});
+
+test('switching away from an oversized template restores generation for the allowed design', async () => {
+  render(<Setup remaining={100} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Import template', exact: true }));
+  const file = Object.defineProperty(new File(['pptx'], 'large.pptx'), 'size', { value: 6 * 1024 * 1024 });
+
+  fireEvent.change(screen.getByLabelText('Import presentation template'), { target: { files: [file] } });
+  expect(screen.getByRole('button', { name: 'Upgrade workspace' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Let AI choose' }));
+  await settle();
+  expect(screen.queryByRole('button', { name: 'Upgrade workspace' })).toBeNull();
+  expect(screen.queryByText('The Free plan allows PowerPoint templates up to 5 MB.')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
+  await settle();
+  expect(generate).toHaveBeenCalledTimes(1);
+});
+
+test('updated plan access clears an earlier server upgrade denial', async () => {
+  jest.mocked(assessPresentation).mockRejectedValueOnce(Object.assign(new Error('Upgrade required'), { status: 402 }));
+  const view = render(<Setup remaining={100} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
+  await settle();
+  expect(screen.getByRole('button', { name: 'Upgrade workspace' })).toBeTruthy();
+  view.rerender(<Setup remaining={100} isPro />);
+  await settle();
+  expect(screen.queryByRole('button', { name: 'Upgrade workspace' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Generate presentation' }));
+  await settle();
+  expect(generate).toHaveBeenCalledTimes(1);
 });

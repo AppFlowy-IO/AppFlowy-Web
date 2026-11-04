@@ -302,3 +302,42 @@ test('rerenders and a refreshed source revision do not submit a second automatic
   await waitFor(() => expect(mockRunGeneration).toHaveBeenCalledTimes(1));
   expect(loadStructuralMap).not.toHaveBeenCalled();
 });
+
+test.each(['generate', 'reuse'] as const)('%s completion preserves a later page-structure selection', async (request) => {
+  let finish!: (result: never) => void;
+  const pending = new Promise<never>((resolve) => { finish = resolve; });
+  const artifact = map('generated', 'AI generated map', 'ai');
+
+  jest.mocked(loadPresentation).mockResolvedValue(loaded(available));
+  if (request === 'reuse') {
+    mockReuse.job = { id: 'old-job' } as never;
+    jest.mocked(openReusableGeneration).mockReturnValue(pending);
+  } else mockRunGeneration.mockReturnValue(pending);
+  render(<PresentationStudio {...props()} />);
+  await waitFor(() => expect(request === 'reuse' ? openReusableGeneration : mockRunGeneration).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'From page structure' }));
+  expect((await screen.findByTestId('server-map')).textContent).toBe('Page structure');
+  await act(async () => finish({ map: artifact.content, artifact, status: available } as never));
+
+  expect(screen.getByRole('button', { name: 'From page structure' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByTestId('server-map').textContent).toBe('Page structure');
+  expect(saveSession).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'AI mind map' }));
+  expect(screen.getByTestId('server-map').textContent).toBe('AI generated map');
+  expect(request === 'reuse' ? openReusableGeneration : mockRunGeneration).toHaveBeenCalledTimes(1);
+});
+
+test('automatic AI generation does not navigate away from a later Source selection', async () => {
+  let finish!: (result: unknown) => void;
+  const artifact = map('generated', 'AI generated map', 'ai');
+
+  jest.mocked(loadPresentation).mockResolvedValue(loaded(available));
+  mockRunGeneration.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  render(<PresentationStudio {...props()} />);
+  await waitFor(() => expect(mockRunGeneration).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Source', exact: true }));
+  await act(async () => finish({ map: artifact.content, artifact, status: available }));
+  expect(screen.getByRole('button', { name: 'Source', exact: true }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.queryByTestId('server-map')).toBeNull();
+  expect(saveSession).not.toHaveBeenCalled();
+});

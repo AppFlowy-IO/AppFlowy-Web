@@ -84,8 +84,6 @@ export default function SlideGenerationSetup({
   const [asked, setAsked] = useState<{ key: string; question?: string }>();
   const purposeQuestion = asked?.key === sourceKey ? asked : undefined;
   const [assessing, setAssessing] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [noticeUpgrade, setNoticeUpgrade] = useState(false);
   const [importing, setImporting] = useState(false);
   const [analyzingTemplate, setAnalyzingTemplate] = useState(false);
   const templateRequest = useRef<AbortController>();
@@ -107,6 +105,18 @@ export default function SlideGenerationSetup({
   const canAssess = (props.canAssess ?? canGenerate) && !customDenied && (designMode !== 'template' || (templateApproved && !draft));
   const countPaywall = props.reuse?.available ? undefined : customDenied ? CUSTOM_SLIDE_MESSAGE : props.isPro === false ? limitMessage : undefined;
   const presetOptions = effectiveSlideOptions(options);
+  const selectionKey = JSON.stringify([assessmentKey, options, style]);
+  // A denial belongs to the submitted settings and access, not every later selection.
+  const noticeKey = JSON.stringify([
+    selectionKey, props.isPro, props.customSlideCount, props.companyStyles,
+    remainingSlides, maxSlides, maxTemplateBytes,
+  ]);
+  const [feedback, setFeedback] = useState<{ key: string; message: string; upgrade: boolean }>();
+  const activeFeedback = feedback?.key === noticeKey ? feedback : undefined;
+  const notice = activeFeedback?.message ?? '';
+  const noticeUpgrade = activeFeedback?.upgrade ?? false;
+  const setNotice = (message: string, upgrade = false) =>
+    setFeedback(message ? { key: noticeKey, message, upgrade } : undefined);
 
   useEffect(() => {
     setDraft(undefined);
@@ -132,13 +142,11 @@ export default function SlideGenerationSetup({
     templateRequest.current = controller;
     setImporting(true);
     setNotice('');
-    setNoticeUpgrade(false);
     try {
       await work(controller.signal);
     } catch (error) {
       if (!controller.signal.aborted) {
-        setNotice(error instanceof Error ? error.message : 'Unable to load the template.');
-        setNoticeUpgrade(presentationUpgradeRequired(error));
+        setNotice(error instanceof Error ? error.message : 'Unable to load the template.', presentationUpgradeRequired(error));
       }
     } finally {
       if (templateRequest.current === controller) {
@@ -168,7 +176,6 @@ export default function SlideGenerationSetup({
     assessment?.condition === 'ambiguous' &&
     !options.purpose?.trim() &&
     !options.reviewOutline;
-  const selectionKey = JSON.stringify([assessmentKey, options, style]);
   const requiresUpgrade = !props.reuse?.available && (!!countPaywall || noticeUpgrade);
   const [requestedSelection, setRequestedSelection] = useState<string>();
   const waitingForResult = requestedSelection === selectionKey;
@@ -225,6 +232,7 @@ export default function SlideGenerationSetup({
   const clearTemplate = () => {
     cancelTemplateRequest();
     setDraft(undefined);
+    setNotice('');
     if (defaultStyle) onStyle(defaultStyle);
   };
 
@@ -242,15 +250,13 @@ export default function SlideGenerationSetup({
     assessmentRequest.current = controller;
     setAssessing(true);
     setNotice('');
-    setNoticeUpgrade(false);
     try {
       const source = props.onPrepareGeneration ? await props.onPrepareGeneration(controller.signal) : snapshot;
 
       if (!source || controller.signal.aborted) return;
       // Opening an existing result is free. A miss must still respect AI admission before assessment.
       if (!canGenerateSelection) {
-        setNotice(countPaywall ?? 'New slides are unavailable right now. Please try again shortly.');
-        setNoticeUpgrade(!!countPaywall);
+        setNotice(countPaywall ?? 'New slides are unavailable right now. Please try again shortly.', !!countPaywall);
         return;
       }
 
@@ -285,8 +291,7 @@ export default function SlideGenerationSetup({
     } catch (error) {
       if (!controller.signal.aborted) {
         setAssessed(undefined);
-        setNotice(error instanceof Error ? error.message : 'Unable to analyze the sources.');
-        setNoticeUpgrade(presentationUpgradeRequired(error));
+        setNotice(error instanceof Error ? error.message : 'Unable to analyze the sources.', presentationUpgradeRequired(error));
         if (presentationUpgradeRequired(error)) void props.onStatusRefresh?.();
       }
     } finally {
@@ -312,6 +317,7 @@ export default function SlideGenerationSetup({
     if (!review?.serverStyle) return;
     const next = { ...review, ...patch };
 
+    setNotice('');
     setDraft({
       ...next,
       serverStyle: {
@@ -490,8 +496,7 @@ export default function SlideGenerationSetup({
                     e.target.value = '';
                     if (!file || !scope) return;
                     if (maxTemplateBytes !== null && file.size > maxTemplateBytes) {
-                      setNotice(templateUploadSizeMessage(maxTemplateBytes));
-                      setNoticeUpgrade(props.isPro === false);
+                      setNotice(templateUploadSizeMessage(maxTemplateBytes), props.isPro === false);
                       return;
                     }
 
@@ -643,8 +648,7 @@ export default function SlideGenerationSetup({
                     onClick={() => {
                       if (!scope) return;
                       if (review.company && props.companyStyles === false) {
-                        setNotice(COMPANY_STYLE_MESSAGE);
-                        setNoticeUpgrade(true);
+                        setNotice(COMPANY_STYLE_MESSAGE, true);
                         return;
                       }
 
@@ -719,7 +723,7 @@ export default function SlideGenerationSetup({
               <UpgradeIcon className='h-5 w-5 shrink-0 text-icon-primary' aria-hidden='true' />
               <div className='min-w-0 flex-1'>
                 <p className='font-medium text-text-primary'>
-                  {remainingSlides === 0 ? 'Slide limit reached'
+                  {!countPaywall ? 'Upgrade to continue' : remainingSlides === 0 ? 'Slide limit reached'
                     : customDenied ? 'Choose a preset or upgrade' : 'Choose fewer slides or upgrade'}
                 </p>
                 <p className='mt-1 text-text-secondary'>{countPaywall ?? notice}</p>

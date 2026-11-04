@@ -4,6 +4,11 @@ This feature provides **Present document**, **Present AI mind map**, and **AI Sl
 
 The **Present** button is enabled in page and modal headers by `PRESENTATION_ENTRY_ENABLED` in [`feature-flags.ts`](./feature-flags.ts). The entry requires server info to confirm official AppFlowy Cloud hosting.
 
+AI presentation actions also follow the server's `ai_enabled` capability through `useAIEnabled`.
+When AI is disabled, including self-hosted servers without a configured model, the AI mind-map and
+slide menu items, direct AI generation button, and **Share → AI Slides** tab are hidden. The AI
+catalog panel does not mount or load in that state. Document presentation does not require AI.
+
 ## Run locally
 
 ```sh
@@ -52,8 +57,8 @@ and then assesses the source before submitting generation. A matching result ope
 assessment or generation request. The same prepared source and selected design pass into generation,
 avoiding a second preparation read. Analysis shows progress after the click; an ambiguous source
 asks for a purpose, and answering it waits for another Generate click before reassessing.
-When the selected request exceeds the allowance, **Find saved presentation** still checks for a
-matching result on click. A match opens for free; a miss stops before assessment or generation.
+When the selected request exceeds the allowance, an existing match still opens for free;
+otherwise, the primary action offers workspace upgrade before assessment or generation.
 Source preparation remains unavailable until status loads or when edit access is missing.
 Completed assessments survive panel visits in a bounded studio cache and saved jobs. Reuse requires
 matching source revisions, extraction options, purpose, reviewed template and prompt bundle.
@@ -69,7 +74,9 @@ edit access and known AI availability allow one automatic generation for that op
 page-structure map does not satisfy the AI request. Failed generation waits for an explicit retry,
 and quota or accounting failures never silently replace AI with a structural map. **From page
 structure** remains an explicit free choice. Source preparation, durable idempotency and Gateway
-settlement use the existing AI generation workflow.
+settlement use the existing AI generation workflow. Late AI results remain available without
+overriding a later view choice or its session selection. Readers can explicitly open an authorized
+saved structural map without creating a new artifact.
 
 Slide setup checks saved results as part of the existing load/generation flow. The primary action
 is **Open presentation** for a match, **Generate presentation** for an allowed new selection, or
@@ -77,6 +84,8 @@ is **Open presentation** for a match, **Generate presentation** for an allowed n
 saved-presentation search. A known limit has one explanatory prompt; changing to an available
 slide count restores Generate, and an existing match stays usable at zero allowance. Upgrade
 uses the existing workspace-owner/member billing flow and preserves the settings draft.
+Request errors apply only to the settings and plan access that produced them, so changing to an
+allowed design or receiving updated plan access restores the appropriate primary action.
 
 The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts. Preset/custom choices retain their explicit request mode. Proactive controls explain known restrictions; the API remains authoritative for admission. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
 
