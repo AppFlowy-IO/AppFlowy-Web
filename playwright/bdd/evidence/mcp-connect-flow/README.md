@@ -12,13 +12,14 @@
 | `08-public-setup.png` | The signed-out setup page at `/oauth/mcp/setup` |
 | `09-owner-settings-off-connections-kept.png` | AI apps turned off again: the connection is kept and can still be disconnected |
 
-Provenance: `capture.spec.ts` in this directory wrote all nine files in one run on 2026-11-03,
+Provenance: `capture.spec.ts` in this directory wrote all nine files in one run on 2026-11-04,
 through its own config, `capture.config.ts` (headless Chromium, 1360×900, device scale 1). 03 grows
-the viewport to the consent card's height (1360×1189), so the frame includes the approval notice and
+the viewport to the consent page's height (1360×1259), so the frame includes the approval notice and
 Approve and allow. The run used a local stack on a single origin, `http://localhost:18180`, behind
-nginx: AppFlowy Cloud and the MCP service built from AppFlowy-Cloud-Premium PR #1521 at commit
-`97d942b1a`, and AppFlowy Web from this branch's Vite dev server at `b7a6772a`, after the branch was
-rebased onto main (`75584790`). The run signs up a fresh owner and a fresh member in a disposable
+nginx: AppFlowy Cloud and the MCP service built on 2026-11-03 at 17:48 UTC from AppFlowy-Cloud-Premium
+PR #1521, right after its commit `d069a1111`, and AppFlowy Web from this branch's Vite dev server
+with the design-system restyle of the MCP screens, on the merge of main `4b78f4cc` (the Figma colour
+token sync, #713). The run signs up a fresh owner and a fresh member in a disposable
 database. The owner's new workspace gets the Pro fixture subscription
 (`grantWorkspaceProSubscription`), because the hosted build allows a Free workspace only one member.
 
