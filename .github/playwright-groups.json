@@ -29,8 +29,8 @@
   },
   {
     "name": "code-block-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js",
-    "description": "Code block settings, Mermaid, literal editing, clipboard, and code/callout page conversion",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/pdf-embed.feature.spec.js",
+    "description": "Code block settings, Mermaid, literal editing, clipboard, code/callout page conversion, and PDF embeds on the production server",
     "bdd": "true",
     "shard": ""
   },
