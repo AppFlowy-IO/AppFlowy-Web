@@ -27,11 +27,13 @@ export const CONSENT_CHECK_MARK = 'pointer-events-none absolute hidden h-3 w-3 t
  * The consent page shell: the AppFlowy logo above a centered 400 px column, like the
  * landing pages. Props go to the column (test ids, roles). The logo is not a
  * link, so nothing on the page leads away from the decision (the consent
- * view's "Learn more" opens a new tab).
+ * view's "Learn more" opens a new tab). The shell is its own scroll container:
+ * the app's body never scrolls (`overflow: hidden`), and a column with many
+ * workspaces is taller than the window.
  */
 export function McpConsentLayout({ children, className, ...columnProps }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className='flex min-h-screen w-full flex-col bg-background-primary'>
+    <div className='appflowy-scroller flex h-screen w-full flex-col overflow-y-auto bg-background-primary'>
       <header className='flex h-[60px] w-full shrink-0 items-center px-5 py-4'>
         <AppFlowyLogo className='h-full w-[141px]' role='img' aria-label='AppFlowy' />
       </header>

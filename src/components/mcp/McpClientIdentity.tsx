@@ -25,14 +25,17 @@ export interface McpClientIdentityProps {
   /** Render the avatar before the name (default true). */
   showAvatar?: boolean;
   /**
-   * `app` (default): the app's name, its host and every badge. `publisher`:
-   * only who publishes it, for the consent page's publisher row. The host
-   * leads, and only a proven identity counts as a verified app; where the
-   * app runs belongs to the redirect row.
+   * `app` (default): the app's name with every badge beside it, then its host.
+   * `publisher`: only who publishes it, for the consent page's publisher row:
+   * the host leads with its badge below, and only a proven identity counts as a
+   * verified app; where the app runs belongs to the redirect row.
    */
   variant?: 'app' | 'publisher';
   avatarSize?: McpClientAvatarSize;
-  /** Extra lines under the badges, such as a connected time. */
+  /** `app` only: what follows the host on its line, such as the device a connection signed in from. */
+  detail?: string;
+  detailTestId?: string;
+  /** Extra lines under the host line, such as a connected time. */
   children?: ReactNode;
   /** Where the "Not verified" tooltip renders; inside an MUI dialog pass an element of the dialog. */
   tooltipContainer?: Element | null;
@@ -57,6 +60,8 @@ export function McpClientIdentity({
   showAvatar = true,
   variant = 'app',
   avatarSize = 'md',
+  detail,
+  detailTestId,
   children,
   tooltipContainer,
   className,
@@ -73,97 +78,139 @@ export function McpClientIdentity({
   const host = client?.client_host?.trim();
   const title = name || host || t('settings.mcp.unknownApp');
 
+  const nameLabel = (
+    <span
+      className='min-w-0 truncate text-sm font-medium text-text-primary'
+      title={title}
+      data-testid='mcp-client-identity-name'
+    >
+      {title}
+    </span>
+  );
+  const badges = client && (
+    <>
+      {verifiedIdentity ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className={cn(
+                BADGE_CLASS,
+                'cursor-help bg-fill-success-light text-text-success-on-fill outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+              )}
+              data-testid='mcp-client-verified-app-badge'
+            >
+              {t('settings.mcp.verifiedApp')}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent container={tooltipContainer ?? undefined}>
+            {t('settings.mcp.verifiedAppTooltip')}
+          </TooltipContent>
+        </Tooltip>
+      ) : nativeApp ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className={cn(
+                BADGE_CLASS,
+                'cursor-help bg-fill-content-visible text-text-secondary outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+              )}
+              data-testid='mcp-client-native-app-badge'
+            >
+              {t('settings.mcp.localApp')}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent container={tooltipContainer ?? undefined}>{t('settings.mcp.nativeAppTooltip')}</TooltipContent>
+        </Tooltip>
+      ) : client.client_kind === 'cimd' ? (
+        <span
+          className={cn(BADGE_CLASS, 'bg-fill-success-light text-text-success-on-fill')}
+          data-testid='mcp-client-verified-badge'
+        >
+          {t('settings.mcp.verified')}
+        </span>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className={cn(
+                BADGE_CLASS,
+                'cursor-help bg-fill-content-visible text-text-secondary outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+              )}
+              data-testid='mcp-client-unverified-badge'
+            >
+              {t('settings.mcp.unverified')}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent container={tooltipContainer ?? undefined}>
+            {t('settings.mcp.unverifiedTooltip')}
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {client.loopback_only && !nativeApp && !publisher && (
+        <span
+          className={cn(BADGE_CLASS, 'bg-fill-content-visible text-text-secondary')}
+          data-testid='mcp-client-local-badge'
+        >
+          {t('settings.mcp.localApp')}
+        </span>
+      )}
+    </>
+  );
+
+  if (publisher) {
+    return (
+      <div className={cn('flex min-w-0 items-center gap-3', className)} data-testid='mcp-client-identity'>
+        {showAvatar && <McpClientAvatar client={client} size={avatarSize} />}
+        <div className='flex min-w-0 flex-col gap-1'>
+          {nameLabel}
+          {badges && (
+            <div className='flex min-w-0 flex-wrap items-center gap-1.5 text-xs leading-[18px] text-text-secondary'>
+              {badges}
+            </div>
+          )}
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  // The host only has a line of its own when the name is not already the host.
+  const hostLabel = name ? host : undefined;
+
   return (
     <div className={cn('flex min-w-0 items-center gap-3', className)} data-testid='mcp-client-identity'>
       {showAvatar && <McpClientAvatar client={client} size={avatarSize} />}
-      <div className='flex min-w-0 flex-col gap-1'>
-        <span
-          className='truncate text-sm font-medium text-text-primary'
-          title={title}
-          data-testid='mcp-client-identity-name'
-        >
-          {title}
-        </span>
-        {client && (
-          <div className='flex min-w-0 flex-wrap items-center gap-1.5 text-xs leading-[18px] text-text-secondary'>
-            {name && host && (
-              <span className='truncate' title={host} data-testid='mcp-client-identity-host'>
-                {host}
-              </span>
-            )}
-            {verifiedIdentity ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    tabIndex={0}
-                    className={cn(
-                      BADGE_CLASS,
-                      'cursor-help bg-fill-success-light text-text-success-on-fill outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                    )}
-                    data-testid='mcp-client-verified-app-badge'
-                  >
-                    {t('settings.mcp.verifiedApp')}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent container={tooltipContainer ?? undefined}>
-                  {t('settings.mcp.verifiedAppTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            ) : nativeApp ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    tabIndex={0}
-                    className={cn(
-                      BADGE_CLASS,
-                      'cursor-help bg-fill-content-visible text-text-secondary outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                    )}
-                    data-testid='mcp-client-native-app-badge'
-                  >
-                    {t('settings.mcp.localApp')}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent container={tooltipContainer ?? undefined}>
-                  {t('settings.mcp.nativeAppTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            ) : client.client_kind === 'cimd' ? (
-              <span
-                className={cn(BADGE_CLASS, 'bg-fill-success-light text-text-success-on-fill')}
-                data-testid='mcp-client-verified-badge'
-              >
-                {t('settings.mcp.verified')}
-              </span>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    tabIndex={0}
-                    className={cn(
-                      BADGE_CLASS,
-                      'cursor-help bg-fill-content-visible text-text-secondary outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                    )}
-                    data-testid='mcp-client-unverified-badge'
-                  >
-                    {t('settings.mcp.unverified')}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent container={tooltipContainer ?? undefined}>
-                  {t('settings.mcp.unverifiedTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {client.loopback_only && !nativeApp && !publisher && (
-              <span
-                className={cn(BADGE_CLASS, 'bg-fill-content-visible text-text-secondary')}
-                data-testid='mcp-client-local-badge'
-              >
-                {t('settings.mcp.localApp')}
-              </span>
-            )}
-          </div>
-        )}
-        {children}
+      <div className='flex min-w-0 flex-col gap-0.5'>
+        {/* What the app is and whether to trust it; a long name pushes the badges to the next line. */}
+        <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
+          {nameLabel}
+          {badges}
+        </div>
+        <div className='flex min-w-0 flex-col text-xs leading-[18px] text-text-secondary empty:hidden'>
+          {(hostLabel || detail) && (
+            <div className='flex min-w-0 items-center gap-1.5'>
+              {hostLabel && (
+                <span className='min-w-0 truncate' title={hostLabel} data-testid='mcp-client-identity-host'>
+                  {hostLabel}
+                </span>
+              )}
+              {hostLabel && detail && (
+                <span aria-hidden='true' className='shrink-0'>
+                  ·
+                </span>
+              )}
+              {detail && (
+                <span className='min-w-0 truncate' title={detail} data-testid={detailTestId}>
+                  {detail}
+                </span>
+              )}
+            </div>
+          )}
+          {children}
+        </div>
       </div>
     </div>
   );

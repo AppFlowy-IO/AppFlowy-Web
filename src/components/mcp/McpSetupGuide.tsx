@@ -2,12 +2,10 @@ import { Fragment, ReactNode, useCallback, useEffect, useId, useMemo, useRef, us
 import { useTranslation } from 'react-i18next';
 
 import {
-  buildCursorInstallUrl,
   buildMcpSnippets,
   buildVsCodeInstallUrl,
   CHATGPT_SETTINGS_URL,
   CLAUDE_CONNECTORS_URL,
-  MCP_SETUP_PAGE_PATH,
 } from '@/application/mcp/setup';
 import {
   connectedSetupApps,
@@ -16,17 +14,13 @@ import {
   type McpSetupAppId,
   type McpSetupConnection,
 } from '@/application/mcp/setupApps';
-import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
-import { ReactComponent as AiIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ArrowUpRightIcon } from '@/assets/icons/arrow_up_right.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { notify } from '@/components/_shared/notify';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
-import { McpConnectedApps } from '@/components/mcp/setup/McpConnectedApps';
 import { McpSetupAppCard } from '@/components/mcp/setup/McpSetupAppCard';
 import { McpSetupAppSteps } from '@/components/mcp/setup/McpSetupAppSteps';
 import type { McpSetupCopy } from '@/components/mcp/setup/McpSetupParts';
-import { McpSetupTroubleshooting } from '@/components/mcp/setup/McpSetupTroubleshooting';
 import { SETUP_APP_TEXT_KEYS } from '@/components/mcp/setup/setupAppText';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,8 +55,8 @@ export interface McpSetupGuideProps {
 
 /**
  * How to connect AI apps to the AppFlowy MCP server: the server URL with Copy,
- * a setup prompt for AI agents, the apps already connected, a gallery of apps
- * whose cards expand into copyable steps, and "Having trouble?".
+ * and a gallery of apps whose cards expand into copyable steps (a connected
+ * app's card says so).
  */
 export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGuideProps) {
   const { t } = useTranslation();
@@ -105,12 +99,6 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
     setSelected((current) => (current === app ? null : app));
   };
 
-  const copyPrompt = () => {
-    const setupPageUrl = new URL(MCP_SETUP_PAGE_PATH, window.location.origin).toString();
-
-    void copy(buildMcpSetupPrompt(url, { setupPageUrl }), t('mcp.setup.promptCopied'));
-  };
-
   /**
    * The card's one primary action: the vendor's page, a one-click install, or a copy. Each also
    * opens the steps. `JSX.Element`, not `ReactNode`, so a new gallery app without a case fails to
@@ -145,14 +133,6 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
             {t('mcp.setup.chatgpt.action')}
           </ExternalAction>
         );
-      case 'cursor':
-        return (
-          <Button asChild variant='outline' size='sm'>
-            <a href={buildCursorInstallUrl(url)} onClick={() => select(app)} data-testid='mcp-install-cursor'>
-              {t('mcp.setup.cursor.install')}
-            </a>
-          </Button>
-        );
       case 'vscode':
         return (
           <Button asChild variant='outline' size='sm'>
@@ -165,10 +145,6 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
         return copyAction(snippets['claude-code'], t('mcp.setup.copyCommand'));
       case 'codex':
         return copyAction(snippets.codex, t('mcp.setup.copyCommand'));
-      case 'gemini':
-        return copyAction(snippets.gemini, t('mcp.setup.copyCommand'));
-      case 'windsurf':
-        return copyAction(snippets['server-url-json'], t('mcp.setup.copyConfig'));
       case 'other':
         return copyAction(url, t('mcp.setup.copyUrl'));
     }
@@ -195,19 +171,6 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
           </Button>
         </div>
       </div>
-
-      <div className='flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-400 bg-fill-content-visible py-3 pl-4 pr-3'>
-        <div className='flex min-w-0 flex-1 basis-60 items-start gap-3 py-1'>
-          <AiIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-primary' />
-          <p className='min-w-0 flex-1 text-sm text-text-primary'>{t('mcp.setup.promptHint')}</p>
-        </div>
-        <Button variant='outline' size='sm' onClick={copyPrompt} data-testid='mcp-copy-setup-prompt'>
-          <CopyIcon className='h-5 w-5' />
-          {t('mcp.setup.copyPrompt')}
-        </Button>
-      </div>
-
-      <McpConnectedApps apps={connectedApps} />
 
       <div className={GALLERY_GRID_CLASS} data-testid='mcp-setup-gallery'>
         {MCP_SETUP_APPS.map((app) => {
@@ -248,7 +211,6 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
         })}
       </div>
 
-      <McpSetupTroubleshooting />
     </div>
   );
 }

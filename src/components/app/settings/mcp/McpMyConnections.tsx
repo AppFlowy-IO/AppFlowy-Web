@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 
 import { mcpClientName, mcpConnectionKey, mcpDeviceLabel, mcpOthersKeepWorking } from './format';
 import {
-  ConnectionDetails,
+  ConnectionTimes,
   DisconnectDescription,
   EmptyState,
   PanelClientIdentity,
@@ -71,8 +71,13 @@ export function McpMyConnections({ state, onDisconnect, overview }: McpMyConnect
               data-client-id={connection.client_id}
               data-family-id={connection.family_id ?? undefined}
             >
-              <PanelClientIdentity client={connection} className='flex-1'>
-                <ConnectionDetails connection={connection} testIdPrefix='mcp-my-connection' />
+              <PanelClientIdentity
+                client={connection}
+                detail={mcpDeviceLabel(connection)}
+                detailTestId='mcp-my-connection-device'
+                className='flex-1'
+              >
+                <ConnectionTimes connection={connection} testIdPrefix='mcp-my-connection' />
               </PanelClientIdentity>
               <div className='flex shrink-0 items-center gap-3'>
                 <PanelScopeBadge scope={connection.scope} />

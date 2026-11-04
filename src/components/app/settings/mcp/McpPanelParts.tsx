@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import { formatMcpDateTime, formatMcpRelativeTime, mcpDate, mcpDeviceLabel } from './format';
+import { formatMcpDateTime, formatMcpRelativeTime, mcpDate } from './format';
 
 /**
  * An element inside the Settings dialog. Radix tooltips portal to `body` by
@@ -155,54 +155,39 @@ export function PanelScopeBadge({ scope }: { scope?: string | null }) {
   );
 }
 
-/**
- * The device a connection signed in from (when the app described it) and its
- * times: "Connected 2 days ago · Last used 5 minutes ago".
- */
-export function ConnectionDetails({
+/** A connection's times: "Connected 2 days ago · Last used 5 minutes ago". */
+export function ConnectionTimes({
   connection,
   testIdPrefix,
 }: {
-  connection: Pick<McpConnectionDetails, 'device_label' | 'connected_at' | 'last_used_at'>;
-  /** `mcp-my-connection` or `mcp-member-connection`: the parts get `-device`, `-time` and `-last-used`. */
+  connection: Pick<McpConnectionDetails, 'connected_at' | 'last_used_at'>;
+  /** `mcp-my-connection` or `mcp-member-connection`: the parts get `-time` and `-last-used`. */
   testIdPrefix: string;
 }) {
   const { t } = useTranslation();
-  const device = mcpDeviceLabel(connection);
   const lastUsed = mcpDate(connection.last_used_at);
 
   return (
-    <div className='flex min-w-0 flex-col'>
-      {device && (
-        <span
-          className='truncate text-xs leading-[18px] text-text-secondary'
-          title={device}
-          data-testid={`${testIdPrefix}-device`}
-        >
-          {device}
-        </span>
+    <div className='flex flex-wrap items-center gap-x-1.5'>
+      <McpTime
+        value={connection.connected_at}
+        label={(time) => t('settings.mcp.connectedAt', { time, ...RAW_INTERPOLATION })}
+        testId={`${testIdPrefix}-time`}
+      />
+      {lastUsed && (
+        <>
+          {mcpDate(connection.connected_at) && (
+            <span aria-hidden='true' className='text-xs leading-[18px] text-text-secondary'>
+              ·
+            </span>
+          )}
+          <McpTime
+            value={connection.last_used_at}
+            label={(time) => t('settings.mcp.lastUsedAt', { time, ...RAW_INTERPOLATION })}
+            testId={`${testIdPrefix}-last-used`}
+          />
+        </>
       )}
-      <div className='flex flex-wrap items-center gap-x-1.5'>
-        <McpTime
-          value={connection.connected_at}
-          label={(time) => t('settings.mcp.connectedAt', { time, ...RAW_INTERPOLATION })}
-          testId={`${testIdPrefix}-time`}
-        />
-        {lastUsed && (
-          <>
-            {mcpDate(connection.connected_at) && (
-              <span aria-hidden='true' className='text-xs leading-[18px] text-text-secondary'>
-                ·
-              </span>
-            )}
-            <McpTime
-              value={connection.last_used_at}
-              label={(time) => t('settings.mcp.lastUsedAt', { time, ...RAW_INTERPOLATION })}
-              testId={`${testIdPrefix}-last-used`}
-            />
-          </>
-        )}
-      </div>
     </div>
   );
 }

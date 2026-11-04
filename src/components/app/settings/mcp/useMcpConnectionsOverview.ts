@@ -8,9 +8,8 @@ import { useMcpResource } from './useMcpRequest';
 export interface McpConnectionsOverview {
   /**
    * Distinct apps the caller connected in any workspace, grouped like the setup
-   * guide's "Connected apps (N)" (`summarizeConnectedApps`). That count covers
-   * the current workspace only, so this one is larger whenever another
-   * workspace has an app the current one lacks.
+   * guide's "Connected" card badges (`summarizeConnectedApps`), which cover the
+   * current workspace only.
    */
   appCount: number;
   workspaceCount: number;

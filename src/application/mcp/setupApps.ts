@@ -10,32 +10,21 @@ import { compareDashboardText } from '@/utils/normalize-text';
 import { getMcpClientDisplayName, type McpClientNaming, trustedCatalogAppId } from './setup';
 
 /** Cards of the setup guide, in display order. */
-export const MCP_SETUP_APPS = [
-  'claude',
-  'chatgpt',
-  'claude-code',
-  'codex',
-  'cursor',
-  'vscode',
-  'gemini',
-  'windsurf',
-  'other',
-] as const;
+export const MCP_SETUP_APPS = ['claude', 'chatgpt', 'claude-code', 'codex', 'vscode', 'other'] as const;
 
 export type McpSetupAppId = (typeof MCP_SETUP_APPS)[number];
 
 /**
- * The verified catalog app (`app_id`) behind each card that has one. Gemini
- * CLI, Windsurf, Antigravity and other apps register themselves with loopback
- * or unlisted redirects, which the catalog never recognizes, so their cards
- * never show "Connected".
+ * The verified catalog app (`app_id`) behind each card that has one. "Other
+ * app" stands for apps that register themselves with loopback or unlisted
+ * redirects, which the catalog never recognizes, so it never shows "Connected".
+ * A catalog app without a card (Cursor, say) badges nothing.
  */
 const CATALOG_APP_IDS: Readonly<Partial<Record<McpSetupAppId, string>>> = {
   claude: 'claude',
   chatgpt: 'chatgpt',
   'claude-code': 'claude-code',
   codex: 'codex',
-  cursor: 'cursor',
   vscode: 'vscode',
 };
 
@@ -53,7 +42,7 @@ export interface McpSetupConnection extends McpClientNaming {
   client_id: string;
 }
 
-/** One app among the caller's connections, for "Connected apps (N)". */
+/** One app among the caller's connections, for the gallery's "Connected" badges and Settings' app count. */
 export interface McpConnectedApp {
   /** `app:<app_id>` for a recognized app, else `name:<client name>`, else `client:<client ID>`. */
   key: string;
@@ -66,7 +55,7 @@ export interface McpConnectedApp {
 function groupKey(connection: McpSetupConnection, appId: string | undefined): string {
   if (appId) return `app:${appId}`;
   // Every install of a self-registered app (say, Gemini CLI on two computers) is its own client.
-  // Their shared name groups them for this label only; nothing else may trust that name.
+  // Their shared name groups them for counting only; nothing else may trust that name.
   const clientName = connection.client_name?.trim().toLowerCase();
 
   return clientName ? `name:${clientName}` : `client:${connection.client_id}`;
@@ -103,7 +92,7 @@ export function summarizeConnectedApps(connections: readonly McpSetupConnection[
   const apps = new Map<string, McpConnectedApp>();
 
   connections.forEach((connection) => {
-    // The same rule as `mcpApprovalKey` and `getMcpClientDisplayName`, so a chip keyed by an app
+    // The same rule as `mcpApprovalKey` and `getMcpClientDisplayName`, so an entry keyed by an app
     // also carries that app's catalog name.
     const appId = trustedCatalogAppId(connection);
     const key = groupKey(connection, appId);

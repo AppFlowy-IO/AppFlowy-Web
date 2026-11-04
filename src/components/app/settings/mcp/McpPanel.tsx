@@ -8,6 +8,7 @@ import {
   type McpMemberStatus,
   type McpMyConnection,
 } from '@/application/services/domains/mcp';
+import { ReactComponent as ArrowRightIcon } from '@/assets/icons/arrow_right.svg';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
@@ -15,6 +16,7 @@ import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipGroupProvider } from '@/components/ui/tooltip';
 
 import { mcpClientName, mcpErrorText } from './format';
@@ -37,22 +39,32 @@ import { useMyMcpConnections } from './useMyMcpConnections';
 
 export interface McpPanelProps {
   workspaceId: string;
+  /** Shows Settings > Connections; without it, Connect AI apps does not point there. */
+  onOpenConnections?: () => void;
 }
 
+type McpPanelTab = 'connect' | 'manage';
+
+/** Tab buttons as in Settings > People (Figma Tab button), with the hover fill. */
+const TAB_TRIGGER_CLASS =
+  'h-8 min-w-0 items-center gap-1.5 rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-fill-content-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden';
+
 /**
- * Settings > MCP, rendered lazily with `key={workspaceId}`: how to connect
- * AI apps through the MCP server, the caller's own connections and, for
- * owners, which apps members may connect. See doc/MCP.md.
+ * Settings > MCP, rendered lazily with `key={workspaceId}`, in two tabs: Connect
+ * AI apps (how to connect them through the MCP server) and Manage AI apps (the
+ * caller's own connections and, for owners, which apps members may connect,
+ * with a count of pending approval requests on the tab). See doc/MCP.md.
  *
  * Everything shown is gated on the member status: unreachable service, AI app
  * connections turned off for the server, ineligible account (email gate or
  * guest), member, or owner. The caller's own connections load alongside it;
  * the owner lists wait for it, since only owners may read them.
  */
-export default function McpPanel({ workspaceId }: McpPanelProps) {
+export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelProps) {
   const { t } = useTranslation();
   // Tooltips render here so they stay inside the Settings dialog.
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [tab, setTab] = useState<McpPanelTab>('connect');
   const member = useMcpMemberStatus(workspaceId);
   const { status, disabled } = member;
   // While AI apps are turned off, and for an owner the email gate excludes, the panel offers only
@@ -88,6 +100,8 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
   });
   const { disconnect: disconnectMine } = mine;
   const reloadMemberConnections = governance.connections.reload;
+  // The menu badge's count, on the tab that holds the requests.
+  const pendingRequests = isOwner ? governance.requests.data?.length ?? 0 : 0;
 
   // Requests cannot be answered while AI apps are turned off, and the panel shows them only to a
   // caller who manages AI apps here (`mcpManagesApprovals`, the menu's rule too): not to an owner
@@ -157,31 +171,76 @@ export default function McpPanel({ workspaceId }: McpPanelProps) {
       </div>
     );
   } else {
+    // Both tabs stay mounted, so switching keeps an expanded card, a typed client ID and open
+    // confirmations. The `hidden` attribute hides the inactive one: no display class on TabsContent.
     body = (
-      <div className='flex flex-col gap-5 divide-y divide-border-primary [&>:not(:first-child)]:pt-5'>
-        <PanelSection
-          title={t('settings.mcp.connectTitle')}
-          description={t('settings.mcp.connectDescription')}
-          testId='mcp-connect-section'
-        >
-          {status.requires_approval && status.role === 'member' && (
-            <Notice testId='mcp-approval-notice'>
-              {/* Verified web apps connect without approval in this mode; members should not request them. */}
-              {status.approval_mode === 'verified_and_approved'
-                ? t('settings.mcp.approvalNoticeVerified')
-                : t('settings.mcp.approvalNotice')}
-            </Notice>
-          )}
-          {/* "Connected apps (N)" and the cards' Connected badges come from the caller's connections. */}
-          <McpSetupGuide serverUrl={status.endpoint} connections={mine.loaded ? mine.connections : undefined} />
-        </PanelSection>
-        <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} overview={overview} />
-        {/* Owners manage approvals below; members see what connects without a request. */}
-        {!isOwner && status.requires_approval && (
-          <ApprovedForWorkspace apps={status.approved_apps} mode={status.approval_mode} />
-        )}
-        {isOwner && <McpWorkspaceAccess governance={governance} />}
-      </div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as McpPanelTab)} className='gap-5'>
+        <TabsList className='gap-1.5' data-testid='mcp-tabs'>
+          <TabsTrigger value='connect' className={TAB_TRIGGER_CLASS} data-testid='mcp-tab-connect'>
+            {t('settings.mcp.connectTab')}
+          </TabsTrigger>
+          <TabsTrigger value='manage' className={TAB_TRIGGER_CLASS} data-testid='mcp-tab-manage'>
+            {t('settings.mcp.manageTab')}
+            {pendingRequests > 0 && (
+              <>
+                <span
+                  aria-hidden='true'
+                  className='inline-flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-fill-theme-thick px-1.5 text-xs font-medium text-text-on-fill'
+                  data-testid='mcp-tab-manage-badge'
+                >
+                  {pendingRequests > 99 ? '99+' : pendingRequests}
+                </span>
+                <span className='sr-only'>{t('settings.mcp.pendingRequestsBadge', { count: pendingRequests })}</span>
+              </>
+            )}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value='connect' forceMount hidden={tab !== 'connect'} data-testid='mcp-tab-panel-connect'>
+          <div className='flex flex-col gap-5'>
+            <PanelSection
+              title={t('settings.mcp.connectTitle')}
+              description={t('settings.mcp.connectDescription')}
+              testId='mcp-connect-section'
+            >
+              {status.requires_approval && status.role === 'member' && (
+                <Notice testId='mcp-approval-notice'>
+                  {/* Verified web apps connect without approval in this mode; members should not request them. */}
+                  {status.approval_mode === 'verified_and_approved'
+                    ? t('settings.mcp.approvalNoticeVerified')
+                    : t('settings.mcp.approvalNotice')}
+                </Notice>
+              )}
+              {/* The cards' Connected badges come from the caller's connections. */}
+              <McpSetupGuide serverUrl={status.endpoint} connections={mine.loaded ? mine.connections : undefined} />
+            </PanelSection>
+            {onOpenConnections && (
+              // AI apps use AppFlowy here; Connections brings other services into AppFlowy.
+              <p className='text-sm text-text-secondary' data-testid='mcp-connections-hint'>
+                {t('settings.mcp.connectionsHint')}{' '}
+                <button
+                  type='button'
+                  onClick={onOpenConnections}
+                  className='inline-flex items-center gap-0.5 rounded-100 align-bottom font-medium text-text-action hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                  data-testid='mcp-open-connections'
+                >
+                  {t('settings.connections.menuLabel')}
+                  <ArrowRightIcon aria-hidden='true' className='h-5 w-5' />
+                </button>
+              </p>
+            )}
+          </div>
+        </TabsContent>
+        <TabsContent value='manage' forceMount hidden={tab !== 'manage'} data-testid='mcp-tab-panel-manage'>
+          <div className='flex flex-col gap-5 divide-y divide-border-primary [&>:not(:first-child)]:pt-5'>
+            <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} overview={overview} />
+            {/* Owners manage approvals below; members see what connects without a request. */}
+            {!isOwner && status.requires_approval && (
+              <ApprovedForWorkspace apps={status.approved_apps} mode={status.approval_mode} />
+            )}
+            {isOwner && <McpWorkspaceAccess governance={governance} />}
+          </div>
+        </TabsContent>
+      </Tabs>
     );
   }
 

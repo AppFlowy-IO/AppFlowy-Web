@@ -216,6 +216,11 @@ function text(testId: string) {
   return screen.getByTestId(testId).textContent;
 }
 
+/** Radix tabs switch on a primary-button mousedown (or the keyboard), not on click. */
+function openTab(tab: 'connect' | 'manage') {
+  fireEvent.mouseDown(screen.getByTestId(`mcp-tab-${tab}`), { button: 0 });
+}
+
 function modeRadio(mode: McpApprovalMode) {
   return screen.getByTestId<HTMLInputElement>(`mcp-approval-mode-${mode}`);
 }
@@ -226,6 +231,8 @@ async function renderOwnerPanel() {
   await screen.findByTestId('mcp-approval-mode');
   await screen.findAllByTestId('mcp-access-request-row');
   await screen.findAllByTestId('mcp-member-connection-row');
+  // Owners manage approvals on the Manage AI apps tab.
+  openTab('manage');
 }
 
 describe('McpPanel', () => {
@@ -271,6 +278,74 @@ describe('McpPanel', () => {
 
   afterEach(() => {
     clock.mockRestore();
+  });
+
+  describe('tabs', () => {
+    it('opens on Connect AI apps, and Manage AI apps holds the connections without unmounting the guide', async () => {
+      render(<McpPanel workspaceId={WS} />);
+
+      await screen.findByTestId('mcp-my-connection-row');
+      const connectTab = screen.getByRole('tab', { name: translations.settings.mcp.connectTab });
+      const manageTab = screen.getByRole('tab', { name: translations.settings.mcp.manageTab });
+      const connectPanel = screen.getByTestId('mcp-tab-panel-connect');
+      const managePanel = screen.getByTestId('mcp-tab-panel-manage');
+
+      expect(connectTab.getAttribute('aria-selected')).toBe('true');
+      expect(manageTab.getAttribute('aria-selected')).toBe('false');
+      expect(connectPanel.hidden).toBe(false);
+      expect(managePanel.hidden).toBe(true);
+      expect(within(connectPanel).getByTestId('mcp-setup-guide')).toBeTruthy();
+      expect(within(managePanel).getByTestId('mcp-my-connections')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-tab-manage-badge')).toBeNull();
+
+      openTab('manage');
+      expect(manageTab.getAttribute('aria-selected')).toBe('true');
+      expect(connectPanel.hidden).toBe(true);
+      expect(managePanel.hidden).toBe(false);
+      // Both stay mounted, so the guide keeps an expanded card across switches.
+      expect(within(connectPanel).getByTestId('mcp-setup-guide')).toBeTruthy();
+
+      openTab('connect');
+      expect(connectPanel.hidden).toBe(false);
+      expect(managePanel.hidden).toBe(true);
+    });
+
+    it('points from Connect AI apps to Settings > Connections when the dialog can show it', async () => {
+      const onOpenConnections = jest.fn();
+      const { unmount } = render(<McpPanel workspaceId={WS} onOpenConnections={onOpenConnections} />);
+
+      await screen.findByTestId('mcp-my-connection-row');
+      const hint = screen.getByTestId('mcp-connections-hint');
+
+      expect(within(screen.getByTestId('mcp-tab-panel-connect')).getByTestId('mcp-connections-hint')).toBe(hint);
+      expect(hint.textContent).toContain(translations.settings.mcp.connectionsHint);
+      fireEvent.click(screen.getByRole('button', { name: translations.settings.connections.menuLabel }));
+      expect(onOpenConnections).toHaveBeenCalledTimes(1);
+      unmount();
+
+      // Without a way to switch panels (outside Settings), the hint is left out.
+      render(<McpPanel workspaceId={WS} />);
+      await screen.findByTestId('mcp-my-connection-row');
+      expect(screen.queryByTestId('mcp-connections-hint')).toBeNull();
+    });
+
+    it('counts an owner’s pending approval requests on Manage AI apps until they are answered', async () => {
+      await renderOwnerPanel();
+
+      const badge = screen.getByTestId('mcp-tab-manage-badge');
+
+      expect(badge.textContent).toBe('1');
+      expect(badge.getAttribute('aria-hidden')).toBe('true');
+      // Screen readers hear the count as words with the tab's name.
+      expect(screen.getByRole('tab', { name: /1 pending approval request/ })).toBe(
+        screen.getByTestId('mcp-tab-manage')
+      );
+
+      api.listMcpAccessRequests.mockResolvedValue([]);
+      fireEvent.click(screen.getByTestId('mcp-dismiss-request-0'));
+      expect(await screen.findByTestId('mcp-access-requests-empty')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-tab-manage-badge')).toBeNull();
+    });
   });
 
   describe('members', () => {
@@ -322,10 +397,10 @@ describe('McpPanel', () => {
         resolveStatus(memberStatus());
       });
 
-      // Everything arrives with the status: no second spinner, and nothing pops in above the gallery later.
+      // Everything arrives with the status: no second spinner, and no card badge pops in later.
       expect(screen.getByTestId('mcp-my-connection-row')).toBeTruthy();
       expect(screen.getByTestId('mcp-all-connections-summary')).toBeTruthy();
-      expect(screen.getByTestId('mcp-setup-connected-apps')).toBeTruthy();
+      expect(screen.getByTestId('mcp-setup-app-connected-claude')).toBeTruthy();
       expect(api.listMyMcpConnections).toHaveBeenCalledTimes(1);
     });
 
@@ -339,9 +414,7 @@ describe('McpPanel', () => {
       expect(api.listMyMcpConnectionsAcrossWorkspaces).toHaveBeenCalledWith(signal);
 
       // The guide gets this workspace's connections only: Claude, matched to its card by the verified catalog id.
-      const connectedApps = await screen.findByTestId('mcp-setup-connected-apps');
-
-      expect(within(connectedApps).getByTestId('mcp-setup-connected-apps-label').textContent).toBe('Connected apps (1)');
+      expect(await screen.findByTestId('mcp-setup-app-connected-claude')).toBeTruthy();
       expect(screen.getByTestId('mcp-setup-app-card-claude').getAttribute('data-connected')).toBe('true');
       expect(screen.getByTestId('mcp-setup-app-connected-claude')).toBeTruthy();
       expect(screen.queryByTestId('mcp-setup-app-connected-cursor')).toBeNull();
@@ -357,7 +430,7 @@ describe('McpPanel', () => {
       expect(screen.queryByTestId('mcp-my-connections-error')).toBeNull();
     });
 
-    it('counts an app connected from two computers once, in the guide and in the summary alike', async () => {
+    it('counts an app connected from two computers once in the summary', async () => {
       // Gemini CLI registers itself on each computer: two unrecognized clients, one app.
       const gemini = (client_id: string, family_id: string): McpMyConnection => ({
         client_id,
@@ -392,9 +465,6 @@ describe('McpPanel', () => {
       expect((await screen.findByTestId('mcp-all-connections-summary')).textContent).toBe(
         'You have 1 app connected across 1 workspace.'
       );
-      const connectedApps = await screen.findByTestId('mcp-setup-connected-apps');
-
-      expect(within(connectedApps).getByTestId('mcp-setup-connected-apps-label').textContent).toBe('Connected apps (1)');
     });
 
     it('tells members that some apps need an owner’s approval and lists the approved ones', async () => {
@@ -1284,6 +1354,8 @@ describe('McpPanel', () => {
 
       const access = await screen.findByTestId('mcp-workspace-access');
 
+      openTab('manage');
+
       expect(await within(access).findByTestId('mcp-settings-error')).toBeTruthy();
       await within(access).findAllByTestId('mcp-member-connection-row');
       await within(access).findAllByTestId('mcp-access-request-row');
@@ -1307,6 +1379,8 @@ describe('McpPanel', () => {
       render(<McpPanel workspaceId={WS} />);
 
       const access = await screen.findByTestId('mcp-workspace-access');
+
+      openTab('manage');
 
       expect((await within(access).findByTestId('mcp-approval-mode-unknown')).textContent).toBe(
         translations.settings.mcp.approvalModeUnknown
@@ -1387,6 +1461,8 @@ describe('McpPanel', () => {
       expect(notice.textContent).toContain(translations.settings.mcp.disabledTitle);
       expect(notice.textContent).toContain(translations.settings.mcp.disabledDescription);
       expect(screen.queryByTestId('mcp-connect-section')).toBeNull();
+      // Only the notice and the caller's connections: nothing to switch between.
+      expect(screen.queryByTestId('mcp-tabs')).toBeNull();
       expect(screen.queryByTestId('mcp-setup-guide')).toBeNull();
       expect(screen.queryByTestId('mcp-approval-notice')).toBeNull();
       expect(screen.queryByTestId('mcp-approved-for-workspace')).toBeNull();

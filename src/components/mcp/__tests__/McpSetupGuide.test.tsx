@@ -1,14 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import translations from '@/@types/translations/en.json';
-import {
-  buildCodexConfigToml,
-  buildCursorInstallUrl,
-  buildServerUrlJson,
-  buildVsCodeInstallUrl,
-} from '@/application/mcp/setup';
+import { buildCodexConfigToml, buildVsCodeInstallUrl } from '@/application/mcp/setup';
 import { MCP_SETUP_APPS, type McpSetupConnection } from '@/application/mcp/setupApps';
-import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
 import { notify } from '@/components/_shared/notify';
 import { copyTextToClipboard } from '@/utils/copy';
 
@@ -85,19 +79,11 @@ describe('McpSetupGuide', () => {
     });
   });
 
-  describe('setup prompt', () => {
-    it('copies a prompt for this server and this deployment’s setup page', async () => {
-      render(<McpSetupGuide serverUrl='https://canonical.example.com/mcp' />);
+  it('offers neither a setup prompt for AI agents nor a troubleshooting section', () => {
+    render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
-      expect(screen.getByText(setup.promptHint)).toBeTruthy();
-      await click('mcp-copy-setup-prompt');
-      expect(copy).toHaveBeenCalledWith(
-        buildMcpSetupPrompt('https://canonical.example.com/mcp', {
-          setupPageUrl: `${window.location.origin}/oauth/mcp/setup`,
-        })
-      );
-      expect(notify.success).toHaveBeenCalledWith(setup.promptCopied);
-    });
+    expect(screen.queryByTestId('mcp-copy-setup-prompt')).toBeNull();
+    expect(screen.queryByTestId('mcp-setup-troubleshooting')).toBeNull();
   });
 
   describe('gallery', () => {
@@ -110,9 +96,9 @@ describe('McpSetupGuide', () => {
       expect(cards.map((element) => element.getAttribute('data-testid'))).toEqual(
         MCP_SETUP_APPS.map((app) => `mcp-setup-app-card-${app}`)
       );
+      expect(MCP_SETUP_APPS).toEqual(['claude', 'chatgpt', 'claude-code', 'codex', 'vscode', 'other']);
       expect(within(card('claude')).getByText(setup.claude.name)).toBeTruthy();
       expect(within(card('claude')).getByText(setup.claude.description)).toBeTruthy();
-      expect(within(card('windsurf')).getByText('Windsurf / Antigravity')).toBeTruthy();
       expect(within(card('other')).getByText(setup.other.name)).toBeTruthy();
       expect(openPanels()).toEqual([]);
       MCP_SETUP_APPS.forEach((app) => {
@@ -149,24 +135,12 @@ describe('McpSetupGuide', () => {
       expect(card('codex').nextElementSibling).toBe(panel);
       expect(card('codex').getAttribute('data-selected')).toBe('true');
 
-      toggle('cursor');
-      expect(openPanels()).toEqual(['cursor']);
+      toggle('vscode');
+      expect(openPanels()).toEqual(['vscode']);
       expect(screen.getByTestId('mcp-client-tab-codex').getAttribute('aria-expanded')).toBe('false');
 
-      toggle('cursor');
+      toggle('vscode');
       expect(openPanels()).toEqual([]);
-    });
-
-    it('titles the steps with the app’s name as written', () => {
-      render(<McpSetupGuide serverUrl={SERVER_URL} />);
-
-      toggle('windsurf');
-      const panel = screen.getByTestId('mcp-client-panel-windsurf');
-
-      // Without RAW_INTERPOLATION, i18next would show the slash as `&#x2F;`.
-      expect(document.getElementById(panel.getAttribute('aria-labelledby') ?? '')?.textContent).toBe(
-        'Set up Windsurf / Antigravity'
-      );
     });
 
     it('opens Claude’s connectors in a new tab and shows the steps, including Team and Enterprise', () => {
@@ -209,18 +183,8 @@ describe('McpSetupGuide', () => {
       expect(within(panel).getByTestId('mcp-setup-team-note').textContent).toContain(setup.chatgpt.teamTitle);
     });
 
-    it('installs in Cursor and VS Code through deeplinks, then explains signing in', () => {
+    it('installs in VS Code through a deeplink, then explains signing in', () => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
-
-      const cursor = screen.getByTestId('mcp-install-cursor');
-
-      expect(cursor.getAttribute('href')).toBe(buildCursorInstallUrl(SERVER_URL));
-      expect(cursor.getAttribute('href')).toContain('name=appflowy&');
-      fireEvent.click(cursor);
-      expect(screen.getByTestId('mcp-setup-cursor-after-install').textContent).toBe(
-        "After installing, open Cursor's MCP settings, find appflowy and select Connect (or Needs login) to sign in."
-      );
-      expect(screen.getByTestId('mcp-snippet-cursor-json').textContent).toContain(`"url": "${SERVER_URL}"`);
 
       const vscode = screen.getByTestId('mcp-install-vscode');
 
@@ -235,8 +199,6 @@ describe('McpSetupGuide', () => {
     it.each([
       ['claude-code', `claude mcp add --transport http appflowy ${SERVER_URL}`],
       ['codex', `codex mcp add appflowy --url ${SERVER_URL}`],
-      ['gemini', `gemini mcp add --transport http appflowy ${SERVER_URL}`],
-      ['windsurf', buildServerUrlJson(SERVER_URL)],
       ['other', SERVER_URL],
     ])('copies %s’s setup from its card and opens the steps', async (app, text) => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
@@ -252,8 +214,6 @@ describe('McpSetupGuide', () => {
       ['codex', 'codex', `codex mcp add appflowy --url ${SERVER_URL}`],
       ['codex', 'codex-login', 'codex mcp login appflowy'],
       ['codex', 'codex-toml', buildCodexConfigToml(SERVER_URL)],
-      ['gemini', 'gemini', `gemini mcp add --transport http appflowy ${SERVER_URL}`],
-      ['windsurf', 'server-url-json', buildServerUrlJson(SERVER_URL)],
     ])('copies the %s snippet %s from the steps', async (app, snippet, text) => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
@@ -304,50 +264,43 @@ describe('McpSetupGuide', () => {
   });
 
   describe('connected apps', () => {
-    it('shows nothing about connections when they are unknown or empty', () => {
+    it('badges no card when connections are unknown or empty', () => {
       const { rerender } = render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
-      expect(screen.queryByTestId('mcp-setup-connected-apps')).toBeNull();
       expect(screen.queryByTestId(/^mcp-setup-app-connected-/)).toBeNull();
 
       rerender(<McpSetupGuide serverUrl={SERVER_URL} connections={[]} />);
-      expect(screen.queryByTestId('mcp-setup-connected-apps')).toBeNull();
+      expect(screen.queryByTestId(/^mcp-setup-app-connected-/)).toBeNull();
     });
 
-    it('counts connected apps and badges the cards of recognized ones', () => {
+    it('badges the cards of recognized connected apps', () => {
       render(
         <McpSetupGuide
           serverUrl={SERVER_URL}
           connections={[
-            verified('cursor', 'dcr-laptop'),
-            verified('cursor', 'dcr-desktop'),
+            verified('vscode', 'dcr-laptop'),
+            verified('vscode', 'dcr-desktop'),
             verified('claude-code', 'https://claude.ai/oauth/claude-code-client-metadata'),
             { client_id: 'dcr-gemini', client_name: 'Gemini CLI MCP Client', client_host: 'localhost' },
-            verified('raycast'),
+            // A catalog app the gallery has no card for.
+            verified('cursor'),
           ]}
         />
       );
 
-      expect(screen.getByTestId('mcp-setup-connected-apps-label').textContent).toBe('Connected apps (4)');
-      expect(screen.getAllByTestId('mcp-setup-connected-app').map((chip) => chip.textContent)).toEqual([
-        'Claude Code',
-        'Cursor',
-        'Gemini CLI MCP Client',
-        'raycast',
-      ]);
       expect(MCP_SETUP_APPS.filter((app) => screen.queryByTestId(`mcp-setup-app-connected-${app}`))).toEqual([
         'claude-code',
-        'cursor',
+        'vscode',
       ]);
-      expect(screen.getByTestId('mcp-setup-app-connected-cursor').textContent).toBe(setup.connected);
-      expect(card('cursor').getAttribute('data-connected')).toBe('true');
+      expect(screen.getByTestId('mcp-setup-app-connected-vscode').textContent).toBe(setup.connected);
+      expect(card('vscode').getAttribute('data-connected')).toBe('true');
       // Self-registered apps are never recognized, whatever they call themselves.
-      expect(card('gemini').getAttribute('data-connected')).toBe('false');
+      expect(card('other').getAttribute('data-connected')).toBe('false');
 
-      const button = screen.getByTestId('mcp-client-tab-cursor');
+      const button = screen.getByTestId('mcp-client-tab-vscode');
       const describedBy = (button.getAttribute('aria-describedby') ?? '').split(' ');
 
-      expect(describedBy).toContain(screen.getByTestId('mcp-setup-app-connected-cursor').id);
+      expect(describedBy).toContain(screen.getByTestId('mcp-setup-app-connected-vscode').id);
     });
 
     it('does not badge a card for a client that only claims the app’s name', () => {
@@ -358,37 +311,7 @@ describe('McpSetupGuide', () => {
         />
       );
 
-      expect(screen.getByTestId('mcp-setup-connected-apps-label').textContent).toBe('Connected apps (1)');
       expect(screen.queryByTestId('mcp-setup-app-connected-claude')).toBeNull();
-    });
-  });
-
-  describe('having trouble', () => {
-    it('starts collapsed and answers reconnecting, approval and one workspace per connection', () => {
-      render(<McpSetupGuide serverUrl={SERVER_URL} />);
-
-      const toggleButton = screen.getByTestId('mcp-setup-troubleshooting-toggle');
-
-      expect(toggleButton.textContent).toBe(setup.trouble.title);
-      expect(toggleButton.getAttribute('aria-expanded')).toBe('false');
-      expect(screen.queryByTestId('mcp-setup-troubleshooting-content')).toBeNull();
-
-      fireEvent.click(toggleButton);
-      const content = screen.getByTestId('mcp-setup-troubleshooting-content');
-
-      expect(toggleButton.getAttribute('aria-expanded')).toBe('true');
-      expect(toggleButton.getAttribute('aria-controls')).toBe(content.id);
-      expect(within(screen.getByTestId('mcp-setup-trouble-reconnect')).getAllByRole('listitem')).toHaveLength(7);
-      expect(screen.getByTestId('mcp-setup-trouble-approval').textContent).toContain(setup.trouble.approvalTitle);
-      expect(screen.getByTestId('mcp-setup-trouble-workspace').textContent).toContain(
-        'add AppFlowy a second time under another name, such as appflowy-work'
-      );
-      expect(screen.getByTestId('mcp-setup-trouble-path').textContent).toContain('PATH');
-      expect(screen.getByTestId('mcp-setup-trouble-blocked').textContent).toContain(setup.trouble.blockedTitle);
-      expect(screen.getByTestId('mcp-setup-trouble-read-only').textContent).toContain('Create and add');
-
-      fireEvent.click(toggleButton);
-      expect(screen.queryByTestId('mcp-setup-troubleshooting-content')).toBeNull();
     });
   });
 });

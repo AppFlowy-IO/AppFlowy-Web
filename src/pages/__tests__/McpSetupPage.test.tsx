@@ -1,10 +1,8 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-import { buildMcpSetupPrompt } from '@/application/mcp/setupPrompt';
 import { AuthService } from '@/application/services/domains';
 import { resetMcpConfigurationForTests } from '@/application/services/js-services/http/mcp-api';
-import { copyTextToClipboard } from '@/utils/copy';
 
 import { McpSetupPage } from '../McpSetupPage';
 
@@ -60,24 +58,13 @@ describe('McpSetupPage', () => {
     expect(getServerInfo).not.toHaveBeenCalled();
   });
 
-  it('offers the app gallery, a setup prompt for AI agents and troubleshooting, without connection state', async () => {
+  it('offers the app gallery without connection state', () => {
     mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
-    jest.mocked(copyTextToClipboard).mockResolvedValue(undefined);
     renderPage();
 
     expect(screen.getByTestId('mcp-setup-gallery')).toBeTruthy();
-    expect(screen.getByTestId('mcp-setup-troubleshooting')).toBeTruthy();
     // Signed out or not, the public page knows no workspace, so it shows no connections.
-    expect(screen.queryByTestId('mcp-setup-connected-apps')).toBeNull();
-
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('mcp-copy-setup-prompt'));
-    });
-    expect(copyTextToClipboard).toHaveBeenCalledWith(
-      buildMcpSetupPrompt('https://mcp.example.com/mcp', {
-        setupPageUrl: `${window.location.origin}/oauth/mcp/setup`,
-      })
-    );
+    expect(screen.queryByTestId(/^mcp-setup-app-connected-/)).toBeNull();
   });
 
   it('waits for Cloud server-info, then shows the MCP URL it advertises', async () => {

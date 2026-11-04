@@ -14,10 +14,7 @@ const MONOGRAMS: Record<McpSetupAppId, { text: string; className: string }> = {
   chatgpt: { text: 'Ch', className: 'bg-badge-color-10-light-2 text-badge-color-10-thick-3' },
   'claude-code': { text: 'CC', className: 'bg-badge-color-4-light-2 text-badge-color-4-thick-3' },
   codex: { text: 'Cx', className: 'bg-badge-color-20-light-2 text-badge-color-20-thick-3' },
-  cursor: { text: 'Cu', className: 'bg-badge-color-14-light-2 text-badge-color-14-thick-3' },
   vscode: { text: 'VS', className: 'bg-badge-color-12-light-2 text-badge-color-12-thick-3' },
-  gemini: { text: 'Ge', className: 'bg-badge-color-16-light-2 text-badge-color-16-thick-3' },
-  windsurf: { text: 'Wi', className: 'bg-badge-color-8-light-2 text-badge-color-8-thick-3' },
   other: { text: '+', className: 'bg-fill-content-visible text-text-secondary' },
 };
 
