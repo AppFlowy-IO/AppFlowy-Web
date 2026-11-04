@@ -12,9 +12,8 @@ services:
       - APPFLOWY_GOTRUE_BASE_URL=https://your-backend.example.com/gotrue
       - APPFLOWY_WS_BASE_URL=wss://your-backend.example.com/ws/v2
       # OPTIONAL override: public origin of the AppFlowy MCP service (without /mcp). Without it
-      # the Web uses the mcp_url AppFlowy Cloud advertises in /api/server-info, which Cloud leaves
-      # out while AI apps are turned off; set it to keep Settings → MCP (the turned-off notice
-      # and disconnecting) then. The bundled deployments serve MCP on the backend's own domain.
+      # the Web uses the mcp_url AppFlowy Cloud advertises in /api/server-info whether MCP is on
+      # or off. The bundled deployments serve MCP on the backend's own domain.
       # Keep it equal to AppFlowy Cloud's APPFLOWY_MCP_BASE_URL: it wins over server-info, and
       # the browser console warns when Cloud advertises a different origin. See doc/MCP.md.
       # - APPFLOWY_MCP_BASE_URL=https://your-backend.example.com

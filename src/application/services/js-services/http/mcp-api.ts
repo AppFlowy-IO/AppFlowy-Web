@@ -571,7 +571,8 @@ function resolveMcpConfiguration(serverInfo: ServerInfoState, override: string):
  * The override wins over server-info without asking it, so an override left
  * behind after the MCP service moved would keep sending users to the old
  * origin. When server-info advertises a different origin, say so once. Its
- * absence is no mismatch: Cloud leaves `mcp_url` out while AI apps are off.
+ * absence is no mismatch: Cloud leaves `mcp_url` out until it has loaded its
+ * MCP policy, and older servers also while MCP is off.
  */
 function warnIfServerInfoDisagrees(serverInfo: ServerInfoState, override: string) {
   if (serverInfo.status !== 'available') return;

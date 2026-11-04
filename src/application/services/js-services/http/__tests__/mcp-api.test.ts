@@ -251,7 +251,7 @@ describe('MCP configuration discovery', () => {
     mockConfig = { APPFLOWY_BASE_URL: CLOUD, APPFLOWY_MCP_BASE_URL: `${BASE}/` };
 
     expect(getMcpConfiguration()).toEqual({ status: 'configured', baseUrl: BASE, source: 'config' });
-    // Cloud leaves mcp_url out while AI apps are off: that is why the override exists, not a mismatch.
+    // Cloud may leave mcp_url out (before its MCP policy loads, or an older server while MCP is off): not a mismatch.
     updateServerInfo(CLOUD, available());
     expect(getMcpBaseUrl()).toBe(BASE);
     // The same origin, spelled differently.
