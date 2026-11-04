@@ -82,6 +82,15 @@ Web development/test mode bypasses this client check. To test creation without P
 debug Cloud server (`debug_assertions` enabled); a release Cloud server still enforces Pro.
 Production-policy tests explicitly disable the development bypass.
 
+### Board viewport loading
+
+A board's rows can be grouped before TanStack Virtual measures its column viewport. A visible
+column with persisted cards keeps a loading card and `aria-busy` until the virtual range is
+available; empty columns and intentionally unmounted offscreen columns do not. The focused
+`CardList.test.tsx` regression covers this handoff, and `CardList.sizing.test.tsx` exercises the
+real virtualizer's viewport and scroll behavior. The cloud BDD scenario “Board, calendar and
+timeline widgets of a slow source” also checks that no empty widget appears before its data.
+
 
 ## 🚀 Production Mode Setup
 
