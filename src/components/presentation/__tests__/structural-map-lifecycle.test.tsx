@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 import PresentationStudio from '../PresentationStudio';
@@ -107,6 +107,13 @@ const props = () => ({
   canWrite: true,
 });
 
+function renderStructure(element: React.ReactElement) {
+  const view = render(element);
+
+  fireEvent.click(screen.getByRole('button', { name: 'From page structure' }));
+  return view;
+}
+
 beforeEach(() => {
   jest.resetAllMocks();
   mockViewerProps = undefined;
@@ -119,7 +126,7 @@ test('waits for the real structural artifact without a local map or a model call
   const request = deferred<Artifact<MindMap>>();
 
   jest.mocked(loadStructuralMap).mockReturnValue(request.promise);
-  render(<PresentationStudio {...props()} />);
+  renderStructure(<PresentationStudio {...props()} />);
   expect(screen.getByText('Loading page structure…')).toBeTruthy();
   expect(screen.queryByTestId('server-map')).toBeNull();
   await act(async () => request.resolve(artifact('Server structure')));
@@ -133,7 +140,7 @@ test('shows a structural endpoint failure and retries that endpoint without gene
     .mocked(loadStructuralMap)
     .mockRejectedValueOnce(new Error('Source access changed'))
     .mockResolvedValueOnce(artifact('Retried structure'));
-  render(<PresentationStudio {...props()} />);
+  renderStructure(<PresentationStudio {...props()} />);
   expect((await screen.findByRole('alert')).textContent).toContain('Source access changed');
   expect(screen.queryByTestId('server-map')).toBeNull();
   fireEvent.click(screen.getByText('Retry page structure'));
@@ -147,32 +154,19 @@ test('shows an empty response without fabricating a root node', async () => {
 
   empty.content.nodes = [];
   jest.mocked(loadStructuralMap).mockResolvedValue(empty);
-  render(<PresentationStudio {...props()} />);
+  renderStructure(<PresentationStudio {...props()} />);
   await screen.findByText('The source has no content to show as a mind map.');
   expect(screen.queryByTestId('server-map')).toBeNull();
   expect(mockRunGeneration).not.toHaveBeenCalled();
 });
 
-test('readers do not call the structural mutation endpoint but can view an authorized saved map', async () => {
-  const saved = artifact('Authorized saved map');
+test('readers view an authorized saved AI map without creating a structure or generating', async () => {
+  const saved = { ...artifact('Authorized saved map'), origin: 'ai' };
 
-  jest
-    .mocked(loadPresentation)
-    .mockResolvedValue({
-      status,
-      session: null,
-      decks: [],
-      styles: [],
-      map: saved.content,
-      mapArtifact: saved,
-    } as never);
+  jest.mocked(loadPresentation).mockResolvedValue({
+    status, session: null, styles: [], map: saved.content, mapArtifact: saved,
+  } as never);
   render(<PresentationStudio {...props()} canWrite={false} />);
-  await screen.findByText(/Editor access is required to create a map from page structure/);
-  expect(screen.queryByTestId('server-map')).toBeNull();
-  const savedButton = screen.getByText('Saved mind map');
-
-  await waitFor(() => expect((savedButton as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(savedButton);
   expect((await screen.findByTestId('server-map')).textContent).toBe('Authorized saved map');
   expect(mockViewerProps?.onMapChange).toBeUndefined();
   expect(loadStructuralMap).not.toHaveBeenCalled();
@@ -187,7 +181,7 @@ test.each(['workspace', 'actor', 'page', 'revision'] as const)(
     const initial = props();
 
     jest.mocked(loadStructuralMap).mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
-    const view = render(<PresentationStudio {...initial} />);
+    const view = renderStructure(<PresentationStudio {...initial} />);
     const oldSignal = jest.mocked(loadStructuralMap).mock.calls[0][3]!;
     const changed = {
       ...initial,
@@ -198,6 +192,7 @@ test.each(['workspace', 'actor', 'page', 'revision'] as const)(
     };
 
     view.rerender(<PresentationStudio {...changed} />);
+    if (change !== 'revision') fireEvent.click(screen.getByRole('button', { name: 'From page structure' }));
     expect(oldSignal.aborted).toBe(true);
     await act(async () => old.resolve(artifact('Old source response')));
     expect(screen.queryByTestId('server-map')).toBeNull();
@@ -212,7 +207,7 @@ test('removes a ready artifact on source revision change before the replacement 
   const initial = props();
 
   jest.mocked(loadStructuralMap).mockResolvedValueOnce(artifact('Old ready map')).mockReturnValueOnce(next.promise);
-  const view = render(<PresentationStudio {...initial} />);
+  const view = renderStructure(<PresentationStudio {...initial} />);
 
   await screen.findByTestId('server-map');
   view.rerender(<PresentationStudio {...initial} snapshot={source('page-a', 'revision-b')} />);
@@ -226,7 +221,7 @@ test('revoking editor access aborts pending structure reads and hides their resu
   const initial = props();
 
   jest.mocked(loadStructuralMap).mockReturnValue(request.promise);
-  const view = render(<PresentationStudio {...initial} />);
+  const view = renderStructure(<PresentationStudio {...initial} />);
   const signal = jest.mocked(loadStructuralMap).mock.calls[0][3]!;
 
   view.rerender(<PresentationStudio {...initial} canWrite={false} />);
@@ -243,7 +238,7 @@ test('a delayed edit cannot restore or select a map after its source changes', a
 
   jest.mocked(loadStructuralMap).mockResolvedValueOnce(artifact('Initial map')).mockReturnValueOnce(next.promise);
   jest.mocked(editMap).mockReturnValue(edit.promise);
-  const view = render(<PresentationStudio {...initial} />);
+  const view = renderStructure(<PresentationStudio {...initial} />);
 
   await screen.findByTestId('server-map');
   const saving = mockViewerProps!.onMapChange!(artifact('Edited map').content);

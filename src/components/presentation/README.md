@@ -64,6 +64,20 @@ result before opening or analyzing the selected source.
 Session writes are scheduled by preference edits and merge only those fields into the latest saved
 payload. Opening a studio does not clear deck/narrative references or another mode's map style.
 
+Mind maps open in AI mode by default. An authorized saved AI/imported map is reused; otherwise,
+edit access and known AI availability allow one automatic generation for that opening. A saved
+page-structure map does not satisfy the AI request. Failed generation waits for an explicit retry,
+and quota or accounting failures never silently replace AI with a structural map. **From page
+structure** remains an explicit free choice. Source preparation, durable idempotency and Gateway
+settlement use the existing AI generation workflow.
+
+Slide setup checks saved results as part of the existing load/generation flow. The primary action
+is **Open presentation** for a match, **Generate presentation** for an allowed new selection, or
+**Upgrade workspace** for a known plan/slide restriction. It never asks users to run a separate
+saved-presentation search. A known limit has one explanatory prompt; changing to an available
+slide count restores Generate, and an existing match stays usable at zero allowance. Upgrade
+uses the existing workspace-owner/member billing flow and preserves the settings draft.
+
 The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts. Preset/custom choices retain their explicit request mode. Proactive controls explain known restrictions; the API remains authoritative for admission. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
 
 ### Paywall and status integration

@@ -137,9 +137,7 @@ export default function PresentationStudio({
   const [sourceState, setSourceState] = useState({ input: incoming, snapshot: incoming });
   // A new source prop must hide the previous source's map in this render, before effect cleanup.
   const snapshot = sourceState.input === incoming ? sourceState.snapshot : incoming;
-  const currentSourceRevision = useRef(snapshot.revision);
-
-  currentSourceRevision.current = snapshot.revision;
+  const identity = `${workspaceId}:${userId}:${snapshot.pageId}`;
   const setSnapshot = useCallback(
     (next: PageSnapshot) => setSourceState({ input: incoming, snapshot: next }),
     [incoming]
@@ -176,7 +174,10 @@ export default function PresentationStudio({
   const sessionQueue = useRef<Promise<void>>(Promise.resolve());
   const preferenceTimer = useRef<number>();
   const pendingPreferences = useRef<Partial<PresentationSession>>({});
-  const [showAIMap, setShowAIMap] = useState(presentMindMap);
+  const [mapChoice, setMapChoice] = useState<{ identity: string; ai: boolean }>();
+  const showAIMap = mapChoice?.identity === identity ? mapChoice.ai : true;
+  const setShowAIMap = useCallback((ai: boolean) => setMapChoice({ identity, ai }), [identity]);
+  const defaultMapAttempt = useRef<string>();
   const [narrativeSelection, setNarrativeSelection] = useState<{
     reference: VersionedId;
     sourceRevision: string;
@@ -185,6 +186,7 @@ export default function PresentationStudio({
   const [outlineDraft, setOutlineDraft] = useState<{ plan: StoryPlan; baseline: StoryPlan }>();
   const [stage, setStage] = useState<SlidesStage>(initialDeck && initialAction !== 'regenerate' ? 'preview' : 'setup');
   const [notice, setNotice] = useState('');
+  const [mapGenerationError, setMapGenerationError] = useState<string>();
   const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [outlineError, setOutlineError] = useState<SlidesWorkflowProps['outlineError']>();
   const [busy, setBusy] = useState(false);
@@ -193,7 +195,6 @@ export default function PresentationStudio({
   const generation = useRef<AbortController>();
   const [sourceNode, setSourceNode] = useState<string>();
   const [unlinkedSource, setUnlinkedSource] = useState<string>();
-  const identity = `${workspaceId}:${userId}:${snapshot.pageId}`;
   const structuralKey = JSON.stringify([identity, snapshot.revision, options.includeProperties]);
   const mapContext = useRef({ key: structuralKey, canWrite });
 
@@ -202,7 +203,7 @@ export default function PresentationStudio({
   const structuralResult = structuralState?.key === structuralKey ? structuralState : undefined;
   const structuralArtifact =
     canWrite && snapshot.serverSource && structuralResult?.state === 'ready' ? structuralResult.artifact : undefined;
-  const savedMapArtifact = loadedIdentity === identity ? mapArtifact : undefined;
+  const savedMapArtifact = loadedIdentity === identity && mapArtifact?.origin !== 'structural' ? mapArtifact : undefined;
   const currentArtifact = showAIMap ? savedMapArtifact : structuralArtifact;
   const currentMap = currentArtifact?.content;
   const mapReferences = useMemo(
@@ -257,6 +258,8 @@ export default function PresentationStudio({
     setStatus(undefined);
     setActiveDeck(initialDeck);
     setMapArtifact(undefined);
+    setMapGenerationError(undefined);
+    defaultMapAttempt.current = undefined;
     setLoadedIdentity(undefined);
     setCompanyStyles([]);
     setStyle(initialDeck?.style ?? APPFLOWY_SLIDE_THEMES[0]);
@@ -301,15 +304,6 @@ export default function PresentationStudio({
         setStatus(loaded.status);
         setCompanyStyles(loaded.styles);
         setMapArtifact(loaded.mapArtifact);
-
-        // With no saved AI map, present the page structure map instead.
-        if (
-          !loaded.mapArtifact ||
-          (presentMindMap &&
-            loaded.mapArtifact.origin === 'ai' &&
-            loaded.mapArtifact.sourceRevision !== currentSourceRevision.current)
-        )
-          setShowAIMap(false);
 
         if (!initialDeck && loaded.mapArtifact?.sourceRevision)
           setNarrativeSelection({
@@ -480,13 +474,14 @@ export default function PresentationStudio({
     setMode('slides');
   }
 
-  async function openExisting() {
+  async function openExisting(present = true) {
     if (busy || !reuse.job) return;
     const controller = new AbortController();
 
     generation.current = controller;
     setBusy(true);
     setNotice('');
+    setMapGenerationError(undefined);
     try {
       const result = await openReusableGeneration(reuseInput, controller.signal);
 
@@ -496,7 +491,7 @@ export default function PresentationStudio({
       else if (result.map) {
         setMapArtifact(result.artifact as Artifact<MindMap>);
         setShowAIMap(true);
-        setMapPresentationOpen(true);
+        setMapPresentationOpen(present);
         persistSelection(
           { id: result.artifact.id, version: result.artifact.version },
           { id: result.artifact.id, version: result.artifact.version }
@@ -583,6 +578,7 @@ export default function PresentationStudio({
     setBusy(true);
     setJobState(undefined);
     setNotice('');
+    if (task === 'mindmap') setMapGenerationError(undefined);
     setUpgradeRequired(false);
     setOutlineError(undefined);
     try {
@@ -648,7 +644,12 @@ export default function PresentationStudio({
             code: error instanceof PresentationAPIError ? error.code : 'REGENERATION_FAILED',
             upgradeRequired: presentationUpgradeRequired(error),
           });
-        else report(error);
+        else {
+          report(error);
+          if (task === 'mindmap')
+            setMapGenerationError(error instanceof Error ? error.message : 'Mind-map generation failed.');
+        }
+
         if (editedPlan && presentationUpgradeRequired(error)) void refreshStatus();
       }
     } finally {
@@ -667,6 +668,26 @@ export default function PresentationStudio({
 
     await generate('slides', undefined, prepareStoryPlan(outlineDraft.plan, outlineDraft.baseline));
   }
+
+  // Opening the map is the generation intent. Keep one attempt per opening, so a failed
+  // provider call or a status refresh cannot silently start another paid operation.
+  const defaultMapAction = useRef<() => void>();
+
+  defaultMapAction.current = () => {
+    if (reuse.job) void openExisting(mapPresentationOpen);
+    else void generate('mindmap');
+  };
+
+  useEffect(() => {
+    if (
+      !showAIMap || (!mapPresentationOpen && mode !== 'mindmap') || loadedIdentity !== identity ||
+      !status || savedMapArtifact || busy || (mapUnavailable && !reuse.job) || reuse.checking || reuse.error ||
+      defaultMapAttempt.current === identity
+    ) return;
+    defaultMapAttempt.current = identity;
+    defaultMapAction.current?.();
+  }, [showAIMap, mapPresentationOpen, mode, loadedIdentity, identity, status, savedMapArtifact, busy,
+    mapUnavailable, reuse.checking, reuse.error, reuse.job]);
 
   async function saveMap(map: MindMap, mapStyle = currentArtifact?.mapStyle) {
     if (!currentArtifact) throw new Error('Save a source-linked mind map before editing.');
@@ -722,9 +743,11 @@ export default function PresentationStudio({
     if (presentMindMap) onClose?.();
   }, [presentMindMap, onClose]);
 
-  // Loading the saved map and then the page structure reads as one step while presenting.
+  // Saved reads, reuse checks and first generation share the presentation's loading surface.
+  const defaultMapPending = showAIMap && !savedMapArtifact && !!status && (!mapUnavailable || !!reuse.job) && !mapGenerationError &&
+    !reuse.error && (busy || reuse.checking || defaultMapAttempt.current !== identity);
   const mapLoading = showAIMap
-    ? loadedIdentity !== identity && !loadFailed
+    ? !loadFailed && (loadedIdentity !== identity || defaultMapPending)
     : canWrite && !!snapshot.serverSource && structuralResult?.state !== 'error' && structuralResult?.state !== 'ready';
   // A presented map that cannot load returns to the page and says why there, rather than
   // replacing the whole screen with an error.
@@ -756,6 +779,13 @@ export default function PresentationStudio({
     : showAIMap
     ? loadedIdentity !== identity
       ? { message: 'Loading saved mind map…', loading: true }
+      : defaultMapPending
+      ? { message: busy ? 'Generating AI mind map…' : 'Checking saved mind maps…', loading: true }
+      : !savedMapArtifact && mapUnavailable
+      ? { message: mapUnavailable }
+      : !savedMapArtifact && mapGenerationError
+      ? { title: 'Couldn’t generate your AI mind map', message: mapGenerationError,
+          retry: { label: 'Retry AI mind map', run: () => void generate('mindmap') } }
       : { message: currentMap ? 'The saved mind map has no nodes to display.' : 'No saved mind map is selected.' }
     : !canWrite
     ? {
@@ -866,12 +896,17 @@ export default function PresentationStudio({
                 {mapStatus.retry.label}
               </Button>
             )}
-            {(reuse.job || canGenerateMap) && (
+            {!mapStatus.retry && !mapStatus.loading && (reuse.job || canGenerateMap) && (
               <Button
                 disabled={busy || reuse.checking || !!reuse.error}
                 onClick={() => (reuse.job ? void openExisting() : void generate('mindmap'))}
               >
                 {reuse.job ? 'Open mind map' : 'Generate AI mind map'}
+              </Button>
+            )}
+            {showAIMap && canWrite && !mapStatus.loading && (
+              <Button variant='outline' onClick={() => setShowAIMap(false)}>
+                Use page structure
               </Button>
             )}
           </>
@@ -1056,8 +1091,8 @@ export default function PresentationStudio({
                   <button aria-pressed={!showAIMap} onClick={() => setShowAIMap(false)}>
                     From page structure
                   </button>
-                  <button aria-pressed={showAIMap} disabled={!savedMapArtifact} onClick={() => setShowAIMap(true)}>
-                    Saved mind map
+                  <button aria-pressed={showAIMap} onClick={() => setShowAIMap(true)}>
+                    AI mind map
                   </button>
                 </div>
               </div>
@@ -1066,7 +1101,7 @@ export default function PresentationStudio({
                   This saved map uses another source revision. Its references will not navigate to this page.
                 </Notice>
               )}
-              {!canGenerateMap && (
+              {!canGenerateMap && (!showAIMap || !!currentMap) && (
                 <Notice>
                   {!status
                     ? 'Loading AI access…'

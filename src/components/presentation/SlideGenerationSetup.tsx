@@ -5,13 +5,13 @@ import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { ReactComponent as PageIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as PaletteIcon } from '@/assets/icons/palette.svg';
+import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip as AppTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { analyzePresentationTemplate, assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from './presentation-client';
 import { COMPANY_STYLE_MESSAGE, CUSTOM_SLIDE_MESSAGE, presentationUpgradeRequired, slideCountLimitMessage, templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
-import PresentationPaywall from './PresentationPaywall';
 import PresentationSettingsDropdown from './PresentationSettingsDropdown';
 import { effectiveSlideOptions } from './slide-guidance';
 import { SLIDE_COUNT_PRESETS } from './slide-limits';
@@ -169,12 +169,12 @@ export default function SlideGenerationSetup({
     !options.purpose?.trim() &&
     !options.reviewOutline;
   const selectionKey = JSON.stringify([assessmentKey, options, style]);
+  const requiresUpgrade = !props.reuse?.available && (!!countPaywall || noticeUpgrade);
   const [requestedSelection, setRequestedSelection] = useState<string>();
   const waitingForResult = requestedSelection === selectionKey;
   const submitting = busy || waitingForResult || assessing;
   const canPrepare = !!props.onPrepareGeneration;
   const canGenerateSelection = canGenerate && canAssess && !limitMessage && !customDenied;
-  const savedResultsOnly = canPrepare && !canGenerateSelection;
   const ready =
     hasSource &&
     (props.reuse?.available || canPrepare || canGenerateSelection) &&
@@ -249,7 +249,8 @@ export default function SlideGenerationSetup({
       if (!source || controller.signal.aborted) return;
       // Opening an existing result is free. A miss must still respect AI admission before assessment.
       if (!canGenerateSelection) {
-        setNotice('No saved presentation matches these settings.');
+        setNotice(countPaywall ?? 'New slides are unavailable right now. Please try again shortly.');
+        setNoticeUpgrade(!!countPaywall);
         return;
       }
 
@@ -708,7 +709,23 @@ export default function SlideGenerationSetup({
               {remainingSlides} slides available for this request. Generating and regenerating use this allowance.
             </p>
           )}
-          {countPaywall ? <PresentationPaywall message={countPaywall} onUpgrade={props.onUpgrade} /> : limitMessage && !props.reuse?.available && <Notice>{limitMessage}</Notice>}
+          {!countPaywall && limitMessage && !props.reuse?.available && <Notice>{limitMessage}</Notice>}
+          {requiresUpgrade && (
+            <div
+              role='status'
+              className='mt-2 flex items-start gap-3 rounded-300 border border-border-primary bg-surface-primary p-4 text-sm'
+              data-testid='presentation-upgrade-prompt'
+            >
+              <UpgradeIcon className='h-5 w-5 shrink-0 text-icon-primary' aria-hidden='true' />
+              <div className='min-w-0 flex-1'>
+                <p className='font-medium text-text-primary'>
+                  {remainingSlides === 0 ? 'Slide limit reached'
+                    : customDenied ? 'Choose a preset or upgrade' : 'Choose fewer slides or upgrade'}
+                </p>
+                <p className='mt-1 text-text-secondary'>{countPaywall ?? notice}</p>
+              </div>
+            </div>
+          )}
         </div>
         {purposeQuestion && (
           <label className='ps-field ps-ppt-question'>
@@ -783,7 +800,7 @@ export default function SlideGenerationSetup({
                 }))}
                 onValueChange={(contentDensity) =>
                   changePreset({ contentDensity: contentDensity as typeof options.contentDensity })
-                }
+        }
               />
             </div>
           </details>
@@ -794,8 +811,7 @@ export default function SlideGenerationSetup({
               <label htmlFor={`${controlsId}-outline`}>Review generated story plan</label>
             </h2>
             <p id={`${controlsId}-outline-description`}>
-              Generate and save the presentation, then review its story. Accepting it makes no additional AI call;
-              editing it requires regeneration.
+              Review the outline before presenting. Editing it regenerates the slides.
             </p>
           </div>
           <Switch
@@ -821,14 +837,15 @@ export default function SlideGenerationSetup({
             {props.reuse.error} <Action onClick={props.reuse.onRetry}>Try again</Action>
           </Notice>
         )}
-        {notice && !props.reuse?.available && (noticeUpgrade ? <PresentationPaywall message={notice} onUpgrade={props.onUpgrade} /> : (
+
+        {notice && !props.reuse?.available && !requiresUpgrade && (
           <Notice>
             {notice}{' '}
             {!assessing && (
-              <Action onClick={generate}>{savedResultsOnly ? 'Check again' : 'Retry analysis'}</Action>
+              <Action onClick={generate}>Retry analysis</Action>
             )}
           </Notice>
-        ))}
+        )}
         {!hasSource && <Notice>Add some document content before generating.</Notice>}
       </div>
       <footer className='ps-ppt-setup-footer'>
@@ -840,9 +857,7 @@ export default function SlideGenerationSetup({
                 className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
               />
               {assessing
-                ? savedResultsOnly
-                  ? 'Checking saved presentations…'
-                  : 'Analyzing your sources…'
+                ? 'Analyzing your sources…'
                 : waitingForResult
                 ? 'Preparing your presentation…'
                 : busy
@@ -861,24 +876,22 @@ export default function SlideGenerationSetup({
         <Button
           size='lg'
           disabled={
-            !ready ||
+            (requiresUpgrade ? busy || importing : !ready) ||
             // An explicit click waits for the selected saved-result lookup before analysis.
             waitingForResult ||
             assessing
           }
-          onClick={generate}
+          onClick={requiresUpgrade ? props.onUpgrade : generate}
         >
-          <AIIcon className='h-4 w-4' />
-          {submitting
+          {requiresUpgrade ? <UpgradeIcon className='h-5 w-5' aria-hidden='true' /> : <AIIcon className='h-4 w-4' />}
+          {requiresUpgrade
+            ? 'Upgrade workspace'
+            : submitting
             ? props.reuse?.available
               ? 'Opening…'
-              : savedResultsOnly
-              ? 'Checking…'
               : 'Generating…'
             : props.reuse?.available
             ? 'Open presentation'
-            : savedResultsOnly
-            ? 'Find saved presentation'
             : plan
             ? 'Regenerate presentation'
             : 'Generate presentation'}
