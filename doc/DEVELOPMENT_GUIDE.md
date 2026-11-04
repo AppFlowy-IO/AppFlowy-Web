@@ -84,9 +84,10 @@ Production-policy tests explicitly disable the development bypass.
 
 ### Board viewport loading
 
-A board's rows can be grouped before TanStack Virtual measures its column viewport. A visible
-column with persisted cards keeps a loading card and `aria-busy` until the virtual range is
-available; empty columns and intentionally unmounted offscreen columns do not. The focused
+A board keeps its Kanban skeleton while its group field initializes and through its first row
+grouping. Grouped rows can also arrive before TanStack Virtual measures the column viewport. A
+visible column with persisted cards keeps a loading card and `aria-busy` until the virtual range
+is available; empty columns and intentionally unmounted offscreen columns do not. The focused
 `CardList.test.tsx` regression covers this handoff, and `CardList.sizing.test.tsx` exercises the
 real virtualizer's viewport and scroll behavior. The cloud BDD scenario “Board, calendar and
 timeline widgets of a slow source” also checks that no empty widget appears before its data.
