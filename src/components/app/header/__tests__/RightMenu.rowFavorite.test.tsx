@@ -413,6 +413,37 @@ describe('RightMenu database history tab', () => {
     release();
   });
 
+  // Desktop #1545: Export follows the tab on screen, whose visible fields
+  // differ from the first tab's, while sharing stays on the container.
+  it('exports the displayed database tab and follows tab switches', () => {
+    function Tabs() {
+      const [, setSearchParams] = useSearchParams();
+
+      return <button onClick={() => setSearchParams({ v: 'calendar-view' })}>Calendar</button>;
+    }
+
+    const container = createDatabaseContainer();
+
+    mockOutline = [container];
+    mockRouteViewId = container.view_id;
+    mockRouteView = container;
+
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container?v=board-view']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <Tabs />
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('share-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(mockExportTarget).toEqual({ viewId: 'board-view', isDatabase: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Calendar' }));
+    expect(mockExportTarget).toEqual({ viewId: 'calendar-view', isDatabase: true });
+  });
+
   it('preserves standalone database tab selection without a container', () => {
     mockOutline = [mockRouteView];
 
@@ -466,11 +497,11 @@ describe('RightMenu Present entry', () => {
     );
   }
 
-  it('hides Present on official AppFlowy Cloud', () => {
+  it('shows Present for the current document on official AppFlowy Cloud', () => {
     mockOfficialHosted = true;
     renderDocumentRoute();
 
-    expect(screen.queryByTestId('present-entry')).toBeNull();
+    expect(screen.getByTestId('present-entry').getAttribute('data-view-id')).toBe('document');
     expect(screen.getByTestId('share-button')).toBeTruthy();
   });
 

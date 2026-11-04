@@ -77,3 +77,50 @@ the session and invalidation state before sending. Application-level errors insi
 HTTP responses keep their existing caller-owned recovery behavior and normalized retry metadata.
 During rollout, update the server fleet before shipping Web batching so every routed server
 fulfills the capability advertised by server-info.
+
+## Progressive global search
+
+Global search first requests `GET /api/search/{workspace_id}/stream` with bearer authentication
+and a per-dialog `x-request-stream-id`. AI-enabled workspaces use hybrid retrieval; other workspaces
+use keyword retrieval. SSE keyword snapshots appear while semantic retrieval continues. Each final
+snapshot replaces the ranked list; keyboard selection follows a retained result's stable target ID.
+The client validates query identity, event sequence, framing, workspace identity, completion and EOF,
+with a 30-second deadline and bounded response size. Changing query/workspace or closing the dialog
+aborts the request immediately, including during the next query's debounce interval.
+
+Only an unsupported route (404/405/501 without an application error), or missing browser streaming
+support, activates the existing paged keyword API. Authentication, rate limits, timeouts, malformed
+streams and interruptions do not trigger a second search. Shared authentication recovery may refresh
+once before any streamed result. The stream itself has no transport retry.
+
+After validated completion, the overview requests authorized content for final result IDs using
+`only_context: true` and `retrieval_mode: "provided_only"`; it does not repeat vector retrieval.
+The older-server fallback retains its existing automatic context retrieval. Empty or superseded
+streamed searches do not request an overview. A degraded final snapshot remains usable.
+
+The stream has no pagination cursor. A full keyword preview or full final window enables lazy
+"Load more", beginning at keyword offset zero to avoid skipping keyword hits displaced by semantic
+results. Subsequent pages follow the server's cursor and deduplicate by object/row identity. A full
+window is only an indication that another page might exist; the first page response determines the
+actual continuation. This compatibility path leaves the minimum supported server version unchanged.
+
+
+Search presentation timing is reported separately from server enqueue metrics. The monotonic
+origin is the latest query input (including the 300 ms debounce and lazy component loading);
+a workspace or retrieval-mode switch starts a new origin. `first_result_visible_ms` waits for
+nonempty routable rows to commit and two frames in a visible document, an estimate of a paint
+opportunity. `all_results_received_ms` waits for validated SSE EOF or the legacy initial page.
+`final_results_visible_ms` waits for final metadata to settle and the final state to commit with
+a visible-document paint opportunity. The initial ranked window includes an empty final state;
+later pagination and AI overview work are excluded. Starting “Load more” finalizes the initial
+window report with known completion/paint milestones and cancels any pending initial paints, so
+appended rows cannot become its first visible result.
+
+One best-effort timing report goes to `POST /api/search/{workspace_id}/stream/metrics`, independently
+of the search cancellation signal. It has a three-second timeout, no retry/auth recovery and no
+user-facing error. The observer records no query text or resource/user IDs, omits unavailable or
+out-of-window milestones, and disposes after 120 seconds. Hidden tabs and tab closure can lose
+samples. Older servers may lack the collector; that does not change search behavior. Cloud exposes
+these reports as `cloud_search_client_milestone_seconds` and `cloud_search_client_reports_total`,
+with fixed mode/transport/outcome/milestone labels. The Search dashboard distinguishes these
+client-reported timings and their sample counts from Search/Cloud server-side measurements.

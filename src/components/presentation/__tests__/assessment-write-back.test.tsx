@@ -108,6 +108,7 @@ afterEach(() => jest.useRealTimers());
 
 test('auto design applies the recommended theme without assessing the source again', async () => {
   render(<Setup designMode='auto' />);
+  fireEvent.click(generateButton());
   await advance(400);
   expect(onStyle).toHaveBeenCalledWith(recommended);
   await advance(2000);
@@ -117,6 +118,7 @@ test('auto design applies the recommended theme without assessing the source aga
 
 test('switching design mode after a recommendation requests no assessment', async () => {
   render(<Setup designMode='auto' />);
+  fireEvent.click(generateButton());
   await advance(400);
   expect(onStyle).toHaveBeenCalledWith(recommended);
   fireEvent.click(screen.getByRole('button', { name: 'AppFlowy themes' }));
@@ -133,6 +135,7 @@ test('switching design mode after a recommendation requests no assessment', asyn
 
 test('a manually chosen theme reuses the source analysis', async () => {
   render(<Setup designMode='theme' />);
+  fireEvent.click(generateButton());
   await advance(400);
   expect(onStyle).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Use recommended' }));
@@ -147,6 +150,7 @@ test('an assessment writes no derived condition or Auto count back into the opti
     assessment: { condition: 'ambiguous', question: 'What is it for?', recommendedSlideCount: 5 },
   } as never);
   render(<Setup designMode='theme' />);
+  fireEvent.click(generateButton());
   await advance(400);
   expect(onOptions).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('Presentation purpose'), { target: { value: 'Decide' } });

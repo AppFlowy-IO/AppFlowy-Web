@@ -369,6 +369,10 @@ When('I resize the outline viewport to height {int}', async ({ page }, height: n
 });
 
 When('I scroll inside the dockable outline', async ({ page }) => {
+  // Resizing can move the outline away from the pointer and collapse it.
+  // Reenter at its current position before moving into the scrollable list.
+  await outline(page).getByTestId('dockable-outline-trigger').hover();
+  await expect(outline(page)).toHaveAttribute('data-expanded', 'true');
   const list = panel(page).locator('.dockable-outline-list');
   const before = await list.evaluate((element) => element.scrollTop);
 

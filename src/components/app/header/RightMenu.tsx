@@ -85,10 +85,14 @@ function RightMenu() {
   // While a row route is loading, do not fall back to the containing database:
   // a click in that window would favorite or export the wrong object.
   const favoriteViewId = hasRowPageRoute ? rowPage?.documentId : actionViewId;
-  const exportTarget = useMemo(
-    () => (hasRowPageRoute ? { viewId: rowPage?.documentId, prepare: prepareRowDocumentView } : undefined),
-    [hasRowPageRoute, rowPage?.documentId, prepareRowDocumentView]
-  );
+  const isDatabasePage = !!routeView && isDatabaseLayout(routeView.layout);
+  // A database page exports the tab on screen, as Desktop does: sharing stays on
+  // the container, but each tab has its own visible fields.
+  const exportTarget = useMemo(() => {
+    if (hasRowPageRoute) return { viewId: rowPage?.documentId, prepare: prepareRowDocumentView };
+    if (isDatabasePage) return { viewId: activeViewId, isDatabase: true };
+    return undefined;
+  }, [hasRowPageRoute, rowPage?.documentId, prepareRowDocumentView, isDatabasePage, activeViewId]);
 
   return (
     <div className={'flex items-center gap-2'}>
