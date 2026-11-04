@@ -1,6 +1,6 @@
 import { captureTokenSession, getTokenParsed, invalidTokenForSession } from '@/application/session/token';
 import { Log } from '@/utils/log';
-import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
+import { SERVER_INFO_LOADING, type ServerInfoState, updateServerInfo } from '@/utils/server-info';
 
 import { isAuthRefreshFailure } from '../auth-refresh-error';
 import { refreshToken } from '../gotrue';
@@ -36,6 +36,8 @@ import {
   resetMcpConfigurationForTests,
   revokeMcpClientApproval,
   updateMcpWorkspaceSettings,
+  getMcpServerStatus,
+  isMcpLicenseRequired,
 } from '../mcp-api';
 
 let mockConfig: Record<string, string> = {};
@@ -163,6 +165,28 @@ beforeEach(() => {
   logWarn = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
 });
 
+describe('MCP server status', () => {
+  const info = (mcp_status?: string | null): ServerInfoState => ({
+    status: 'available',
+    info: { enable_page_history: true, mcp_status },
+  });
+
+  it('reads the statuses this Web knows from server-info', () => {
+    expect(getMcpServerStatus(info('enabled'))).toBe('enabled');
+    expect(getMcpServerStatus(info('disabled'))).toBe('disabled');
+    expect(getMcpServerStatus(info('license_required'))).toBe('license_required');
+    expect(isMcpLicenseRequired(info('license_required'))).toBe(true);
+    expect(isMcpLicenseRequired(info('enabled'))).toBe(false);
+  });
+
+  it('claims nothing for an older server, a newer value, or server-info that has not loaded', () => {
+    for (const state of [info(undefined), info(null), info('something_newer'), SERVER_INFO_LOADING]) {
+      expect(getMcpServerStatus(state)).toBeUndefined();
+      expect(isMcpLicenseRequired(state)).toBe(false);
+    }
+  });
+});
+
 describe('MCP configuration', () => {
   it('normalizes the base URL and derives the server URL', () => {
     expect(getMcpBaseUrl()).toBe(BASE);
@@ -251,7 +275,7 @@ describe('MCP configuration discovery', () => {
     mockConfig = { APPFLOWY_BASE_URL: CLOUD, APPFLOWY_MCP_BASE_URL: `${BASE}/` };
 
     expect(getMcpConfiguration()).toEqual({ status: 'configured', baseUrl: BASE, source: 'config' });
-    // Cloud leaves mcp_url out while AI apps are off: that is why the override exists, not a mismatch.
+    // Cloud may leave mcp_url out (before its MCP policy loads, or an older server while MCP is off): not a mismatch.
     updateServerInfo(CLOUD, available());
     expect(getMcpBaseUrl()).toBe(BASE);
     // The same origin, spelled differently.
@@ -1059,14 +1083,12 @@ describe('MCP failure log', () => {
   it('logs nothing for a success or a request the caller aborted', async () => {
     const controller = new AbortController();
 
-    fetchMock
-      .mockResolvedValueOnce(response(200, { connections: [] }))
-      .mockImplementationOnce(
-        (_url, init) =>
-          new Promise((_resolve, reject) => {
-            init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
-          })
-      );
+    fetchMock.mockResolvedValueOnce(response(200, { connections: [] })).mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        })
+    );
 
     await listMyMcpConnections(WS);
 

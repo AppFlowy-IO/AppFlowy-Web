@@ -40,6 +40,7 @@ jest.mock('@/application/services/domains/mcp', () => ({
   disconnectAllMcpWorkspaceConnections: jest.fn(),
   listMcpAccessRequests: jest.fn(),
   dismissMcpAccessRequest: jest.fn(),
+  isMcpLicenseRequired: jest.fn(),
 }));
 
 const api = jest.mocked(McpService);
@@ -337,9 +338,7 @@ describe('McpPanel', () => {
       expect(badge.textContent).toBe('1');
       expect(badge.getAttribute('aria-hidden')).toBe('true');
       // Screen readers hear the count as words with the tab's name.
-      expect(screen.getByRole('tab', { name: /1 pending approval request/ })).toBe(
-        screen.getByTestId('mcp-tab-manage')
-      );
+      expect(screen.getByRole('tab', { name: /1 pending approval request/ })).toBe(screen.getByTestId('mcp-tab-manage'));
 
       api.listMcpAccessRequests.mockResolvedValue([]);
       fireEvent.click(screen.getByTestId('mcp-dismiss-request-0'));
@@ -1447,6 +1446,44 @@ describe('McpPanel', () => {
       fireEvent.click(screen.getByTestId('mcp-approve-request-0'));
 
       await waitFor(() => expect(text('badge')).toBe('1'));
+    });
+  });
+
+  describe('a self-hosted license without MCP', () => {
+    /** The upgrade prompt instead of setup, the turned-off notice and every approval control. */
+    async function expectUpgradePrompt() {
+      const notice = await screen.findByTestId('mcp-panel-license-required');
+
+      expect(notice.textContent).toContain(translations.settings.mcp.licenseRequiredTitle);
+      expect(notice.textContent).toContain(translations.settings.mcp.licenseRequiredDescription);
+      expect(screen.queryByTestId('mcp-panel-disabled')).toBeNull();
+      expect(screen.queryByTestId('mcp-tabs')).toBeNull();
+      expect(screen.queryByTestId('mcp-setup-guide')).toBeNull();
+      expect(screen.queryByTestId('mcp-workspace-access')).toBeNull();
+      expect(screen.queryByTestId('mcp-panel-unavailable')).toBeNull();
+      expect(screen.queryByTestId('mcp-panel-error')).toBeNull();
+    }
+
+    beforeEach(() => {
+      api.isMcpLicenseRequired.mockReturnValue(true);
+    });
+
+    it('asks for a license upgrade and keeps the member’s connections to disconnect', async () => {
+      // MCP answers, and reports itself off while the license does not include it.
+      api.getMcpMemberStatus.mockResolvedValue(memberStatus({ enabled: false }));
+      api.listMyMcpConnections.mockResolvedValue([myClaude]);
+      render(<McpPanel workspaceId={WS} />);
+
+      await expectUpgradePrompt();
+      await waitFor(() => expect(rows('mcp-my-connection-row')).toHaveLength(1));
+    });
+
+    it('asks for the upgrade even when the MCP service does not answer', async () => {
+      api.getMcpMemberStatus.mockRejectedValue(new McpApiError({ status: 503, error: 'temporarily_unavailable' }));
+      render(<McpPanel workspaceId={WS} />);
+
+      await expectUpgradePrompt();
+      expect(screen.queryByTestId('mcp-my-connections')).toBeNull();
     });
   });
 

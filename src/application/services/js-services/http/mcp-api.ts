@@ -571,7 +571,8 @@ function resolveMcpConfiguration(serverInfo: ServerInfoState, override: string):
  * The override wins over server-info without asking it, so an override left
  * behind after the MCP service moved would keep sending users to the old
  * origin. When server-info advertises a different origin, say so once. Its
- * absence is no mismatch: Cloud leaves `mcp_url` out while AI apps are off.
+ * absence is no mismatch: Cloud leaves `mcp_url` out until it has loaded its
+ * MCP policy, and older servers also while MCP is off.
  */
 function warnIfServerInfoDisagrees(serverInfo: ServerInfoState, override: string) {
   if (serverInfo.status !== 'available') return;
@@ -628,6 +629,32 @@ export function getMcpConfiguration(): McpConfiguration {
 
   mcpConfigurationSnapshot = { serverInfo, override, value };
   return value;
+}
+
+/** What server-info's `mcp_status` says about MCP on this server (see `ServerInfo.mcp_status`). */
+export type McpServerStatus = 'enabled' | 'disabled' | 'license_required';
+
+const MCP_SERVER_STATUSES: readonly McpServerStatus[] = ['enabled', 'disabled', 'license_required'];
+
+/**
+ * Server-info's `mcp_status`, or undefined while server-info is not loaded, on
+ * servers that predate the field, and for a value this Web does not know yet
+ * (a newer server's), which therefore claims nothing.
+ */
+export function getMcpServerStatus(serverInfo: ServerInfoState = getServerInfoSnapshot()): McpServerStatus | undefined {
+  if (serverInfo.status !== 'available') return undefined;
+
+  const status = serverInfo.info.mcp_status;
+
+  return MCP_SERVER_STATUSES.find((known) => known === status);
+}
+
+/**
+ * Whether this self-hosted server's license does not include MCP, so Settings >
+ * MCP asks for a license upgrade instead of offering setup.
+ */
+export function isMcpLicenseRequired(serverInfo: ServerInfoState = getServerInfoSnapshot()): boolean {
+  return getMcpServerStatus(serverInfo) === 'license_required';
 }
 
 /** Forgets what server-info confirmed and which values were warned about; tests only. */

@@ -12,7 +12,7 @@ import { MembersPanel } from '@/components/app/settings/MembersPanel';
 import { ProfilePanel } from '@/components/app/settings/ProfilePanel';
 import SettingMenu from '@/components/app/settings/SettingMenu';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
-import { useMcpConfiguration } from '@/components/mcp/useMcpConfiguration';
+import { useMcpConfiguration, useMcpLicenseRequired } from '@/components/mcp/useMcpConfiguration';
 import { Progress } from '@/components/ui/progress';
 import { canManageWorkspaceBilling } from '@/utils/subscription';
 
@@ -42,6 +42,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   const isOfficialHosted = useIsOfficialHosted();
   // The app's auth layer runs the server-info loop this reads.
   const mcpConfiguration = useMcpConfiguration();
+  const mcpLicenseRequired = useMcpLicenseRequired();
   const [selectedItem, setSelectedItem] = useState<SettingMenuItem>(SettingMenuItem.ACCOUNT);
 
   const currentWorkspace = useMemo(
@@ -50,9 +51,10 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   );
   // Billing exists only on the official cloud, and only the owner can change a workspace's plan.
   const showBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isOfficialHosted);
-  // The MCP tab exists only where the MCP service is known: APPFLOWY_MCP_BASE_URL or Cloud server-info's mcp_url.
-  const showAiApps = mcpConfiguration.status === 'configured';
-  const aiAppsMissing = mcpConfiguration.status === 'not_configured';
+  // The MCP tab exists where the MCP service is known (APPFLOWY_MCP_BASE_URL or Cloud server-info's mcp_url), and
+  // on a self-hosted server whose license does not include MCP, where it asks for a license upgrade.
+  const showAiApps = mcpConfiguration.status === 'configured' || mcpLicenseRequired;
+  const aiAppsMissing = mcpConfiguration.status === 'not_configured' && !mcpLicenseRequired;
   // Owners see how many AI app approval requests are waiting.
   const aiAppsPendingRequests = useMcpPendingRequestCount(
     workspaceId,

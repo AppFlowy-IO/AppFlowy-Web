@@ -26,8 +26,9 @@ At a glance (details in the sections below):
   identity it proves (Claude, ChatGPT) as **Verified app** ([App identity](#app-identity)).
 - **Three approval policies per workspace**: Verified and approved apps (the default), Approved
   apps only and Any app, with app-level approvals ("All Cursor installs").
-- **Enable MCP switch**: an administrator turns AI app connections on or off for the whole server
-  in AppFlowy-Admin; while off the consent page and Settings say so, and Settings keeps Your
+- **Enable MCP switch**: MCP is on by default, and an administrator can turn it off (or back on)
+  for the whole server in AppFlowy-Admin; a self-hosted server serves it only with a One, Team or
+  Enterprise license. While off the consent page and Settings say so, and Settings keeps Your
   connections for disconnecting ([Enable MCP switch](#enable-mcp-switch)).
 
 ## Flow
@@ -206,8 +207,8 @@ The menu item appears once the MCP service's URL is known (`useMcpConfiguration`
 [MCP service URL](#mcp-service-url)). `?setting=AI_APPS` opens it, also through
 `/app?setting=AI_APPS` (`MCP_SETTINGS_PATH`, which `AppWorkspaceRedirect` keeps); while server-info
 is still loading the deep link waits with a spinner, and it falls back to Account on a server
-without MCP (which includes a server that turned AI app connections off, when the Web learns the
-URL from server-info; see [Enable MCP switch](#enable-mcp-switch)). `McpPanel` renders lazily with
+without MCP (see [MCP service URL](#mcp-service-url); a server that turned MCP off still names
+the service, and the panel shows that it is off). `McpPanel` renders lazily with
 `key={workspaceId}` and loads the member status together with the caller's own connections and
 their summary across workspaces, which need nothing from it (a failed status pauses those two, and
 its Retry loads them again); the owner lists wait for the status. What the panel shows follows the
@@ -364,24 +365,30 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    and the CI check in `.github/workflows/web_ci.yaml`. A value that is not an http(s) origin (it has
    a path such as `/mcp`, a query, a fragment or credentials) is ignored with a console warning, as
    Cloud ignores it. AppFlowy Cloud's bundled Docker Compose (`appflowy_web`) and
-   Helm (`appflowy-web`) deployments set it to the MCP origin, because server-info has no `mcp_url`
-   while AI app connections are turned off and Settings → MCP must still show that and let
-   members disconnect. Set it in any other deployment that runs the MCP service for the same reason.
+   Helm (`appflowy-web`) deployments set it to the MCP origin, so the Web finds the service without
+   waiting for server-info; elsewhere it is optional, since server-info names the service whether
+   MCP is on or off.
    It must name the origin Cloud advertises: the override wins without asking server-info, and when
    server-info is loaded anyway (inside `/app`) and names a different origin, the Web keeps the
    override and logs a console warning naming both.
 2. **`mcp_url` from AppFlowy Cloud's `/api/server-info`** (web projection), set from Cloud's
-   `APPFLOWY_MCP_BASE_URL`, the same variable the MCP service reads, so one compose `.env` serves
-   both; when it is unset, Cloud advertises its own `APPFLOWY_BASE_URL` (the same-domain default).
-   Cloud advertises it only while AI app connections are turned on
-   ([Enable MCP switch](#enable-mcp-switch)), so it is auto-discovery like `web_url` only while
-   they are on; that is why deployments also set the override above. The value is read through
+   `APPFLOWY_MCP_BASE_URL` only, the same variable the MCP service reads, so one compose `.env`
+   serves both. Unlike the MCP service, which falls back to `APPFLOWY_BASE_URL` for its own origin,
+   Cloud never does: without the variable it knows no MCP service and advertises none.
+   Cloud advertises it whenever it knows that origin and has loaded its MCP policy, whether MCP is
+   on or off ([Enable MCP switch](#enable-mcp-switch)), so it is auto-discovery like `web_url`:
+   while MCP is off the Web still reaches the service to show that and to let members disconnect.
+   A deployment without the MCP service leaves the variable off Cloud and the Web (AppFlowy
+   Cloud's bundled Compose and Helm files set both wherever they deploy MCP), so the Web treats
+   MCP as not configured (item 3) and hides it.
+   Settings → MCP shows the service as unavailable only when Cloud, or the Web's own override,
+   names an origin where nothing answers. The value is read through
    the shared server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's
    refresh loop provides it, and the public consent and setup pages run the loop themselves
    (`useMcpConfiguration({ loadServerInfo: true })`).
 3. Otherwise **not configured**: Settings hides the MCP tab, both `/oauth/mcp/*` pages say AI app
-   connections are not configured. A Web that relies on server-info lands here while AI app
-   connections are turned off.
+   connections are not configured. A Web that relies on server-info lands here when Cloud knows no
+   MCP origin, or briefly after Cloud starts, before it has loaded its MCP policy.
 
 The answer is `loading` until server-info responds, and the consent and setup pages show a spinner
 meanwhile. A failed request keeps it loading while the loop retries, with `retrying` set, and the
@@ -389,14 +396,14 @@ spinner then says the AppFlowy server can't be reached and the page keeps trying
 (`mcp.serverInfoRetrying`); a signed-out user is sent to sign in only once it answers.
 `unsupported` (a server without `/api/server-info`) means not configured. Once server-info has
 answered, a later refresh that fails or is pending keeps that answer, so an open page does not lose
-the service on a transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`;
-only Cloud falls back as described above.
+the service on a transient error. The Web never derives the URL from its own `APPFLOWY_BASE_URL`,
+and neither does Cloud.
 
 **MCP service** — for the browser flow to work:
 
 - `APPFLOWY_MCP_BASE_URL` is the service's own public origin: the OAuth issuer (`iss`) and the
-  canonical resource `<origin>/mcp`. AppFlowy Cloud reads the same variable to advertise
-  `mcp_url`; a Web override, if any, must name the same origin.
+  canonical resource `<origin>/mcp`. AppFlowy Cloud reads the same variable, and only that one,
+  to advertise `mcp_url`; a Web override, if any, must name the same origin.
 - `APPFLOWY_WEB_URL` must be the Web origin. Unset, it defaults to the MCP origin, consent redirects
   land on the MCP service itself and the service logs a startup warning. It also builds the
   `resource_documentation` link (`/oauth/mcp/setup`) and the server icon.
@@ -424,14 +431,31 @@ only Cloud falls back as described above.
 
 ### Enable MCP switch
 
-AI app connections have one server-wide switch, **Enable MCP** in AppFlowy-Admin → AI apps (MCP),
-next to the email gate and the MCP rate limits. It is off by default. Cloud keeps it as `mcp_enabled`
-in its system config (section `mcp`, written only through `PUT /api/admin/mcp/policy`, with a change
-history), and the MCP service picks a change up within seconds. `APPFLOWY_MCP_ENABLED` on the server
-is a bootstrap value that a saved Admin setting overrides: `true` turns MCP on until an admin decides
-otherwise (Cloud's `dev.env` and CI do this), unset leaves it to the Admin page (self-host
-`deploy.env`: off until an admin turns it on), and an explicit `false` locks it off whatever the
-Admin page says ("Managed by deployment").
+MCP has one server-wide switch, **Enable MCP** on AppFlowy-Admin's MCP page (`/mcp-server`), next
+to the email gate and the MCP rate limits. MCP is on by default, and an administrator can turn it
+off (or back on) there. Cloud keeps the choice as `mcp_enabled` in its system config (section
+`mcp`, written only through `PUT /api/admin/mcp/policy`, with a change history): a saved value
+always decides, a saved value Cloud cannot read keeps MCP off, and the MCP service picks a change up
+within seconds. No environment variable turns MCP on or off.
+
+A self-hosted server serves MCP only with a One, Team or Enterprise license, and Admin shows the
+MCP page only then. Without one (no license, Seed, or an expired license) MCP refuses exactly as
+while it is turned off, below, with an `error_description` that names the license. Hosted AppFlowy
+Cloud is always licensed.
+
+Cloud's server-info says so in `mcp_status` (`enabled`, `disabled`, or `license_required`;
+`getMcpServerStatus` reads it and treats a value it does not know as unknown). Cloud sends
+`mcp_status` only where MCP is deployed (it knows an MCP origin): a deployment without the MCP
+service sends neither `mcp_url` nor `mcp_status`, so Settings hides the MCP tab there whatever the
+license. With `license_required`, Settings shows the MCP tab even without an MCP URL (as before
+Cloud has loaded its MCP policy), and the panel asks for a
+license upgrade ("Upgrade required", as for the other features a license unlocks) instead of
+offering setup or the turned-off notice. The member's own connections stay listed when the MCP
+service answers, so they can still be disconnected.
+
+After an upgrade, MCP is on (self-hosted: only with a One, Team or Enterprise license) unless an
+administrator saved the switch in Admin, which keeps deciding. No environment variable turns MCP
+on or off; to keep it off, turn it off in Admin.
 
 While it is off:
 
@@ -444,13 +468,10 @@ While it is off:
   disconnecting member connections and revoking approvals, and token revocation.
 - Connections are kept, not revoked: AI apps stop working at once and resume when MCP is turned back
   on (a token refresh while off is a temporary 503 that does not use up the refresh token).
-- Cloud's server-info stops advertising `mcp_url`. A Web that finds the MCP service through
-  server-info treats it as not configured after its next server-info refresh (every 5 minutes, and
-  when the tab regains focus or comes back online, at most every 30 seconds): Settings → MCP
-  disappears, and the `/oauth/mcp/*` pages say AI app connections are not configured. With the Web's
-  own `APPFLOWY_MCP_BASE_URL`, or until that refresh, the Web still reaches the service and shows the
-  turned-off states: the consent page's `mcp_disabled` error view (see the reasons table above) and
-  the Settings notice with Your connections (see [Settings → MCP](#settings--mcp)).
+- Cloud's server-info keeps advertising `mcp_url`, so the Web still reaches the service, through
+  server-info or its own `APPFLOWY_MCP_BASE_URL`, and shows the turned-off states: the consent
+  page's `mcp_disabled` error view (see the reasons table above) and the Settings notice with Your
+  connections (see [Settings → MCP](#settings--mcp)).
 
 The Web reads the state from the member status's `enabled` and from the `mcp_disabled` reason
 (`isMcpDisabledError`), never from the description text.
@@ -584,7 +605,7 @@ against the wire types: a fixture missing a field the server always sends fails 
 | `src/application/session/__tests__/sign_in.test.ts` | Form and MCP consent continuations: OAuth parameters kept out of login and callback URLs, return within the TTL, expired view after it, unrelated later login, cross-tab magic link, password recovery, legacy cleanup, only the canonical consent path (not case or percent-encoded variants) |
 | `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges, no setup prompt or Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
 | `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, NotFound at a percent-encoded path, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
-| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared) |
+| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared), the license upgrade prompt (server-info `mcp_status: license_required`, with or without a reachable MCP service) |
 | `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count or a newer load's), deep links that wait for server-info, routes |
 | `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
 | `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers (Web-CI's docker-runtime-test also fetches `/oauth/mcp/authorize` from both images and checks them) |
@@ -599,11 +620,11 @@ allow), exchanges the code with `resource`, lists tools, finds the connection in
 disconnects it and checks that the old token is refused. A second test cancels and expects
 `access_denied` with `state` and `iss`. It needs:
 
-- A running Cloud stack (Cloud API, GoTrue) plus the MCP service, with AI app connections turned
-  on (`APPFLOWY_MCP_ENABLED=true`, as Cloud's `dev.env` and CI set it, or Enable MCP in
-  AppFlowy-Admin). The MCP service's `APPFLOWY_WEB_URL` must be the Web origin under test, its CORS
-  must allow that origin, and its email gate must admit the test users (`<uuid>@appflowy.io`): leave
-  both allowlists empty (the default) or include `appflowy.io`.
+- A running Cloud stack (Cloud API, GoTrue) plus the MCP service, with MCP on (the default, unless
+  an administrator turned it off in AppFlowy-Admin; a self-hosted build also needs a One, Team or
+  Enterprise license). The MCP service's `APPFLOWY_WEB_URL` must be the Web origin under test, its
+  CORS must allow that origin, and its email gate must admit the test users
+  (`<uuid>@appflowy.io`): leave both allowlists empty (the default) or include `appflowy.io`.
 - The Web app at `BASE_URL` (default `http://localhost:3000`) that knows the MCP URL: from Cloud
   server-info (`mcp_url`), or from `APPFLOWY_MCP_BASE_URL`, either in `.env` (`pnpm dev`) or at
   runtime: when `APPFLOWY_BASE_URL`, `APPFLOWY_GOTRUE_BASE_URL` and `APPFLOWY_WS_BASE_URL` are set

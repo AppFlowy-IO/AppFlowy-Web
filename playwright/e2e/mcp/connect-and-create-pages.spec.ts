@@ -8,8 +8,9 @@
  * metadata, RFC 8414 authorization-server metadata, dynamic client registration, the Web consent
  * page, the token endpoint, then an MCP session on the copied URL itself).
  *
- * Needs a running stack where AI apps are turned on (Admin → AI apps (MCP), or
- * APPFLOWY_MCP_ENABLED=true) and AppFlowy Web knows the MCP origin (server-info `mcp_url`, or
+ * Needs a running stack where MCP is on (the default; an administrator can turn it off on
+ * AppFlowy-Admin's MCP page, and a self-hosted server also needs a One, Team or Enterprise
+ * license) and AppFlowy Web knows the MCP origin (server-info `mcp_url`, or
  * APPFLOWY_MCP_BASE_URL). Each run signs up a fresh @appflowy.io user, who owns a new workspace.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -121,11 +122,11 @@ async function copyServerUrlFromSettings(page: Page): Promise<string> {
     page.getByTestId('mcp-panel'),
     'Settings → MCP is hidden: AppFlowy Web must know the MCP origin (server-info mcp_url, or APPFLOWY_MCP_BASE_URL)'
   ).toBeVisible({ timeout: 30000 });
-  // The panel shows a spinner until the member status says whether AI apps are on.
+  // The panel shows a spinner until the member status says whether MCP is on.
   await expect(page.getByTestId('mcp-panel-loading')).toHaveCount(0, { timeout: 30000 });
   await expect(
     page.getByTestId('mcp-panel-disabled'),
-    'AI apps are turned off on this server: turn them on in Admin → AI apps (MCP), or set APPFLOWY_MCP_ENABLED=true'
+    'MCP is turned off on this server: turn it on in AppFlowy-Admin, on the MCP page (a self-hosted server also needs a One, Team or Enterprise license)'
   ).toHaveCount(0);
 
   const field = page.getByTestId('mcp-endpoint-value');

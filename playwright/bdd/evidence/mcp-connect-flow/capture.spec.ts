@@ -181,7 +181,6 @@ interface StoredRow {
 
 interface PolicyPage {
   revision: number;
-  env_locked_disabled: boolean;
   enabled: { value: boolean; stored: boolean | null };
 }
 
@@ -213,7 +212,6 @@ class AiAppsSwitch {
     if (response.ok()) {
       const page = (JSON.parse(text) as { data: PolicyPage }).data;
 
-      if (page.env_locked_disabled) throw new Error('APPFLOWY_MCP_ENABLED=false locks AI apps off on this stack');
       console.log(`AI apps at start (policy API): value ${page.enabled.value}, stored ${page.enabled.stored}`);
       return new AiAppsSwitch(request, { kind: 'api', revision: page.revision, start: page.enabled });
     }

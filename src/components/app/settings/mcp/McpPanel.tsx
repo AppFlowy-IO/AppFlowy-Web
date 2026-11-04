@@ -14,6 +14,7 @@ import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
+import { useMcpLicenseRequired } from '@/components/mcp/useMcpConfiguration';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -67,6 +68,9 @@ export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelPro
   const [tab, setTab] = useState<McpPanelTab>('connect');
   const member = useMcpMemberStatus(workspaceId);
   const { status, disabled } = member;
+  // Server-info says this self-hosted server's license does not include MCP: the panel asks for an
+  // upgrade, like the other features a license unlocks, whatever the member status says.
+  const licenseRequired = useMcpLicenseRequired();
   // While AI apps are turned off, and for an owner the email gate excludes, the panel offers only
   // the caller's own connections, so the owner lists stay unloaded (approving, for one, is refused
   // then). The server would let such owners withdraw access; doc/MCP.md lists that as not in v1.
@@ -106,7 +110,7 @@ export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelPro
   // Requests cannot be answered while AI apps are turned off, and the panel shows them only to a
   // caller who manages AI apps here (`mcpManagesApprovals`, the menu's rule too): not to an owner
   // the email gate excludes, nor to one the MCP service now lists as a member. The badge goes.
-  const clearsBadge = disabled || (status !== undefined && !member.failed && !isOwner);
+  const clearsBadge = licenseRequired || disabled || (status !== undefined && !member.failed && !isOwner);
 
   useEffect(() => {
     if (clearsBadge) publishMcpPendingRequestCount(workspaceId, undefined);
@@ -126,7 +130,16 @@ export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelPro
 
   let body: ReactNode;
 
-  if (disabled) {
+  if (licenseRequired) {
+    // MCP refuses every AI app until the license includes it. Connections made before stay listed
+    // when the MCP service answers (it reports itself off then), so they can still be removed.
+    body = (
+      <div className='flex flex-col gap-5'>
+        <LicenseRequiredNotice />
+        {disabled && <McpMyConnections state={mine} onDisconnect={handleDisconnectMine} overview={overview} />}
+      </div>
+    );
+  } else if (disabled) {
     // Nothing can connect; the caller's own connections stay so they can still be removed.
     body = (
       <div className='flex flex-col gap-5'>
@@ -311,6 +324,25 @@ function ApprovedForWorkspace({ apps, mode }: { apps: readonly McpApprovedApp[];
 }
 
 /** AI app connections are turned off for the whole server (Admin → AI apps (MCP), or the deployment). */
+/** The upgrade prompt of a self-hosted license below One, as for the other licensed features. */
+function LicenseRequiredNotice() {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      role='status'
+      className='flex items-start gap-3 rounded-400 bg-fill-warning-light py-4 pl-4 pr-3'
+      data-testid='mcp-panel-license-required'
+    >
+      <WarningIcon aria-hidden='true' className='h-5 w-5 shrink-0 text-icon-warning-thick' />
+      <div className='flex min-w-0 flex-col gap-1'>
+        <h3 className='text-sm font-medium text-text-primary'>{t('settings.mcp.licenseRequiredTitle')}</h3>
+        <p className='text-sm text-text-primary'>{t('settings.mcp.licenseRequiredDescription')}</p>
+      </div>
+    </div>
+  );
+}
+
 function DisabledNotice() {
   const { t } = useTranslation();
 

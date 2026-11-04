@@ -2,7 +2,7 @@
 
 | File | Shows |
 | --- | --- |
-| `01-owner-settings-ai-apps-off.png` | Settings → MCP while AI apps are turned off, the default until an administrator turns them on |
+| `01-owner-settings-ai-apps-off.png` | Settings → MCP after an administrator turns MCP off in Admin (MCP is on by default) |
 | `02-consent-ai-apps-off.png` | The consent page when AI apps are turned off |
 | `03-owner-consent.png` | A workspace owner approving and allowing an AI app that runs on their computer |
 | `04-owner-settings.png` | Settings → MCP with the server URL copied, and setup cards for each AI app |
