@@ -550,12 +550,6 @@ export default function MindMapViewer({
           </>
         )}
       </TransformWrapper>
-      {onClosePresentation && generateLabel && (
-        <Action className='absolute left-4 top-4 z-10' disabled={!canGenerate} onClick={onGenerate}>
-          <Sparkles size={16} />
-          {generateLabel}
-        </Action>
-      )}
       {expanded && (
         <Action
           className='ps-map-close'
