@@ -9,7 +9,7 @@ import ImageResizer from '@/components/editor/components/blocks/image/ImageResiz
 import { MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
 import VideoToolbar from '@/components/editor/components/blocks/video/VideoToolbar';
 import { VideoBlockNode } from '@/components/editor/editor.type';
-import { processUrl } from '@/utils/url';
+import { requireHttpUrl } from '@/utils/url';
 import { getVideoErrorMessage } from '@/utils/video-url';
 
 function VideoRender({
@@ -23,8 +23,7 @@ function VideoRender({
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
   const { width: imageWidth } = node.data || {};
   const rawUrl = node.data.url;
-  const processedUrl = rawUrl ? (processUrl(rawUrl) || rawUrl) : undefined;
-  const url = processedUrl && /^https?:\/\//i.test(processedUrl) ? processedUrl : undefined;
+  const url = rawUrl ? requireHttpUrl(rawUrl) : undefined;
   const ref = useRef<HTMLDivElement>(null);
   const handleWidthChange = useCallback(
     (newWidth: number) => {

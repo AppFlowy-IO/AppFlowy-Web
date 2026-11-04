@@ -9,7 +9,7 @@ import { VideoBlockData, VideoType } from '@/application/types';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 
 import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
-import { processUrl } from '@/utils/url';
+import { requireHttpUrl } from '@/utils/url';
 import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
@@ -30,8 +30,12 @@ function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
 
   const handleInsertEmbedLink = useCallback(
     (url: string) => {
+      const safeUrl = requireHttpUrl(url);
+
+      if (!safeUrl) return;
+
       CustomEditor.setBlockData(editor, blockId, {
-        url: processUrl(url) || url,
+        url: safeUrl,
         ...videoTypeData(VideoType.External),
       } as VideoBlockData);
       onClose();

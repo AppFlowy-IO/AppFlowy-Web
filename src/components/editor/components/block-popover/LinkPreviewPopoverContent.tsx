@@ -7,7 +7,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { LinkPreviewBlockData, LinkPreviewType } from '@/application/types';
 import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
-import { processUrl } from '@/utils/url';
+import { requireHttpUrl } from '@/utils/url';
 
 function LinkPreviewPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -23,7 +23,9 @@ function LinkPreviewPopoverContent({ blockId, onClose }: { blockId: string; onCl
 
   const handleInsertEmbedLink = useCallback(
     (rawUrl: string) => {
-      const url = processUrl(rawUrl) || rawUrl;
+      const url = requireHttpUrl(rawUrl);
+
+      if (!url) return;
 
       CustomEditor.setBlockData(editor, blockId, {
         url,

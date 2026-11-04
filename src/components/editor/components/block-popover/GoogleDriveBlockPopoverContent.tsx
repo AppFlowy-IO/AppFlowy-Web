@@ -15,7 +15,7 @@ import {
 import { GoogleDriveBrowser } from '@/components/editor/components/blocks/google-drive/GoogleDriveBrowser';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
-import { processUrl } from '@/utils/url';
+import { requireHttpUrl } from '@/utils/url';
 
 function GoogleDriveBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -33,7 +33,9 @@ function GoogleDriveBlockPopoverContent({ blockId, onClose }: { blockId: string;
 
   const handleInsertEmbedLink = useCallback(
     (rawUrl: string) => {
-      const url = processUrl(rawUrl) || rawUrl;
+      const url = requireHttpUrl(rawUrl);
+
+      if (!url) return;
 
       CustomEditor.setBlockData(editor, blockId, {
         url,

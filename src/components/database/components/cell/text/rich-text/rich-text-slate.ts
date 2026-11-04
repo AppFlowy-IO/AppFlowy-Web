@@ -13,7 +13,7 @@ import {
 } from '@/application/database-yjs/fields/text/rich-text';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
-import { isSingleURLText, processUrl } from '@/utils/url';
+import { isSingleURLText, sanitizeHref } from '@/utils/url';
 
 /**
  * Slate model for a Text cell: one paragraph of marked text, with line breaks
@@ -325,18 +325,28 @@ function insertTexts(editor: Editor, texts: Text[]) {
 }
 
 function insertLink(editor: Editor, url: string) {
-  const href = processUrl(url) || url;
+  // Unsafe schemes (e.g. `javascript:`) must never become an href mark.
+  // They are inserted as plain text instead.
+  const href = sanitizeHref(url);
 
   if (editor.selection && Range.isExpanded(editor.selection)) {
-    // Pasting a link onto selected text links that text, as in Notion.
-    editor.addMark(EditorMarkFormat.Href, href);
+    if (href) {
+      // Pasting a link onto selected text links that text, as in Notion.
+      editor.addMark(EditorMarkFormat.Href, href);
+    }
+
     Transforms.collapse(editor, { edge: 'end' });
     return;
   }
 
-  Transforms.insertNodes(editor, [{ text: url, href } as Text], { select: true });
-  // Typing after the pasted link continues as plain text.
-  editor.removeMark(EditorMarkFormat.Href);
+  if (href) {
+    Transforms.insertNodes(editor, [{ text: url, href } as Text], { select: true });
+    // Typing after the pasted link continues as plain text.
+    editor.removeMark(EditorMarkFormat.Href);
+    return;
+  }
+
+  Transforms.insertNodes(editor, [{ text: url } as Text], { select: true });
 }
 
 type InlineMarkdownRule = {
@@ -369,7 +379,12 @@ const INLINE_MARKDOWN_RULES: InlineMarkdownRule[] = [
   },
   {
     match: /\[([^\]]+)\]\(([^)\s]+)\)$/,
-    convert: ([, content, url]) => ({ text: content, marks: { [EditorMarkFormat.Href]: processUrl(url) || url } }),
+    convert: ([, content, url]) => {
+      const href = sanitizeHref(url);
+
+      if (!href) return { text: content, marks: {} };
+      return { text: content, marks: { [EditorMarkFormat.Href]: href } };
+    },
   },
 ];
 

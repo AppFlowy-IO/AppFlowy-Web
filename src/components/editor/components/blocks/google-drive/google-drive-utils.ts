@@ -1,4 +1,4 @@
-import { processUrl } from '@/utils/url';
+import { processUrl, requireHttpUrl } from '@/utils/url';
 
 const supportedGoogleDriveHosts = [
   'drive.google.com',
@@ -9,10 +9,14 @@ const supportedGoogleDriveHosts = [
 ];
 
 function parseGoogleDriveUrl(rawUrl: string) {
-  const processedUrl = processUrl(rawUrl) || rawUrl;
+  // `new URL('javascript:...')` parses successfully, so gate on http(s)
+  // first instead of falling back to the raw input.
+  const httpUrl = requireHttpUrl(rawUrl);
+
+  if (!httpUrl) return null;
 
   try {
-    return new URL(processedUrl);
+    return new URL(httpUrl);
   } catch {
     return null;
   }

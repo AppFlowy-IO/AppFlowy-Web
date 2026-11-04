@@ -27,7 +27,7 @@ import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { parseAppFlowyPageLink, processUrl } from '@/utils/url';
+import { parseAppFlowyPageLink, requireHttpUrl, sanitizeHref } from '@/utils/url';
 import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 import { PasteAsMenuType } from './constants';
@@ -129,9 +129,18 @@ export function PasteAsPanel() {
         return;
       }
 
-      const url = processUrl(payload.url) || payload.url;
+      const rawUrl = payload.url;
+      // Never create a clickable mention or embed from an unsafe scheme.
+      // Unsafe input keeps its pasted text but gets no link target.
+      const url = sanitizeHref(rawUrl);
+      const embedUrl = requireHttpUrl(rawUrl);
 
       if (type === PasteAsMenuType.Mention) {
+        if (!url) {
+          Transforms.collapse(editor, { edge: 'end' });
+          return;
+        }
+
         // Keep following the pasted URL while the row metadata resolves. A
         // plain Range becomes stale when local or remote edits happen before
         // the URL during the request.
@@ -206,9 +215,14 @@ export function PasteAsPanel() {
 
       Transforms.delete(editor);
 
-      if (type === PasteAsMenuType.Embed && isValidVideoUrl(url)) {
+      if (!embedUrl) {
+        Transforms.collapse(editor, { edge: 'end' });
+        return;
+      }
+
+      if (type === PasteAsMenuType.Embed && isValidVideoUrl(embedUrl)) {
         turnIntoBlock(BlockType.VideoBlock, {
-          url,
+          url: embedUrl,
           align: AlignType.Center,
           ...videoTypeData(VideoType.External),
         } as VideoBlockData);
@@ -216,7 +230,7 @@ export function PasteAsPanel() {
       }
 
       turnIntoBlock(BlockType.LinkPreview, {
-        url,
+        url: embedUrl,
         preview_type: type === PasteAsMenuType.Embed ? LinkPreviewType.Embed : LinkPreviewType.Bookmark,
       } as LinkPreviewBlockData);
     },
