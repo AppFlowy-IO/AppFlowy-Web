@@ -190,7 +190,7 @@ it('opens Present AI mind map directly in the enlarged view and closes back to t
 
   expect(canvas.classList.contains('ps-map-expanded')).toBe(true);
   expect(screen.queryByRole('navigation', { name: 'Page presentation tools' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Generate with AI' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Generate with AI' })).toBeNull();
   fireEvent.keyDown(canvas, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Interactive mind map' })).toBeNull());
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
