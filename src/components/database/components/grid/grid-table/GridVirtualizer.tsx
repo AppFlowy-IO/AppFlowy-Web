@@ -46,10 +46,11 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { dataSource, embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
   const isHistoryPreview = dataSource?.type === 'history';
 
-  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady, pinColumnHeader } = useGridVirtualizer({
-    data,
-    columns,
-  });
+  const { parentRef, virtualizer, columnVirtualizer, getColumnWidth, scrollMarginTop, isReady, pinColumnHeader } =
+    useGridVirtualizer({
+      data,
+      columns,
+    });
 
   const rowItems = virtualizer.getVirtualItems();
   // Rows take the column items as a prop: a sideways scroll that renders the
@@ -73,11 +74,16 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { setShowStickyHeader } = useGridContext();
   const stickyHeaderVisibleRef = useRef<boolean | null>(null);
 
+  // TanStack keeps the column sizes it computed until `measure()`, whatever
+  // `estimateSize` returns since. `getColumnWidth` is new whenever a width may
+  // change: new columns, or the New property column's fill once the grid or its
+  // paddings resize. While a column is dragged to a new width, its header
+  // follows the pointer outside React: re-measure when the drag ends.
   useEffect(() => {
     if (!isResizing) {
       columnVirtualizer.measure();
     }
-  }, [columnVirtualizer, isResizing, columns]);
+  }, [columnVirtualizer, isResizing, columns, getColumnWidth]);
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;

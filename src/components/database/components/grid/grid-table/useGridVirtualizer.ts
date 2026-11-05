@@ -312,6 +312,8 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     parentRef,
     virtualizer,
     columnVirtualizer,
+    // The columns' `estimateSize`: a new function whenever a column's width may change.
+    getColumnWidth,
     scrollMarginTop: parentOffset,
     isReady,
     pinColumnHeader,
