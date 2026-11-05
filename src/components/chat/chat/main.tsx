@@ -1,6 +1,6 @@
 // Code: Chat main component
 import { AnimatePresence, motion } from 'framer-motion';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { ChatInput } from '@/components/chat/components/chat-input';
 import { ChatMessages } from '@/components/chat/components/chat-messages';
@@ -27,11 +27,19 @@ function ChatContentWithModelSync({ currentUser, selectionMode }: { currentUser?
   const { chatSettings, selectedModelName, setSelectedModelName, updateChatSettings } = useMessagesHandlerContext();
   const { requestInstance, chatId } = useChatContext();
   const savedModelRef = useRef<string>();
+  // Image answers stay offered until the model list says the server has no image model.
+  const [imageGenerationAvailable, setImageGenerationAvailable] = useState(true);
 
   savedModelRef.current = chatSettings?.metadata?.ai_model as string | undefined;
   const modelRequestInstance = useMemo(
     () => ({
-      getModelList: () => requestInstance.getModelList(),
+      getModelList: async () => {
+        const modelList = await requestInstance.getModelList();
+
+        setImageGenerationAvailable(modelList.image_generation ?? true);
+
+        return modelList;
+      },
       getCurrentModel: async () => savedModelRef.current || '',
       setCurrentModel: async (modelName: string) => {
         await updateChatSettings({
@@ -49,8 +57,9 @@ function ChatContentWithModelSync({ currentUser, selectionMode }: { currentUser?
       setSelectedModelName,
       requestInstance: modelRequestInstance,
       chatId,
+      imageGenerationAvailable,
     }),
-    [selectedModelName, setSelectedModelName, modelRequestInstance, chatId]
+    [selectedModelName, setSelectedModelName, modelRequestInstance, chatId, imageGenerationAvailable]
   );
 
   return (

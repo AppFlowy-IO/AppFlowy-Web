@@ -63,13 +63,31 @@ export enum OutputContent {
   RichTextImage = 2,
 }
 
+/**
+ * Image options understood by the AI service for IMAGE and RichTextImage answers.
+ * `image_model` is intentionally absent: omitting it lets the admin-configured
+ * default image model apply, while sending it would pin a specific provider model.
+ */
+export interface OutputContentMetadata {
+  /** Replaces the answer text (or the question) as the image prompt. */
+  custom_image_prompt?: string;
+  /** `WxH`, for example `1024x1024`, `1536x1024`, `1024x1536`. */
+  size?: string;
+  /** `standard` or `hd` (mapped by the server to the provider's levels). */
+  quality?: string;
+}
+
 export interface ResponseFormat {
   output_layout: OutputLayout;
   output_content: OutputContent;
+  output_content_metadata?: OutputContentMetadata;
+}
 
-  // It's unclear what this is supposed to be
-  // eslint-disable-next-line
-  output_content_metadata?: any;
+/** Error line emitted inside an answer stream: `{code, message, error}`. */
+export interface StreamErrorPayload {
+  code: number;
+  message: string;
+  error?: string;
 }
 
 export enum MessageType {
@@ -98,6 +116,14 @@ export interface SendQuestionPayload {
   message_type: MessageType;
   prompt_id?: string;
   model_name?: string;
+}
+
+export interface UpdateQuestionPayload {
+  chat_id: string;
+  message_id: number;
+  content: string;
+  /** `false` edits the question and drops its answer so the client streams a new one. */
+  generate_answer: boolean;
 }
 
 export enum ChatInputMode {

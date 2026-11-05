@@ -1,5 +1,6 @@
 import { EditorData, EditorNode } from '@appflowyinc/editor';
 
+import { parseAttachmentMarkers } from '@/components/chat/lib/attachments';
 import { AiPrompt, AiPromptCategory, RawPromptData } from '@/components/chat/types/prompt';
 
 export function stringToColor(string: string, colorArray?: string[]) {
@@ -163,3 +164,29 @@ export const parsePromptData = (
     };
   });
 };
+
+const MAX_CHAT_TITLE_LENGTH = 60;
+
+/**
+ * Turns the first question of a chat into a sidebar title: first non-empty
+ * line, whitespace collapsed, cut at a word boundary with an ellipsis.
+ */
+export function deriveChatTitle(message: string): string {
+  // A question as sent carries attachment markers, which are transport, not a title.
+  const firstLine = parseAttachmentMarkers(message)
+    .text.split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!firstLine) return '';
+
+  const collapsed = firstLine.replace(/\s+/g, ' ');
+
+  if (collapsed.length <= MAX_CHAT_TITLE_LENGTH) return collapsed;
+
+  const cut = collapsed.slice(0, MAX_CHAT_TITLE_LENGTH);
+  const lastSpace = cut.lastIndexOf(' ');
+  const base = lastSpace > MAX_CHAT_TITLE_LENGTH / 2 ? cut.slice(0, lastSpace) : cut;
+
+  return `${base.trimEnd()}…`;
+}

@@ -16,12 +16,17 @@ jest.mock('@/components/chat/writer/context', () => ({
 }));
 jest.mock('@appflowyinc/editor', () => ({ EditorProvider: () => null }));
 jest.mock('@/components/chat/provider/messages-handler-provider', () => ({
-  useMessagesHandlerContext: () => ({ fetchAnswerStream: mockFetchAnswerStream }),
+  useMessagesHandlerContext: () => ({ fetchAnswerStream: mockFetchAnswerStream, regenerateAnswer: jest.fn() }),
 }));
 jest.mock('@/components/chat/provider/messages-provider', () => ({
   useChatMessagesContext: () => ({ getMessage: () => undefined }),
 }));
-jest.mock('@/components/chat/provider/response-format-provider', () => ({ useResponseFormatContext: () => ({}) }));
+// OutputLayout.Flex and OutputContent.TEXT: the automatic text format.
+const mockAnswerFormat = { output_layout: 4, output_content: 0 };
+
+jest.mock('@/components/chat/provider/response-format-provider', () => ({
+  useResponseFormatContext: () => ({ resolveAnswerFormat: () => mockAnswerFormat }),
+}));
 jest.mock('@/components/chat/provider/suggestions-provider', () => ({
   useSuggestionsContext: () => ({ getMessageSuggestions: () => undefined }),
 }));

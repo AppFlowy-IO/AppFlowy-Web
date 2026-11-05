@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useChatContext } from '@/components/chat/chat/context';
 import { useChatSettingsLoader } from '@/components/chat/hooks/use-chat-settings-loader';
 import { RagScopeLoadState, useRagScopeLoader } from '@/components/chat/hooks/use-rag-scope-loader';
-import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
+import { deriveChatTitle } from '@/components/chat/lib/utils';
 import {
   AuthorType,
   ChatMessageMetadata,
@@ -25,15 +25,22 @@ import { useSuggestionsContext } from './suggestions-provider';
 
 interface MessagesHandlerContextTypes {
   fetchMessages: (payload?: GetChatMessagesPayload) => Promise<RepeatedChatMessage>;
-  submitQuestion: (message: string) => Promise<void>;
-  regenerateAnswer: (questionId: number) => Promise<void>;
+  /** `format` is remembered for the answer so a later "Try again" reuses it. */
+  submitQuestion: (message: string, format?: ResponseFormat) => Promise<void>;
+  regenerateAnswer: (questionId: number, format?: ResponseFormat) => Promise<void>;
   fetchAnswerStream: (
     questionId: number,
     format?: ResponseFormat,
-    onMessage?: (text: string, done?: boolean) => void,
-    onProgress?: (step: string) => void
+    onMessage?: (text: string, done?: boolean, metadata?: ChatMessageMetadata[]) => void,
+    onProgress?: (step: string) => void,
+    onReasoning?: (reasoning: string) => void
   ) => Promise<void>;
   cancelAnswerStream: () => void;
+  /** Saves an edited question and streams a fresh answer for it. */
+  editQuestion: (questionId: number, content: string) => Promise<void>;
+  /** The question currently shown in its edit box, if any. */
+  editingQuestionId: number | null;
+  setEditingQuestionId: (questionId: number | null) => void;
   questionSending: boolean;
   answerApplying: boolean;
   selectedModelName?: string;
@@ -85,8 +92,16 @@ function useMessagesHandler() {
     }
   }, [chatSettings]);
 
-  const { messageIds, addMessages, insertMessage, removeMessages, saveMessageContent, getMessage } =
-    useChatMessagesContext();
+  const {
+    messageIds,
+    addMessages,
+    insertMessage,
+    removeMessages,
+    saveMessageContent,
+    updateMessageContent,
+    getMessage,
+  } = useChatMessagesContext();
+  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
 
   // Use refs for values that change frequently but are only read inside callbacks,
   // to avoid recreating the entire callback chain on each change.
@@ -97,7 +112,7 @@ function useMessagesHandler() {
 
   messageIdsRef.current = messageIds;
 
-  const { setResponseFormatWithId } = useResponseFormatContext();
+  const { setResponseFormatWithId, resolveAnswerFormat } = useResponseFormatContext();
 
   const { currentPromptId } = usePromptModal();
 
@@ -128,6 +143,7 @@ function useMessagesHandler() {
       setQuestionSending(false);
       questionSendingRef.current = false;
       setAnswerApplying(false);
+      setEditingQuestionId(null);
       cancelStreamRef.current = undefined;
     };
   }, [chatId]);
@@ -170,9 +186,13 @@ function useMessagesHandler() {
   );
 
   const regenerateAnswer = useCallback(
-    async (questionId: number) => {
+    async (questionId: number, format?: ResponseFormat) => {
       const question = getMessage(questionId);
       const answerId = question?.reply_message_id || questionId + 1;
+
+      if (format) {
+        setResponseFormatWithId(answerId, format);
+      }
 
       const newMessages = removeMessages([answerId]);
 
@@ -182,11 +202,11 @@ function useMessagesHandler() {
         createAssistantMessage(answerId, index);
       }, 200);
     },
-    [createAssistantMessage, getMessage, removeMessages]
+    [createAssistantMessage, getMessage, removeMessages, setResponseFormatWithId]
   );
 
   const submitQuestion = useCallback(
-    async (message: string) => {
+    async (message: string, format?: ResponseFormat) => {
       if (questionSendingRef.current) {
         const error = new Error('A question is already being sent');
 
@@ -239,6 +259,12 @@ function useMessagesHandler() {
 
         const answerId = question.reply_message_id || question.message_id + 1;
 
+        // Snapshot the format now: the input may reset a one-shot image request
+        // before the assistant message mounts and starts streaming.
+        if (format) {
+          setResponseFormatWithId(answerId, format);
+        }
+
         // remove fake message
         removeMessages([fakeMessageId]);
 
@@ -263,7 +289,7 @@ function useMessagesHandler() {
             const view = await requestInstance.getCurrentView();
 
             if (isFirstMessage && view) {
-              await requestInstance.updateViewName(view, message);
+              await requestInstance.updateViewName(view, deriveChatTitle(message));
             }
             // eslint-disable-next-line
           } catch (e: any) {
@@ -293,6 +319,7 @@ function useMessagesHandler() {
       flushChatSettings,
       waitForPendingChatSettings,
       waitUntilRagScopeReady,
+      setResponseFormatWithId,
     ]
   );
 
@@ -325,8 +352,9 @@ function useMessagesHandler() {
     async (
       questionId: number,
       format?: ResponseFormat,
-      onMessage?: (text: string, done?: boolean) => void,
-      onProgress?: (step: string) => void
+      onMessage?: (text: string, done?: boolean, metadata?: ChatMessageMetadata[]) => void,
+      onProgress?: (step: string) => void,
+      onReasoning?: (reasoning: string) => void
     ) => {
       const question = getMessage(questionId);
       let answerId = question?.reply_message_id;
@@ -340,7 +368,7 @@ function useMessagesHandler() {
       }
 
       const handleMessageProgress = (message: string, metadata: ChatMessageMetadata[], done?: boolean) => {
-        onMessage?.(message, done);
+        onMessage?.(message, done, metadata);
 
         if (done) {
           if (message) {
@@ -365,38 +393,31 @@ function useMessagesHandler() {
 
       try {
         setAnswerApplying(true);
-        const { cancel, streamPromise } = await requestInstance.fetchAnswerStream(
+        const { cancel, streamPromise } = requestInstance.fetchAnswerStream(
           {
             question_id: questionId,
             format: format || {
-              output_layout: OutputLayout.Paragraph,
+              output_layout: OutputLayout.Flex,
               output_content: OutputContent.TEXT,
             },
             model_name: selectedModelNameRef.current,
           },
           handleMessageProgress,
-          onProgress
+          onProgress,
+          onReasoning
         );
 
+        // Registered before the request resolves so Stop works while waiting for headers.
         cancelStreamRef.current = cancel;
         await streamPromise;
-        // eslint-disable-next-line
-      } catch (e: any) {
-        toast.error(e.message);
+      } catch (e) {
         setAnswerApplying(false);
-        const code = e.code;
 
-        if (code !== ERROR_CODE_NO_LIMIT) {
-          // remove assistant message if error is not no limit
-          if (answerId) {
-            removeAssistantMessage(answerId);
-          }
-
-          return;
-        }
-
-        // if error is no limit, show assistant message with error
+        // The assistant message stays mounted: it renders the error with a retry
+        // button instead of silently disappearing with a toast.
         return Promise.reject(e);
+      } finally {
+        cancelStreamRef.current = undefined;
       }
     },
     [getMessage, setResponseFormatWithId, saveAnswer, startFetchSuggestions, removeAssistantMessage, requestInstance]
@@ -407,6 +428,35 @@ function useMessagesHandler() {
       cancelStreamRef.current();
     }
   }, []);
+
+  const editQuestion = useCallback(
+    async (questionId: number, content: string) => {
+      const question = getMessage(questionId);
+
+      if (!question) return;
+
+      const answerId = question.reply_message_id || questionId + 1;
+      // Keep the answer's original format (an image question stays an image question).
+      const format = resolveAnswerFormat(answerId, getMessage(answerId)?.content);
+
+      try {
+        await requestInstance.updateQuestion({
+          chat_id: chatId,
+          message_id: questionId,
+          content,
+          generate_answer: false,
+        });
+        updateMessageContent(questionId, content);
+        setEditingQuestionId(null);
+        await regenerateAnswer(questionId, format);
+        // eslint-disable-next-line
+      } catch (e: any) {
+        toast.error(e.message);
+        return Promise.reject(e);
+      }
+    },
+    [chatId, getMessage, regenerateAnswer, requestInstance, resolveAnswerFormat, updateMessageContent]
+  );
 
   // Keep the shared model state in sync. Explicit persistence is handled by
   // ModelSelector's request adapter so one selection produces exactly one
@@ -426,6 +476,9 @@ function useMessagesHandler() {
       regenerateAnswer,
       fetchAnswerStream,
       cancelAnswerStream,
+      editQuestion,
+      editingQuestionId,
+      setEditingQuestionId,
       questionSending,
       answerApplying,
       selectedModelName,
@@ -442,6 +495,8 @@ function useMessagesHandler() {
       regenerateAnswer,
       fetchAnswerStream,
       cancelAnswerStream,
+      editQuestion,
+      editingQuestionId,
       questionSending,
       answerApplying,
       selectedModelName,

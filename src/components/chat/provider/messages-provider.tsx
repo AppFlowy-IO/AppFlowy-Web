@@ -10,6 +10,10 @@ export interface ChatMessagesContextTypes {
   removeMessages: (ids: number[]) => ChatMessage[];
   insertMessage: (message: ChatMessage, index: number) => void;
   saveMessageContent: (messageId: number, content: string, metadata: ChatMessageMetadata[]) => void;
+  /** Replaces a message's text and re-renders it (used when a question is edited). */
+  updateMessageContent: (messageId: number, content: string) => void;
+  /** Bumped when a message changes in place, so consumers rendering content re-read it. */
+  messagesVersion: number;
 }
 
 export const ChatMessagesContext = createContext<ChatMessagesContextTypes | undefined>(undefined);
@@ -29,6 +33,7 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
     chatId,
   } = useChatContext();
   const [messageIds, setMessageIds] = useState<number[]>([]);
+  const [messagesVersion, setMessagesVersion] = useState(0);
   const messagesRef = useRef<ChatMessage[]>([]);
 
   useEffect(() => {
@@ -75,10 +80,18 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
       if(message) {
         message.content = content;
         message.meta_data = [...metadata];
+        setMessagesVersion((version) => version + 1);
       }
     },
     []
   );
+  const updateMessageContent = useCallback((messageId: number, content: string) => {
+    messagesRef.current = messagesRef.current.map((message) =>
+      message.message_id === messageId ? { ...message, content } : message
+    );
+    setMessagesVersion((version) => version + 1);
+  }, []);
+
   const contextValue = useMemo(
     () => ({
       messageIds,
@@ -87,8 +100,19 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
       removeMessages,
       insertMessage,
       saveMessageContent,
+      updateMessageContent,
+      messagesVersion,
     }),
-    [messageIds, getMessage, addMessages, removeMessages, insertMessage, saveMessageContent]
+    [
+      messageIds,
+      getMessage,
+      addMessages,
+      removeMessages,
+      insertMessage,
+      saveMessageContent,
+      updateMessageContent,
+      messagesVersion,
+    ]
   );
 
   return (

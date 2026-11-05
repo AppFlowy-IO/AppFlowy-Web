@@ -111,15 +111,15 @@ test.describe('Chat Provider Stability', () => {
     await expect(textarea).toBeVisible();
 
     // Format controls should still work
-    // Default responseMode is FormatResponse, so FormatGroup starts visible
-    await expect(ChatSelectors.formatGroup(page)).toBeAttached({ timeout: 10000 });
-    // Clicking toggle switches to Auto mode, hiding FormatGroup
-    await expect(ChatSelectors.formatToggle(page)).toBeVisible();
-    await ChatSelectors.formatToggle(page).click();
+    // Default responseMode is Auto, so FormatGroup starts hidden
+    await expect(ChatSelectors.formatToggle(page)).toBeVisible({ timeout: 10000 });
     await expect(ChatSelectors.formatGroup(page)).toHaveCount(0);
-    // Clicking again switches back to FormatResponse, showing FormatGroup
+    // Clicking toggle switches to FormatResponse mode, showing FormatGroup
     await ChatSelectors.formatToggle(page).click();
     await expect(ChatSelectors.formatGroup(page)).toBeAttached();
+    // Clicking again switches back to Auto, hiding FormatGroup
+    await ChatSelectors.formatToggle(page).click();
+    await expect(ChatSelectors.formatGroup(page)).toHaveCount(0);
   });
 
   test('should handle rapid chat navigation without unmount errors', async ({ page, request }) => {
