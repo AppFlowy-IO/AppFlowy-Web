@@ -1,5 +1,5 @@
 /**
- * Regenerates the ten screenshots in this directory (README.md lists them). It is evidence, not a
+ * Regenerates the eleven screenshots in this directory (README.md lists them). It is evidence, not a
  * test: no CI job or e2e suite runs it (see `capture.config.ts`). From the repository root:
  *
  *   BASE_URL=<web origin> APPFLOWY_BASE_URL=<cloud origin> APPFLOWY_GOTRUE_BASE_URL=<gotrue url> \
@@ -661,6 +661,27 @@ test('capture the AI apps (MCP) connect-flow screenshots', async ({ browser, req
         expect(shown).toBe(server.resource);
       });
 
+      await test.step('11: an owner’s Claude steps, with the link for their Claude organization', async () => {
+        const encoded = encodeURIComponent(server.resource);
+
+        // The frame shows the steps, not 04's toast.
+        await expect(owner.page.getByText('Copied to clipboard')).toHaveCount(0, { timeout: 15000 });
+        await owner.page.getByTestId('mcp-client-tab-claude').click();
+        const organization = owner.page.getByTestId('mcp-add-to-claude-organization');
+
+        await expect(organization).toHaveAttribute(
+          'href',
+          `https://claude.ai/admin-settings/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=${encoded}`
+        );
+        await expect(owner.page.getByTestId('mcp-add-to-claude')).toHaveAttribute(
+          'href',
+          `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=${encoded}`
+        );
+        await organization.scrollIntoViewIfNeeded();
+        await owner.page.mouse.move(0, 0);
+        await shot(owner.page, '11-owner-settings-claude-organization.png');
+      });
+
       await test.step('05: pages the app created through MCP, open in Web', async () => {
         const { documentId, gridId } = await createPagesThroughMcp(request, server.resource, tokens.access_token);
 
@@ -676,16 +697,32 @@ test('capture the AI apps (MCP) connect-flow screenshots', async ({ browser, req
       });
     });
 
-    await test.step('08: the signed-out setup page', async () => {
+    await test.step('08: the signed-out setup page of a self-hosted server, with ChatGPT’s steps', async () => {
       const context = await browser.newContext(contextOptions());
 
       contexts.push(context);
       const page = await context.newPage();
 
+      // On a self-hosted server the guide notes that Claude's apps and ChatGPT must reach it from
+      // the internet. This stack is a hosted build, so the step adds `self_hosted: true` to the
+      // page's server-info responses, as a self-hosted server sends it.
+      await page.route('**/api/server-info', async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as { data?: Record<string, unknown> };
+
+        if (body.data) body.data.self_hosted = true;
+        await route.fulfill({ response, json: body });
+      });
       await page.goto('/oauth/mcp/setup', { waitUntil: 'domcontentloaded' });
       await expect(page.getByTestId('mcp-setup-gallery')).toBeVisible({ timeout: 30000 });
       await expect(page.getByTestId('mcp-endpoint-value')).toHaveValue(server.resource);
-      await shot(page, '08-public-setup.png');
+      await expect(page.getByTestId('mcp-setup-self-hosted-note')).toBeVisible({ timeout: 30000 });
+      // ChatGPT's card copies the URL and opens its steps, which link to the plugins page.
+      await page.getByTestId('mcp-setup-app-action-chatgpt').click();
+      await expect(page.getByTestId('mcp-open-chatgpt-plugins')).toHaveAttribute('href', 'https://chatgpt.com/plugins');
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(server.resource);
+      await page.mouse.move(0, 0);
+      await shot(page, '08-public-setup.png', { fitContent: true });
     });
 
     await test.step('06: a member requests approval for an unapproved app', async () => {
