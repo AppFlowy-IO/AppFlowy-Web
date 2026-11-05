@@ -64,7 +64,7 @@ export function McpSetupAppSteps({
                 >
                   {t('mcp.setup.claude.organizationAction')}
                 </ExternalAction>
-                <span id={organizationHintId} className='text-xs leading-[18px] text-text-secondary'>
+                <span id={organizationHintId} className='text-xs leading-[18px] text-text-primary'>
                   {t('mcp.setup.claude.organizationHint')}
                 </span>
               </>
