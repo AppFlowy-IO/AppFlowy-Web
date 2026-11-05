@@ -167,9 +167,20 @@ destinations (`AuthContinuationKind`: public Form links and MCP consent requests
 is the same on Settings → MCP and on the public `/oauth/mcp/setup` page. From the top:
 
 - **Server URL** with Copy (`mcp-endpoint-value`, `mcp-copy-endpoint`).
+- On a **self-hosted server** (server-info `self_hosted: true`, read through `useIsSelfHosted`), a
+  note under it (`mcp-setup-self-hosted-note`): Claude (web, desktop and Cowork) and ChatGPT connect
+  from Anthropic's and OpenAI's clouds, so the server must be reachable from the internet or through
+  the vendor's tunnel; Claude Code and Codex connect from the user's computer. Settings reads the
+  hosting mode from the auth layer's server-info loop; the public page runs that loop itself, also
+  when the Web's `APPFLOWY_MCP_BASE_URL` override already names the MCP service (the URL then shows
+  at once, and the note appears when server-info answers). See
+  [Self-hosted servers and vendor clouds](#self-hosted-servers-and-vendor-clouds).
 - No **Copy setup prompt** row: the guide does not offer it. `buildMcpSetupPrompt` in
-  `src/application/mcp/setupPrompt.ts` stays (versioned by `MCP_SETUP_PROMPT_VERSION`), because the
-  golden file Desktop checks against (`__tests__/setupGolden.test.ts`) still covers it.
+  `src/application/mcp/setupPrompt.ts` stays (versioned by `MCP_SETUP_PROMPT_VERSION`, now 3: Claude
+  Code's command with `--scope user`, Claude's prefilled link and ChatGPT's plugins page), because
+  Desktop still offers it and the golden file Desktop checks against
+  (`__tests__/setupGolden.test.ts`, `__golden__/setup-texts.json`) covers it, together with the
+  snippets, install links, both Claude connector links and ChatGPT's plugins page.
 - No separate list of connected apps: the cards' **Connected** badges (below) say which gallery
   apps are connected, and Settings lists every connection under Your connections. The badges
   appear only when the caller's connections are passed (Settings; the public page knows no
@@ -180,9 +191,8 @@ is the same on Settings → MCP and on the public `/oauth/mcp/setup` page. From 
   app (`MCP_SETUP_APPS`). Cursor, Gemini CLI and Windsurf / Antigravity have no card on Web (they
   connect through Other app); Desktop still shows them, and their builders stay in
   `src/application/mcp/setup.ts` for the golden file. Each card has a lettered
-  tile (no third-party logos), a one-line description, one primary action (Open Claude / Open
-  ChatGPT in a new tab, the VS Code install deeplink, or Copy command / URL)
-  and a **Connected** badge when one of the connections has the card's verified catalog `app_id`
+  tile (no third-party logos), a one-line description, one primary action and a **Connected**
+  badge when one of the connections has the card's verified catalog `app_id`
   (`claude`, `chatgpt`, `claude-code`, `codex`, `vscode`) with `verified_app: true`
   (see [App identity](#app-identity)). A self-asserted client name never earns the badge, Other
   app never shows it (its clients are not recognizable), and a catalog app without a card (Cursor)
@@ -191,15 +201,43 @@ is the same on Settings → MCP and on the public `/oauth/mcp/setup` page. From 
   `mcp-client-panel-<app>`); the grid packs densely so the rest of the row stays in place.
 - No **Having trouble?** section.
 
+The cards' actions, all built from the guide's server URL (Settings: the member status's
+`endpoint`; the public page: the configured MCP origin, from the override or server-info `mcp_url`):
+
+| Card | Primary action | In its steps |
+| --- | --- | --- |
+| Claude | **Add to Claude** (`mcp-add-to-claude`): `buildClaudeConnectorUrl`, Claude's prefill link `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=<encodeURIComponent(url)>`, in a new tab (`noopener noreferrer`) | The by-hand path (Customize → Connectors → + Add → Add custom connector) and the Team and Enterprise note. For a **workspace owner** (Settings only: `workspaceOwner`, the panel's `isOwner`) the note adds **Add for your Claude organization** (`mcp-add-to-claude-organization`, `buildClaudeOrganizationConnectorUrl`: the same link under `https://claude.ai/admin-settings/connectors`), described by a hint that only Owners of a Claude Team or Enterprise organization can use it. The public page knows no workspace, so it never shows it |
+| ChatGPT | **Copy URL** | **Open ChatGPT plugins** (`mcp-open-chatgpt-plugins`, `https://chatgpt.com/plugins`, new tab), then + → Add custom MCP server, name AppFlowy, URL, OAuth, confirm the warning, create and install the plugin, mention `@AppFlowy` in a chat; the note that workspace permissions may restrict who can add custom MCP servers |
+| Claude Code | **Copy command** (`claude mcp add --transport http --scope user appflowy <url>`) | The command with Copy, `--scope project` as the shared alternative, `/mcp` to sign in and to re-authenticate |
+| Codex | **Copy command** (`codex mcp add appflowy --url <url>`) | That command and `codex mcp login appflowy` with Copy, the `config.toml` entry, the app and IDE path |
+| VS Code | **Install in VS Code** (the `vscode:` deeplink) | The CLI command for bash and zsh |
+| Other app | **Copy URL** | The remote and `mcp-remote` configurations |
+
+The Claude links only fill the dialog in: the user checks the name and URL, selects Continue and
+signs in through AppFlowy's OAuth. ChatGPT, Claude Code and Codex have no link that adds a server,
+so their cards copy. Copy buttons share the guide's `copy` (toast "Copied to clipboard", or the copy
+failure toast).
+
 The vendor steps follow each vendor's documentation as of 2026-11 (the Notion parity research
-lists the sources): Claude's Customize → Connectors → + Add → Add custom connector with "Sign in
-now" and "Use Claude's published identity (Recommended)", plus Organization settings → Connectors
-→ Add → Custom → Web for Team and Enterprise owners; ChatGPT's custom app or custom MCP server
-under Settings → Apps (Plugins on some plans), worded loosely because the labels vary by plan,
-plus the admin note for Business, Enterprise and Edu; Claude Code's `--scope user` / `--scope
-project`; Codex's `codex mcp login`, `config.toml` (user and project) and the app/IDE path.
-Re-check them with vendor releases. Translated text
+lists the sources; the connector links, ChatGPT's plugins page and the commands were re-checked on
+2026-11-05): Claude's prefilled Add custom connector (or Customize → Connectors → + Add → Add custom
+connector by hand) with "Sign in now" and "Use Claude's published identity (Recommended)", plus
+Organization settings → Connectors → Add → Custom → Web for Team and Enterprise Owners; ChatGPT's
+plugins page with + → Add custom MCP server (the earlier Settings → Apps / Developer mode path is
+gone); Claude Code's `--scope user` (in the command) / `--scope project`; Codex's
+`codex mcp add` and `codex mcp login` (CLI and app), `config.toml` (user and project) and the
+app/IDE path. Re-check them with vendor releases. Translated text
 marks commands and paths with backticks, which `RichText` renders as inline code.
+
+### Self-hosted servers and vendor clouds
+
+Claude on the web, Claude Desktop and Cowork, and ChatGPT reach a custom MCP server from their
+vendor's cloud, not from the user's computer, so a self-hosted server must be reachable from the
+internet: allow Anthropic's egress ranges `160.79.104.0/21` and `153.61.208.0/20`, and OpenAI's
+published list (`https://openai.com/chatgpt-connectors.json`). A server that stays private can use
+the vendor's tunnel instead: Claude Enterprise's MCP tunnels (a research preview, by request) or
+OpenAI's Secure MCP Tunnel. Claude Code and Codex connect from the user's own machine, so they only
+need to reach the server from there. The guide's self-hosted note says this in short.
 
 ## Settings → MCP
 
@@ -384,8 +422,10 @@ The Web finds the MCP service's public origin (without `/mcp`) in this order
    Settings → MCP shows the service as unavailable only when Cloud, or the Web's own override,
    names an origin where nothing answers. The value is read through
    the shared server-info snapshot (`src/utils/server-info.ts`): inside `/app` the auth layer's
-   refresh loop provides it, and the public consent and setup pages run the loop themselves
-   (`useMcpConfiguration({ loadServerInfo: true })`).
+   refresh loop provides it, the public consent page runs the loop itself
+   (`useMcpConfiguration({ loadServerInfo: true })`, skipped when the override names the service),
+   and the public setup page always runs it (`useServerInfo`), because its self-hosted note needs
+   server-info's `self_hosted` even when the override names the service.
 3. Otherwise **not configured**: Settings hides the MCP tab, both `/oauth/mcp/*` pages say AI app
    connections are not configured. A Web that relies on server-info lands here when Cloud knows no
    MCP origin, or briefly after Cloud starts, before it has loaded its MCP policy.
@@ -599,13 +639,13 @@ against the wire types: a fixture missing a field the server always sends fails 
 
 | Suite | Covers |
 | --- | --- |
-| `src/application/mcp/__tests__/setup.test.ts` | Install links, commands and configs (exact strings, TOML escaping, Cursor's `appflowy` name), scopes, URL helpers |
+| `src/application/mcp/__tests__/setup.test.ts` | Install links, Claude's prefilled connector links (user and organization, the server URL kept as one parameter), commands and configs (exact strings, TOML escaping, Cursor's `appflowy` name), scopes, URL helpers |
 | `setupApps.test.ts`, `setupPrompt.test.ts` | Card order and catalog mapping; connected apps counted per app, never matched by a self-asserted name; the setup prompt's version, commands, browser steps, `get-self` check and setup page link |
 | `mcp-api.test.ts` | Bearer header, no refresh token in any body, query-form client IDs, error mapping, refresh and retry once on 401, owner disconnect refusing an empty filter, URL resolution order (override, server-info `mcp_url`, not configured), loading, keeping the answer through failed refreshes, `auto_approved_clients`, the approval policy body (`approval_mode` alone), server-shaped fixtures, a missing list rejected as `invalid_response`, an unknown approval policy read as undefined in the member status and the settings, retries bound to the same user, per-device (`family_id`) and `all=true` disconnects, app-level keys (approve, revoke, dismiss), connections across workspaces, `approved_apps`, `mcpApprovalKey`, `mcp_disabled` (from the reason or the error code) kept apart from outages |
 | `src/application/session/__tests__/sign_in.test.ts` | Form and MCP consent continuations: OAuth parameters kept out of login and callback URLs, return within the TTL, expired view after it, unrelated later login, cross-tab magic link, password recovery, legacy cleanup, only the canonical consent path (not case or percent-encoded variants) |
-| `src/components/mcp/**` | Identity badges; setup guide: cards and their actions, one expanded card after its own card, every snippet and copy, Connected badges, no setup prompt or Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
+| `src/components/mcp/**` | Identity badges; setup guide: cards and their actions (Add to Claude, the owner-only organization link, ChatGPT's Copy URL and plugins link), one expanded card after its own card, every snippet and copy, Connected badges, the self-hosted note, no setup prompt or Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
 | `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, NotFound at a percent-encoded path, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
-| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared), the license upgrade prompt (server-info `mcp_status: license_required`, with or without a reachable MCP service) |
+| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared), the license upgrade prompt (server-info `mcp_status: license_required`, with or without a reachable MCP service), Claude's organization link for owners only, the self-hosted note from server-info |
 | `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count or a newer load's), deep links that wait for server-info, routes |
 | `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
 | `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers (Web-CI's docker-runtime-test also fetches `/oauth/mcp/authorize` from both images and checks them) |

@@ -4,8 +4,10 @@ import { Link } from 'react-router-dom';
 
 import { MCP_SETTINGS_PATH } from '@/application/mcp/setup';
 import { toMcpServerUrl } from '@/application/services/domains/mcp';
+import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
+import { useIsSelfHosted, useServerInfo } from '@/components/app/hooks/useServerInfo';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { useMcpConfiguration } from '@/components/mcp/useMcpConfiguration';
 import { Progress } from '@/components/ui/progress';
@@ -14,11 +16,18 @@ import { Progress } from '@/components/ui/progress';
  * Public instructions for connecting AI apps (`/oauth/mcp/setup`). No sign-in
  * needed: the MCP server links here as its `resource_documentation`. The
  * server URL comes from `APPFLOWY_MCP_BASE_URL` or, without it, from Cloud
- * server-info, so the page waits for server-info first.
+ * server-info, so without the override the page waits for server-info first.
  */
 export function McpSetupPage() {
   const { t } = useTranslation();
-  const configuration = useMcpConfiguration({ loadServerInfo: true });
+
+  // The page runs the server-info loop itself, also when the override names the MCP service (the
+  // URL then shows at once): server-info says whether this server is self-hosted, for the guide's
+  // note that Claude's apps and ChatGPT must reach it from the internet.
+  useServerInfo(true, defaultConfig.baseURL);
+
+  const configuration = useMcpConfiguration();
+  const selfHosted = useIsSelfHosted();
   const title = t('mcp.setup.pageTitle');
 
   useEffect(() => {
@@ -59,7 +68,7 @@ export function McpSetupPage() {
             </div>
           ) : configuration.status === 'configured' ? (
             <>
-              <McpSetupGuide serverUrl={toMcpServerUrl(configuration.baseUrl)} />
+              <McpSetupGuide serverUrl={toMcpServerUrl(configuration.baseUrl)} selfHosted={selfHosted} />
               <p className='text-sm text-text-secondary'>{t('mcp.setup.signInNote')}</p>
               <Link
                 to={MCP_SETTINGS_PATH}

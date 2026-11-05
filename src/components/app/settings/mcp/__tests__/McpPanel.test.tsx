@@ -12,7 +12,9 @@ import type {
   McpWorkspaceConnection,
   McpWorkspaceSettings,
 } from '@/application/services/domains/mcp';
+import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 import { notify } from '@/components/_shared/notify';
+import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
 import McpPanel from '../McpPanel';
 import { resetMcpPendingRequestCountsForTests, useMcpPendingRequestCount } from '../pendingRequestCount';
@@ -1446,6 +1448,48 @@ describe('McpPanel', () => {
       fireEvent.click(screen.getByTestId('mcp-approve-request-0'));
 
       await waitFor(() => expect(text('badge')).toBe('1'));
+    });
+  });
+
+  describe('setup guide', () => {
+    afterEach(() => {
+      act(() => updateServerInfo(defaultConfig.baseURL, SERVER_INFO_LOADING));
+    });
+
+    it('offers an owner Claude’s organization-wide link and a member only the personal one', async () => {
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
+      const { unmount } = render(<McpPanel workspaceId={WS} />);
+
+      fireEvent.click(await screen.findByTestId('mcp-client-tab-claude'));
+      expect(screen.getByTestId('mcp-add-to-claude-organization').getAttribute('href')).toContain(
+        'https://claude.ai/admin-settings/connectors?modal=add-custom-connector'
+      );
+      unmount();
+
+      api.getMcpMemberStatus.mockResolvedValue(memberStatus());
+      render(<McpPanel workspaceId={WS} />);
+      fireEvent.click(await screen.findByTestId('mcp-client-tab-claude'));
+      expect(screen.getByTestId('mcp-add-to-claude').getAttribute('href')).toContain(
+        'https://claude.ai/customize/connectors?modal=add-custom-connector'
+      );
+      expect(screen.queryByTestId('mcp-add-to-claude-organization')).toBeNull();
+    });
+
+    it('notes on a self-hosted server that Claude and ChatGPT must reach it from the internet', async () => {
+      render(<McpPanel workspaceId={WS} />);
+
+      expect(await screen.findByTestId('mcp-setup-guide')).toBeTruthy();
+      expect(screen.queryByTestId('mcp-setup-self-hosted-note')).toBeNull();
+
+      act(() =>
+        updateServerInfo(defaultConfig.baseURL, {
+          status: 'available',
+          info: { enable_page_history: true, self_hosted: true },
+        })
+      );
+      expect(screen.getByTestId('mcp-setup-self-hosted-note').textContent).toContain(
+        translations.mcp.setup.selfHosted.note
+      );
     });
   });
 

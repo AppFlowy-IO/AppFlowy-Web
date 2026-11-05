@@ -1,5 +1,6 @@
 import {
   buildClaudeCodeCommand,
+  buildClaudeConnectorUrl,
   buildCodexCommand,
   buildGeminiCommand,
   buildMcpRemoteCommand,
@@ -14,8 +15,8 @@ describe('buildMcpSetupPrompt', () => {
   const prompt = buildMcpSetupPrompt(URL, { setupPageUrl: SETUP_PAGE });
 
   it('names its version and this deployment’s server URL', () => {
-    expect(MCP_SETUP_PROMPT_VERSION).toBe(2);
-    expect(prompt.split('\n')[0]).toContain('(AppFlowy setup prompt v2)');
+    expect(MCP_SETUP_PROMPT_VERSION).toBe(3);
+    expect(prompt.split('\n')[0]).toContain('(AppFlowy setup prompt v3)');
     expect(prompt).toContain(`Server URL: ${URL}`);
     expect(prompt).toContain('There is no API key, and you never need my AppFlowy password.');
   });
@@ -31,8 +32,10 @@ describe('buildMcpSetupPrompt', () => {
       buildMcpRemoteCommand(URL),
       `{"mcpServers":{"appflowy":{"url":"${URL}"}}} to ~/.cursor/mcp.json`,
       `{"mcpServers":{"appflowy":{"serverUrl":"${URL}"}}}`,
-      '`--scope user`',
     ].forEach((text) => expect(prompt).toContain(text));
+    expect(prompt).toContain(
+      `Claude Code: run \`${buildClaudeCodeCommand(URL)}\`, which makes it available in every project.`
+    );
   });
 
   it('gives the VS Code command for the shells its quoting works in, and a config file for the others', () => {
@@ -52,14 +55,21 @@ describe('buildMcpSetupPrompt', () => {
     expect(prompt).toContain('add the server again under another name, such as appflowy-work');
   });
 
-  it('points apps the agent cannot configure to the setup page, when known', () => {
+  it('has the user add Claude through its prefilled link and ChatGPT as a custom MCP server', () => {
     expect(prompt).toContain(
-      `custom connector (Claude) or app (ChatGPT) with the URL above, and point me to ${SETUP_PAGE}`
+      `in Claude with ${buildClaudeConnectorUrl(URL)}, which opens Add custom connector with AppFlowy filled in;`
     );
+    expect(prompt).toContain(
+      'in ChatGPT at https://chatgpt.com/plugins with + then Add custom MCP server, the URL above and OAuth;'
+    );
+  });
+
+  it('points apps the agent cannot configure to the setup page, when known', () => {
+    expect(prompt).toContain(`as a custom connector with the URL above, and point me to ${SETUP_PAGE}`);
 
     const withoutPage = buildMcpSetupPrompt(URL);
 
-    expect(withoutPage).toContain('custom connector (Claude) or app (ChatGPT) with the URL above.');
+    expect(withoutPage).toContain('as a custom connector with the URL above.');
     expect(withoutPage).not.toContain('point me to');
   });
 

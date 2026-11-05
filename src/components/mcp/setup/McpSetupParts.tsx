@@ -1,7 +1,8 @@
-import { Fragment } from 'react';
+import { Fragment, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { McpSnippetId } from '@/application/mcp/setup';
+import { ReactComponent as ArrowUpRightIcon } from '@/assets/icons/arrow_up_right.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { Button } from '@/components/ui/button';
@@ -60,8 +61,18 @@ export function SetupSteps({ items }: { items: string[] }) {
   );
 }
 
-/** An aside such as "Using Claude Team or Enterprise?". */
-export function SetupNote({ title, text, testId }: { title: string; text: string; testId?: string }) {
+/** An aside such as "Using Claude Team or Enterprise?"; `children` are actions under its text. */
+export function SetupNote({
+  title,
+  text,
+  testId,
+  children,
+}: {
+  title: string;
+  text: string;
+  testId?: string;
+  children?: ReactNode;
+}) {
   return (
     <div
       role='note'
@@ -74,8 +85,41 @@ export function SetupNote({ title, text, testId }: { title: string; text: string
         <span>
           <RichText text={text} />
         </span>
+        {children && <div className='flex flex-wrap items-center gap-x-3 gap-y-2 pt-2'>{children}</div>}
       </div>
     </div>
+  );
+}
+
+/** A vendor page in a new tab, marked as leaving AppFlowy. */
+export function ExternalAction({
+  href,
+  onOpen,
+  describedBy,
+  testId,
+  children,
+}: {
+  href: string;
+  onOpen?: () => void;
+  /** Id of text that qualifies the action, such as who can use it. */
+  describedBy?: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <Button asChild variant='outline' size='sm'>
+      <a
+        href={href}
+        target='_blank'
+        rel='noopener noreferrer'
+        onClick={onOpen}
+        aria-describedby={describedBy}
+        data-testid={testId}
+      >
+        {children}
+        <ArrowUpRightIcon aria-hidden='true' className='h-5 w-5' />
+      </a>
+    </Button>
   );
 }
 

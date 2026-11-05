@@ -3,6 +3,8 @@ import { SettingMenuItem } from '@/application/types';
 
 import {
   buildClaudeCodeCommand,
+  buildClaudeConnectorUrl,
+  buildClaudeOrganizationConnectorUrl,
   buildCodexCommand,
   buildCodexConfigToml,
   buildCodexLoginCommand,
@@ -15,12 +17,14 @@ import {
   buildServerUrlJson,
   buildVsCodeCliCommand,
   buildVsCodeInstallUrl,
-  CHATGPT_SETTINGS_URL,
+  CHATGPT_PLUGINS_URL,
   CLAUDE_CONNECTORS_URL,
+  CLAUDE_ORGANIZATION_CONNECTORS_URL,
   describeRedirectUri,
   getMcpClientDisplayName,
   isLoopbackHost,
   isSafeMcpRedirectUrl,
+  MCP_CONNECTOR_NAME,
   MCP_SERVER_NAME,
   MCP_SETTINGS_PATH,
   MCP_SETUP_PAGE_PATH,
@@ -68,7 +72,9 @@ describe('MCP setup builders', () => {
   });
 
   it('builds the CLI commands for Claude Code, Codex and Gemini CLI', () => {
-    expect(buildClaudeCodeCommand(URL)).toBe('claude mcp add --transport http appflowy https://mcp.appflowy.com/mcp');
+    expect(buildClaudeCodeCommand(URL)).toBe(
+      'claude mcp add --transport http --scope user appflowy https://mcp.appflowy.com/mcp'
+    );
     expect(buildCodexCommand(URL)).toBe('codex mcp add appflowy --url https://mcp.appflowy.com/mcp');
     expect(buildCodexLoginCommand()).toBe('codex mcp login appflowy');
     expect(buildGeminiCommand(URL)).toBe('gemini mcp add --transport http appflowy https://mcp.appflowy.com/mcp');
@@ -92,7 +98,7 @@ describe('MCP setup builders', () => {
 
   it('quotes shell arguments only when a URL contains shell syntax', () => {
     expect(buildClaudeCodeCommand("https://example.com/mcp?a=1&b='x'")).toBe(
-      `claude mcp add --transport http appflowy 'https://example.com/mcp?a=1&b='\\''x'\\'''`
+      `claude mcp add --transport http --scope user appflowy 'https://example.com/mcp?a=1&b='\\''x'\\'''`
     );
     expect(buildVsCodeCliCommand("https://example.com/it's")).toBe(
       `code --add-mcp '{"name":"appflowy","type":"http","url":"https://example.com/it'\\''s"}'`
@@ -140,8 +146,31 @@ describe('MCP setup builders', () => {
 
   it('links to the vendor pages and the public setup page', () => {
     expect(CLAUDE_CONNECTORS_URL).toBe('https://claude.ai/customize/connectors');
-    expect(CHATGPT_SETTINGS_URL).toBe('https://chatgpt.com/#settings');
+    expect(CLAUDE_ORGANIZATION_CONNECTORS_URL).toBe('https://claude.ai/admin-settings/connectors');
+    expect(CHATGPT_PLUGINS_URL).toBe('https://chatgpt.com/plugins');
     expect(MCP_SETUP_PAGE_PATH).toBe('/oauth/mcp/setup');
+  });
+
+  it("opens Claude's Add custom connector dialog with AppFlowy filled in, for a user or an organization", () => {
+    expect(buildClaudeConnectorUrl(URL)).toBe(
+      'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=https%3A%2F%2Fmcp.appflowy.com%2Fmcp'
+    );
+    expect(buildClaudeOrganizationConnectorUrl(URL)).toBe(
+      'https://claude.ai/admin-settings/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=https%3A%2F%2Fmcp.appflowy.com%2Fmcp'
+    );
+
+    // The server URL survives as one parameter, whatever it contains.
+    const odd = "https://mcp.exämple.com/mcp?a=1&b='x'#f";
+
+    [buildClaudeConnectorUrl(odd), buildClaudeOrganizationConnectorUrl(odd)].forEach((link) => {
+      const parsed = new globalThis.URL(link);
+
+      expect(Array.from(parsed.searchParams.keys())).toEqual(['modal', 'connectorName', 'connectorUrl']);
+      expect(parsed.searchParams.get('modal')).toBe('add-custom-connector');
+      expect(parsed.searchParams.get('connectorName')).toBe(MCP_CONNECTOR_NAME);
+      expect(parsed.searchParams.get('connectorUrl')).toBe(odd);
+      expect(parsed.hash).toBe('');
+    });
   });
 });
 

@@ -3,7 +3,8 @@
  *
  * Every builder takes the canonical server URL (`<APPFLOWY_MCP_BASE_URL>/mcp`,
  * or the `endpoint` the server reports for a workspace) and returns the exact
- * text a user pastes or the link a button opens. See doc/MCP.md.
+ * text a user pastes or the link a button opens. The vendor links and
+ * commands follow the vendors' documentation as of 2026-11-05. See doc/MCP.md.
  *
  * AppFlowy Desktop ports these builders byte for byte (AppFlowy-Premium
  * frontend/appflowy_flutter/lib/features/mcp/logic/mcp_setup.dart).
@@ -38,14 +39,20 @@ export const MCP_SNIPPET_IDS = [
 
 export type McpSnippetId = (typeof MCP_SNIPPET_IDS)[number];
 
-/** Where Claude (web and desktop) manages custom connectors. */
+/** The name Claude's connector prefill gives the server; the steps ask for the same name. */
+export const MCP_CONNECTOR_NAME = 'AppFlowy';
+
+/** Where Claude (web, desktop and Cowork) manages a user's custom connectors. */
 export const CLAUDE_CONNECTORS_URL = 'https://claude.ai/customize/connectors';
 
+/** Where Owners of a Claude Team or Enterprise organization manage its connectors. */
+export const CLAUDE_ORGANIZATION_CONNECTORS_URL = 'https://claude.ai/admin-settings/connectors';
+
 /**
- * ChatGPT on the web. `#settings` has opened its settings dialog (not re-verified
- * for current builds); a fragment ChatGPT ignores still opens ChatGPT.
+ * ChatGPT's plugins page, where + then "Add custom MCP server" adds a server.
+ * ChatGPT has no link that fills a server in, so the guide copies the URL.
  */
-export const CHATGPT_SETTINGS_URL = 'https://chatgpt.com/#settings';
+export const CHATGPT_PLUGINS_URL = 'https://chatgpt.com/plugins';
 
 /**
  * Deep link to Settings > MCP (`SettingMenuItem.AI_APPS`). `/app` keeps the
@@ -106,8 +113,33 @@ export function buildVsCodeCliCommand(url: string): string {
   return `code --add-mcp ${shellQuote(JSON.stringify({ name: MCP_SERVER_NAME, type: 'http', url }))}`;
 }
 
+function claudeAddConnectorUrl(page: string, url: string): string {
+  const name = encodeURIComponent(MCP_CONNECTOR_NAME);
+
+  return `${page}?modal=add-custom-connector&connectorName=${name}&connectorUrl=${encodeURIComponent(url)}`;
+}
+
+/**
+ * Opens Claude's Add custom connector dialog (Customize → Connectors) with the
+ * name and server URL filled in. It only fills them in: the user confirms,
+ * then signs in through AppFlowy's OAuth.
+ */
+export function buildClaudeConnectorUrl(url: string): string {
+  return claudeAddConnectorUrl(CLAUDE_CONNECTORS_URL, url);
+}
+
+/**
+ * The same dialog in Organization settings → Connectors, which adds the
+ * connector for a whole Claude Team or Enterprise organization. Only its
+ * Owners can use it; each member still connects and signs in.
+ */
+export function buildClaudeOrganizationConnectorUrl(url: string): string {
+  return claudeAddConnectorUrl(CLAUDE_ORGANIZATION_CONNECTORS_URL, url);
+}
+
+/** Adds the server for every project (`--scope user`); `/mcp` in Claude Code then signs in. */
 export function buildClaudeCodeCommand(url: string): string {
-  return `claude mcp add --transport http ${MCP_SERVER_NAME} ${shellArg(url)}`;
+  return `claude mcp add --transport http --scope user ${MCP_SERVER_NAME} ${shellArg(url)}`;
 }
 
 export function buildCodexCommand(url: string): string {
@@ -316,7 +348,9 @@ export interface McpClientNaming {
  * gallery cards and app grouping all go through this, so a client counts as
  * an app only when the catalog vouches for it.
  */
-export function trustedCatalogAppId(client?: Pick<McpClientNaming, 'app_id' | 'verified_app'> | null): string | undefined {
+export function trustedCatalogAppId(
+  client?: Pick<McpClientNaming, 'app_id' | 'verified_app'> | null
+): string | undefined {
   return client?.verified_app === true ? client.app_id?.trim() || undefined : undefined;
 }
 

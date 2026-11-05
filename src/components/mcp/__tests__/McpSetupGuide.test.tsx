@@ -1,7 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import translations from '@/@types/translations/en.json';
-import { buildCodexConfigToml, buildVsCodeInstallUrl } from '@/application/mcp/setup';
+import {
+  buildClaudeConnectorUrl,
+  buildClaudeOrganizationConnectorUrl,
+  buildCodexConfigToml,
+  buildVsCodeInstallUrl,
+} from '@/application/mcp/setup';
 import { MCP_SETUP_APPS, type McpSetupConnection } from '@/application/mcp/setupApps';
 import { notify } from '@/components/_shared/notify';
 import { copyTextToClipboard } from '@/utils/copy';
@@ -86,6 +91,32 @@ describe('McpSetupGuide', () => {
     expect(screen.queryByTestId('mcp-setup-troubleshooting')).toBeNull();
   });
 
+  describe('self-hosted server', () => {
+    it('says Claude’s apps and ChatGPT must reach the server from the internet or a tunnel', () => {
+      render(<McpSetupGuide serverUrl={SERVER_URL} selfHosted />);
+
+      const note = screen.getByTestId('mcp-setup-self-hosted-note');
+
+      expect(note.getAttribute('role')).toBe('note');
+      expect(note.textContent).toContain(setup.selfHosted.title);
+      expect(note.textContent).toContain(setup.selfHosted.note);
+      expect(setup.selfHosted.note).toContain('reachable from the internet');
+      expect(setup.selfHosted.note).toContain('Claude Code and Codex connect from your computer');
+      // Above the gallery, so it is read before choosing an app.
+      expect(
+        note.compareDocumentPosition(screen.getByTestId('mcp-setup-gallery')) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+
+    it('is not shown for AppFlowy Cloud or while the hosting mode is unknown', () => {
+      const { rerender } = render(<McpSetupGuide serverUrl={SERVER_URL} />);
+
+      expect(screen.queryByTestId('mcp-setup-self-hosted-note')).toBeNull();
+      rerender(<McpSetupGuide serverUrl={SERVER_URL} selfHosted={false} />);
+      expect(screen.queryByTestId('mcp-setup-self-hosted-note')).toBeNull();
+    });
+  });
+
   describe('gallery', () => {
     it('shows a card per app with its name and description, none expanded', () => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
@@ -143,12 +174,16 @@ describe('McpSetupGuide', () => {
       expect(openPanels()).toEqual([]);
     });
 
-    it('opens Claude’s connectors in a new tab and shows the steps, including Team and Enterprise', () => {
+    it('adds AppFlowy to Claude through its prefilled Add custom connector link, then shows the steps', () => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
-      const link = screen.getByTestId('mcp-open-claude-connectors');
+      const link = screen.getByTestId('mcp-add-to-claude');
 
-      expect(link.getAttribute('href')).toBe('https://claude.ai/customize/connectors');
+      expect(link.textContent).toBe(setup.claude.action);
+      expect(link.getAttribute('href')).toBe(
+        'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=https%3A%2F%2Fmcp.example.com%2Fmcp'
+      );
+      expect(link.getAttribute('href')).toBe(buildClaudeConnectorUrl(SERVER_URL));
       expect(link.getAttribute('target')).toBe('_blank');
       expect(link.getAttribute('rel')).toBe('noopener noreferrer');
       fireEvent.click(link);
@@ -160,27 +195,80 @@ describe('McpSetupGuide', () => {
           .getAllByRole('listitem')
           .map((item) => item.textContent)
       ).toEqual([setup.claude.step1, setup.claude.step2, setup.claude.step3, setup.claude.step4]);
-      expect(setup.claude.step1).toContain('Customize → Connectors');
+      expect(setup.claude.step1).toContain('Add to Claude');
       expect(setup.claude.step3).toContain("Use Claude's published identity (Recommended)");
+      // Without the link (or when it fails), the user adds it by hand.
+      expect(panel.textContent).toContain('Customize → Connectors, select + Add, then Add custom connector');
+      expect(panel.textContent).toContain('Cowork');
       const team = within(panel).getByTestId('mcp-setup-team-note');
 
       expect(team.textContent).toContain(setup.claude.teamTitle);
       expect(team.textContent).toContain('Organization settings → Connectors → Add → Custom → Web');
     });
 
-    it('opens ChatGPT and explains plans and Business, Enterprise and Edu workspaces', () => {
+    it('offers no organization-wide Claude link unless the viewer owns the workspace', () => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
 
-      const link = screen.getByTestId('mcp-open-chatgpt');
+      toggle('claude');
+      expect(screen.queryByTestId('mcp-add-to-claude-organization')).toBeNull();
+      expect(screen.getByTestId('mcp-client-panel-claude').querySelectorAll('a[href]')).toHaveLength(0);
+    });
 
-      expect(link.getAttribute('href')).toBe('https://chatgpt.com/#settings');
+    it('offers a workspace owner the organization-wide Claude link, for Claude Team and Enterprise Owners only', () => {
+      render(<McpSetupGuide serverUrl={SERVER_URL} workspaceOwner />);
+
+      toggle('claude');
+      const team = screen.getByTestId('mcp-setup-team-note');
+      const link = within(team).getByTestId('mcp-add-to-claude-organization');
+
+      expect(link.textContent).toBe(setup.claude.organizationAction);
+      expect(link.getAttribute('href')).toBe(
+        'https://claude.ai/admin-settings/connectors?modal=add-custom-connector&connectorName=AppFlowy&connectorUrl=https%3A%2F%2Fmcp.example.com%2Fmcp'
+      );
+      expect(link.getAttribute('href')).toBe(buildClaudeOrganizationConnectorUrl(SERVER_URL));
+      expect(link.getAttribute('target')).toBe('_blank');
       expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-      fireEvent.click(link);
+
+      const hint = document.getElementById(link.getAttribute('aria-describedby') ?? '');
+
+      expect(hint?.textContent).toBe(setup.claude.organizationHint);
+      expect(setup.claude.organizationHint).toContain('Owners of a Claude Team or Enterprise organization');
+      // The card keeps its single action: the personal link.
+      expect(within(card('claude')).queryByTestId('mcp-add-to-claude-organization')).toBeNull();
+    });
+
+    it('copies the server URL for ChatGPT and opens its custom MCP server steps with the plugins page', async () => {
+      render(<McpSetupGuide serverUrl={SERVER_URL} />);
+
+      await click('mcp-setup-app-action-chatgpt');
+      expect(screen.getByTestId('mcp-setup-app-action-chatgpt').textContent).toBe(setup.copyUrl);
+      expect(copy).toHaveBeenCalledWith(SERVER_URL);
+      expect(notify.success).toHaveBeenCalledWith(setup.copied);
 
       const panel = screen.getByTestId('mcp-client-panel-chatgpt');
+      const link = within(panel).getByTestId('mcp-open-chatgpt-plugins');
 
-      expect(within(panel).getByText(setup.chatgpt.note)).toBeTruthy();
-      expect(within(panel).getByTestId('mcp-setup-team-note').textContent).toContain(setup.chatgpt.teamTitle);
+      expect(link.getAttribute('href')).toBe('https://chatgpt.com/plugins');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(
+        within(panel)
+          .getAllByRole('listitem')
+          .map((item) => item.textContent)
+      ).toEqual([
+        setup.chatgpt.step1,
+        setup.chatgpt.step2,
+        setup.chatgpt.step3,
+        'In a chat, mention @AppFlowy to use it.',
+      ]);
+      expect(setup.chatgpt.step1).toContain('Add custom MCP server');
+      expect(setup.chatgpt.step2).toContain('choose OAuth');
+      // The steps before ChatGPT's plugins replaced Developer mode are gone.
+      expect(panel.textContent).not.toMatch(/Developer mode|Settings → Apps/);
+      const team = within(panel).getByTestId('mcp-setup-team-note');
+
+      expect(team.textContent).toContain(setup.chatgpt.teamTitle);
+      expect(team.textContent).toContain('Workspace permissions may restrict who can add custom MCP servers');
     });
 
     it('installs in VS Code through a deeplink, then explains signing in', () => {
@@ -197,8 +285,9 @@ describe('McpSetupGuide', () => {
     });
 
     it.each([
-      ['claude-code', `claude mcp add --transport http appflowy ${SERVER_URL}`],
+      ['claude-code', `claude mcp add --transport http --scope user appflowy ${SERVER_URL}`],
       ['codex', `codex mcp add appflowy --url ${SERVER_URL}`],
+      ['chatgpt', SERVER_URL],
       ['other', SERVER_URL],
     ])('copies %s’s setup from its card and opens the steps', async (app, text) => {
       render(<McpSetupGuide serverUrl={SERVER_URL} />);
@@ -210,7 +299,7 @@ describe('McpSetupGuide', () => {
     });
 
     it.each([
-      ['claude-code', 'claude-code', `claude mcp add --transport http appflowy ${SERVER_URL}`],
+      ['claude-code', 'claude-code', `claude mcp add --transport http --scope user appflowy ${SERVER_URL}`],
       ['codex', 'codex', `codex mcp add appflowy --url ${SERVER_URL}`],
       ['codex', 'codex-login', 'codex mcp login appflowy'],
       ['codex', 'codex-toml', buildCodexConfigToml(SERVER_URL)],
@@ -230,12 +319,12 @@ describe('McpSetupGuide', () => {
       const scope = screen.getByTestId('mcp-setup-claude-code-scope');
 
       expect(scope.textContent).toBe(
-        'Add --scope user to use AppFlowy in every project, or --scope project to share it with your team through .mcp.json (each teammate still signs in).'
+        '--scope user makes AppFlowy available in every project. To share it with your team through .mcp.json instead, use --scope project (each teammate still signs in).'
       );
       expect(Array.from(scope.querySelectorAll('code')).map((code) => code.textContent)).toEqual([
         '--scope user',
-        '--scope project',
         '.mcp.json',
+        '--scope project',
       ]);
       expect(screen.getByTestId('mcp-client-panel-claude-code').textContent).toContain(
         'To sign in again later, run /mcp, choose appflowy and select Re-authenticate.'

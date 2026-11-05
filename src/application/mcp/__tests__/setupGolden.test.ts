@@ -5,7 +5,8 @@
  * ports these builders (frontend/appflowy_flutter/lib/features/mcp/logic/
  * mcp_setup.dart) and checks them against a copy of this golden file
  * (test/features/mcp/web_setup_golden.json). Any change to a snippet, install
- * link or the setup prompt fails here first. Then:
+ * or Claude connector link, ChatGPT's plugins page or the setup prompt fails
+ * here first. Then:
  *
  * 1. Bump MCP_SETUP_PROMPT_VERSION if the prompt's instructions changed.
  * 2. Regenerate: UPDATE_GOLDEN=1 pnpm exec jest src/application/mcp/__tests__/setupGolden.test.ts
@@ -15,10 +16,13 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  buildClaudeConnectorUrl,
+  buildClaudeOrganizationConnectorUrl,
   buildCursorInstallUrl,
   buildMcpRemoteCommand,
   buildMcpSnippets,
   buildVsCodeInstallUrl,
+  CHATGPT_PLUGINS_URL,
   MCP_SNIPPET_IDS,
 } from '../setup';
 import { buildMcpSetupPrompt, MCP_SETUP_PROMPT_VERSION } from '../setupPrompt';
@@ -43,6 +47,7 @@ function buildGolden() {
       ' Regenerate with UPDATE_GOLDEN=1 (see setupGolden.test.ts) and copy to Desktop.',
     promptVersion: MCP_SETUP_PROMPT_VERSION,
     setupPageUrl: SETUP_PAGE_URL,
+    chatgptPluginsUrl: CHATGPT_PLUGINS_URL,
     cases: Object.fromEntries(
       SERVER_URLS.map((url) => {
         const snippets = buildMcpSnippets(url);
@@ -51,6 +56,8 @@ function buildGolden() {
           url,
           {
             snippets: Object.fromEntries(MCP_SNIPPET_IDS.map((id) => [id, snippets[id]])),
+            claude: buildClaudeConnectorUrl(url),
+            claudeOrganization: buildClaudeOrganizationConnectorUrl(url),
             cursor: buildCursorInstallUrl(url),
             vscode: buildVsCodeInstallUrl(url),
             mcpRemote: buildMcpRemoteCommand(url),

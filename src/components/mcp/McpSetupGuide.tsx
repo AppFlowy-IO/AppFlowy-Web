@@ -1,11 +1,11 @@
-import { Fragment, ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  buildClaudeConnectorUrl,
+  buildClaudeOrganizationConnectorUrl,
   buildMcpSnippets,
   buildVsCodeInstallUrl,
-  CHATGPT_SETTINGS_URL,
-  CLAUDE_CONNECTORS_URL,
 } from '@/application/mcp/setup';
 import {
   connectedSetupApps,
@@ -14,13 +14,12 @@ import {
   type McpSetupAppId,
   type McpSetupConnection,
 } from '@/application/mcp/setupApps';
-import { ReactComponent as ArrowUpRightIcon } from '@/assets/icons/arrow_up_right.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { notify } from '@/components/_shared/notify';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { McpSetupAppCard } from '@/components/mcp/setup/McpSetupAppCard';
 import { McpSetupAppSteps } from '@/components/mcp/setup/McpSetupAppSteps';
-import type { McpSetupCopy } from '@/components/mcp/setup/McpSetupParts';
+import { ExternalAction, type McpSetupCopy, SetupNote } from '@/components/mcp/setup/McpSetupParts';
 import { SETUP_APP_TEXT_KEYS } from '@/components/mcp/setup/setupAppText';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +49,18 @@ export interface McpSetupGuideProps {
    * Omit where they are unknown, such as on the public setup page.
    */
   connections?: readonly McpSetupConnection[];
+  /**
+   * The viewer owns this workspace (Settings only): Claude's steps also offer
+   * adding AppFlowy for the viewer's whole Claude organization, which only
+   * Owners of a Claude Team or Enterprise organization can do.
+   */
+  workspaceOwner?: boolean;
+  /**
+   * Server-info says this server is self-hosted: a note says that Claude's apps
+   * and ChatGPT connect from their vendors' clouds, so they must reach it from
+   * the internet or through the vendor's tunnel.
+   */
+  selfHosted?: boolean;
   className?: string;
 }
 
@@ -58,12 +69,13 @@ export interface McpSetupGuideProps {
  * and a gallery of apps whose cards expand into copyable steps (a connected
  * app's card says so).
  */
-export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGuideProps) {
+export function McpSetupGuide({ serverUrl, connections, workspaceOwner, selfHosted, className }: McpSetupGuideProps) {
   const { t } = useTranslation();
   const inputId = useId();
   const idPrefix = useId();
   const url = serverUrl.trim();
   const snippets = useMemo(() => buildMcpSnippets(url), [url]);
+  const organizationConnectorUrl = workspaceOwner ? buildClaudeOrganizationConnectorUrl(url) : undefined;
   const connectedApps = useMemo(() => summarizeConnectedApps(connections ?? []), [connections]);
   const connectedCards = useMemo(() => connectedSetupApps(connectedApps), [connectedApps]);
   const [selected, setSelected] = useState<McpSetupAppId | null>(null);
@@ -100,9 +112,9 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
   };
 
   /**
-   * The card's one primary action: the vendor's page, a one-click install, or a copy. Each also
-   * opens the steps. `JSX.Element`, not `ReactNode`, so a new gallery app without a case fails to
-   * compile instead of rendering a card without its action.
+   * The card's one primary action: a vendor link that fills AppFlowy in, a one-click install, or a
+   * copy. Each also opens the steps. `JSX.Element`, not `ReactNode`, so a new gallery app without a
+   * case fails to compile instead of rendering a card without its action.
    */
   const primaryAction = (app: McpSetupAppId): JSX.Element => {
     const copyAction = (text: string, label: string) => (
@@ -123,16 +135,13 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
     switch (app) {
       case 'claude':
         return (
-          <ExternalAction href={CLAUDE_CONNECTORS_URL} onOpen={() => select(app)} testId='mcp-open-claude-connectors'>
+          <ExternalAction href={buildClaudeConnectorUrl(url)} onOpen={() => select(app)} testId='mcp-add-to-claude'>
             {t('mcp.setup.claude.action')}
           </ExternalAction>
         );
       case 'chatgpt':
-        return (
-          <ExternalAction href={CHATGPT_SETTINGS_URL} onOpen={() => select(app)} testId='mcp-open-chatgpt'>
-            {t('mcp.setup.chatgpt.action')}
-          </ExternalAction>
-        );
+        // ChatGPT has no link that fills a server in; its steps open the plugins page.
+        return copyAction(url, t('mcp.setup.copyUrl'));
       case 'vscode':
         return (
           <Button asChild variant='outline' size='sm'>
@@ -172,6 +181,14 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
         </div>
       </div>
 
+      {selfHosted && (
+        <SetupNote
+          title={t('mcp.setup.selfHosted.title')}
+          text={t('mcp.setup.selfHosted.note')}
+          testId='mcp-setup-self-hosted-note'
+        />
+      )}
+
       <div className={GALLERY_GRID_CLASS} data-testid='mcp-setup-gallery'>
         {MCP_SETUP_APPS.map((app) => {
           const textKey = SETUP_APP_TEXT_KEYS[app];
@@ -203,37 +220,19 @@ export function McpSetupGuide({ serverUrl, connections, className }: McpSetupGui
                   <p id={titleId} className='text-sm font-medium text-text-primary'>
                     {t('mcp.setup.stepsTitle', { name, ...RAW_INTERPOLATION })}
                   </p>
-                  <McpSetupAppSteps app={app} snippets={snippets} onCopy={copy} />
+                  <McpSetupAppSteps
+                    app={app}
+                    snippets={snippets}
+                    onCopy={copy}
+                    organizationConnectorUrl={organizationConnectorUrl}
+                  />
                 </div>
               )}
             </Fragment>
           );
         })}
       </div>
-
     </div>
-  );
-}
-
-/** A vendor page in a new tab, marked as leaving AppFlowy. */
-function ExternalAction({
-  href,
-  onOpen,
-  testId,
-  children,
-}: {
-  href: string;
-  onOpen: () => void;
-  testId: string;
-  children: ReactNode;
-}) {
-  return (
-    <Button asChild variant='outline' size='sm'>
-      <a href={href} target='_blank' rel='noopener noreferrer' onClick={onOpen} data-testid={testId}>
-        {children}
-        <ArrowUpRightIcon aria-hidden='true' className='h-5 w-5' />
-      </a>
-    </Button>
   );
 }
 

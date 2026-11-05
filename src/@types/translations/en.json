@@ -5479,34 +5479,41 @@
       "copyCommand": "Copy command",
       "copyUrl": "Copy URL",
       "stepsTitle": "Set up {{name}}",
+      "selfHosted": {
+        "title": "Claude and ChatGPT must reach this server",
+        "note": "Claude (web, desktop and Cowork) and ChatGPT connect from Anthropic's and OpenAI's clouds, so this self-hosted server must be reachable from the internet or through the vendor's tunnel (Claude Enterprise MCP tunnels, OpenAI Secure MCP Tunnel). Claude Code and Codex connect from your computer."
+      },
       "claude": {
         "name": "Claude",
-        "description": "Custom connector for web, desktop and mobile",
-        "action": "Open Claude",
-        "step1": "In Claude, open Customize → Connectors, select + Add, then Add custom connector.",
-        "step2": "Name it AppFlowy, paste the server URL and select Continue.",
+        "description": "Custom connector for web, desktop and Cowork",
+        "action": "Add to Claude",
+        "step1": "Select Add to Claude. Claude opens Add custom connector with the name AppFlowy and the server URL filled in.",
+        "step2": "Check them and select Continue.",
         "step3": "Choose Sign in now and keep Use Claude's published identity (Recommended).",
         "step4": "Approve access in the AppFlowy window that opens.",
-        "note": "The connector then also works in Claude's desktop and mobile apps. Free plans allow one custom connector.",
+        "manual": "Or add it yourself: in Claude, open Customize → Connectors, select + Add, then Add custom connector, name it AppFlowy and paste the server URL.",
+        "note": "The connector then also works in Claude's desktop and mobile apps and in Cowork. Free plans allow one custom connector.",
         "teamTitle": "Using Claude Team or Enterprise?",
-        "teamNote": "Only owners can add custom connectors. An owner adds AppFlowy once at Organization settings → Connectors → Add → Custom → Web, with the server URL. Each member then selects Connect next to AppFlowy under Customize → Connectors and signs in to AppFlowy."
+        "teamNote": "Only Owners of the Claude organization can add custom connectors. An Owner adds AppFlowy once at Organization settings → Connectors → Add → Custom → Web, with the server URL. Each member then selects Connect next to AppFlowy under Customize → Connectors and signs in to AppFlowy.",
+        "organizationAction": "Add for your Claude organization",
+        "organizationHint": "Only for Owners of a Claude Team or Enterprise organization: it opens Organization settings → Connectors with AppFlowy filled in."
       },
       "chatgpt": {
         "name": "ChatGPT",
-        "description": "Custom app on paid ChatGPT plans",
-        "action": "Open ChatGPT",
-        "step1": "In ChatGPT on the web, open Settings → Apps (Plugins on some plans). If asked, turn on Developer mode under Advanced.",
-        "step2": "Create an app or add a custom MCP server: name it AppFlowy, paste the server URL and choose OAuth.",
-        "step3": "Confirm, then sign in and approve access in the AppFlowy window.",
-        "note": "Menu names vary by ChatGPT plan. Custom apps need a paid plan, and some plans only allow read access.",
-        "teamTitle": "Using ChatGPT Business, Enterprise or Edu?",
-        "teamNote": "Usually only workspace admins and owners can create and publish custom apps. Ask one to add AppFlowy with the server URL and publish it; each member then connects it and signs in to AppFlowy."
+        "description": "Custom MCP server, added as a plugin",
+        "openPlugins": "Open ChatGPT plugins",
+        "step1": "On ChatGPT's plugins page, select +, then Add custom MCP server.",
+        "step2": "Name it AppFlowy, paste the server URL and choose OAuth.",
+        "step3": "Confirm the warning, then create and install the plugin. When asked, sign in to AppFlowy and approve access.",
+        "step4": "In a chat, mention `@AppFlowy` to use it.",
+        "teamTitle": "Using a ChatGPT workspace?",
+        "teamNote": "Workspace permissions may restrict who can add custom MCP servers. If you can't add one, ask a workspace admin."
       },
       "claudeCode": {
         "name": "Claude Code",
         "description": "One command in your terminal",
         "step1": "Run this command in your terminal:",
-        "scope": "Add `--scope user` to use AppFlowy in every project, or `--scope project` to share it with your team through `.mcp.json` (each teammate still signs in).",
+        "scope": "`--scope user` makes AppFlowy available in every project. To share it with your team through `.mcp.json` instead, use `--scope project` (each teammate still signs in).",
         "step2": "Start Claude Code, run `/mcp`, choose `appflowy` and sign in.",
         "reconnect": "To sign in again later, run `/mcp`, choose `appflowy` and select Re-authenticate."
       },

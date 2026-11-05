@@ -12,9 +12,11 @@ import { subscribeToServerInfo } from '@/utils/server-info';
 
 export interface UseMcpConfigurationOptions {
   /**
-   * Run the server-info refresh loop. Pages outside `/app` (consent, setup)
-   * need it; inside `/app` the auth layer already runs the one loop that owns
-   * the shared snapshot.
+   * Run the server-info refresh loop, unless `APPFLOWY_MCP_BASE_URL` already
+   * names the service. The consent page needs it; inside `/app` the auth layer
+   * already runs the one loop that owns the shared snapshot, and the setup page
+   * runs it itself, also with the override, to learn whether the server is
+   * self-hosted.
    */
   loadServerInfo?: boolean;
 }

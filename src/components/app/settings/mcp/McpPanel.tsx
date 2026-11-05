@@ -12,6 +12,7 @@ import { ReactComponent as ArrowRightIcon } from '@/assets/icons/arrow_right.svg
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info_colored.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
+import { useIsSelfHosted } from '@/components/app/hooks/useServerInfo';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { useMcpLicenseRequired } from '@/components/mcp/useMcpConfiguration';
@@ -71,6 +72,8 @@ export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelPro
   // Server-info says this self-hosted server's license does not include MCP: the panel asks for an
   // upgrade, like the other features a license unlocks, whatever the member status says.
   const licenseRequired = useMcpLicenseRequired();
+  // The setup guide's note that Claude's apps and ChatGPT reach a self-hosted server from their clouds.
+  const selfHosted = useIsSelfHosted();
   // While AI apps are turned off, and for an owner the email gate excludes, the panel offers only
   // the caller's own connections, so the owner lists stay unloaded (approving, for one, is refused
   // then). The server would let such owners withdraw access; doc/MCP.md lists that as not in v1.
@@ -223,8 +226,14 @@ export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelPro
                     : t('settings.mcp.approvalNotice')}
                 </Notice>
               )}
-              {/* The cards' Connected badges come from the caller's connections. */}
-              <McpSetupGuide serverUrl={status.endpoint} connections={mine.loaded ? mine.connections : undefined} />
+              {/* The cards' Connected badges come from the caller's connections; owners also get
+                  Claude's add-for-your-organization link. */}
+              <McpSetupGuide
+                serverUrl={status.endpoint}
+                connections={mine.loaded ? mine.connections : undefined}
+                workspaceOwner={isOwner}
+                selfHosted={selfHosted}
+              />
             </PanelSection>
             {onOpenConnections && (
               // AI apps use AppFlowy here; Connections brings other services into AppFlowy.

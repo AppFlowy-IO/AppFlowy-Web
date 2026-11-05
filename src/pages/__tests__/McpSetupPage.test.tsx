@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { AuthService } from '@/application/services/domains';
@@ -48,6 +48,8 @@ describe('McpSetupPage', () => {
 
   it('shows the setup guide for the configured URL and links to the AI apps settings', () => {
     mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
+    // The override needs no server-info: the guide shows before it answers.
+    getServerInfo.mockReturnValue(new Promise(() => undefined));
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'mcp.setup.pageTitle' })).toBeTruthy();
@@ -55,13 +57,61 @@ describe('McpSetupPage', () => {
     expect(screen.getByText('mcp.setup.signInNote')).toBeTruthy();
     expect(screen.getByTestId('mcp-setup-manage-link').getAttribute('href')).toBe('/app?setting=AI_APPS');
     expect(document.title).toBe('mcp.setup.pageTitle | AppFlowy');
-    expect(getServerInfo).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('mcp-setup-self-hosted-note')).toBeNull();
+    // It still asks, for whether the server is self-hosted.
+    expect(getServerInfo).toHaveBeenCalledTimes(1);
   });
 
-  it('offers the app gallery without connection state', () => {
+  it.each([
+    ['with', 'https://mcp.example.com'],
+    ['without', undefined],
+  ])(
+    'notes on a self-hosted server, %s the MCP URL override, that Claude and ChatGPT must reach it',
+    async (_, override) => {
+      if (override) mockConfig.APPFLOWY_MCP_BASE_URL = override;
+      getServerInfo.mockResolvedValue({
+        enable_page_history: true,
+        self_hosted: true,
+        mcp_url: 'https://mcp.example.com',
+      });
+      renderPage();
+
+      expect((await screen.findByTestId('mcp-setup-self-hosted-note')).textContent).toContain(
+        'mcp.setup.selfHosted.note'
+      );
+      expect(screen.getByTestId<HTMLInputElement>('mcp-endpoint-value').value).toBe('https://mcp.example.com/mcp');
+      expect(getServerInfo).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('adds no self-hosted note for AppFlowy Cloud', async () => {
+    mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
+    getServerInfo.mockResolvedValue({ enable_page_history: true, self_hosted: false });
+    renderPage();
+
+    await act(async () => undefined);
+    expect(getServerInfo).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('mcp-setup-guide')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-setup-self-hosted-note')).toBeNull();
+  });
+
+  it('offers no organization-wide Claude link: the public page knows no workspace owner', async () => {
     mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
     renderPage();
 
+    // Let server-info answer.
+    await act(async () => undefined);
+    fireEvent.click(screen.getByTestId('mcp-client-tab-claude'));
+    expect(screen.getByTestId('mcp-client-panel-claude')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-add-to-claude-organization')).toBeNull();
+  });
+
+  it('offers the app gallery without connection state', async () => {
+    mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
+    renderPage();
+
+    // Let server-info answer.
+    await act(async () => undefined);
     expect(screen.getByTestId('mcp-setup-gallery')).toBeTruthy();
     // Signed out or not, the public page knows no workspace, so it shows no connections.
     expect(screen.queryByTestId(/^mcp-setup-app-connected-/)).toBeNull();
