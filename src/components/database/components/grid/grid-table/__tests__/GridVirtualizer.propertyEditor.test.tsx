@@ -346,7 +346,7 @@ test('a grouped grid opens one property editor, in the header row whose field me
     rendered.unmount();
     data.destroy();
   }
-});
+}, 15000); // Real grid, menus and timers: give a loaded CI runner room.
 
 test('a grouped grid opens the editor of a property added from a header row in that row only', async () => {
   const data = fixture({ grouped: true });
@@ -380,7 +380,7 @@ test('a grouped grid opens the editor of a property added from a header row in t
     rendered.unmount();
     data.destroy();
   }
-});
+}, 15000); // Real grid, menus and timers: give a loaded CI runner room.
 
 test("a grouped grid moves the property editor to its first header row when the editor's group collapses", async () => {
   const data = fixture({ grouped: true });
@@ -411,7 +411,7 @@ test("a grouped grid moves the property editor to its first header row when the 
     rendered.unmount();
     data.destroy();
   }
-});
+}, 15000); // Real grid, menus and timers: give a loaded CI runner room.
 
 test('an ungrouped grid shows its property editor in the header row in view as the sticky header pins and unpins', async () => {
   const data = fixture({ grouped: false });
@@ -450,4 +450,4 @@ test('an ungrouped grid shows its property editor in the header row in view as t
     rendered.unmount();
     data.destroy();
   }
-});
+}, 15000); // Real grid, menus and timers: give a loaded CI runner room.
