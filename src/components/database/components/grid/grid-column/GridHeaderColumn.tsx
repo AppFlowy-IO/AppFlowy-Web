@@ -20,9 +20,12 @@ const DASHBOARD_HEADER_ICON_CLASS = '!h-4 !w-4 shrink-0 text-dash-tool-icon';
 
 export function GridHeaderColumn({
   column,
+  rowKey,
   onResizeColumnStart,
 }: {
   column: RenderColumn;
+  /** The render key of the cell's header row: a grouped grid repeats the header row once per group. */
+  rowKey: string;
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const readOnly = useReadOnly();
@@ -92,7 +95,7 @@ export function GridHeaderColumn({
   }, [displayMenu, fieldId, iconClassName, isAIField, onResizeColumnStart, readOnly, tooltipContent]);
 
   if (isNewProperty) {
-    return <GridNewProperty />;
+    return <GridNewProperty rowKey={rowKey} />;
   }
 
   // The menu sits beside the content, so moving it between the two header rows
@@ -100,7 +103,15 @@ export function GridHeaderColumn({
   return (
     <>
       {children}
-      {!readOnly && displayMenu && <GridFieldMenu menuOpen={menuOpen} setMenuOpen={setMenuOpen} fieldId={fieldId} />}
+      {!readOnly && displayMenu && (
+        <GridFieldMenu
+          menuOpen={menuOpen}
+          setMenuOpen={setMenuOpen}
+          fieldId={fieldId}
+          rowKey={rowKey}
+          isSticky={isSticky}
+        />
+      )}
     </>
   );
 }

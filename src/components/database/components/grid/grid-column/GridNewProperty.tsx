@@ -5,7 +5,8 @@ import { useNewPropertyDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
-function GridNewProperty () {
+/** The New property cell of a header row (`rowKey`); the new property's editor opens in that row. */
+function GridNewProperty ({ rowKey }: { rowKey: string }) {
   const { t } = useTranslation();
   const onNewProperty = useNewPropertyDispatch();
   const {
@@ -17,7 +18,7 @@ function GridNewProperty () {
     onClick={() => {
       const id = onNewProperty(FieldType.RichText);
 
-      setActivePropertyId(id);
+      setActivePropertyId(id, rowKey);
     }}
     className={'flex text-text-secondary px-3 py-2 cursor-pointer hover:bg-fill-content-hover bg-fill-content h-[36px] flex-1 font-medium text-sm items-center gap-1.5'}
   >

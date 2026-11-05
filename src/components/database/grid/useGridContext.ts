@@ -131,8 +131,16 @@ export type GridContextType = {
   rowOrders?: Row[];
   rows: RenderRow[];
   setRows: (rows: RenderRow[]) => void;
+  /** The field whose property editor is open. */
   activePropertyId?: string;
-  setActivePropertyId: (activePropertyId?: string) => void;
+  /**
+   * The header row of `rows` (its render key) that shows the open property
+   * editor: a grouped grid repeats its header row once per group. While the
+   * sticky header holds the field menus, it shows the editor instead.
+   */
+  activePropertyRowKey?: string;
+  /** Opens the property editor of a field from the header row `rowKey`, or closes it. */
+  setActivePropertyId: (activePropertyId?: string, rowKey?: string) => void;
   remainingRowCount: number;
   lastVisibleRowId?: string;
   loadMoreRows: () => void;
