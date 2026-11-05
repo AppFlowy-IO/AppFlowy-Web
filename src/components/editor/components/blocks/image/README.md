@@ -49,6 +49,14 @@ The browser configuration uses a dedicated Chrome for Testing executable and Pla
 - Existing server-backed image copy/download/hover tests were updated for the redesigned toolbar; their live server run remains for CI. Live beta sign-in rejected the configured test credentials, so live upload/persistence is not claimed.
 - The browser harness loads the shared CJS PostCSS configuration natively, preserving the production plugins without Playwright ESM transformation of Tailwind's `require.cache`. Dedicated image tests are excluded from the general connections job to avoid duplicate execution.
 
+## CI follow-up — 2026-11-05
+
+- Merged `main`, retaining the image revamp and the shared editor's 40px placeholder, 8px/12px padding, 24px action slot, and 12px image corners. The placeholder marker belongs on the empty surface, not around a populated image.
+- Added the dedicated image config to `.eslintignore.web`, consistent with the other Playwright configs. It remains covered by `playwright/tsconfig.integrations.json`.
+- Corrected the server-backed hover test to expect the actual “Align left”, “Align center”, and “Align right” labels observed in its CI trace.
+- Duplicate-image tests now scroll the stable block: lazy loading replaces the image node when its validated source arrives. The pending-upload case also waits for the restored editor and both blocks after reload.
+- Local validation: 105 focused Jest tests, application and integration TypeScript, full lint, production and Storybook builds, and whitespace checks passed. The full light/dark browser run passed 133 scenarios; a new picker geometry assertion needed to include controls hidden from accessibility queries by the open upload modal, then passed separately in both themes. All 134 distinct image scenarios are covered by these runs. The live server-backed suite was not rerun locally.
+
 ## Issues reproduced while porting
 
 - A clipboard containing both image bytes and HTML inserted two images. File pastes now bypass the fallback HTML insertion path.

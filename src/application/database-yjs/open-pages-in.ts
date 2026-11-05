@@ -25,14 +25,19 @@ export function parseOpenPagesIn(raw: unknown): OpenPagesIn | null {
 
 /**
  * A known stored value wins; otherwise records opened from a dashboard widget
- * or a drill-down open in a side peek, and records of a view in a center peek.
+ * or a drill-down open in a side peek. A view's own records follow its
+ * layout's interaction default: desktop's grid, board, list, gallery,
+ * calendar and chart pass `defaultOpenPagesIn: sidePeek`, while Timeline
+ * passes none and falls back to the center peek. Without a layout this is the
+ * bare `drill-queries.json` resolver, whose view default is the center peek.
  * A mobile context opens records full screen before this resolver runs.
  */
 export function resolveOpenPagesIn(raw: unknown, source: OpenRecordSource, layout?: DatabaseViewLayout): OpenPagesIn {
-  // Calendar follows desktop #1531; an explicitly stored preference still wins.
-  return (
-    parseOpenPagesIn(raw) ?? (source === 'view' && layout !== DatabaseViewLayout.Calendar ? 'center_peek' : 'side_peek')
-  );
+  const stored = parseOpenPagesIn(raw);
+
+  if (stored) return stored;
+  if (source !== 'view') return 'side_peek';
+  return layout === undefined || layout === DatabaseViewLayout.Timeline ? 'center_peek' : 'side_peek';
 }
 
 /** The source view's layout, used for layout-specific defaults without storing a preference. */

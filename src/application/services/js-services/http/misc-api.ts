@@ -8,6 +8,28 @@ import { RepeatedChatMessage } from '@/components/chat';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
+/** Where an image or PDF that matched the query is stored. */
+export interface SearchResourceLocator {
+  workspace_id: string;
+  parent_dir: string;
+  file_id: string;
+  is_public?: boolean;
+}
+
+/** Why a result matched through an image or PDF rather than its own text. */
+export interface SearchEvidence {
+  kind: 'image' | 'pdf';
+  processor_id: string;
+  /**
+   * The image or PDF within the result: a document's image block ID (`<block id>:<index>` for a
+   * gallery image), or a database row's `<field id>:<file id>`.
+   */
+  resource_id: string;
+  locator: SearchResourceLocator;
+  /** The generated text that matched the query. */
+  matched_text?: string | null;
+}
+
 export interface SearchDocumentResponseItem {
   object_id: string;
   workspace_id: string;
@@ -17,6 +39,8 @@ export interface SearchDocumentResponseItem {
   database_view_id?: string | null;
   database_id?: string | null;
   database_row_id?: string | null;
+  /** Present when the result matched through an image or PDF; older servers omit it. */
+  evidence?: SearchEvidence[];
 }
 
 export interface SearchDocumentPageResponse {
@@ -59,7 +83,8 @@ export async function searchWorkspaceDocumentPage(
   workspaceId: string,
   query: string,
   offset = 0,
-  requestStreamId?: string
+  requestStreamId?: string,
+  signal?: AbortSignal
 ) {
   const url = `/api/search/${workspaceId}/page`;
   const headers: Record<string, string> = { 'x-request-time': Date.now().toString() };
@@ -79,6 +104,7 @@ export async function searchWorkspaceDocumentPage(
         score: SEARCH_SCORE_THRESHOLD,
       },
       headers,
+      ...(signal ? { signal } : {}),
     })
   );
 }
@@ -89,7 +115,7 @@ export async function searchWorkspace(workspaceId: string, query: string) {
   return payload.map((item) => item.object_id);
 }
 
-export async function generateSearchSummary(workspaceId: string, query: string) {
+export async function generateSearchSummary(workspaceId: string, query: string, signal?: AbortSignal) {
   const url = `/api/search/${workspaceId}/summary`;
   const payload = {
     query,
@@ -100,7 +126,28 @@ export async function generateSearchSummary(workspaceId: string, query: string) 
   return executeAPIRequest<SearchSummaryResult>(() =>
     getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
       headers,
+      ...(signal ? { signal } : {}),
     })
+  );
+}
+
+/** Reuse completed search identities; the server reloads authorized content without another search. */
+export async function generateSearchSummaryForDocuments(
+  workspaceId: string,
+  query: string,
+  objectIds: string[],
+  signal?: AbortSignal
+) {
+  return executeAPIRequest<SearchSummaryResult>(() =>
+    getAxios()?.post<APIResponse<SearchSummaryResult>>(
+      `/api/search/${workspaceId}/summary`,
+      { query, object_ids: Array.from(new Set(objectIds)), only_context: true, retrieval_mode: 'provided_only' },
+      {
+        headers: { 'x-request-time': Date.now().toString() },
+        ...(signal ? { signal } : {}),
+        skipTransportRetry: true,
+      }
+    )
   );
 }
 

@@ -760,8 +760,8 @@ describe('DatabaseActions in dashboards', () => {
 
     const button = screen.getByTestId('database-actions-search');
 
-    expect(button.className).toContain('h-6');
-    expect(button.className).toContain('w-6');
+    expect(button.className).toContain('h-8');
+    expect(button.className).toContain('w-8');
     fireEvent.click(button);
     const field = screen.getByTestId('database-actions-search-field');
 

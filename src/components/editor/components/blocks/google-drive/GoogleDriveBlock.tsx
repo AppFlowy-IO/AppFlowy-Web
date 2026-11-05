@@ -79,6 +79,7 @@ export const GoogleDriveBlock = memo(
       >
         <div
           contentEditable={false}
+          data-media-placeholder={!embeddedUrl}
           className={`embed-block flex-col p-4 ${embeddedUrl ? '!border-none !bg-transparent !p-0' : ''}`}
         >
           {embeddedUrl ? (

@@ -392,7 +392,7 @@ export const DashboardWidget = memo(function DashboardWidget({
         'group/widget relative isolate flex min-w-0 flex-col rounded-500',
         DASHBOARD_WIDGET_BOX_TRANSITION_CLASS,
         'group-data-[resizing=true]/row:transition-none motion-reduce:transition-none',
-        'data-[editing=true]:bg-dash-edit-tint data-[selected=true]:shadow-[inset_0_0_0_2px_var(--dash-accent)]',
+        'data-[editing=true]:bg-fill-theme-select data-[selected=true]:shadow-[inset_0_0_0_2px_var(--border-theme-thick)]',
         isDragging && 'opacity-40'
       )}
       data-database-id={widget.databaseId}
@@ -416,7 +416,7 @@ export const DashboardWidget = memo(function DashboardWidget({
     >
       <div
         className={cn(
-          'relative flex h-full min-h-0 w-full flex-col',
+          'relative flex h-full min-h-0 w-full flex-col rounded-400 bg-surface-primary ring-1 ring-border-primary',
           fadeIn && 'animate-in fade-in-0 [animation-duration:var(--dash-motion-reflow)] motion-reduce:animate-none'
         )}
         data-content-held={contentHeld ? 'true' : undefined}

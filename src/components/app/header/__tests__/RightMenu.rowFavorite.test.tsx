@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useSearchParams } from 'react-router-dom';
 
 import { publishDatabasePageSelection } from '@/application/database-yjs/database-page-state';
+import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import type { ActiveRowPageInfo } from '@/application/row-document/row-page-state';
 import { ViewLayout, type View } from '@/application/types';
 import RightMenu from '@/components/app/header/RightMenu';
+import type { ExportTarget } from '@/components/app/share/ExportPanel';
 
 let mockActiveRowPage: ActiveRowPageInfo | null = null;
 let mockRouteViewId = 'database-container';
@@ -32,24 +34,31 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-1',
 }));
 
+let mockExportTarget: ExportTarget | undefined;
+
 jest.mock('src/components/app/share/ShareButton', () => ({
   __esModule: true,
   default: ({
     viewId,
     publishViewId,
     hidePublish = false,
+    exportTarget,
   }: {
     viewId: string;
     publishViewId?: string;
     hidePublish?: boolean;
-  }) => (
-    <div
-      data-testid='share-button'
-      data-view-id={viewId}
-      data-publish-view-id={publishViewId}
-      data-publish-hidden={String(hidePublish)}
-    />
-  ),
+    exportTarget?: ExportTarget;
+  }) => {
+    mockExportTarget = exportTarget;
+    return (
+      <div
+        data-testid='share-button'
+        data-view-id={viewId}
+        data-publish-view-id={publishViewId}
+        data-publish-hidden={String(hidePublish)}
+      />
+    );
+  },
 }));
 
 jest.mock('@/components/app/header/FavoriteButton', () => ({
@@ -104,6 +113,8 @@ function createDatabaseContainer(): View {
 
 describe('RightMenu row-page actions', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
+    mockExportTarget = undefined;
     mockActiveRowPage = null;
     mockRouteViewId = 'database-container';
     mockRouteView = { view_id: mockRouteViewId };
@@ -180,6 +191,50 @@ describe('RightMenu row-page actions', () => {
     expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('true');
   });
 
+  // Issue #545: Share → Export as PDF on a full-page row exported the parent grid.
+  it('exports the row document, not the containing database, on a row-page route', async () => {
+    const source = { database_id: 'database-1', database_view_id: 'grid-view', row_id: 'requested-row' };
+
+    mockActiveRowPage = {
+      rowId: 'requested-row',
+      documentId: 'row-document',
+      title: '  Requested row  ',
+      source,
+      hasDocument: false,
+    };
+
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container?r=requested-row']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    // Sharing stays on the database; only the export target changes.
+    expect(screen.getByTestId('share-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(mockExportTarget?.viewId).toBe('row-document');
+
+    await mockExportTarget?.prepare?.();
+    expect(ensureRowDocumentView).toHaveBeenCalledWith('workspace-1', 'row-document', source);
+    expect(syncRowDocumentViewName).toHaveBeenCalledWith('workspace-1', 'row-document', 'Requested row');
+  });
+
+  it('keeps the export target unresolved while the requested row page is loading', () => {
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container?r=requested-row']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(mockExportTarget).toBeDefined();
+    expect(mockExportTarget?.viewId).toBeUndefined();
+  });
+
   it('continues targeting the route view outside row-page routes', () => {
     render(
       <MemoryRouter
@@ -192,6 +247,7 @@ describe('RightMenu row-page actions', () => {
 
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('database-container');
     expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('false');
+    expect(mockExportTarget).toBeUndefined();
   });
 
   it('publishes the dashboard selected on a database container route', () => {
@@ -357,6 +413,37 @@ describe('RightMenu database history tab', () => {
     release();
   });
 
+  // Desktop #1545: Export follows the tab on screen, whose visible fields
+  // differ from the first tab's, while sharing stays on the container.
+  it('exports the displayed database tab and follows tab switches', () => {
+    function Tabs() {
+      const [, setSearchParams] = useSearchParams();
+
+      return <button onClick={() => setSearchParams({ v: 'calendar-view' })}>Calendar</button>;
+    }
+
+    const container = createDatabaseContainer();
+
+    mockOutline = [container];
+    mockRouteViewId = container.view_id;
+    mockRouteView = container;
+
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container?v=board-view']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <Tabs />
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('share-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(mockExportTarget).toEqual({ viewId: 'board-view', isDatabase: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Calendar' }));
+    expect(mockExportTarget).toEqual({ viewId: 'calendar-view', isDatabase: true });
+  });
+
   it('preserves standalone database tab selection without a container', () => {
     mockOutline = [mockRouteView];
 
@@ -410,11 +497,12 @@ describe('RightMenu Present entry', () => {
     );
   }
 
-  it('shows Present on official AppFlowy Cloud', () => {
+  it('shows Present for the current document on official AppFlowy Cloud', () => {
     mockOfficialHosted = true;
     renderDocumentRoute();
 
     expect(screen.getByTestId('present-entry').getAttribute('data-view-id')).toBe('document');
+    expect(screen.getByTestId('share-button')).toBeTruthy();
   });
 
   it('hides Present on self-hosted servers and while hosting is unknown', () => {

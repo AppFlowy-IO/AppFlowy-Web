@@ -312,7 +312,10 @@ export const ImageBlock = memo(
               localUrl={renderedLocalUrl}
             />
           ) : (
-            <div className='image-empty image-selection-surface relative flex h-11 w-full items-center gap-2 rounded-lg bg-[var(--block-bg-color-20)] py-2 pl-3 pr-2 text-sm leading-5 text-text-tertiary hover:bg-[var(--block-bg-hover-color-20)]'>
+            <div
+              data-media-placeholder='true'
+              className='image-empty image-selection-surface relative flex h-10 w-full items-center gap-2 rounded-lg bg-[var(--block-bg-color-20)] py-2 pl-3 pr-2 text-sm leading-5 text-text-tertiary hover:bg-[var(--block-bg-hover-color-20)]'
+            >
               <button
                 type='button'
                 className='flex min-w-0 flex-1 items-center gap-2 text-left'
@@ -328,7 +331,7 @@ export const ImageBlock = memo(
                   variant='ghost'
                   size='icon'
                   aria-label={t('web.imageBlock.options')}
-                  className='relative z-30 !h-7 !w-7 !p-1'
+                  className='relative z-30 !h-6 !w-6 !p-0.5'
                   onClick={(event) => {
                     event.stopPropagation();
                     setMenu(event.currentTarget);

@@ -59,7 +59,7 @@ export const PendingWidgetBox = memo(function PendingWidgetBox({
     <div
       aria-busy={!existingOnly}
       className={cn(
-        'group/widget relative isolate flex min-w-0 flex-col rounded-500 bg-dash-edit-tint shadow-[inset_0_0_0_2px_var(--dash-accent)]',
+        'group/widget relative isolate flex min-w-0 flex-col rounded-500 bg-fill-theme-select shadow-[inset_0_0_0_2px_var(--border-theme-thick)]',
         DASHBOARD_WIDGET_BOX_TRANSITION_CLASS,
         'motion-reduce:transition-none'
       )}
@@ -80,37 +80,46 @@ export const PendingWidgetBox = memo(function PendingWidgetBox({
         data-dock-anchor='true'
         ref={registerAnchor}
       />
-      {showWidgetTitles ? (
-        <div
-          className='flex min-w-0 shrink-0 items-center'
-          data-testid='dashboard-widget-header'
-          style={{ height: WIDGET_HEADER_HEIGHT, padding: WIDGET_HEADER_PADDING }}
-        >
-          <span className='truncate rounded-600 px-2.5 py-1 text-xs font-medium leading-4 text-dash-edit-title'>
-            <span data-testid='dashboard-widget-title'>
-              {existingOnly ? t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' }) : name}
+      <div className='relative flex min-h-0 w-full flex-1 flex-col rounded-400 bg-surface-primary ring-1 ring-border-primary'>
+        {showWidgetTitles ? (
+          <div
+            className='flex min-w-0 shrink-0 items-center border-b border-border-primary'
+            data-testid='dashboard-widget-header'
+            style={{ height: WIDGET_HEADER_HEIGHT, padding: WIDGET_HEADER_PADDING }}
+          >
+            <span className='truncate px-2 py-1.5 text-sm font-medium leading-5 text-text-primary'>
+              <span data-testid='dashboard-widget-title'>
+                {existingOnly ? t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' }) : name}
+              </span>
             </span>
-          </span>
-        </div>
-      ) : null}
-      <div
-        className='dash-card relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-400 bg-dash-card-bg'
-        data-editing='true'
-        data-testid='dashboard-widget-body'
-      >
-        {existingOnly ? (
-          <p className='m-auto px-3 text-sm text-text-secondary'>
-            {t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' })}
-          </p>
-        ) : spec === 'chart' ? (
-          <ChartLoadingState fill />
-        ) : (
-          <div aria-hidden='true' className='flex flex-col gap-3 px-3 pt-3' data-testid='dashboard-widget-pending-table'>
-            {Array.from({ length: GRID_SKELETON_ROWS }, (_, index) => (
-              <span className='h-4 w-full rounded bg-chart-empty' key={index} />
-            ))}
           </div>
-        )}
+        ) : null}
+        <div
+          className={cn(
+            'relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-primary',
+            showWidgetTitles ? 'rounded-b-400' : 'rounded-400'
+          )}
+          data-editing='true'
+          data-testid='dashboard-widget-body'
+        >
+          {existingOnly ? (
+            <p className='m-auto px-3 text-sm text-text-secondary'>
+              {t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' })}
+            </p>
+          ) : spec === 'chart' ? (
+            <ChartLoadingState fill />
+          ) : (
+            <div
+              aria-hidden='true'
+              className='flex flex-col gap-3 px-3 pt-3'
+              data-testid='dashboard-widget-pending-table'
+            >
+              {Array.from({ length: GRID_SKELETON_ROWS }, (_, index) => (
+                <span className='h-4 w-full rounded-100 bg-fill-content-visible' key={index} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

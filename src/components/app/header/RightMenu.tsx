@@ -64,10 +64,11 @@ function RightMenu() {
     return parentView && isDatabaseContainer(parentView) ? parentView.view_id : routeViewId;
   }, [outline, routeView?.parent_view_id, routeViewId]);
 
-  // On a full-page row (?r=), the favorite action targets the row document,
-  // not the containing database.
+  // On a full-page row (?r=), favorite and export target the row document,
+  // not the containing database. Materializing the row-document view first
+  // gives the server the row title for favorites and the exported PDF.
   const rowPage = rowPageRowId && activeRowPage?.rowId === rowPageRowId ? activeRowPage : null;
-  const prepareRowDocumentForFavorite = useCallback(async () => {
+  const prepareRowDocumentView = useCallback(async () => {
     if (!rowPage?.documentId || !workspaceId) return;
 
     if (rowPage.source) {
@@ -82,8 +83,16 @@ function RightMenu() {
   }, [rowPage, workspaceId]);
 
   // While a row route is loading, do not fall back to the containing database:
-  // a click in that window would favorite the wrong object.
+  // a click in that window would favorite or export the wrong object.
   const favoriteViewId = hasRowPageRoute ? rowPage?.documentId : actionViewId;
+  const isDatabasePage = !!routeView && isDatabaseLayout(routeView.layout);
+  // A database page exports the tab on screen, as Desktop does: sharing stays on
+  // the container, but each tab has its own visible fields.
+  const exportTarget = useMemo(() => {
+    if (hasRowPageRoute) return { viewId: rowPage?.documentId, prepare: prepareRowDocumentView };
+    if (isDatabasePage) return { viewId: activeViewId, isDatabase: true };
+    return undefined;
+  }, [hasRowPageRoute, rowPage?.documentId, prepareRowDocumentView, isDatabasePage, activeViewId]);
 
   return (
     <div className={'flex items-center gap-2'}>
@@ -106,11 +115,12 @@ function RightMenu() {
           presentationViewId={hasRowPageRoute ? rowPage?.documentId : undefined}
           presentationTitle={rowPage?.title}
           presentationIsRow={hasRowPageRoute}
+          exportTarget={exportTarget}
         />
       ) : null}
       <InlineCommentToggleButton />
       {favoriteViewId && (
-        <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
+        <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentView : undefined} />
       )}
       {actionViewId && <MoreActions viewId={actionViewId} activeViewId={activeViewId} rowId={rowPageRowId} />}
 

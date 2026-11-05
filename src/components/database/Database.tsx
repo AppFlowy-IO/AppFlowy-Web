@@ -900,6 +900,9 @@ function Database(props: Database2Props) {
     // A dashboard lists no row of its own database: each widget mounts the
     // database of its view, this one included, with its own row pipeline.
     if (layout === DatabaseViewLayout.Dashboard) return 'none';
+    // A full row page shows one row: its view's chart, groups, filters and
+    // sorts never apply to it, so it only catches up on the rows that changed.
+    if (rowId) return 'delta';
     // A chart aggregates every row of its view, so the walk seeds them all.
     if (layout === DatabaseViewLayout.Chart) return 'full';
 
@@ -918,7 +921,7 @@ function Database(props: Database2Props) {
       (conditionsView?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
       ? 'full'
       : 'delta';
-  }, [doc, activeViewId, viewConditionsOverlay, extraFilters, searchActive]);
+  }, [doc, activeViewId, rowId, viewConditionsOverlay, extraFilters, searchActive]);
 
   const activeViewRowDataNeed = useSyncExternalStore(
     useCallback(
@@ -2092,7 +2095,8 @@ function Database(props: Database2Props) {
       // documents are loaded through the publish navigation/cache path.
       // Then a mobile context opens records full screen, and otherwise the
       // view's "Open pages in" decides (WP13 §3.8): a dashboard widget or a
-      // drill-down or Calendar opens a side peek by default, other views the centre peek.
+      // drill-down, and every view layout except Timeline, opens a side peek by
+      // default; Timeline opens the centre peek.
       const opening = resolveRecordOpening({
         readOnly,
         isDocumentBlock: Boolean(_isDocumentBlock),

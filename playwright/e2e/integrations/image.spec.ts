@@ -12,7 +12,13 @@ test('slash picker uses Figma geometry, neutral selection and auto uploads from 
   await expect(picker.getByRole('tab')).toHaveCount(3);
   await expect(page.getByTestId('file-dropzone').getByRole('button')).toHaveCSS('height', '264px');
   await expect(picker.getByRole('button', { name: 'Upload', exact: true })).toHaveCount(0);
-  await expect(block(page).locator('.image-empty')).toHaveCSS('height', '44px');
+  const placeholder = block(page).locator('[data-media-placeholder="true"]');
+
+  await expect(placeholder).toHaveCSS('height', '40px');
+  await expect(placeholder).toHaveCSS('padding', '8px 12px');
+  await expect(
+    placeholder.getByRole('button', { name: 'Image options', exact: true, includeHidden: true })
+  ).toHaveCSS('width', '24px');
   await expect(block(page).locator('.image-block')).toHaveAttribute('data-upload-open', 'true');
   await expect(block(page).locator('.image-block')).toHaveAttribute('data-selected', 'false');
   await page.screenshot({ path: info.outputPath('image-upload.png') });
@@ -76,7 +82,7 @@ for (const source of ['embedded', 'stored', 'uploaded', 'previewed upload'] as c
     const images = block(page).locator('.image-content > img');
 
     for (let index = 0; index < 2; index++) {
-      await images.nth(index).scrollIntoViewIfNeeded();
+      await block(page).nth(index).scrollIntoViewIfNeeded();
       await expect(images.nth(index)).toBeVisible();
       await expect
         .poll(() => images.nth(index).evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0))
@@ -552,10 +558,15 @@ test('pending images cannot be duplicated until their upload completes, then bot
   await duplicate.click();
   await expect(block(page)).toHaveCount(2);
   await page.reload();
+  await expect(snapshot(page)).toHaveAttribute('data-ready', 'true');
+  await expect(block(page)).toHaveCount(2);
   for (let index = 0; index < 2; index++) {
-    const img = block(page).nth(index).locator('.image-content > img');
+    const imageBlock = block(page).nth(index);
+    const img = imageBlock.locator('.image-content > img');
 
-    await img.scrollIntoViewIfNeeded();
+    // Lazy loading replaces the img when its validated source arrives. Scroll
+    // the stable block so that replacement cannot detach the action's target.
+    await imageBlock.scrollIntoViewIfNeeded();
     await expect(img).toBeVisible();
     await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
   }

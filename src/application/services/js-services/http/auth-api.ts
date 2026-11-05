@@ -26,6 +26,8 @@ export interface ServerInfo {
   enable_page_history: boolean;
   /** Batch permission reads preserve singleton repair and typed per-item errors. */
   enable_object_permission_batch?: boolean;
+  /** Absent on legacy servers; transport pacing must not wait for unsupported ACKs. */
+  supports_realtime_update_ack?: boolean;
   /** Both flags must be literal true before a compact atomic command is submitted. */
   enable_atomic_creation?: boolean;
   enable_atomic_creation_defaults?: boolean;

@@ -56,6 +56,26 @@ async function readRowEmptyFlag(page: Page, rowId: string): Promise<unknown> {
   }
 }
 
+async function expectRowEmptyFlag(page: Page, rowId: string, isEmpty: boolean): Promise<void> {
+  if (isEmpty) {
+    await expect(rowIcon(page, rowId)).toHaveCount(0);
+  } else {
+    await expect(rowIcon(page, rowId)).toBeVisible();
+  }
+
+  // The body and Row metadata are separate collabs. A saved body does not
+  // mean the Row update has left the persistent outbox yet.
+  const drained = await page.evaluate(async () => {
+    const flush = (window as Window & { __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean> }).__TEST_FLUSH_ALL_SYNC__;
+
+    if (!flush) throw new Error('The app sync drain is unavailable');
+    return flush();
+  });
+
+  expect(drained, 'deliver pending row metadata before checking its server snapshot').toBe(true);
+  await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(isEmpty);
+}
+
 async function readDocumentText(page: Page, documentId: string): Promise<string> {
   const doc = await readCollab(page, documentId, 0);
 
@@ -216,7 +236,7 @@ test('opening an untouched row waits for the server document; body content alone
     timeout: 30000,
     intervals: [250, 500, 1000],
   }).toBe(text);
-  await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(false);
+  await expectRowEmptyFlag(page, rowId, false);
   await closeRowDetailWithEscape(page);
   await expect(rowIcon(page, rowId)).toBeVisible();
 
@@ -225,16 +245,16 @@ test('opening an untouched row waits for the server document; body content alone
   // Use real editor keyboard actions so Slate owns the selection and deletion.
   await editor.getByText(text, { exact: true }).click();
   await expect(editor).toBeFocused();
-  await page.keyboard.press('ControlOrMeta+A');
-  await page.keyboard.press('Backspace');
+  await editor.press('ControlOrMeta+A');
+  await editor.press('Backspace');
   await expect(editor).not.toContainText(text);
   await expect.poll(() => readDocumentText(page, documentId)).toBe('');
-  await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(true);
+  await expectRowEmptyFlag(page, rowId, true);
   await expect(rowIcon(page, rowId)).toHaveCount(0);
   await page.keyboard.press('ControlOrMeta+Z');
   await expect(editor).toContainText(text);
   await expect.poll(() => readDocumentText(page, documentId)).toBe(text);
-  await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(false);
+  await expectRowEmptyFlag(page, rowId, false);
   await expect(rowIcon(page, rowId)).toBeVisible();
   await expect(editor).toBeFocused();
   // Slate chooses its redo variant from the browser user agent. The emulated
@@ -244,7 +264,7 @@ test('opening an untouched row waits for the server document; body content alone
   await page.keyboard.press(redoShortcut);
   await expect(editor).not.toContainText(text);
   await expect.poll(() => readDocumentText(page, documentId)).toBe('');
-  await expect.poll(() => readRowEmptyFlag(page, rowId)).toBe(true);
+  await expectRowEmptyFlag(page, rowId, true);
   await closeRowDetailWithEscape(page);
   await expect(rowIcon(page, rowId)).toHaveCount(0);
   const rowBodyReads: string[] = [];

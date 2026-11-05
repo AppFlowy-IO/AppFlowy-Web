@@ -80,7 +80,7 @@ test.describe('Image Toolbar Hover Actions', () => {
 
     // The Align menu must work outside SelectionToolbarContext.
     await imageBlock.getByRole('button', { name: 'Align', exact: true }).click();
-    for (const name of ['Left', 'Center', 'Right']) {
+    for (const name of ['Align left', 'Align center', 'Align right']) {
       await expect(page.getByTestId('image-align-menu').getByRole('button', { name, exact: true })).toBeVisible();
     }
   });

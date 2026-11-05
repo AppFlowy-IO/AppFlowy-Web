@@ -69,9 +69,11 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
       data-unsaved={dirty}
       {...globalFilterTriggerProps}
       className={cn(
-        'relative flex h-7 max-w-[320px] items-center gap-1 rounded-[14px] px-2 text-sm font-normal outline-none',
-        'hover:brightness-95 focus-visible:ring-2 focus-visible:ring-border-theme-thick',
-        active ? 'bg-dash-pill-bg-active text-dash-pill-fg-active' : 'bg-dash-pill-bg text-dash-pill-fg'
+        'relative flex h-7 max-w-[320px] items-center gap-1.5 rounded-full border px-2 text-sm font-medium outline-none',
+        'focus-visible:ring-2 focus-visible:ring-border-theme-thick',
+        active
+          ? 'border-border-theme-thick bg-fill-theme-select text-text-primary hover:bg-fill-text-select'
+          : 'border-border-primary bg-surface-primary text-text-secondary hover:bg-fill-content-hover'
       )}
     >
       <span className='relative flex shrink-0'>
@@ -84,7 +86,7 @@ export const GlobalFilterChip = memo(function GlobalFilterChip({
           <span
             className={cn(
               'absolute -bottom-[3px] -right-1 flex h-3 min-w-3 items-center justify-center rounded-full px-[2px] text-[9px] font-semibold leading-3 text-text-on-fill',
-              active ? 'bg-dash-pill-fg-active' : 'bg-dash-pill-fg'
+              active ? 'bg-fill-theme-thick' : 'bg-icon-secondary'
             )}
             data-parity-id='dash-global-filter-pill__badge'
             data-testid='dashboard-global-filter-chip-count'

@@ -123,6 +123,8 @@ This is a regression checklist and record of user expectations, not a claim that
 
 ### Image
 
+- CI follow-up (2026-11-05): alignment options use “Align left/center/right”. When testing lazy-loaded duplicates after reload, scroll the stable block rather than the image node, which is replaced when validation supplies its source. Keep dedicated Playwright configs aligned with `.eslintignore.web` and type-check them through the integration-test tsconfig.
+- Preserve the shared editor's 40px image placeholder and 24px trailing action slot. Apply `data-media-placeholder` to the empty surface so shared padding does not wrap or inset a populated image.
 - Fullscreen copy action uses the normal copy icon and a success toast.
 - Duplicate must load correctly without a spurious error banner.
 - Pasted block-link mentions use the photo filename and shared truncation/style rules.

@@ -2229,6 +2229,258 @@ export const collab = $root.collab = (() => {
         return AccessChanged;
     })();
 
+    collab.UpdateAck = (function() {
+
+        /**
+         * Properties of an UpdateAck.
+         * @memberof collab
+         * @interface IUpdateAck
+         * @property {collab.IRid|null} [messageId] UpdateAck messageId
+         * @property {string|null} [databaseRestoreId] UpdateAck databaseRestoreId
+         */
+
+        /**
+         * Constructs a new UpdateAck.
+         * @memberof collab
+         * @classdesc Represents an UpdateAck.
+         * @implements IUpdateAck
+         * @constructor
+         * @param {collab.IUpdateAck=} [properties] Properties to set
+         */
+        function UpdateAck(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UpdateAck messageId.
+         * @member {collab.IRid|null|undefined} messageId
+         * @memberof collab.UpdateAck
+         * @instance
+         */
+        UpdateAck.prototype.messageId = null;
+
+        /**
+         * UpdateAck databaseRestoreId.
+         * @member {string|null|undefined} databaseRestoreId
+         * @memberof collab.UpdateAck
+         * @instance
+         */
+        UpdateAck.prototype.databaseRestoreId = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * UpdateAck _databaseRestoreId.
+         * @member {"databaseRestoreId"|undefined} _databaseRestoreId
+         * @memberof collab.UpdateAck
+         * @instance
+         */
+        Object.defineProperty(UpdateAck.prototype, "_databaseRestoreId", {
+            get: $util.oneOfGetter($oneOfFields = ["databaseRestoreId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new UpdateAck instance using the specified properties.
+         * @function create
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {collab.IUpdateAck=} [properties] Properties to set
+         * @returns {collab.UpdateAck} UpdateAck instance
+         */
+        UpdateAck.create = function create(properties) {
+            return new UpdateAck(properties);
+        };
+
+        /**
+         * Encodes the specified UpdateAck message. Does not implicitly {@link collab.UpdateAck.verify|verify} messages.
+         * @function encode
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {collab.IUpdateAck} message UpdateAck message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateAck.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.messageId != null && Object.hasOwnProperty.call(message, "messageId"))
+                $root.collab.Rid.encode(message.messageId, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.databaseRestoreId != null && Object.hasOwnProperty.call(message, "databaseRestoreId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.databaseRestoreId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UpdateAck message, length delimited. Does not implicitly {@link collab.UpdateAck.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {collab.IUpdateAck} message UpdateAck message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateAck.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UpdateAck message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.UpdateAck} UpdateAck
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateAck.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.UpdateAck();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.messageId = $root.collab.Rid.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 2: {
+                        message.databaseRestoreId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UpdateAck message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.UpdateAck} UpdateAck
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateAck.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UpdateAck message.
+         * @function verify
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UpdateAck.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.messageId != null && message.hasOwnProperty("messageId")) {
+                let error = $root.collab.Rid.verify(message.messageId);
+                if (error)
+                    return "messageId." + error;
+            }
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                properties._databaseRestoreId = 1;
+                if (!$util.isString(message.databaseRestoreId))
+                    return "databaseRestoreId: string expected";
+            }
+            return null;
+        };
+
+        /**
+         * Creates an UpdateAck message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.UpdateAck} UpdateAck
+         */
+        UpdateAck.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.UpdateAck)
+                return object;
+            let message = new $root.collab.UpdateAck();
+            if (object.messageId != null) {
+                if (typeof object.messageId !== "object")
+                    throw TypeError(".collab.UpdateAck.messageId: object expected");
+                message.messageId = $root.collab.Rid.fromObject(object.messageId);
+            }
+            if (object.databaseRestoreId != null)
+                message.databaseRestoreId = String(object.databaseRestoreId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UpdateAck message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {collab.UpdateAck} message UpdateAck
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UpdateAck.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults)
+                object.messageId = null;
+            if (message.messageId != null && message.hasOwnProperty("messageId"))
+                object.messageId = $root.collab.Rid.toObject(message.messageId, options);
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                object.databaseRestoreId = message.databaseRestoreId;
+                if (options.oneofs)
+                    object._databaseRestoreId = "databaseRestoreId";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this UpdateAck to JSON.
+         * @function toJSON
+         * @memberof collab.UpdateAck
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UpdateAck.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UpdateAck
+         * @function getTypeUrl
+         * @memberof collab.UpdateAck
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UpdateAck.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.UpdateAck";
+        };
+
+        return UpdateAck;
+    })();
+
     collab.CollabMessage = (function() {
 
         /**
@@ -2241,6 +2493,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.IUpdate|null} [update] CollabMessage update
          * @property {collab.IAwarenessUpdate|null} [awarenessUpdate] CollabMessage awarenessUpdate
          * @property {collab.IAccessChanged|null} [accessChanged] CollabMessage accessChanged
+         * @property {collab.IUpdateAck|null} [updateAck] CollabMessage updateAck
          */
 
         /**
@@ -2306,17 +2559,25 @@ export const collab = $root.collab = (() => {
          */
         CollabMessage.prototype.accessChanged = null;
 
+        /**
+         * CollabMessage updateAck.
+         * @member {collab.IUpdateAck|null|undefined} updateAck
+         * @memberof collab.CollabMessage
+         * @instance
+         */
+        CollabMessage.prototype.updateAck = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * CollabMessage data.
-         * @member {"syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|undefined} data
+         * @member {"syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|"updateAck"|undefined} data
          * @memberof collab.CollabMessage
          * @instance
          */
         Object.defineProperty(CollabMessage.prototype, "data", {
-            get: $util.oneOfGetter($oneOfFields = ["syncRequest", "update", "awarenessUpdate", "accessChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["syncRequest", "update", "awarenessUpdate", "accessChanged", "updateAck"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -2356,6 +2617,8 @@ export const collab = $root.collab = (() => {
                 $root.collab.AwarenessUpdate.encode(message.awarenessUpdate, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
             if (message.accessChanged != null && Object.hasOwnProperty.call(message, "accessChanged"))
                 $root.collab.AccessChanged.encode(message.accessChanged, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.updateAck != null && Object.hasOwnProperty.call(message, "updateAck"))
+                $root.collab.UpdateAck.encode(message.updateAck, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
             return writer;
         };
 
@@ -2414,6 +2677,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 6: {
                         message.accessChanged = $root.collab.AccessChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 7: {
+                        message.updateAck = $root.collab.UpdateAck.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -2496,6 +2763,16 @@ export const collab = $root.collab = (() => {
                         return "accessChanged." + error;
                 }
             }
+            if (message.updateAck != null && message.hasOwnProperty("updateAck")) {
+                if (properties.data === 1)
+                    return "data: multiple values";
+                properties.data = 1;
+                {
+                    let error = $root.collab.UpdateAck.verify(message.updateAck);
+                    if (error)
+                        return "updateAck." + error;
+                }
+            }
             return null;
         };
 
@@ -2534,6 +2811,11 @@ export const collab = $root.collab = (() => {
                 if (typeof object.accessChanged !== "object")
                     throw TypeError(".collab.CollabMessage.accessChanged: object expected");
                 message.accessChanged = $root.collab.AccessChanged.fromObject(object.accessChanged);
+            }
+            if (object.updateAck != null) {
+                if (typeof object.updateAck !== "object")
+                    throw TypeError(".collab.CollabMessage.updateAck: object expected");
+                message.updateAck = $root.collab.UpdateAck.fromObject(object.updateAck);
             }
             return message;
         };
@@ -2578,6 +2860,11 @@ export const collab = $root.collab = (() => {
                 object.accessChanged = $root.collab.AccessChanged.toObject(message.accessChanged, options);
                 if (options.oneofs)
                     object.data = "accessChanged";
+            }
+            if (message.updateAck != null && message.hasOwnProperty("updateAck")) {
+                object.updateAck = $root.collab.UpdateAck.toObject(message.updateAck, options);
+                if (options.oneofs)
+                    object.data = "updateAck";
             }
             return object;
         };

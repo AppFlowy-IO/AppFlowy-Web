@@ -48,9 +48,14 @@ const fixture = () => {
     },
   });
   const dropUpload = () => {
+    jest.mocked(enqueueOutboxUpdate).mockClear();
     handleMessage(ctx, manifest());
-    expect(emit.mock.calls[0][0].collabMessage.update.payload.byteLength).toBeGreaterThan(2);
+    const [record, options] = jest.mocked(enqueueOutboxUpdate).mock.calls[0];
+
+    expect(record.payload.byteLength).toBeGreaterThan(2);
+    expect(options).toEqual({ broadcast: false, source: 'manifest' });
     expect(confirmed).not.toHaveBeenCalled();
+    jest.mocked(enqueueOutboxUpdate).mockClear();
     emit.mockClear();
   };
 
@@ -174,7 +179,7 @@ test('equal state vectors cannot hide a dropped deletion, and matching delete me
   jest.advanceTimersByTime(60_000);
   expect(f.emit).toHaveBeenCalledTimes(1);
   handleMessage(f.ctx, f.manifest());
-  const update = f.emit.mock.calls.find(([message]) => message.collabMessage?.update)![0].collabMessage.update;
+  const update = jest.mocked(enqueueOutboxUpdate).mock.calls[0][0];
 
   Y.applyUpdate(f.server, update.payload);
   handleMessage(f.ctx, f.manifest());

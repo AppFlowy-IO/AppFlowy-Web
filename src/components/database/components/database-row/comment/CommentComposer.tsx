@@ -13,7 +13,7 @@ import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.s
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
-import { DraftMention, serializeCommentMentions, updateDraftMentions } from './comment-mentions';
+import { DraftMention, serializeCommentMentions, updateDraftMentions } from '@/application/comment-mentions';
 import { CommentDraftContext } from './CommentDraftContext';
 
 interface CommentComposerProps {

@@ -203,6 +203,11 @@
     "exportPdfIncludeLinkedPagesPro": "Pro plan required",
     "exportPdfSuccess": "PDF downloaded",
     "exportPdfError": "Failed to export PDF",
+    "pdfPageFormat": "Page format",
+    "pdfLetter": "Letter",
+    "pdfLegal": "Legal",
+    "landscape": "Landscape",
+    "pdfWideTableHint": "Wide tables continue on additional pages, repeating the name column.",
     "publishTab": "Publish",
     "shareTab": "Share",
     "publishOnAppFlowy": "Publish on AppFlowy",
@@ -3745,7 +3750,9 @@
     "betaTooltip": "We currently only support searching for pages and content in documents",
     "fromTrashHint": "From trash",
     "noResultsHint": "We didn't find what you're looking for, try searching for another term.",
-    "clearSearchTooltip": "Clear search field"
+    "clearSearchTooltip": "Clear search field",
+    "foundInImage": "Found in an image",
+    "foundInPdf": "Found in a PDF"
   },
   "space": {
     "delete": "Delete",

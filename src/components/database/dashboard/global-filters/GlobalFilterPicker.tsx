@@ -5,6 +5,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
+import { Input } from '@/components/ui/input';
 import { useDashboardContext, useDashboardLayout } from '@/components/database/dashboard/DashboardContext';
 import { cn } from '@/lib/utils';
 
@@ -13,9 +14,9 @@ import { GlobalFilterSourceField } from './global-filter.utils';
 import { useFilterMenuSourceDocs } from './useFilterMenuSourceDocs';
 import { useDashboardFilterSources } from './useGlobalFilterActions';
 
-/** A 28px row of the global filter menus (radius 6, padding 0 8, gap 8, 14/20). */
+/** Medium rows share semantic hover, selection and keyboard focus states. */
 export const GLOBAL_FILTER_ROW_CLASS =
-  'flex h-7 w-full min-w-0 items-center gap-2 rounded-200 px-2 text-left text-sm text-text-primary outline-none hover:bg-dash-hover-fill data-[active=true]:bg-dash-hover-fill';
+  'flex h-8 w-full min-w-0 items-center gap-2 rounded-200 px-2 text-left text-sm leading-5 text-text-primary outline-none hover:bg-fill-content-hover focus-visible:ring-2 focus-visible:ring-border-theme-thick data-[active=true]:bg-fill-theme-select [&_svg]:h-5 [&_svg]:w-5';
 
 export interface GlobalFilterPickerProps {
   mode: GlobalFilterPickerMode;
@@ -112,10 +113,10 @@ export function GlobalFilterPicker({
 
   return (
     <div className='flex flex-col' data-testid='dashboard-global-filter-picker' data-mode={mode}>
-      <input
+      <Input
         aria-label={t('dashboard.globalFilters.filterBy', { defaultValue: 'Filter by…' })}
         autoFocus
-        className='mx-1 mb-1.5 mt-1 h-7 rounded-200 border border-border-primary bg-transparent px-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-theme-thick'
+        className='mx-1 mb-2 mt-1 h-8 !rounded-200 px-2 text-sm'
         data-testid='dashboard-global-filter-search'
         onChange={(event) => {
           setQuery(event.target.value);
