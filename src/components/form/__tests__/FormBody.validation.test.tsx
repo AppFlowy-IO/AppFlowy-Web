@@ -1,9 +1,27 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+import * as formApi from '@/application/services/js-services/http/form-api';
 import { PublicFormSchema, PublicQuestion, PublicQuestionKind } from '@/application/types/form';
 import { FormBody } from '@/components/form/FormBody';
 
 describe('FormBody typed-answer validation', () => {
+  const scrollIntoView = jest.fn();
+  const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+
+  beforeAll(() => {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+  });
+
+  beforeEach(() => scrollIntoView.mockClear());
+
+  afterAll(() => {
+    if (scrollIntoViewDescriptor) {
+      Object.defineProperty(Element.prototype, 'scrollIntoView', scrollIntoViewDescriptor);
+    } else {
+      Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+    }
+  });
+
   it('uses the legacy display fallback only when the respondent schema title is empty', () => {
     const { rerender } = render(<FormBody token='preview' schema={{ ...schemaFor(), title: '' }} previewMode />);
 
@@ -84,6 +102,74 @@ describe('FormBody typed-answer validation', () => {
 
     expect(screen.getByText('Required')).toBeTruthy();
     expect(screen.queryByText('Enter a valid email address.')).toBeNull();
+  });
+
+  it('makes an unanswered required question visible and clears feedback after it is corrected', async () => {
+    render(<FormBody token='preview' schema={schemaFor(question('text', true))} previewMode />);
+    const input = await questionInput('text');
+    const submit = screen.getByTestId('public-form-submit');
+
+    submit.focus();
+    fireEvent.click(submit);
+
+    expect(screen.getByRole('alert').textContent).toBe('Please review 1 answer before submitting.');
+    expect(input.parentElement?.classList.contains('ring-1')).toBe(true);
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId('public-form-question-text'));
+    expect(screen.queryByTestId('public-form-confirmation')).toBeNull();
+
+    fireEvent.change(input, { target: { value: 'Niseko United' } });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(input.parentElement?.classList.contains('ring-1')).toBe(false);
+    fireEvent.click(submit);
+    expect(screen.getByTestId('public-form-confirmation')).toBeTruthy();
+  });
+
+  it('counts invalid answers and focuses the first question in the authored order', async () => {
+    render(
+      <FormBody token='preview' schema={schemaFor(question('phone', true), question('email', true))} previewMode />
+    );
+    const firstInput = await questionInput('phone');
+
+    await questionInput('email');
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+
+    expect(screen.getByRole('alert').textContent).toBe('Please review 2 answers before submitting.');
+    await waitFor(() => expect(document.activeElement).toBe(firstInput));
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId('public-form-question-phone'));
+
+    fireEvent.change(firstInput, { target: { value: '+1 555 123 4567' } });
+
+    expect(screen.getByRole('alert').textContent).toBe('Please review 1 answer before submitting.');
+    expect(document.activeElement).toBe(firstInput);
+  });
+
+  it('reveals server validation errors in authored order after locally valid answers', async () => {
+    const submitResponse = jest.spyOn(formApi, 'submitPublicForm').mockResolvedValueOnce({
+      kind: 'invalid',
+      field_errors: { email: 'This email cannot be used.', phone: 'This phone cannot be used.' },
+    });
+
+    try {
+      render(<FormBody token='shared-form' schema={schemaFor(question('phone', true), question('email', true))} />);
+      const firstInput = await questionInput('phone');
+
+      fireEvent.change(firstInput, { target: { value: '+1 555 123 4567' } });
+      fireEvent.change(await questionInput('email'), { target: { value: 'person@example.com' } });
+      screen.getByTestId('public-form-submit').focus();
+      fireEvent.click(screen.getByTestId('public-form-submit'));
+
+      expect((await screen.findByRole('alert')).textContent).toBe('Please review 2 answers before submitting.');
+      expect(submitResponse).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('This phone cannot be used.')).toBeTruthy();
+      expect(screen.getByText('This email cannot be used.')).toBeTruthy();
+      await waitFor(() => expect(document.activeElement).toBe(firstInput));
+      expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId('public-form-question-phone'));
+      expect(screen.queryByTestId('public-form-confirmation')).toBeNull();
+    } finally {
+      submitResponse.mockRestore();
+    }
   });
 });
 

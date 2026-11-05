@@ -97,6 +97,8 @@ function _FormQuestion({
     <div
       data-testid={`public-form-question-${question.id}`}
       data-question-kind={question.kind}
+      data-question-id={question.id}
+      tabIndex={-1}
       className='flex flex-col gap-2'
     >
       <div className='flex flex-col gap-1'>
