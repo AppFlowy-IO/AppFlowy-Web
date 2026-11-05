@@ -67,9 +67,9 @@ function type(value: string, caret = value.length) {
 describe('inline comment person mentions', () => {
   beforeAll(() => {
     globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
     } as unknown as typeof ResizeObserver;
   });
 
@@ -134,7 +134,7 @@ describe('inline comment person mentions', () => {
     render(<Harness submit={submit} />);
     type('Hi @Al please review', 6);
     fireEvent.click(screen.getByRole('option', { name: /Alice/ }));
-    expect((screen.getByTestId('input') as HTMLTextAreaElement).value).toBe('Hi @Alice  please review');
+    expect(screen.getByTestId('input').value).toBe('Hi @Alice  please review');
     fireEvent.click(screen.getByText('Send'));
     expect(submit).toHaveBeenCalledWith(`Hi @[Alice](${people[0].person_id})  please review`);
   });
