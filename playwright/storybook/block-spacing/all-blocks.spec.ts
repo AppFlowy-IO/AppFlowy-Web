@@ -89,6 +89,16 @@ for (const width of [1200, 600]) {
     }
 
     await expect(block('all-file').locator('[data-file-row]')).toHaveCSS('min-height', '44px');
+    const fileRow = block('all-file').locator('[data-file-row]');
+    const fileLabel = fileRow.locator('.file-block-label');
+
+    await expect(fileLabel).toHaveCSS('text-align', 'left');
+    const iconRect = (await fileRow.locator(':scope > svg').boundingBox())!;
+    const labelRect = (await fileLabel.boundingBox())!;
+
+    expect(labelRect.x - iconRect.x - iconRect.width).toBeCloseTo(8);
+    expect(labelRect.y + labelRect.height / 2).toBeCloseTo(iconRect.y + iconRect.height / 2);
+
     await expect(block('all-sub_page').locator('.subpage')).toHaveCSS('height', '32px');
     await expect(block('all-linked_page').locator('.subpage')).toHaveCSS('height', '32px');
   });

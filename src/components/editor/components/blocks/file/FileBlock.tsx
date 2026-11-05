@@ -7,7 +7,9 @@ import { useReadOnly, useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType, FieldURLType, FileBlockData } from '@/application/types';
-import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
+import { ReactComponent as FileIcon } from '@/assets/icons/file_block_doc.svg';
+import { ReactComponent as UploadedFileIcon } from '@/assets/icons/file_block_uploaded_doc.svg';
+import { ReactComponent as LinkedFileIcon } from '@/assets/icons/file_block_uploaded_doc_by_link.svg';
 import { ReactComponent as ReloadIcon } from '@/assets/icons/regenerate.svg';
 import { notify } from '@/components/_shared/notify';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -30,12 +32,13 @@ export const FileBlock = memo(
     const { url: dataUrl, name, retry_local_url } = useMemo(() => data || {}, [data]);
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
     const emptyRef = useRef<HTMLDivElement>(null);
-    const [showToolbar, setShowToolbar] = useState(false);
 
     const url = useMemo(() => constructFileUrl(dataUrl, workspaceId, viewId), [dataUrl, workspaceId, viewId]);
 
+    const Icon = url ? (data.url_type === FieldURLType.Upload ? UploadedFileIcon : LinkedFileIcon) : FileIcon;
+
     const className = useMemo(() => {
-      const classList = ['w-full'];
+      const classList = ['file-block group relative w-full'];
 
       if (url) {
         classList.push('cursor-pointer');
@@ -142,30 +145,21 @@ export const FileBlock = memo(
     );
 
     return (
-      <div
-        {...attributes}
-        contentEditable={readOnly ? false : undefined}
-        className={className}
-        onMouseEnter={() => {
-          if (!url) return;
-          setShowToolbar(true);
-        }}
-        onMouseLeave={() => setShowToolbar(false)}
-        onClick={handleClick}
-      >
+      <div {...attributes} contentEditable={readOnly ? false : undefined} className={className} onClick={handleClick}>
         <div contentEditable={false} data-file-row className={`embed-block items-center p-4`}>
-          <div className={'flex h-full items-start'}>
-            <FileIcon className={'h-6 w-6'} />
-          </div>
+          <Icon className={'h-5 w-5 shrink-0 text-text-tertiary'} />
 
-          <div ref={emptyRef} className={'flex flex-1 flex-col gap-2 overflow-hidden text-base font-medium'}>
+          <div
+            ref={emptyRef}
+            className={'file-block-label min-w-0 flex-1 overflow-hidden text-left text-sm font-medium leading-5'}
+          >
             {url || needRetry ? (
               <div className={'flex flex-col gap-2'}>
                 <div className={'w-full truncate'}>{name?.trim() || t('document.title.placeholder')}</div>
                 {needRetry && <div className={'font-normal text-function-error'}>{t('web.fileBlock.uploadFailed')}</div>}
               </div>
             ) : (
-              <div className={'text-text-secondary'}>{t('web.fileBlock.empty')}</div>
+              <div className={'truncate font-normal text-text-tertiary'}>{t('web.fileBlock.empty')}</div>
             )}
           </div>
 
@@ -179,7 +173,7 @@ export const FileBlock = memo(
                 </IconButton>
               </Tooltip>
             ))}
-          {showToolbar && url && (
+          {url && (
             <FileToolbar
               node={{
                 ...node,

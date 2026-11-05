@@ -1082,3 +1082,28 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
   > .toggle-list:not(.collapsed):has(> .block-element) {
   padding-bottom: 2px;
 }
+
+// Match the desktop file row and keep its action slot stable on hover.
+#body [role='textbox'] .file-block [data-file-row] {
+  border-radius: 8px;
+  background-color: var(--block-bg-color-20);
+  color: var(--block-text-color-20);
+
+  &:hover,
+  &:focus-within {
+    background-color: var(--block-bg-hover-color-20);
+  }
+
+  > .flex {
+    min-height: 28px;
+  }
+
+  > div:last-child:has(> button[aria-haspopup='menu']) {
+    opacity: 0;
+  }
+
+  &:hover > div:last-child,
+  &:focus-within > div:last-child {
+    opacity: 1;
+  }
+}
