@@ -1,6 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { Workspaces } from '../Workspaces';
@@ -43,10 +42,9 @@ jest.mock('@/components/app/app.hooks', () => ({
   useRefreshUserWorkspaceInfo: () => jest.fn(),
   useAIEnabled: () => false,
   useAppOperations: () => ({ onChangeWorkspace: jest.fn() }),
-}));
-
-jest.mock('@/utils/subscription', () => ({
-  isAppFlowyHosted: () => false,
+  // Self-hosted with no subscription fetcher: billing entries stay hidden.
+  useIsOfficialHosted: () => false,
+  useGetSubscriptions: () => undefined,
 }));
 
 describe('Workspaces dropdown list visibility', () => {
@@ -58,12 +56,14 @@ describe('Workspaces dropdown list visibility', () => {
     );
 
     const trigger = screen.getByTestId('workspace-dropdown-trigger');
+
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
     fireEvent.click(trigger);
     fireEvent.keyDown(trigger, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
       const workspaceListContainer = screen.getByTestId('workspace-list');
+
       expect(workspaceListContainer).toBeTruthy();
       expect(workspaceListContainer.className).toContain('appflowy-visible-scrollbar');
       expect(workspaceListContainer.className).toContain('max-h-[320px]');
