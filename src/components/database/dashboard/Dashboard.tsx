@@ -287,7 +287,7 @@ export function Dashboard() {
             <DashboardLoadSchedulerProvider hostSourceId={hostDatabaseId} order={widgetOrder} scrollRef={scrollRef}>
               <div
                 // `group/dashboard`: the handles and drop zones read `data-dragging` in CSS.
-                className='group/dashboard relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden'
+                className='group/dashboard relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden bg-surface-container-layer-00'
                 data-dragging={draggingWidgetId ? 'true' : undefined}
                 data-editing={editing ? 'true' : 'false'}
                 data-testid='dashboard-view'
@@ -295,7 +295,7 @@ export function Dashboard() {
               >
                 {/* The same inset in View and Edit mode; the grid's first band replaces the top padding. */}
                 <div
-                  className={cn('flex w-full flex-col pb-10', DASHBOARD_COMPACT_INSET_CLASS)}
+                  className={cn('flex w-full flex-col pb-10 pt-3', DASHBOARD_COMPACT_INSET_CLASS)}
                   style={getDashboardInlinePadding({
                     paddingStart: paddingStart ?? DASHBOARD_DEFAULT_INLINE_PADDING,
                     paddingEnd: paddingEnd ?? DASHBOARD_DEFAULT_INLINE_PADDING,

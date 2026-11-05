@@ -9,6 +9,7 @@ import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -46,12 +47,12 @@ export const LAYOUT_ROW_PARITY_SLUGS: Partial<Record<DatabaseViewLayout, string>
 };
 
 const ROW_CLASS = cn(
-  'flex h-7 w-full shrink-0 items-center gap-2 rounded-[6px] px-2 text-left text-sm leading-5 text-text-primary outline-none',
-  'hover:bg-dash-hover-fill focus-visible:bg-dash-hover-fill aria-disabled:cursor-default aria-disabled:opacity-60 aria-disabled:hover:bg-transparent',
+  'h-8 w-full min-w-0 shrink-0 justify-start gap-2 !rounded-200 px-2 text-left text-sm font-normal leading-5 text-text-primary',
+  'hover:bg-fill-content-hover focus-visible:ring-2 focus-visible:ring-border-theme-thick aria-pressed:bg-fill-theme-select aria-disabled:cursor-default aria-disabled:text-text-tertiary aria-disabled:hover:bg-transparent [&_svg]:h-5 [&_svg]:w-5',
   'transition-colors',
   DASHBOARD_MOTION_FAST_CLASS
 );
-const SECTION_TITLE_CLASS = 'px-2 pb-1 pt-2 text-xs font-medium leading-4 text-dash-title';
+const SECTION_TITLE_CLASS = 'px-2 pb-1 pt-3 text-xs font-medium leading-[18px] text-text-secondary';
 
 interface RowProps {
   disabled: boolean;
@@ -64,8 +65,8 @@ interface RowProps {
 
 function PickerRow({ disabled, onActivate, children, testId, className, attrs }: RowProps) {
   return (
-    <button
-      aria-disabled={disabled || undefined}
+    <Button
+      disabled={disabled}
       className={cn(ROW_CLASS, className)}
       data-picker-focusable='true'
       data-testid={testId}
@@ -73,10 +74,11 @@ function PickerRow({ disabled, onActivate, children, testId, className, attrs }:
         if (!disabled) onActivate();
       }}
       type='button'
+      variant='ghost'
       {...attrs}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -111,12 +113,12 @@ function OptionRow({
       testId='dashboard-widget-picker-option'
     >
       <PageIcon
-        className='!h-4 !w-4 shrink-0 text-xs leading-4'
-        iconSize={16}
+        className='!h-5 !w-5 shrink-0 text-sm leading-5'
+        iconSize={20}
         view={{ icon: option.icon, layout: option.layout }}
       />
       <span className='min-w-0 flex-1 truncate'>{option.name}</span>
-      {selected ? <CheckIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-dash-accent' /> : null}
+      {selected ? <CheckIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-icon-info-thick' /> : null}
     </PickerRow>
   );
 }
@@ -143,7 +145,7 @@ function GroupRows({ group, disabled, currentViewId, onPickExisting, onShowAll }
           onActivate={() => onShowAll(group.databaseId)}
           testId='dashboard-widget-picker-show-more'
         >
-          <MoreIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-dash-tool-icon' />
+          <MoreIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-icon-secondary' />
           <span className='truncate'>
             {t('dashboard.picker.showMore', { count: group.more, defaultValue: 'Show {{count}} more' })}
           </span>
@@ -183,7 +185,7 @@ function LayoutRow({
           data-parity-id={slug ? `dash-widget-picker-layout-${slug}__icon` : undefined}
         >
           <ViewIcon
-            className='h-4 w-4 text-dash-tool-icon'
+            className='h-4 w-4 text-icon-secondary'
             data-parity-id='dash-widget-picker-layout__icon'
             layout={databaseLayoutToViewLayout(row.layout)}
             size='unset'
@@ -284,7 +286,7 @@ export const WidgetSourceList = memo(function WidgetSourceList({
                 data-testid='dashboard-widget-picker-group'
                 key={group.databaseId}
               >
-                <div className='truncate px-2 pb-1 pt-1.5 text-xs font-medium leading-4 text-dash-title'>
+                <div className='truncate px-2 pb-1 pt-1.5 text-xs font-medium leading-4 text-text-secondary'>
                   {group.name || t('untitled')}
                 </div>
                 <GroupRows
@@ -302,7 +304,7 @@ export const WidgetSourceList = memo(function WidgetSourceList({
                     onActivate={() => onNewInDatabase(group.databaseId, group.name)}
                     testId='dashboard-widget-picker-new-in-database'
                   >
-                    <PlusIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-dash-tool-icon' />
+                    <PlusIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-icon-secondary' />
                     <span className='truncate'>
                       {t('dashboard.picker.newViewIn', {
                         database: group.name || t('untitled'),

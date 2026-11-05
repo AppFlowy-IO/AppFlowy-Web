@@ -27,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import { useDashboardLayout } from './DashboardContext';
+import { DASHBOARD_OVERLAY_CLASS } from './dashboard-ui';
 import { dashboardFullAnnouncement, DashboardFullTooltipContent } from './DashboardFullTooltip';
 import { useDashboardUi, useDashboardUiOptional } from './DashboardUiContext';
 import { useDashboardCreationOnline } from './hooks/useDashboardCreationOnline';
@@ -120,11 +121,11 @@ const ENTRY_PARITY_IDS: Record<WidgetMenuEntryId, { item: string; icon: string; 
   },
 };
 
-/** Notion's menu chrome (spec §7.1): 220 wide, radius 10, padding 4. */
-export const WIDGET_MENU_CONTENT_CLASS = 'w-[220px] !min-w-[220px] !rounded-[10px] !p-1';
-/** Items 28 tall, radius 6, padding `0 8`, 14/20 text, 16px icons in the tool icon colour. */
+/** AppFlowy menu chrome: 240px wide, 12px corners and 8px content padding. */
+export const WIDGET_MENU_CONTENT_CLASS = `${DASHBOARD_OVERLAY_CLASS} w-[240px] !min-w-[240px] !p-2`;
+/** Medium menu rows use 14/20 text and 20px semantic icons. */
 const ITEM_CLASS =
-  '!h-7 !min-h-7 !rounded-200 !px-2 !py-0 gap-2 text-sm leading-5 [&_svg]:!h-4 [&_svg]:!w-4 [&_svg]:text-dash-tool-icon';
+  '!h-8 !min-h-8 !rounded-200 !px-2 !py-1.5 gap-2 text-sm leading-5 [&_svg]:!h-5 [&_svg]:!w-5 [&_svg]:text-icon-secondary';
 const SEPARATOR_CLASS = '!-mx-1 !my-1';
 
 function runEntry(id: WidgetMenuEntryId, actions: WidgetActions) {
@@ -260,7 +261,11 @@ function RefusedDuplicateEntry({ offline = false }: { offline?: boolean }) {
           <EntryContent id='duplicate' />
         </DropdownMenuItem>
       </TooltipTrigger>
-      {offline ? <TooltipContent side='right'>{onlineReason}</TooltipContent> : <DashboardFullTooltipContent side='right' />}
+      {offline ? (
+        <TooltipContent side='right'>{onlineReason}</TooltipContent>
+      ) : (
+        <DashboardFullTooltipContent side='right' />
+      )}
     </Tooltip>
   );
 }
@@ -271,7 +276,11 @@ function MenuEntry({ entry, actions, onEditView }: EntryProps & { onEditView: ()
 
   return (
     <DropdownMenuItem
-      className={ITEM_CLASS}
+      className={cn(
+        ITEM_CLASS,
+        entry.id === 'delete' &&
+          'hover:text-text-error focus:text-text-error [&:focus_svg]:text-icon-error-thick [&:hover_svg]:text-icon-error-thick'
+      )}
       data-parity-id={ENTRY_PARITY_IDS[entry.id].item}
       data-testid={`dashboard-widget-menu-${entry.id}`}
       disabled={entry.disabled}
@@ -279,7 +288,7 @@ function MenuEntry({ entry, actions, onEditView }: EntryProps & { onEditView: ()
         if (entry.id === 'edit-view') onEditView();
         runEntry(entry.id, actions);
       }}
-      // Delete is neutral, as in Notion.
+      // Destructive rows stay neutral until hovered or focused.
       variant='default'
     >
       <EntryContent id={entry.id} />
