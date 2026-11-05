@@ -86,7 +86,8 @@ jobs:
     if: ${{ !inputs.interop_only }}
     name: 'Code blocks and Mermaid (light and dark)'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
