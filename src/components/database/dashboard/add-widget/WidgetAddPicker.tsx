@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { DatabaseViewLayout } from '@/application/types';
 import { ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED } from '@/application/view-online-policy';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 import { useDashboardContext } from '../DashboardContext';
@@ -31,7 +32,7 @@ function firstPick(
   return row ? { kind: 'layout', layout: row.layout } : null;
 }
 
-/** The search field of a docked picker: 28 tall, radius 6, accent focus ring. */
+/** A labelled, medium search field in the docked picker. */
 export function PickerSearchField({
   value,
   onChange,
@@ -46,19 +47,21 @@ export function PickerSearchField({
   return (
     <label
       className={cn(
-        'mx-1 mb-1 flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] border border-border-primary px-2',
-        'focus-within:border-dash-accent focus-within:ring-1 focus-within:ring-dash-accent'
+        'mx-1 mb-2 flex h-8 shrink-0 items-center gap-1.5 rounded-200 border border-border-primary px-2',
+        'focus-within:border-border-theme-thick focus-within:ring-1 focus-within:ring-border-theme-thick hover:border-border-primary-hover'
       )}
       data-parity-id='dash-widget-picker-search'
     >
       <SearchIcon
         aria-hidden='true'
-        className='h-4 w-4 shrink-0 text-icon-tertiary'
+        className='h-5 w-5 shrink-0 text-icon-secondary'
         data-parity-id='dash-widget-picker-search__icon'
       />
-      <input
+      <Input
+        aria-label={placeholder}
         autoFocus
-        className='min-w-0 flex-1 bg-transparent text-sm leading-5 text-text-primary outline-none placeholder:text-text-tertiary'
+        variant='ghost'
+        className='h-full min-w-0 flex-1 rounded-none px-0 text-sm leading-5'
         data-dock-autofocus='true'
         data-testid='dashboard-widget-picker-search'
         onChange={(event) => onChange(event.target.value)}
@@ -90,7 +93,12 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
   const online = useDashboardCreationOnline();
   const existingOnly = state.kind === 'choosing_existing' || !online;
   const excludeViewIds = useMemo(() => (state.kind === 'open' ? [state.viewId] : []), [state]);
-  const picker = useWidgetPickerSections({ mode: 'add', primaryDatabaseId: hostDatabaseId, excludeViewIds, existingOnly });
+  const picker = useWidgetPickerSections({
+    mode: 'add',
+    primaryDatabaseId: hostDatabaseId,
+    excludeViewIds,
+    existingOnly,
+  });
   const [target, setTarget] = useState<{ databaseId: string; name: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -186,9 +194,11 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
         onClose={close}
         parityPrefix='dash-widget-picker'
         testIdPrefix='dashboard-widget-picker'
-        title={existingOnly
-          ? t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' })
-          : t('dashboard.picker.newView', { defaultValue: 'New view' })}
+        title={
+          existingOnly
+            ? t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' })
+            : t('dashboard.picker.newView', { defaultValue: 'New view' })
+        }
       />
       <PickerSearchField
         onChange={picker.setQuery}

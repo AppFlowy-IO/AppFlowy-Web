@@ -49,7 +49,7 @@ function FileToolbar({ node }: { node: FileNode }) {
   }, [open]);
 
   return (
-    <div onClick={(e) => e.stopPropagation()} className='flex shrink-0 items-center'>
+    <div data-file-actions onClick={(e) => e.stopPropagation()} className='flex shrink-0 items-center'>
       <IconButton
         aria-label={t('button.more')}
         aria-haspopup='menu'

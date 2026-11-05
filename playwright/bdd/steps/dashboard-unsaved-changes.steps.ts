@@ -76,7 +76,7 @@ Then('the dashboard filter button shows no unsaved dot', async ({ page }) => {
   await expect(PrivateSelectors.buttonDot(page)).toHaveCount(0);
 });
 
-/** The toolbar button has no numeric badge (WP07/WP08): only its glyph (and a dot's screen-reader text). */
+/** The labelled toolbar button has no numeric badge; an unsaved dot may add screen-reader text. */
 Then('the dashboard filter button shows no count', async ({ page }) => {
   const button = DashboardSelectors.globalFilterButton(page);
 
@@ -91,7 +91,7 @@ Then('the dashboard filter button shows no count', async ({ page }) => {
         return (clone.textContent ?? '').trim();
       })
     )
-    .toBe('');
+    .toBe('Filter');
 });
 
 Then('the {string} widget Sort button shows an unsaved dot', async ({ page }, label: string) => {
@@ -139,12 +139,9 @@ When('I choose {string} from the {string} menu', async ({ page }, item: string, 
 // A widget's popover footer and the toast
 // ---------------------------------------------------------------------------
 
-When(
-  'I click {string} in the {string} widget filters popover',
-  async ({ page }, control: string, label: string) => {
-    await clickWidgetPopoverControl(page, page, label, control);
-  }
-);
+When('I click {string} in the {string} widget filters popover', async ({ page }, control: string, label: string) => {
+  await clickWidgetPopoverControl(page, page, label, control);
+});
 
 Then('I see the toast {string} with an {string} button', async ({ page }, message: string, undo: string) => {
   await expectSavedToast(page, message, undo);
@@ -168,12 +165,9 @@ Given('this device holds unreadable unsaved changes for the dashboard', async ({
 // ---------------------------------------------------------------------------
 
 /** Opened once on the view's full grid page, where a writer's grid stores the shared value. */
-Given(
-  'the {string} view calculates the sum of {string}',
-  async ({ page }, label: string, property: string) => {
-    await calculateOnViewPage(page, label, property, 'Sum', () => openDashboard(page));
-  }
-);
+Given('the {string} view calculates the sum of {string}', async ({ page }, label: string, property: string) => {
+  await calculateOnViewPage(page, label, property, 'Sum', () => openDashboard(page));
+});
 
 Then(
   'the {string} widget footer shows the {string} sum {string}',

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DatabaseViewLayout } from '@/application/types';
 import DashboardSettings from '@/components/database/components/settings/DashboardSettings';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger } from '@/components/ui/tooltip';
 
 const mockUpdateSetting = jest.fn();
 let mockShowWidgetTitles = true;
@@ -75,6 +76,24 @@ describe('DashboardSettings', () => {
     expect(screen.getByTestId('layout-switcher').getAttribute('data-layout')).toBe(String(DatabaseViewLayout.Dashboard));
   });
 
+  it('returns keyboard focus to the button when its trigger has a tooltip', async () => {
+    render(
+      <Tooltip>
+        <DashboardSettings wrapTrigger={(trigger) => <TooltipTrigger asChild>{trigger}</TooltipTrigger>}>
+          <Button data-testid='settings-trigger' type='button' variant='ghost'>
+            Open
+          </Button>
+        </DashboardSettings>
+      </Tooltip>
+    );
+    await openMenu();
+
+    fireEvent.keyDown(screen.getByTestId('dashboard-settings-menu'), { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByTestId('dashboard-settings-menu')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('settings-trigger')));
+  });
+
   it('hides widget titles when the enabled switch is toggled', async () => {
     renderSettings();
     await openMenu();
@@ -83,6 +102,7 @@ describe('DashboardSettings', () => {
 
     expect(item.textContent).toContain('Show widget titles');
     expect(item.getAttribute('data-checked')).toBe('true');
+    expect(item.getAttribute('aria-checked')).toBe('true');
     expect(item.querySelector('[role="switch"]')?.getAttribute('data-state')).toBe('checked');
 
     fireEvent.click(item);
@@ -122,7 +142,7 @@ describe('DashboardSettings', () => {
     renderSettings();
     await openMenu();
 
-    const items = screen.getAllByRole('menuitem').map((item) => item.getAttribute('data-testid'));
+    const items = screen.getAllByRole('menuitemcheckbox').map((item) => item.getAttribute('data-testid'));
     const item = screen.getByTestId('dashboard-settings-show-icons-in-heading');
 
     expect(items.indexOf('dashboard-settings-show-icons-in-heading')).toBe(
@@ -130,6 +150,7 @@ describe('DashboardSettings', () => {
     );
     expect(item.textContent).toContain('Show icons in heading');
     expect(item.getAttribute('data-checked')).toBe('false');
+    expect(item.getAttribute('aria-checked')).toBe('false');
     expect(item.querySelector('[role="switch"]')?.getAttribute('data-state')).toBe('unchecked');
 
     fireEvent.click(item);

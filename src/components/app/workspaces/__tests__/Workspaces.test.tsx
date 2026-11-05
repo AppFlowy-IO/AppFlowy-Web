@@ -39,11 +39,11 @@ const mockWorkspaces = [
 jest.mock('@/components/app/app.hooks', () => ({
   useUserWorkspaceInfo: () => ({ workspaces: mockWorkspaces }),
   useCurrentWorkspaceId: () => 'ws-1',
+  useIsOfficialHosted: () => false,
   useRefreshUserWorkspaceInfo: () => jest.fn(),
   useAIEnabled: () => false,
   useAppOperations: () => ({ onChangeWorkspace: jest.fn() }),
-  // Self-hosted with no subscription fetcher: billing entries stay hidden.
-  useIsOfficialHosted: () => false,
+  // Self-hosted (useIsOfficialHosted above) with no subscription fetcher: billing entries stay hidden.
   useGetSubscriptions: () => undefined,
 }));
 

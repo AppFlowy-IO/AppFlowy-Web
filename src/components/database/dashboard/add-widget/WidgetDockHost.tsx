@@ -12,9 +12,11 @@ import {
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 import { DASHBOARD_POPOVER_RADIUS } from '../constants';
 import { useDashboardUi } from '../DashboardUiContext';
+import { DASHBOARD_OVERLAY_CLASS } from '../dashboard-ui';
 
 import { useAddWidgetFlowState } from './add-widget-api';
 import { AddWidgetFlowState, isAddWidgetPopoverOpen } from './add-widget-flow';
@@ -130,7 +132,7 @@ export function WidgetDockHost({ sourceWidgetId, closeSourcePanel, bindFlowView,
         {open && panel ? (
           <PopoverContent
             {...dockPopperProps(placement.side)}
-            className='flex flex-col overflow-hidden border border-border-primary bg-surface-primary p-2 shadow-menu'
+            className={cn(DASHBOARD_OVERLAY_CLASS, 'flex flex-col overflow-hidden p-2')}
             data-mode={panel === 'source' ? 'replace' : 'add'}
             data-parity-id={panel === 'picker' || panel === 'source' ? 'dash-widget-picker' : undefined}
             data-side={placement.side}
@@ -152,7 +154,8 @@ export function WidgetDockHost({ sourceWidgetId, closeSourcePanel, bindFlowView,
               maxHeight: placement.maxHeight,
             }}
           >
-            {panel === 'picker' && (state.kind === 'creating' || state.kind === 'choosing_existing' || state.kind === 'open') ? (
+            {panel === 'picker' &&
+            (state.kind === 'creating' || state.kind === 'choosing_existing' || state.kind === 'open') ? (
               <WidgetAddPicker state={state} />
             ) : panel === 'config' && state.kind === 'configuring' ? (
               <NewViewConfigPanel state={state} />
