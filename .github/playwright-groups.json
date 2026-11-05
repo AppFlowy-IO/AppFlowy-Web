@@ -22,8 +22,8 @@
   },
   {
     "name": "dockable-outline-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js",
-    "description": "Dockable document outline, scroll tracking, themes, comments, and published display modes",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/inline-comment-mentions.feature.spec.js",
+    "description": "Dockable document outline and document comment person mentions",
     "bdd": "true",
     "shard": ""
   },
