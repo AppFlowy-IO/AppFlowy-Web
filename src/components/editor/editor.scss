@@ -733,7 +733,8 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
       flex: 0 0 24px;
       width: 24px;
       height: 24px;
-      padding: 2px 4px 2px 0;
+      // Center the 20px glyph with the adjacent 22px list marker.
+      padding: 2px 3px 2px 1px;
       top: 0;
       margin-top: max(0px, calc((var(--callout-toggle-line-height) - 24px) / 2));
       border-radius: 6px;
