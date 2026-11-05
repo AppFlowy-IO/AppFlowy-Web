@@ -4,25 +4,21 @@ import { useTranslation } from 'react-i18next';
 import * as McpService from '@/application/services/domains/mcp';
 import type {
   McpAccessRequest,
-  McpApprovalMode,
   McpApprovedClient,
   McpWorkspaceConnection,
   McpWorkspaceSettings,
 } from '@/application/services/domains/mcp';
 import { notify } from '@/components/_shared/notify';
-import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 
-import { isMcpAccessLost, mcpApprovalCovers, mcpClientNames, mcpConnectionKey, mcpDisconnectRemoves } from './format';
+import { isMcpAccessLost, mcpApprovalCovers, mcpConnectionKey, mcpDisconnectRemoves } from './format';
 import { publishMcpPendingRequestCount } from './pendingRequestCount';
 import { type McpResource, useMcpAction, useMcpResource } from './useMcpRequest';
 
 /**
- * The owner action in flight. `id` names its target: the approval mode, the
- * client ID or app key being approved, a request's or an approval's key, or a
- * member connection (`mcpMemberConnectionId`).
+ * The owner action in flight. `id` names its target: the client ID or app key being
+ * approved, a request's or an approval's key, or a member connection (`mcpMemberConnectionId`).
  */
 export type McpGovernanceAction =
-  | { kind: 'settings'; id: McpApprovalMode }
   | { kind: 'approve'; id: string }
   | { kind: 'dismiss'; id: string }
   | { kind: 'revoke'; id: string }
@@ -49,11 +45,6 @@ export interface McpGovernanceState {
   /** Every member's live connection, one per device. */
   connections: McpResource<McpWorkspaceConnection[]>;
   pending: McpGovernanceAction | undefined;
-  /**
-   * Sets the approval policy (no confirmation). A stricter policy toasts the
-   * apps the server approved so members keep working.
-   */
-  setApprovalMode: (mode: McpApprovalMode) => Promise<boolean>;
   /**
    * Approves `target`: a client ID (as its app when the catalog recognizes
    * it), or an `app:<app_id>` key that approves every registration of the
@@ -85,7 +76,7 @@ async function reportAccessLost<T>(request: Promise<T>, onAccessLost?: () => voi
   }
 }
 
-/** Owner governance of AI apps in a workspace: approval policy, requests, approvals and member connections. */
+/** Owner governance of AI apps in a workspace: requests, approvals and member connections. */
 export function useMcpGovernance(
   workspaceId: string,
   { enabled, onAccessLost, onConnectionsChanged }: UseMcpGovernanceOptions
@@ -125,31 +116,6 @@ export function useMcpGovernance(
     [onAccessLost]
   );
 
-  const setApprovalMode = useCallback(
-    (mode: McpApprovalMode) =>
-      run(
-        { kind: 'settings', id: mode },
-        (signal) => McpService.updateMcpWorkspaceSettings(workspaceId, mode, { signal }),
-        ({ auto_approved_clients: autoApproved, ...result }) => {
-          // Keep the loaded approved apps: they carry the resolved names and logos.
-          updateSettings((current) => (current ? { ...result, approved_clients: current.approved_clients } : result));
-          if (autoApproved.length === 0) return;
-
-          // The stricter policy approved the apps members were using; the list now includes them.
-          notify.success(
-            t('settings.mcp.autoApproved', {
-              count: autoApproved.length,
-              names: mcpClientNames(autoApproved, t),
-              ...RAW_INTERPOLATION,
-            })
-          );
-          void reloadSettings();
-        },
-        onError
-      ),
-    [run, workspaceId, updateSettings, reloadSettings, t, onError]
-  );
-
   const approve = useCallback(
     (target: string, requestKey?: string) =>
       run(
@@ -157,7 +123,7 @@ export function useMcpGovernance(
         (signal) => McpService.approveMcpClient(workspaceId, target, { signal }),
         () => {
           notify.success(t('settings.mcp.approved'));
-          // The request filed under the approved key; a typed client ID also clears its own request.
+          // The request filed under the approved key; a client ID also clears its own request.
           updateRequests((current) =>
             current?.filter((request) => request.approval_key !== (requestKey ?? target) && request.client_id !== target)
           );
@@ -259,7 +225,6 @@ export function useMcpGovernance(
     requests,
     connections,
     pending,
-    setApprovalMode,
     approve,
     dismiss,
     revoke,

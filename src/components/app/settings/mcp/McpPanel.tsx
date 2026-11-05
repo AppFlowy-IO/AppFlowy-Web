@@ -187,8 +187,8 @@ export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelPro
       </div>
     );
   } else {
-    // Both tabs stay mounted, so switching keeps an expanded card, a typed client ID and open
-    // confirmations. The `hidden` attribute hides the inactive one: no display class on TabsContent.
+    // Both tabs stay mounted, so switching keeps expanded cards and open confirmations.
+    // The `hidden` attribute hides the inactive one: no display class on TabsContent.
     body = (
       <Tabs value={tab} onValueChange={(value) => setTab(value as McpPanelTab)} className='gap-5'>
         <TabsList className='gap-1.5' data-testid='mcp-tabs'>

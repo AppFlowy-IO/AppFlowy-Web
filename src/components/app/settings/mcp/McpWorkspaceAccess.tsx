@@ -3,26 +3,18 @@ import { useTranslation } from 'react-i18next';
 
 import {
   isMcpAppApprovalKey,
-  MCP_APPROVAL_MODES,
   type McpApprovalMode,
   type McpApprovedClient,
-  type McpClientSummary,
   type McpWorkspaceConnection,
 } from '@/application/services/domains/mcp';
-import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down_small.svg';
 import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 
 import {
   groupMcpConnectionsByMember,
-  isStricterMcpApprovalMode,
   mcpApprovalCovers,
   mcpClientName,
-  mcpClientNames,
-  mcpClientsKeptApproved,
   mcpConnectionKey,
   mcpDate,
   mcpDeviceLabel,
@@ -37,7 +29,6 @@ import {
   DisconnectDescription,
   EmptyState,
   McpTime,
-  Notice,
   PanelClientIdentity,
   PanelScopeBadge,
   PanelSection,
@@ -47,32 +38,13 @@ import {
   SectionLoading,
   SubSection,
 } from './McpPanelParts';
+
 import type { McpGovernanceAction, McpGovernanceState } from './useMcpGovernance';
 
 const NO_APPROVED_CLIENTS: McpApprovedClient[] = [];
-const NO_CLIENTS: McpClientSummary[] = [];
-/** The server's longest client ID (`MAX_CLIENT_ID_BYTES`, in bytes; the server still decides). */
-const MAX_CLIENT_ID_LENGTH = 2048;
-
-/** i18n keys of each approval policy option. */
-const APPROVAL_MODE_TEXT = {
-  verified_and_approved: {
-    title: 'settings.mcp.approvalModeVerified',
-    description: 'settings.mcp.approvalModeVerifiedDescription',
-  },
-  approved_only: {
-    title: 'settings.mcp.approvalModeApproved',
-    description: 'settings.mcp.approvalModeApprovedDescription',
-  },
-  any: { title: 'settings.mcp.approvalModeAny', description: 'settings.mcp.approvalModeAnyDescription' },
-} as const;
 
 /** What the open confirmation dialog asks about. */
 type Confirmation =
-  /** A policy that admits more apps without approval. */
-  | { kind: 'loosen'; mode: McpApprovalMode }
-  /** A stricter policy keeps `clients` approved (members are connected to them). */
-  | { kind: 'tighten'; mode: McpApprovalMode; clients: McpClientSummary[] }
   | { kind: 'revoke'; approval: McpApprovedClient }
   | { kind: 'disconnect'; connection: McpWorkspaceConnection }
   | { kind: 'disconnectAll' };
@@ -82,9 +54,8 @@ function isPending(pending: McpGovernanceAction | undefined, kind: McpGovernance
 }
 
 /**
- * Owner-only "Workspace access": the approval policy, members' approval
- * requests, approved apps, every member's connections (by member, one row per
- * device), approval by client ID and disconnecting every AI app.
+ * Owner-only "Workspace access": members' approval requests, approved apps,
+ * every member's connections (by member, one row per device), and disconnecting every AI app.
  */
 export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceState }) {
   const { t } = useTranslation();
@@ -93,7 +64,6 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
     requests,
     connections,
     pending,
-    setApprovalMode,
     approve,
     dismiss,
     revoke,
@@ -131,38 +101,13 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
     });
   };
 
-  const chooseMode = (mode: McpApprovalMode) => {
-    if (!approvalMode || mode === approvalMode) return;
-    if (!isStricterMcpApprovalMode(mode, approvalMode)) {
-      ask({ kind: 'loosen', mode });
-      return;
-    }
-
-    // A stricter policy keeps the apps members already use approved; name them first.
-    // Unknown while member connections load or failed: the toast names what the server kept.
-    const kept = mcpClientsKeptApproved(connections.data, approvedClients, mode, approvalMode);
-
-    if (kept.length > 0) ask({ kind: 'tighten', mode, clients: kept });
-    else void setApprovalMode(mode);
-  };
-
   return (
     <PanelSection
       title={t('settings.mcp.workspaceAccessTitle')}
       description={t('settings.mcp.workspaceAccessDescription')}
       testId='mcp-workspace-access'
     >
-      {/* The policy and the approved apps load together: one alert here when that fails, no list below. */}
-      {settings.failed ? (
-        <SectionError onRetry={() => void settings.reload()} testId='mcp-settings-error' />
-      ) : !settings.data ? (
-        <SectionLoading />
-      ) : !approvalMode ? (
-        // A policy a newer server added: changing it would need to know how strict it is.
-        <Notice testId='mcp-approval-mode-unknown'>{t('settings.mcp.approvalModeUnknown')}</Notice>
-      ) : (
-        <ApprovalPolicy mode={approvalMode} disabled={busy} onChoose={chooseMode} />
-      )}
+      {settings.failed && <SectionError onRetry={() => void settings.reload()} testId='mcp-settings-error' />}
 
       <SubSection title={t('settings.mcp.requestsTitle')} testId='mcp-access-requests'>
         {requests.failed ? (
@@ -384,12 +329,6 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
         )}
       </SubSection>
 
-      <ApproveById
-        busy={busy}
-        approvingClientId={pending?.kind === 'approve' ? pending.id : undefined}
-        onApprove={approve}
-      />
-
       <DisconnectAll
         // An empty list leaves nothing to disconnect; an unknown one (loading, failed) might not be empty.
         disabled={busy || connections.data?.length === 0}
@@ -399,14 +338,6 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
       <p className='text-xs leading-[18px] text-text-secondary' data-testid='mcp-propagation-note'>
         {t('settings.mcp.propagationNote')}
       </p>
-
-      <PolicyDialogs
-        confirmation={confirmation}
-        open={confirmOpen}
-        loading={isPending(pending, 'settings')}
-        onClose={closeConfirmation}
-        onConfirm={(mode) => closeOnSuccess(setApprovalMode(mode))}
-      />
 
       <RevokeDialog
         approval={confirmation?.kind === 'revoke' ? confirmation.approval : undefined}
@@ -439,139 +370,6 @@ export function McpWorkspaceAccess({ governance }: { governance: McpGovernanceSt
         onConfirm={() => closeOnSuccess(disconnectAll())}
       />
     </PanelSection>
-  );
-}
-
-/** One radio per approval policy, strictest last but "verified and approved" (the default) first. */
-function ApprovalPolicy({
-  mode,
-  disabled,
-  onChoose,
-}: {
-  mode: McpApprovalMode;
-  disabled: boolean;
-  onChoose: (mode: McpApprovalMode) => void;
-}) {
-  const { t } = useTranslation();
-  const groupId = useId();
-
-  return (
-    <fieldset className='flex min-w-0 flex-col gap-2' disabled={disabled} data-testid='mcp-approval-mode'>
-      <legend className='mb-2 text-sm font-medium text-text-primary'>{t('settings.mcp.approvalModeTitle')}</legend>
-      {MCP_APPROVAL_MODES.map((option) => {
-        const checked = option === mode;
-        const descriptionId = `${groupId}-${option}`;
-
-        return (
-          <label
-            key={option}
-            className={cn(
-              'flex min-w-0 items-start gap-3 rounded-300 border px-4 py-3 transition-colors',
-              checked ? 'border-border-theme-thick' : 'border-border-primary',
-              disabled ? 'cursor-not-allowed' : 'cursor-pointer',
-              !disabled && !checked && 'hover:border-border-primary-hover'
-            )}
-          >
-            <input
-              type='radio'
-              name={groupId}
-              value={option}
-              checked={checked}
-              onChange={() => onChoose(option)}
-              aria-describedby={descriptionId}
-              className='m-[3px] h-3.5 w-3.5 shrink-0 cursor-[inherit] appearance-none rounded-full border-[1.25px] border-border-primary bg-fill-content transition-colors checked:border-4 checked:border-fill-theme-thick checked:bg-icon-on-fill focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-theme-thick enabled:hover:border-border-primary-hover enabled:checked:hover:border-fill-theme-thick-hover disabled:checked:opacity-40 [&:disabled:not(:checked)]:bg-fill-content-hover'
-              data-testid={`mcp-approval-mode-${option}`}
-            />
-            <span className='flex min-w-0 flex-col'>
-              <span
-                className={cn(
-                  'flex flex-wrap items-center gap-2 text-sm font-medium',
-                  disabled ? 'text-text-tertiary' : 'text-text-primary'
-                )}
-              >
-                {t(APPROVAL_MODE_TEXT[option].title)}
-                {option === 'verified_and_approved' && (
-                  <span className='whitespace-nowrap rounded-full bg-fill-info-light px-2 py-px text-sm font-normal text-text-info-on-fill'>
-                    {t('settings.mcp.approvalModeRecommended')}
-                  </span>
-                )}
-              </span>
-              <span
-                id={descriptionId}
-                className={cn('text-xs leading-[18px]', disabled ? 'text-text-tertiary' : 'text-text-secondary')}
-              >
-                {t(APPROVAL_MODE_TEXT[option].description)}
-              </span>
-            </span>
-          </label>
-        );
-      })}
-    </fieldset>
-  );
-}
-
-/**
- * Confirmations of a policy change. Loosening warns what members can now
- * connect; tightening names the apps the server keeps approved so members keep
- * working (only asked when there are any).
- */
-function PolicyDialogs({
-  confirmation,
-  open,
-  loading,
-  onClose,
-  onConfirm,
-}: {
-  confirmation: Confirmation | undefined;
-  open: boolean;
-  loading: boolean;
-  onClose: () => void;
-  onConfirm: (mode: McpApprovalMode) => void;
-}) {
-  const { t } = useTranslation();
-  const loosen = confirmation?.kind === 'loosen' ? confirmation : undefined;
-  const tighten = confirmation?.kind === 'tighten' ? confirmation : undefined;
-  const kept = tighten?.clients ?? NO_CLIENTS;
-  const allowAny = loosen?.mode === 'any';
-
-  return (
-    <>
-      <ConfirmModal
-        open={open && Boolean(loosen)}
-        title={allowAny ? t('settings.mcp.allowAllTitle') : t('settings.mcp.allowVerifiedTitle')}
-        description={allowAny ? t('settings.mcp.allowAllDescription') : t('settings.mcp.allowVerifiedDescription')}
-        confirmText={allowAny ? t('settings.mcp.allowAllConfirm') : t('settings.mcp.allowVerifiedConfirm')}
-        loading={loading}
-        dialogTestId={allowAny ? 'mcp-allow-all-dialog' : 'mcp-allow-verified-dialog'}
-        confirmTestId={allowAny ? 'mcp-confirm-allow-all' : 'mcp-confirm-allow-verified'}
-        onClose={onClose}
-        onConfirm={() => {
-          if (loosen) onConfirm(loosen.mode);
-        }}
-      />
-
-      <ConfirmModal
-        open={open && Boolean(tighten)}
-        title={
-          tighten?.mode === 'verified_and_approved'
-            ? t('settings.mcp.requireApprovalUnverifiedTitle')
-            : t('settings.mcp.requireApprovalTitle')
-        }
-        description={t('settings.mcp.requireApprovalKeepApps', {
-          count: kept.length,
-          names: mcpClientNames(kept, t),
-          ...RAW_INTERPOLATION,
-        })}
-        confirmText={t('settings.mcp.requireApprovalConfirm')}
-        loading={loading}
-        dialogTestId='mcp-require-approval-dialog'
-        confirmTestId='mcp-confirm-require-approval'
-        onClose={onClose}
-        onConfirm={() => {
-          if (tighten) onConfirm(tighten.mode);
-        }}
-      />
-    </>
   );
 }
 
@@ -708,78 +506,6 @@ function DisconnectAll({ disabled, onDisconnectAll }: { disabled: boolean; onDis
       >
         {t('settings.mcp.disconnectAllConfirm')}
       </Button>
-    </div>
-  );
-}
-
-/** Collapsible "Approve an app by client ID" for apps nobody has requested yet. */
-function ApproveById({
-  busy,
-  approvingClientId,
-  onApprove,
-}: {
-  busy: boolean;
-  /** The client ID an approval is in flight for. */
-  approvingClientId?: string;
-  onApprove: (clientId: string) => Promise<boolean>;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [clientId, setClientId] = useState('');
-  const contentId = useId();
-  const descriptionId = useId();
-  const trimmed = clientId.trim();
-  const approving = Boolean(trimmed) && approvingClientId === trimmed;
-
-  return (
-    <div className='rounded-400 border border-border-primary' data-testid='mcp-approve-by-id'>
-      <button
-        type='button'
-        aria-expanded={open}
-        aria-controls={open ? contentId : undefined}
-        onClick={() => setOpen((value) => !value)}
-        className='flex w-full items-center justify-between gap-2 rounded-400 px-4 py-3 text-left text-sm font-medium text-text-primary outline-none hover:bg-fill-content-hover focus-visible:ring-2 focus-visible:ring-border-theme-thick'
-        data-testid='mcp-approve-by-id-toggle'
-      >
-        {t('settings.mcp.advancedTitle')}
-        <ChevronDownIcon
-          aria-hidden='true'
-          className={cn('h-5 w-5 shrink-0 text-icon-secondary transition-transform', open && 'rotate-180')}
-        />
-      </button>
-      {open && (
-        <form
-          id={contentId}
-          className='flex flex-col gap-3 px-4 pb-4'
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!trimmed || busy) return;
-            void onApprove(trimmed).then((success) => {
-              if (success) setClientId('');
-            });
-          }}
-        >
-          <p id={descriptionId} className='text-xs leading-[18px] text-text-secondary'>
-            {t('settings.mcp.advancedDescription')}
-          </p>
-          <div className='flex min-w-0 items-center gap-2'>
-            <Input
-              autoFocus
-              value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
-              maxLength={MAX_CLIENT_ID_LENGTH}
-              placeholder={t('settings.mcp.clientIdPlaceholder')}
-              aria-label={t('settings.mcp.advancedTitle')}
-              aria-describedby={descriptionId}
-              className='min-w-0 flex-1 font-mono'
-              data-testid='mcp-approve-by-id-input'
-            />
-            <Button type='submit' disabled={busy || !trimmed} loading={approving} data-testid='mcp-approve-by-id-submit'>
-              {t('settings.mcp.approve')}
-            </Button>
-          </div>
-        </form>
-      )}
     </div>
   );
 }

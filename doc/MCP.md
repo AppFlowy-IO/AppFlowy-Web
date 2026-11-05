@@ -24,8 +24,9 @@ At a glance (details in the sections below):
   `GET /api/mcp/me/connections`.
 - **Verified apps**: the server's catalog names apps it recognizes and marks web apps whose
   identity it proves (Claude, ChatGPT) as **Verified app** ([App identity](#app-identity)).
-- **Three approval policies per workspace**: Verified and approved apps (the default), Approved
-  apps only and Any app, with app-level approvals ("All Cursor installs").
+- **Verified and approved apps**: the server's default lets verified web apps connect directly;
+  other apps need an owner's approval, with app-level approvals ("All Cursor installs"). Settings
+  offers no approval-policy selector or manual client-ID input.
 - **Enable MCP switch**: MCP is on by default, and an administrator can turn it off (or back on)
   for the whole server in AppFlowy-Admin; a self-hosted server serves it only with a One, Team or
   Enterprise license. While off the consent page and Settings say so, and Settings keeps Your
@@ -271,7 +272,7 @@ member status:
 - **Two tabs** (`mcp-tabs`, Figma Tab button as on Settings → People), for an eligible account
   only: **Connect AI apps** (`mcp-tab-connect`, the default) and **Manage AI apps**
   (`mcp-tab-manage`). Both panels stay mounted and the inactive one gets the `hidden` attribute, so
-  switching keeps an expanded card, a typed client ID and scroll positions. An owner's Manage tab
+  switching keeps an expanded card and scroll positions. An owner's Manage tab
   shows the pending approval request count (`mcp-tab-manage-badge`, read as "N pending approval
   requests"), like the menu badge; the panel always opens on Connect.
 - **Connect AI apps**: `McpSetupGuide` with `status.endpoint` and the caller's connections in this
@@ -304,27 +305,19 @@ member status:
   `approved_apps` (C5): the approved apps by name only, with "All {app} installs" for app-level
   approvals. Under `verified_and_approved` an empty list says verified web apps need no approval
   (`approvedForWorkspaceEmptyVerified`). Owners get the full list under Workspace access instead.
-- **Workspace access**, for eligible owners only: the approval policy (three radios, below; the
-  change can take up to 30 seconds to apply), approval requests (Approve, Dismiss), approved apps
+- **Workspace access**, for eligible owners only: approval requests (Approve, Dismiss), approved apps
   with their active connection counts (Revoke asks first and disconnects everyone using what the
   approval covered), every member's connections grouped by member (a header with name, email and a
   connection count, then one row per device; Disconnect filters by `client_id`, `user_uuid` and
-  `family_id`; the email line is left out when the member's name is the email), approval by client
-  ID, and **Disconnect all AI apps** (`mcp-disconnect-all`, asks first, then
+  `family_id`; the email line is left out when the member's name is the email), and
+  **Disconnect all AI apps** (`mcp-disconnect-all`, asks first, then
   `DELETE .../connections?all=true`; disabled while the loaded list is empty).
-  - The policy (`approval_mode`): **Verified and approved apps** (`verified_and_approved`, the
-    default for a workspace that never chose: the catalog's web apps, `identity_verified`, connect
-    without approval; catalog apps that run on members' computers, like Claude Code and Cursor,
-    need one like any other app), **Approved apps only** (`approved_only`) and **Any app** (`any`).
-  - Loosening asks first: "Allow any AI app?" for `any`, "Allow verified apps without approval?"
-    for `verified_and_approved` from `approved_only`.
-  - Tightening keeps working connections working: the server approves (by the acting owner) every
-    app members are connected to that the new policy would refuse and returns them as
-    `auto_approved_clients` in the `PUT .../settings` response. When the loaded member connections
-    include such apps (`mcpClientsKeptApproved`: not covered by an approval, and for
-    `verified_and_approved` not `identity_verified`), a confirmation names them first ("These apps stay
-    approved so members keep working: …"); otherwise the change applies at once. After the PUT, a
-    toast names the apps the server approved and the approved list reloads.
+  - The server defaults to **Verified and approved apps** (`verified_and_approved`): the catalog's
+    web apps, `identity_verified`, connect without approval; apps that run on members' computers,
+    like Claude Code and Cursor, need an approval like any other app. Settings has no policy
+    selector or policy-changing dialogs, and opening it never writes a policy. The server's actual
+    `approval_mode` is still read so workspaces with existing `approved_only` or `any` settings keep
+    accurate member notices and Revoke confirmations.
   - Approvals: approving a client the catalog recognizes approves its app (`approval_key`
     `app:<app_id>`), shown as "All {app} installs"; requests for such an app are merged and say
     "Approving covers all {app} installs." Approve sends the request's `approval_key` when it is an
@@ -356,9 +349,8 @@ a toast: `settings.mcp.actionFailed` with the reason's consent message (the reas
 consent page reads it, `toConsentErrorReason`, also for errors without one), except where Settings
 needs its own words (`mcpErrorText`): `not_workspace_owner` (`settings.mcp.notOwner`), and the reasons
 whose consent text sends the user back to the AI app: `unknown_client`
-(`settings.mcp.unknownClientId`), `invalid_request` (`settings.mcp.invalidRequest`, for example a
-typed client ID over the server's 2048 bytes; the Approve by client ID input stops at 2048
-characters), and the consent-only `invalid_redirect_uri` and `invalid_target` (the generic
+(`settings.mcp.unknownClientId`), `invalid_request` (`settings.mcp.invalidRequest`), and the
+consent-only `invalid_redirect_uri` and `invalid_target` (the generic
 message). A table test in `format.test.ts` checks that no reason's Settings text says "your AI
 app". Tooltips render inside the panel so they stay above the MUI dialog. The hooks
 (`useMcpMemberStatus`, `useMyMcpConnections`, `useMcpConnectionsOverview`,
@@ -645,7 +637,7 @@ against the wire types: a fixture missing a field the server always sends fails 
 | `src/application/session/__tests__/sign_in.test.ts` | Form and MCP consent continuations: OAuth parameters kept out of login and callback URLs, return within the TTL, expired view after it, unrelated later login, cross-tab magic link, password recovery, legacy cleanup, only the canonical consent path (not case or percent-encoded variants) |
 | `src/components/mcp/**` | Identity badges; setup guide: cards and their actions (Add to Claude, the owner-only organization link, ChatGPT's Copy URL and plugins link), one expanded card after its own card, every snippet and copy, Connected badges, the self-hosted note, no setup prompt or Having trouble?, inline code in translated text; consent model rules (`mcp_disabled`: fatal, first status blocker, no retry, Cancel or account switch), `useMcpConfiguration` |
 | `McpAuthorizePage.test.tsx` | Invalid requests, not configured, waiting for server-info, flow-bound sign-in, expired view, identity, read-scope disclosure, workspace roles, guest workspaces, approve and allow, access requests, deny, Cancel from error views, allow body, reason views, framing, NotFound at a percent-encoded path, Learn more link, read-only hint, Verified app (web apps only; an app on the computer is not called verified), the "I recognize {host}" tick (Allow, Approve and allow, not Request approval or loopback), the turned-off view (client lookup, member status `enabled: false` or 503, Allow, Request approval, Cancel) |
-| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, approval policy radios and their confirmations (loosening, tightening with kept apps, apps on members' computers kept), app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared), the license upgrade prompt (server-info `mcp_status: license_required`, with or without a reachable MCP service), Claude's organization link for owners only, the self-hosted note from server-info |
+| `src/components/app/settings/mcp/**` | Panel states, the Connect and Manage tabs (both mounted, the owner's pending-request count, the Connections hint), member and owner views, per-device rows (device, last used, scope tooltip), summary across workspaces (counted per app by `summarizeConnectedApps`), the setup guide's Connected badges from this workspace's connections only, members' approved apps and the policy-aware notice, the default verified-app setup without policy or manual-ID controls, compatibility with existing server approval modes, app-level approvals (approving a merged request by its app key, revoking one install next to all installs), grouped member connections, Disconnect all, menu badge publication, toasts, formatting, the turned-off notice (status `enabled: false` or 503 `mcp_disabled`, Your connections kept and disconnectable, owner lists not loaded, an owner action or list answering `mcp_disabled` switching to it, menu badge cleared), the license upgrade prompt (server-info `mcp_status: license_required`, with or without a reachable MCP service), Claude's organization link for owners only, the self-hosted note from server-info |
 | `Settings.mcp.test.tsx`, `MainAppRoutes.mcp.test.tsx`, `AppWorkspaceRedirect.test.tsx` | Menu item once the URL is known, the owner's pending-request badge (gated on the member status, never overwriting the panel's count or a newer load's), deep links that wait for server-info, routes |
 | `LoginPage.mcp-consent.test.tsx`, `LoginPage.form-redirect.test.tsx` | The login page resuming only its own flow, legacy `redirectTo` queries moved into the continuation |
 | `deploy/routes.test.ts`, `deploy/publish-ssr.test.ts` | `/oauth` as an app path and its anti-framing headers (Web-CI's docker-runtime-test also fetches `/oauth/mcp/authorize` from both images and checks them) |

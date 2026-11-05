@@ -188,7 +188,6 @@ const boOnCursor: McpWorkspaceConnection = {
   user_email: null,
   family_id: 'bo-cursor',
 };
-const boOnVscode: McpWorkspaceConnection = { ...boOnCursor, ...vscode, family_id: 'bo-vscode' };
 
 function memberStatus(overrides: Partial<McpMemberStatus> = {}): McpMemberStatus {
   const requiresApproval = overrides.requires_approval ?? false;
@@ -224,14 +223,10 @@ function openTab(tab: 'connect' | 'manage') {
   fireEvent.mouseDown(screen.getByTestId(`mcp-tab-${tab}`), { button: 0 });
 }
 
-function modeRadio(mode: McpApprovalMode) {
-  return screen.getByTestId<HTMLInputElement>(`mcp-approval-mode-${mode}`);
-}
-
 async function renderOwnerPanel() {
   api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
   render(<McpPanel workspaceId={WS} />);
-  await screen.findByTestId('mcp-approval-mode');
+  await screen.findAllByTestId('mcp-approved-client-row');
   await screen.findAllByTestId('mcp-access-request-row');
   await screen.findAllByTestId('mcp-member-connection-row');
   // Owners manage approvals on the Manage AI apps tab.
@@ -268,10 +263,6 @@ describe('McpPanel', () => {
     api.getMcpWorkspaceSettings.mockResolvedValue(settings);
     api.listMcpAccessRequests.mockResolvedValue([cursorRequest]);
     api.listMcpWorkspaceConnections.mockResolvedValue([annOnClaude, eveOnClaude]);
-    api.updateMcpWorkspaceSettings.mockImplementation(async (_workspaceId, mode) => ({
-      ...settingsWith(mode),
-      auto_approved_clients: [],
-    }));
     api.approveMcpClient.mockResolvedValue({ approved: true });
     api.dismissMcpAccessRequest.mockResolvedValue({ dismissed: true });
     api.revokeMcpClientApproval.mockResolvedValue({ disconnected: 2 });
@@ -759,15 +750,14 @@ describe('McpPanel', () => {
   });
 
   describe('owners', () => {
-    it('shows the approval policy, requests, approved apps and member connections by member', async () => {
+    it('shows requests, approved apps and member connections without policy or manual approval controls', async () => {
       await renderOwnerPanel();
 
       expect(screen.queryByTestId('mcp-approval-notice')).toBeNull();
-      expect(modeRadio('verified_and_approved').checked).toBe(true);
-      expect(modeRadio('approved_only').checked).toBe(false);
-      expect(modeRadio('any').checked).toBe(false);
-      expect(screen.getByRole('radio', { name: /Verified and approved apps/ })).toBeTruthy();
+      expect(screen.queryByRole('radio')).toBeNull();
+      expect(screen.queryByTestId('mcp-approve-by-id')).toBeNull();
       expect(screen.queryByRole('switch')).toBeNull();
+      expect(api.updateMcpWorkspaceSettings).not.toHaveBeenCalled();
       expect(api.getMcpWorkspaceSettings).toHaveBeenCalledWith(WS, signal);
       expect(api.listMcpAccessRequests).toHaveBeenCalledWith(WS, signal);
       expect(api.listMcpWorkspaceConnections).toHaveBeenCalledWith(WS, signal);
@@ -855,127 +845,6 @@ describe('McpPanel', () => {
       // Disconnect buttons are numbered in display order.
       expect(within(groups[0]).getByTestId('mcp-member-disconnect-1')).toBeTruthy();
       expect(within(groups[1]).getByTestId('mcp-member-disconnect-2')).toBeTruthy();
-    });
-
-    it('asks before allowing any app, and requires approval again without asking when nothing changes', async () => {
-      await renderOwnerPanel();
-
-      fireEvent.click(modeRadio('any'));
-      const dialog = await screen.findByTestId('mcp-allow-all-dialog');
-
-      expect(within(dialog).getByText('Allow any AI app?')).toBeTruthy();
-      expect(api.updateMcpWorkspaceSettings).not.toHaveBeenCalled();
-      expect(modeRadio('verified_and_approved').checked).toBe(true);
-
-      fireEvent.click(within(dialog).getByTestId('mcp-confirm-allow-all'));
-      await waitFor(() => expect(modeRadio('any').checked).toBe(true));
-      expect(api.updateMcpWorkspaceSettings).toHaveBeenCalledWith(WS, 'any', signal);
-      await waitFor(() => expect(screen.queryByTestId('mcp-allow-all-dialog')).toBeNull());
-
-      // Ann and Eve use Claude, which is approved: nothing to keep, so no question.
-      fireEvent.click(modeRadio('approved_only'));
-      await waitFor(() => expect(modeRadio('approved_only').checked).toBe(true));
-      expect(api.updateMcpWorkspaceSettings).toHaveBeenLastCalledWith(WS, 'approved_only', signal);
-      expect(api.updateMcpWorkspaceSettings).toHaveBeenCalledTimes(2);
-      expect(screen.queryByTestId('mcp-require-approval-dialog')).toBeNull();
-    });
-
-    it('warns before letting verified apps connect without approval', async () => {
-      api.getMcpWorkspaceSettings.mockResolvedValue(settingsWith('approved_only'));
-      await renderOwnerPanel();
-
-      fireEvent.click(modeRadio('verified_and_approved'));
-      const dialog = await screen.findByTestId('mcp-allow-verified-dialog');
-
-      expect(within(dialog).getByText('Allow verified apps without approval?')).toBeTruthy();
-      expect(within(dialog).getByText(/like Claude and ChatGPT, without an owner's approval/)).toBeTruthy();
-      expect(within(dialog).getByText(/like Claude Code and Cursor, still need one/)).toBeTruthy();
-      fireEvent.click(within(dialog).getByText('Cancel'));
-      await waitFor(() => expect(screen.queryByTestId('mcp-allow-verified-dialog')).toBeNull());
-      expect(api.updateMcpWorkspaceSettings).not.toHaveBeenCalled();
-      expect(modeRadio('approved_only').checked).toBe(true);
-
-      fireEvent.click(modeRadio('verified_and_approved'));
-      fireEvent.click(await screen.findByTestId('mcp-confirm-allow-verified'));
-      await waitFor(() => expect(modeRadio('verified_and_approved').checked).toBe(true));
-      expect(api.updateMcpWorkspaceSettings).toHaveBeenCalledWith(WS, 'verified_and_approved', signal);
-    });
-
-    it('names the apps that stay approved before a stricter policy, then toasts what the server kept', async () => {
-      const approvedAgain = settingsWith('approved_only', [
-        ...settings.approved_clients,
-        ...[cursor, vscode].map((client) => ({ ...approval(client), approved_at: '2026-11-01T10:00:00Z' })),
-      ]);
-
-      api.getMcpWorkspaceSettings.mockResolvedValueOnce(settingsWith('any')).mockResolvedValue(approvedAgain);
-      api.listMcpWorkspaceConnections.mockResolvedValue([annOnClaude, annOnCursor, boOnCursor, boOnVscode]);
-      api.updateMcpWorkspaceSettings.mockResolvedValue({
-        ...approvedAgain,
-        auto_approved_clients: [cursor, vscode].map((client) => ({ ...client, approval_key: client.client_id })),
-      });
-      await renderOwnerPanel();
-
-      expect(modeRadio('any').checked).toBe(true);
-      fireEvent.click(modeRadio('approved_only'));
-
-      const dialog = await screen.findByTestId('mcp-require-approval-dialog');
-
-      expect(within(dialog).getByText('Allow only approved apps?')).toBeTruthy();
-      expect(
-        within(dialog).getByText('These apps stay approved so members keep working: Cursor, Visual Studio Code.')
-      ).toBeTruthy();
-      expect(api.updateMcpWorkspaceSettings).not.toHaveBeenCalled();
-
-      fireEvent.click(within(dialog).getByTestId('mcp-confirm-require-approval'));
-
-      await waitFor(() => expect(modeRadio('approved_only').checked).toBe(true));
-      expect(api.updateMcpWorkspaceSettings).toHaveBeenCalledWith(WS, 'approved_only', signal);
-      expect(notify.success).toHaveBeenCalledWith('Cursor, Visual Studio Code stay approved so members keep working.');
-      // The approved apps now include the two the server approved.
-      await waitFor(() => expect(rows('mcp-approved-client-row')).toHaveLength(3));
-      await waitFor(() => expect(screen.queryByTestId('mcp-require-approval-dialog')).toBeNull());
-    });
-
-    it('keeps apps on members’ computers and unverified apps approved when verified web apps may still connect', async () => {
-      api.getMcpWorkspaceSettings.mockResolvedValue(settingsWith('any', []));
-      api.listMcpWorkspaceConnections.mockResolvedValue([
-        annOnClaude,
-        { ...annOnClaude, ...cursorAppA, family_id: 'ann-cursor-app' },
-        boOnVscode,
-      ]);
-      await renderOwnerPanel();
-
-      fireEvent.click(modeRadio('verified_and_approved'));
-      const dialog = await screen.findByTestId('mcp-require-approval-dialog');
-
-      expect(within(dialog).getByText('Require approval for unverified apps?')).toBeTruthy();
-      // Claude still connects; Cursor is recognized but runs on members' computers, so it is kept too.
-      expect(
-        within(dialog).getByText('These apps stay approved so members keep working: Cursor, Visual Studio Code.')
-      ).toBeTruthy();
-      fireEvent.click(within(dialog).getByTestId('mcp-confirm-require-approval'));
-      await waitFor(() =>
-        expect(api.updateMcpWorkspaceSettings).toHaveBeenCalledWith(WS, 'verified_and_approved', signal)
-      );
-    });
-
-    it('still toasts the app the server kept approved when the connection list did not load', async () => {
-      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
-      api.getMcpWorkspaceSettings.mockResolvedValue(settingsWith('any'));
-      api.listMcpWorkspaceConnections.mockRejectedValue(
-        new McpApiError({ status: 503, reason: 'temporarily_unavailable' })
-      );
-      api.updateMcpWorkspaceSettings.mockResolvedValue({
-        ...settingsWith('approved_only'),
-        auto_approved_clients: [{ ...cursor, approval_key: cursor.client_id }],
-      });
-      render(<McpPanel workspaceId={WS} />);
-      await screen.findByTestId('mcp-member-connections-error');
-
-      fireEvent.click(await screen.findByTestId('mcp-approval-mode-approved_only'));
-
-      await waitFor(() => expect(notify.success).toHaveBeenCalledWith('Cursor stays approved so members keep working.'));
-      expect(screen.queryByTestId('mcp-require-approval-dialog')).toBeNull();
     });
 
     it('does not repeat a member’s email under a name that is the email', async () => {
@@ -1247,49 +1116,6 @@ describe('McpPanel', () => {
       expect(screen.getByTestId<HTMLButtonElement>('mcp-disconnect-all-button').disabled).toBe(true);
     });
 
-    it('approves an app by client ID', async () => {
-      await renderOwnerPanel();
-      const toggle = screen.getByTestId('mcp-approve-by-id-toggle');
-
-      expect(screen.queryByTestId('mcp-approve-by-id-input')).toBeNull();
-      fireEvent.click(toggle);
-      expect(toggle.getAttribute('aria-expanded')).toBe('true');
-
-      const input = screen.getByTestId<HTMLInputElement>('mcp-approve-by-id-input');
-      const submit = screen.getByTestId<HTMLButtonElement>('mcp-approve-by-id-submit');
-
-      expect(submit.disabled).toBe(true);
-      // No longer than the server accepts (MAX_CLIENT_ID_BYTES).
-      expect(input.maxLength).toBe(2048);
-      fireEvent.change(input, { target: { value: '  https://app.example.com/oauth/client.json ' } });
-      expect(submit.disabled).toBe(false);
-      fireEvent.click(submit);
-
-      await waitFor(() => expect(input.value).toBe(''));
-      expect(api.approveMcpClient).toHaveBeenCalledWith(WS, 'https://app.example.com/oauth/client.json', signal);
-      expect(notify.success).toHaveBeenCalledWith('Approved');
-    });
-
-    it('says when no app is registered with the typed client ID', async () => {
-      api.approveMcpClient.mockRejectedValue(
-        new McpApiError({ status: 404, error: 'invalid_client', reason: 'unknown_client' })
-      );
-      await renderOwnerPanel();
-      fireEvent.click(screen.getByTestId('mcp-approve-by-id-toggle'));
-
-      const input = screen.getByTestId<HTMLInputElement>('mcp-approve-by-id-input');
-
-      fireEvent.change(input, { target: { value: 'dcr-missing' } });
-      fireEvent.click(screen.getByTestId('mcp-approve-by-id-submit'));
-
-      await waitFor(() =>
-        expect(notify.error).toHaveBeenCalledWith("That didn't work. No app is registered with this client ID.")
-      );
-      // The typed ID stays so it can be corrected.
-      expect(input.value).toBe('dcr-missing');
-      expect(notify.success).not.toHaveBeenCalled();
-    });
-
     it('reports a failed action and keeps its confirmation open', async () => {
       api.revokeMcpClientApproval.mockRejectedValue(new McpApiError({ status: 429, reason: 'rate_limited' }));
       await renderOwnerPanel();
@@ -1348,7 +1174,7 @@ describe('McpPanel', () => {
       expect(api.listMcpWorkspaceConnections).not.toHaveBeenCalled();
     });
 
-    it('shows one alert with Retry when the settings fail, then the policy and approved apps', async () => {
+    it('shows one alert with Retry when the settings fail, then the approved apps', async () => {
       api.getMcpWorkspaceSettings.mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }));
       api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
       render(<McpPanel workspaceId={WS} />);
@@ -1360,20 +1186,18 @@ describe('McpPanel', () => {
       expect(await within(access).findByTestId('mcp-settings-error')).toBeTruthy();
       await within(access).findAllByTestId('mcp-member-connection-row');
       await within(access).findAllByTestId('mcp-access-request-row');
-      // The policy and the approved apps come from one request: one alert and one Retry for both.
+      // Only settings failed; the other owner lists stay available alongside one Retry.
       expect(within(access).getAllByRole('alert')).toHaveLength(1);
       expect(within(access).getAllByText(translations.settings.mcp.retry)).toHaveLength(1);
       expect(screen.queryByTestId('mcp-approved-clients')).toBeNull();
 
       fireEvent.click(screen.getByTestId('mcp-settings-error-retry'));
-      expect(await screen.findByTestId('mcp-approval-mode')).toBeTruthy();
-      expect(modeRadio('verified_and_approved').checked).toBe(true);
       expect(await screen.findByTestId('mcp-approved-client-row')).toBeTruthy();
       expect(screen.queryByTestId('mcp-settings-error')).toBeNull();
       expect(api.getMcpWorkspaceSettings).toHaveBeenCalledTimes(2);
     });
 
-    it('says when the workspace’s approval policy is one this Web does not know, instead of loading', async () => {
+    it('keeps owner lists available without overwriting an unknown server approval policy', async () => {
       // A policy a newer server added reads as undefined (getMcpWorkspaceSettings).
       api.getMcpWorkspaceSettings.mockResolvedValue({ ...settings, approval_mode: undefined });
       api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
@@ -1383,15 +1207,13 @@ describe('McpPanel', () => {
 
       openTab('manage');
 
-      expect((await within(access).findByTestId('mcp-approval-mode-unknown')).textContent).toBe(
-        translations.settings.mcp.approvalModeUnknown
-      );
-      expect(within(access).queryByTestId('mcp-approval-mode')).toBeNull();
       // The approved apps came with the settings; with every list loaded, nothing is still loading.
-      expect(within(access).getByTestId('mcp-approved-client-row')).toBeTruthy();
+      expect(await within(access).findByTestId('mcp-approved-client-row')).toBeTruthy();
       await within(access).findAllByTestId('mcp-access-request-row');
       await within(access).findAllByTestId('mcp-member-connection-row');
       expect(within(access).queryByRole('status')).toBeNull();
+      expect(within(access).queryByRole('radio')).toBeNull();
+      expect(api.updateMcpWorkspaceSettings).not.toHaveBeenCalled();
     });
 
     it('reloads the member status when the caller is no longer an owner', async () => {
