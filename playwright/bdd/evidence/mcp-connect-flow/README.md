@@ -5,7 +5,7 @@
 | `01-owner-settings-ai-apps-off.png` | Settings → MCP after an administrator turns MCP off in Admin (MCP is on by default) |
 | `02-consent-ai-apps-off.png` | The consent page when AI apps are turned off |
 | `03-owner-consent.png` | A workspace owner approving and allowing an AI app that runs on their computer |
-| `04-owner-settings.png` | Settings → MCP's Connect tab with the server URL copied, and a setup card per AI app, each with its one-click action: Add to Claude (Claude's prefilled Add custom connector link), Copy URL for ChatGPT, Copy command for Claude Code and Codex (the commands with the URL filled in), Install in VS Code, Copy URL for other apps |
+| `04-owner-settings.png` | Settings → MCP's Connect tab with the server URL copied, and a setup card per app that connects through MCP, each with its one-click action: Add to Claude (Claude's prefilled Add custom connector link), Copy URL for ChatGPT, Copy command for Claude Code and Codex (the commands with the URL filled in), Install in VS Code, Copy URL for other apps |
 | `05-web-pages-created-by-ai-app.png` | A document and a grid that the AI app created through MCP, open in AppFlowy Web |
 | `06-member-request-sent.png` | A member's approval request for an unapproved AI app |
 | `07-owner-reenable-approval-confirm.png` | The confirmation shown when an owner requires approval again; apps already connected keep working |
