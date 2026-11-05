@@ -39,13 +39,14 @@ const MAX_HEIGHT = 200;
 export function ChatInput() {
   const { t } = useTranslation();
   const [focused, setFocused] = useState(false);
-  const [message, setMessage] = useState('');
+  // Draft identity preserves edits even if the user retypes the submitted text.
+  const [draft, setDraft] = useState({ text: '' });
+  const message = draft.text;
+  const setMessage = useCallback((text: string) => setDraft({ text }), []);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const extrasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const sourcesTriggerRef = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
 
   const {
@@ -62,10 +63,10 @@ export function ChatInput() {
     useResponseFormatContext();
   const { openModal, currentPromptId, updateCurrentPromptId, reloadDatabasePrompts } = usePromptModal();
   const { chatId, workspaceId, currentUser } = useChatContext();
-  const { messageIds, getMessage } = useChatMessagesContext();
+  const { messageIds, getMessage, getQuestionId } = useChatMessagesContext();
   const { getMessageSuggestions } = useSuggestionsContext();
   const imageGenerationAvailable = useImageGenerationAvailable();
-  const { attachments, addFiles, removeAttachment, clearAttachments, readyAttachments, uploading } =
+  const { attachments, addFiles, removeAttachment, readyAttachments, uploading } =
     useChatAttachments({ workspaceId, chatId });
 
   const webSearchEnabled = chatSettings?.web_search_enabled ?? false;
@@ -80,7 +81,7 @@ export function ChatInput() {
     return () => {
       setMessage('');
     };
-  }, [chatId]);
+  }, [chatId, setMessage]);
 
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
@@ -98,15 +99,8 @@ export function ChatInput() {
     // toggle overflowY
     textarea.style.overflowY = textarea.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
 
-    // adjust container height
-    if (containerRef.current) {
-      const extrasHeight = extrasRef.current?.offsetHeight ?? 0;
-
-      containerRef.current.style.height = `${
-        newHeight + extrasHeight + (responseMode === ChatInputMode.FormatResponse ? 54 + 20 : 30 + 16)
-      }px`; // 32px padding
-    }
-  }, [responseMode]);
+    // The composer itself sizes naturally, including wrapped toolbar rows.
+  }, []);
 
   useEffect(() => {
     adjustHeight();
@@ -133,8 +127,10 @@ export function ChatInput() {
 
     if (latestAnswerId === undefined) return null;
 
-    return getMessageSuggestions(latestAnswerId - 1)?.items[0]?.content ?? null;
-  }, [getMessageSuggestions, messageIds]);
+    const questionId = getQuestionId(latestAnswerId);
+
+    return questionId === undefined ? null : getMessageSuggestions(questionId)?.items[0]?.content ?? null;
+  }, [getMessageSuggestions, getQuestionId, messageIds]);
 
   const handleInput = () => {
     adjustHeight();
@@ -170,7 +166,7 @@ export function ChatInput() {
 
     if (empty && e.key === '@' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      setSourcesOpen(true);
+      sourcesTriggerRef.current?.click();
       return;
     }
 
@@ -211,9 +207,13 @@ export function ChatInput() {
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
     setDragging(false);
-    addFiles(Array.from(e.dataTransfer.files ?? []));
+    const files = Array.from(e.dataTransfer.files ?? []);
+
+    if (files.length === 0) return;
+
+    e.preventDefault();
+    addFiles(files);
   };
 
   const handleSubmit = async () => {
@@ -234,14 +234,16 @@ export function ChatInput() {
 
     const format = buildRequestFormat();
     const content = formatQuestionWithAttachments(message, readyAttachments);
+    const submittedAttachmentIds = attachments
+      .filter((item) => item.status === 'ready' && !!item.url)
+      .map((item) => item.id);
 
     try {
       await submitQuestion(content, format);
-      // The draft and its uploads are kept until the question is accepted, so a
-      // rejected send loses nothing.
-      setMessage('');
-      clearAttachments();
-      adjustHeight();
+      // Only clear the accepted draft; edits and uploads added during the send
+      // belong to the next question. A rejected send leaves everything intact.
+      setDraft((current) => (current === draft ? { text: '' } : current));
+      submittedAttachmentIds.forEach(removeAttachment);
       // An image request applies to one message; the next question is text again.
       resetImageIntent();
     } catch (e) {
@@ -252,15 +254,27 @@ export function ChatInput() {
   };
 
   useEffect(() => {
-    const handleResize = () => {
-      if (message) {
-        adjustHeight();
-      }
-    };
+    const textarea = textareaRef.current;
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [adjustHeight, message]);
+    if (!textarea) return;
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', adjustHeight);
+      return () => window.removeEventListener('resize', adjustHeight);
+    }
+
+    let previousWidth = textarea.clientWidth;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || entry.contentRect.width === previousWidth) return;
+
+      previousWidth = entry.contentRect.width;
+      adjustHeight();
+    });
+
+    observer.observe(textarea);
+
+    return () => observer.disconnect();
+  }, [adjustHeight]);
 
   const formatTooltip =
     responseMode === ChatInputMode.FormatResponse ? t('chat.input.button.auto') : t('chat.input.button.format');
@@ -268,7 +282,7 @@ export function ChatInput() {
 
   useEffect(() => {
     adjustHeight();
-  }, [adjustHeight, currentPromptId, message]);
+  }, [adjustHeight, currentPromptId, message, responseMode]);
 
   const handleUsePrompt = useCallback(
     (prompt: AiPrompt) => {
@@ -276,7 +290,7 @@ export function ChatInput() {
       setResponseMode(ChatInputMode.Auto);
       setMessage(prompt.content);
     },
-    [setResponseMode, updateCurrentPromptId]
+    [setMessage, setResponseMode, updateCurrentPromptId]
   );
 
   return (
@@ -288,21 +302,20 @@ export function ChatInput() {
       className={'w-full'}
     >
       <div
-        ref={containerRef}
         onDragOver={(e) => {
+          if (!Array.from(e.dataTransfer.types ?? []).includes('Files')) return;
+
           e.preventDefault();
           if (!dragging) setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         className={`relative flex flex-col justify-between gap-1 border ${
-          focused || dragging ? 'border-primary ring-1 ring-ring' : 'ring-0'
-        } w-full rounded-[12px] border-border px-2 py-1 focus:border-primary`}
+          focused || dragging ? 'border-border-theme-thick ring-1 ring-border-theme-thick' : 'border-border-primary ring-0'
+        } w-full rounded-400 px-2 py-1`}
         data-testid='chat-input-container'
       >
-        <div ref={extrasRef}>
-          <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
-        </div>
+        <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
         {responseMode === ChatInputMode.FormatResponse && (
           <FormatGroup
             imageAvailable={imageGenerationAvailable}
@@ -341,12 +354,12 @@ export function ChatInput() {
           }}
           rows={1}
           className={
-            'h-full min-h-[32px] w-full resize-none !border-none !px-1.5 !py-1 !text-sm caret-primary !shadow-none !outline-none !ring-0'
+            'min-h-[32px] w-full shrink-0 resize-none !border-none !px-1.5 !py-1 !text-sm text-text-primary caret-fill-theme-thick !shadow-none !outline-none !ring-0 placeholder:text-text-tertiary'
           }
         />
 
-        <div className={'flex items-center justify-between gap-4'}>
-          <div className={'flex items-center gap-1'}>
+        <div className={'flex flex-wrap items-end justify-between gap-2'}>
+          <div className={'flex min-w-0 flex-1 basis-[320px] flex-wrap items-center gap-1'}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -356,6 +369,7 @@ export function ChatInput() {
                   variant={'ghost'}
                   size={'icon'}
                   data-testid='chat-input-format-toggle'
+                  aria-label={formatTooltip}
                   onClick={() => {
                     setResponseMode(
                       responseMode === ChatInputMode.FormatResponse ? ChatInputMode.Auto : ChatInputMode.FormatResponse
@@ -380,10 +394,11 @@ export function ChatInput() {
                   size={'icon'}
                   disabled={disabled || answerApplying}
                   aria-pressed={webSearchEnabled}
+                  aria-label={t('chat.webSearch.label')}
                   data-testid='chat-input-web-search-toggle'
                   onClick={handleToggleWebSearch}
                 >
-                  <EarthIcon className={`h-5 w-5 ${webSearchEnabled ? 'text-primary' : 'text-icon-secondary'}`} />
+                  <EarthIcon className={`h-5 w-5 ${webSearchEnabled ? 'text-icon-info-thick' : 'text-icon-secondary'}`} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -403,6 +418,7 @@ export function ChatInput() {
                   size={'icon'}
                   disabled={disabled || answerApplying}
                   data-testid='chat-input-attach'
+                  aria-label={t('chat.attachments.button')}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <AttachmentIcon className='h-5 w-5 text-icon-secondary' />
@@ -456,13 +472,14 @@ export function ChatInput() {
             />
           </div>
 
-          <div className={'flex items-center gap-2'}>
-            <RelatedViews open={sourcesOpen} onOpenChange={setSourcesOpen} />
+          <div className={'ml-auto flex shrink-0 items-center gap-2'}>
+            <RelatedViews triggerRef={sourcesTriggerRef} />
             {answerApplying ? (
               <Button
                 onClick={cancelAnswerStream}
                 size={'icon'}
                 variant={'link'}
+                aria-label={t('chat.input.button.stop')}
                 className={'p-0 text-fill-theme-thick'}
               >
                 <StopIcon className='h-7 w-7' />
@@ -472,6 +489,7 @@ export function ChatInput() {
                 onClick={handleSubmit}
                 size={'icon'}
                 variant={'link'}
+                aria-label={t('chat.input.button.send')}
                 className={'p-0 text-fill-theme-thick'}
                 disabled={(!message.trim() && readyAttachments.length === 0) || uploading || disabled}
                 data-testid='chat-input-send'

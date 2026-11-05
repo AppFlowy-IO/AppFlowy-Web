@@ -21,6 +21,9 @@ interface ResponseFormatContextTypes {
    * question into another picture.
    */
   resetImageIntent: () => void;
+}
+
+interface MessageResponseFormatContextTypes {
   getMessageResponseFormat: (id: number) => ResponseFormat | undefined;
   setResponseFormatWithId: (id: number, responseFormat: ResponseFormat) => void;
   /**
@@ -33,12 +36,24 @@ interface ResponseFormatContextTypes {
 }
 
 export const ResponseFormatContext = createContext<ResponseFormatContextTypes | undefined>(undefined);
+const MessageResponseFormatContext = createContext<MessageResponseFormatContextTypes | undefined>(undefined);
 
 export function useResponseFormatContext() {
   const context = useContext(ResponseFormatContext);
 
   if (!context) {
     throw new Error('useResponseFormatContext must be used within a ResponseFormatProvider');
+  }
+
+  return context;
+}
+
+/** Stable per-message actions, independent of the input's draft format. */
+export function useMessageResponseFormatContext() {
+  const context = useContext(MessageResponseFormatContext);
+
+  if (!context) {
+    throw new Error('useMessageResponseFormatContext must be used within a ResponseFormatProvider');
   }
 
   return context;
@@ -115,6 +130,11 @@ export const ResponseFormatProvider = ({ children }: { children: ReactNode }) =>
     };
   }, [chatId]);
 
+  const messageFormatContextValue = useMemo(
+    () => ({ getMessageResponseFormat, setResponseFormatWithId, resolveAnswerFormat }),
+    [getMessageResponseFormat, setResponseFormatWithId, resolveAnswerFormat]
+  );
+
   const contextValue = useMemo(
     () => ({
       responseMode,
@@ -126,9 +146,6 @@ export const ResponseFormatProvider = ({ children }: { children: ReactNode }) =>
       setImageOptions,
       buildRequestFormat,
       resetImageIntent,
-      getMessageResponseFormat,
-      setResponseFormatWithId,
-      resolveAnswerFormat,
     }),
     [
       responseMode,
@@ -138,11 +155,12 @@ export const ResponseFormatProvider = ({ children }: { children: ReactNode }) =>
       setImageOptions,
       buildRequestFormat,
       resetImageIntent,
-      getMessageResponseFormat,
-      setResponseFormatWithId,
-      resolveAnswerFormat,
     ]
   );
 
-  return <ResponseFormatContext.Provider value={contextValue}>{children}</ResponseFormatContext.Provider>;
+  return (
+    <MessageResponseFormatContext.Provider value={messageFormatContextValue}>
+      <ResponseFormatContext.Provider value={contextValue}>{children}</ResponseFormatContext.Provider>
+    </MessageResponseFormatContext.Provider>
+  );
 };

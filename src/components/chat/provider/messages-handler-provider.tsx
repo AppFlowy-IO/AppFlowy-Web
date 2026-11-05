@@ -20,7 +20,7 @@ import {
 import { useMessageAnimation } from './message-animation-provider';
 import { useChatMessagesContext } from './messages-provider';
 import { usePromptModal } from './prompt-modal-provider';
-import { useResponseFormatContext } from './response-format-provider';
+import { useMessageResponseFormatContext } from './response-format-provider';
 import { useSuggestionsContext } from './suggestions-provider';
 
 interface MessagesHandlerContextTypes {
@@ -97,7 +97,7 @@ function useMessagesHandler() {
     addMessages,
     insertMessage,
     removeMessages,
-    saveMessageContent,
+    saveAnswerMessage,
     updateMessageContent,
     getMessage,
   } = useChatMessagesContext();
@@ -112,7 +112,7 @@ function useMessagesHandler() {
 
   messageIdsRef.current = messageIds;
 
-  const { setResponseFormatWithId, resolveAnswerFormat } = useResponseFormatContext();
+  const { setResponseFormatWithId, resolveAnswerFormat } = useMessageResponseFormatContext();
 
   const { currentPromptId } = usePromptModal();
 
@@ -121,7 +121,9 @@ function useMessagesHandler() {
   const [questionSending, setQuestionSending] = useState(false);
   const questionSendingRef = useRef(false);
   const [answerApplying, setAnswerApplying] = useState(false);
+  const answerApplyingRef = useRef(false);
   const cancelStreamRef = useRef<() => void>();
+  const regenerationTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const chatSettingsFlushersRef = useRef(new Set<() => Promise<void>>());
 
   const registerChatSettingsFlush = useCallback((flush: () => Promise<void>) => {
@@ -143,8 +145,10 @@ function useMessagesHandler() {
       setQuestionSending(false);
       questionSendingRef.current = false;
       setAnswerApplying(false);
+      answerApplyingRef.current = false;
       setEditingQuestionId(null);
       cancelStreamRef.current = undefined;
+      clearTimeout(regenerationTimeoutRef.current);
     };
   }, [chatId]);
 
@@ -167,12 +171,13 @@ function useMessagesHandler() {
   );
 
   const createAssistantMessage = useCallback(
-    (answerId: number, index: number) => {
+    (questionId: number, answerId: number, index: number) => {
       registerAnimation(answerId);
 
       insertMessage(
         {
           message_id: answerId,
+          question_message_id: questionId,
           content: '',
           author: {
             author_uuid: 'assistant',
@@ -187,7 +192,12 @@ function useMessagesHandler() {
 
   const regenerateAnswer = useCallback(
     async (questionId: number, format?: ResponseFormat) => {
+      if (questionSendingRef.current || answerApplyingRef.current) return;
+
       const question = getMessage(questionId);
+
+      if (!question) return;
+
       const answerId = question?.reply_message_id || questionId + 1;
 
       if (format) {
@@ -196,10 +206,14 @@ function useMessagesHandler() {
 
       const newMessages = removeMessages([answerId]);
 
-      setTimeout(() => {
+      questionSendingRef.current = true;
+      setQuestionSending(true);
+      regenerationTimeoutRef.current = setTimeout(() => {
         const index = newMessages.map((message) => message.message_id).indexOf(questionId);
 
-        createAssistantMessage(answerId, index);
+        questionSendingRef.current = false;
+        setQuestionSending(false);
+        createAssistantMessage(questionId, answerId, index);
       }, 200);
     },
     [createAssistantMessage, getMessage, removeMessages, setResponseFormatWithId]
@@ -207,7 +221,7 @@ function useMessagesHandler() {
 
   const submitQuestion = useCallback(
     async (message: string, format?: ResponseFormat) => {
-      if (questionSendingRef.current) {
+      if (questionSendingRef.current || answerApplyingRef.current) {
         const error = new Error('A question is already being sent');
 
         toast.error(error.message);
@@ -280,9 +294,7 @@ function useMessagesHandler() {
         registerFetchSuggestions(question.message_id);
 
         // create assistant message after user message
-        setTimeout(() => {
-          createAssistantMessage(answerId, 0);
-        }, 200);
+        createAssistantMessage(question.message_id, answerId, 0);
 
         void (async () => {
           try {
@@ -324,7 +336,7 @@ function useMessagesHandler() {
   );
 
   const saveAnswer = useCallback(
-    async (questionId: number, content: string, metadata: ChatMessageMetadata[]) => {
+    async (questionId: number, placeholderId: number, content: string, metadata: ChatMessageMetadata[]) => {
       try {
         const answer = await requestInstance.saveAnswer({
           question_message_id: questionId,
@@ -332,13 +344,14 @@ function useMessagesHandler() {
           ...(metadata.length !== 0 && { meta_data: metadata }),
         });
 
-        saveMessageContent(answer.message_id, content, metadata);
+        setResponseFormatWithId(answer.message_id, resolveAnswerFormat(placeholderId, content));
+        saveAnswerMessage(questionId, placeholderId, { ...answer, content, meta_data: metadata });
         // eslint-disable-next-line
       } catch (e: any) {
         toast.error(e.message);
       }
     },
-    [requestInstance, saveMessageContent]
+    [requestInstance, resolveAnswerFormat, saveAnswerMessage, setResponseFormatWithId]
   );
 
   const removeAssistantMessage = useCallback(
@@ -356,35 +369,37 @@ function useMessagesHandler() {
       onProgress?: (step: string) => void,
       onReasoning?: (reasoning: string) => void
     ) => {
-      const question = getMessage(questionId);
-      let answerId = question?.reply_message_id;
-
-      if (!answerId) {
-        answerId = questionId + 1;
+      if (questionSendingRef.current || answerApplyingRef.current) {
+        throw new Error('An answer is already being requested');
       }
+
+      answerApplyingRef.current = true;
+      setAnswerApplying(true);
+      const question = getMessage(questionId);
+      const answerId = question?.reply_message_id || questionId + 1;
 
       if (format) {
         setResponseFormatWithId(answerId, format);
       }
 
+      let completion: Promise<void> | undefined;
       const handleMessageProgress = (message: string, metadata: ChatMessageMetadata[], done?: boolean) => {
         onMessage?.(message, done, metadata);
 
         if (done) {
           if (message) {
-            void (async () => {
-              await saveAnswer(questionId, message, metadata);
-              setAnswerApplying(false);
-              if (answerId && messageIdsRef.current.indexOf(answerId) === 0) {
-                await startFetchSuggestions(questionId);
+            const isLatestAnswer = messageIdsRef.current.indexOf(answerId) === 0;
+
+            completion = (async () => {
+              await saveAnswer(questionId, answerId, message, metadata);
+              if (isLatestAnswer) {
+                void startFetchSuggestions(questionId);
               }
             })();
           } else {
             if (answerId) {
               removeAssistantMessage(answerId);
             }
-
-            setAnswerApplying(false);
           }
 
           return;
@@ -392,7 +407,6 @@ function useMessagesHandler() {
       };
 
       try {
-        setAnswerApplying(true);
         const { cancel, streamPromise } = requestInstance.fetchAnswerStream(
           {
             question_id: questionId,
@@ -410,14 +424,15 @@ function useMessagesHandler() {
         // Registered before the request resolves so Stop works while waiting for headers.
         cancelStreamRef.current = cancel;
         await streamPromise;
+        await completion;
       } catch (e) {
-        setAnswerApplying(false);
-
         // The assistant message stays mounted: it renders the error with a retry
         // button instead of silently disappearing with a toast.
         return Promise.reject(e);
       } finally {
         cancelStreamRef.current = undefined;
+        answerApplyingRef.current = false;
+        setAnswerApplying(false);
       }
     },
     [getMessage, setResponseFormatWithId, saveAnswer, startFetchSuggestions, removeAssistantMessage, requestInstance]
@@ -431,6 +446,8 @@ function useMessagesHandler() {
 
   const editQuestion = useCallback(
     async (questionId: number, content: string) => {
+      if (questionSendingRef.current || answerApplyingRef.current) return;
+
       const question = getMessage(questionId);
 
       if (!question) return;
@@ -439,6 +456,8 @@ function useMessagesHandler() {
       // Keep the answer's original format (an image question stays an image question).
       const format = resolveAnswerFormat(answerId, getMessage(answerId)?.content);
 
+      questionSendingRef.current = true;
+      setQuestionSending(true);
       try {
         await requestInstance.updateQuestion({
           chat_id: chatId,
@@ -448,12 +467,16 @@ function useMessagesHandler() {
         });
         updateMessageContent(questionId, content);
         setEditingQuestionId(null);
-        await regenerateAnswer(questionId, format);
         // eslint-disable-next-line
       } catch (e: any) {
         toast.error(e.message);
         return Promise.reject(e);
+      } finally {
+        questionSendingRef.current = false;
+        setQuestionSending(false);
       }
+
+      await regenerateAnswer(questionId, format);
     },
     [chatId, getMessage, regenerateAnswer, requestInstance, resolveAnswerFormat, updateMessageContent]
   );

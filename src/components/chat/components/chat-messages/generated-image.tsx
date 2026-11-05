@@ -60,6 +60,9 @@ function ImageAction({
           size={'icon'}
           disabled={disabled}
           aria-label={tooltip}
+          className={
+            'text-icon-primary focus-visible:ring-2 focus-visible:ring-border-theme-thick disabled:text-icon-tertiary'
+          }
           data-testid={testId}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onClick}
@@ -142,7 +145,10 @@ export function GeneratedImage({ url, alt, onRegenerate, variant = 'answer' }: G
 
   if (phase === 'failed') {
     return (
-      <Alert className={'w-full max-w-[480px] border-none bg-fill-error-light text-foreground'} data-testid='chat-generated-image-failed'>
+      <Alert
+        className={'w-full max-w-[480px] border-none bg-fill-error-light text-foreground'}
+        data-testid='chat-generated-image-failed'
+      >
         <AlertDescription>
           <div className={'flex flex-wrap items-center gap-3'}>
             <ErrorIcon className={'!min-h-5 !min-w-5 text-icon-error-thick'} />
@@ -152,7 +158,12 @@ export function GeneratedImage({ url, alt, onRegenerate, variant = 'answer' }: G
                 {t('chat.image.retry')}
               </Button>
               {onRegenerate ? (
-                <Button variant={'outline'} size={'sm'} onClick={onRegenerate} data-testid='chat-generated-image-regenerate'>
+                <Button
+                  variant={'outline'}
+                  size={'sm'}
+                  onClick={onRegenerate}
+                  data-testid='chat-generated-image-regenerate'
+                >
                   {t('chat.image.regenerate')}
                 </Button>
               ) : null}
@@ -197,13 +208,21 @@ export function GeneratedImage({ url, alt, onRegenerate, variant = 'answer' }: G
       {isImageReady ? (
         <div
           className={
-            'absolute right-2 top-2 flex gap-0.5 rounded-[8px] border border-border-primary bg-fill-toolbar p-0.5 opacity-0 shadow transition-opacity focus-within:opacity-100 group-hover:opacity-100'
+            'absolute right-2 top-2 flex gap-0.5 rounded-300 border border-border-primary bg-surface-primary p-0.5 text-icon-primary opacity-0 shadow-toolbar transition-opacity focus-within:opacity-100 group-hover:opacity-100'
           }
         >
-          <ImageAction tooltip={t('chat.image.preview')} onClick={() => setPreviewOpen(true)} testId='chat-generated-image-preview'>
+          <ImageAction
+            tooltip={t('chat.image.preview')}
+            onClick={() => setPreviewOpen(true)}
+            testId='chat-generated-image-preview'
+          >
             <PreviewIcon className={'h-5 w-5'} />
           </ImageAction>
-          <ImageAction tooltip={t('chat.image.copy')} onClick={() => void handleCopy()} testId='chat-generated-image-copy'>
+          <ImageAction
+            tooltip={t('chat.image.copy')}
+            onClick={() => void handleCopy()}
+            testId='chat-generated-image-copy'
+          >
             <CopyIcon className={'h-5 w-5'} />
           </ImageAction>
           <ImageAction
@@ -215,7 +234,11 @@ export function GeneratedImage({ url, alt, onRegenerate, variant = 'answer' }: G
             <DownloadIcon className={'h-5 w-5'} />
           </ImageAction>
           {onRegenerate ? (
-            <ImageAction tooltip={t('chat.image.regenerate')} onClick={onRegenerate} testId='chat-generated-image-regenerate'>
+            <ImageAction
+              tooltip={t('chat.image.regenerate')}
+              onClick={onRegenerate}
+              testId='chat-generated-image-regenerate'
+            >
               <RegenerateIcon className={'h-5 w-5'} />
             </ImageAction>
           ) : null}

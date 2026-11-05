@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import debounce from 'lodash-es/debounce';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ReactComponent as DocIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as ChevronDown } from '@/assets/icons/triangle_down.svg';
@@ -21,10 +21,13 @@ import { Spaces } from './spaces';
 export function RelatedViews({
   open: controlledOpen,
   onOpenChange,
+  triggerRef,
 }: {
-  /** Lets the input open the picker, for example when the user types "@". */
+  /** Optional controlled state for embedding the picker. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Keyboard opening clicks the same trigger to flush selections and refresh scope. */
+  triggerRef?: Ref<HTMLButtonElement>;
 } = {}) {
   const [searchValue, setSearchValue] = useState('');
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -131,6 +134,7 @@ export function RelatedViews({
     <Popover open={open} onOpenChange={handleOpenChange} modal>
       <PopoverTrigger asChild={true}>
         <Button
+          ref={triggerRef}
           disabled={viewsLoading || questionSending}
           size='sm'
           className='gap-0.5 px-1.5 text-sm text-text-secondary'

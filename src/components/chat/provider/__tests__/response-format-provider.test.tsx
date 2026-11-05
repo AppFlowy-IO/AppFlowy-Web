@@ -1,7 +1,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { ReactNode } from 'react';
 
-import { ResponseFormatProvider, useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
+import {
+  ResponseFormatProvider,
+  useMessageResponseFormatContext,
+  useResponseFormatContext,
+} from '@/components/chat/provider/response-format-provider';
 import { ChatInputMode, OutputContent, OutputLayout } from '@/components/chat/types';
 
 jest.mock('@/components/chat/chat/context', () => ({
@@ -59,7 +63,7 @@ describe('ResponseFormatProvider', () => {
   });
 
   it('remembers the format used for a message', () => {
-    const { result } = renderHook(() => useResponseFormatContext(), { wrapper });
+    const { result } = renderHook(() => useMessageResponseFormatContext(), { wrapper });
     const format = { output_layout: OutputLayout.Flex, output_content: OutputContent.IMAGE };
 
     act(() => {
@@ -71,7 +75,7 @@ describe('ResponseFormatProvider', () => {
   });
 
   it('resolves an answer format from memory, then content, then the automatic text format', () => {
-    const { result } = renderHook(() => useResponseFormatContext(), { wrapper });
+    const { result } = renderHook(() => useMessageResponseFormatContext(), { wrapper });
     const remembered = { output_layout: OutputLayout.Flex, output_content: OutputContent.IMAGE };
     const generated = '![Generated Image](https://cloud/api/file_storage/ws/v1/blob/chat/a.png)';
 

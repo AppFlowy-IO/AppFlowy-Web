@@ -30,6 +30,8 @@ export enum AuthorType {
 
 export interface ChatMessage {
   message_id: number;
+  /** Client-side link for a streamed answer; history resolves the question's reply_message_id. */
+  question_message_id?: number;
   author: {
     author_type: AuthorType;
     author_uuid: string;

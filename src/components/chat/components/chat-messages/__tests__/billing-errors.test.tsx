@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { Error as WriterError } from '@/components/chat/components/ai-writer/error';
 import { AssistantMessage } from '@/components/chat/components/chat-messages/assistant-message';
@@ -8,6 +8,7 @@ let mockOfficialHosted = false;
 let mockError = { code: ERROR_CODE_NO_LIMIT, message: 'The server AI allowance has been exhausted' };
 const mockFetchAnswerStream = jest.fn();
 const mockTranslate = (key: string) => key;
+const mockBusy = { answerApplying: false, questionSending: false };
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
 jest.mock('@/components/app/app.hooks', () => ({ useIsOfficialHosted: () => mockOfficialHosted }));
@@ -16,16 +17,20 @@ jest.mock('@/components/chat/writer/context', () => ({
 }));
 jest.mock('@appflowyinc/editor', () => ({ EditorProvider: () => null }));
 jest.mock('@/components/chat/provider/messages-handler-provider', () => ({
-  useMessagesHandlerContext: () => ({ fetchAnswerStream: mockFetchAnswerStream, regenerateAnswer: jest.fn() }),
+  useMessagesHandlerContext: () => ({
+    fetchAnswerStream: mockFetchAnswerStream,
+    regenerateAnswer: jest.fn(),
+    ...mockBusy,
+  }),
 }));
 jest.mock('@/components/chat/provider/messages-provider', () => ({
-  useChatMessagesContext: () => ({ getMessage: () => undefined }),
+  useChatMessagesContext: () => ({ getMessage: () => undefined, getQuestionId: () => 1 }),
 }));
 // OutputLayout.Flex and OutputContent.TEXT: the automatic text format.
 const mockAnswerFormat = { output_layout: 4, output_content: 0 };
 
 jest.mock('@/components/chat/provider/response-format-provider', () => ({
-  useResponseFormatContext: () => ({ resolveAnswerFormat: () => mockAnswerFormat }),
+  useMessageResponseFormatContext: () => ({ resolveAnswerFormat: () => mockAnswerFormat }),
 }));
 jest.mock('@/components/chat/provider/suggestions-provider', () => ({
   useSuggestionsContext: () => ({ getMessageSuggestions: () => undefined }),
@@ -38,6 +43,9 @@ jest.mock('../message-sources', () => ({ useResolvedMessageSources: () => [], Re
 
 beforeEach(() => {
   mockOfficialHosted = false;
+  mockBusy.answerApplying = false;
+  mockBusy.questionSending = false;
+  mockFetchAnswerStream.mockClear();
   mockError = { code: ERROR_CODE_NO_LIMIT, message: 'The server AI allowance has been exhausted' };
   mockFetchAnswerStream.mockImplementation(async () => {
     throw mockError;
@@ -46,6 +54,25 @@ beforeEach(() => {
 });
 
 afterEach(() => jest.restoreAllMocks());
+
+it.each(['answerApplying', 'questionSending'] as const)('blocks Retry while %s is active', async (busyFlag) => {
+  mockFetchAnswerStream.mockRejectedValue(new Error('Temporary failure'));
+  const { rerender } = render(<AssistantMessage id={2} isHovered={false} />);
+  const retry = await screen.findByTestId<HTMLButtonElement>('chat-answer-retry');
+
+  mockBusy[busyFlag] = true;
+  rerender(<AssistantMessage id={2} isHovered={false} />);
+  expect(retry.disabled).toBe(true);
+  fireEvent.click(retry);
+  expect(mockFetchAnswerStream).toHaveBeenCalledTimes(1);
+
+  mockBusy[busyFlag] = false;
+  rerender(<AssistantMessage id={2} isHovered={false} />);
+  expect(retry.disabled).toBe(false);
+  fireEvent.click(retry);
+  expect(mockFetchAnswerStream).toHaveBeenCalledTimes(2);
+  await screen.findByTestId('chat-answer-retry');
+});
 
 it.each(['writer', 'chat'])(
   'preserves self-hosted %s quota guidance and only shows the upgrade on official cloud',

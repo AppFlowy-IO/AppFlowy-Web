@@ -57,14 +57,17 @@ export function AnswerCodeBlock({
           {isMermaid ? (
             <div className='chat-code-toggle' role='group' aria-label={t('chat.code.view')}>
               {(['diagram', 'code'] as const).map((option) => (
-                <button
+                <Button
                   key={option}
                   type='button'
+                  variant={'ghost'}
+                  size={'sm'}
+                  className='!rounded-200 px-2 font-medium text-text-secondary focus-visible:ring-2 focus-visible:ring-border-theme-thick aria-pressed:text-text-primary'
                   aria-pressed={view === option}
                   onClick={() => setChosenView(option)}
                 >
                   {t(`chat.code.${option}`)}
-                </button>
+                </Button>
               ))}
             </div>
           ) : null}
@@ -72,13 +75,13 @@ export function AnswerCodeBlock({
             <TooltipTrigger asChild>
               <Button
                 variant={'ghost'}
-                size={'icon'}
-                className='h-6 w-6'
+                size={'icon-sm'}
+                className='!rounded-200 focus-visible:ring-2 focus-visible:ring-border-theme-thick'
                 aria-label={copyLabel}
                 onClick={copy}
                 data-testid='chat-code-copy'
               >
-                <CopyIcon className='h-4 w-4' />
+                <CopyIcon className='h-5 w-5' />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{copyLabel}</TooltipContent>

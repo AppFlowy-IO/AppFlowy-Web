@@ -9,7 +9,7 @@ import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
-import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
+import { useMessageResponseFormatContext } from '@/components/chat/provider/response-format-provider';
 import { useSuggestionsContext } from '@/components/chat/provider/suggestions-provider';
 import { ChatMessageMetadata, ResponseFormat } from '@/components/chat/types';
 import { Button } from '@/components/ui/button';
@@ -28,15 +28,15 @@ const MAX_PROGRESS_STEPS = 5;
 export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boolean }) {
   const isOfficialHosted = useIsOfficialHosted();
   const hasStarted = useRef(false);
-  const { getMessage } = useChatMessagesContext();
-  const { resolveAnswerFormat } = useResponseFormatContext();
-  const { fetchAnswerStream, regenerateAnswer } = useMessagesHandlerContext();
+  const { getMessage, getQuestionId } = useChatMessagesContext();
+  const { resolveAnswerFormat } = useMessageResponseFormatContext();
+  const { fetchAnswerStream, regenerateAnswer, answerApplying, questionSending } = useMessagesHandlerContext();
 
   const { getMessageSuggestions } = useSuggestionsContext();
 
   const message = getMessage(id);
 
-  const questionId = id - 1;
+  const questionId = getQuestionId(id);
   // Sources streamed before the answer is saved let citations resolve while it types.
   const [streamSources, setStreamSources] = useState<ChatMessageMetadata[]>([]);
   const savedSources = message?.meta_data;
@@ -66,6 +66,8 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
   }, []);
 
   const run = useCallback(async () => {
+    if (questionId === undefined) return;
+
     setLoading(true);
     setError(null);
     setDone(false);
@@ -116,6 +118,8 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
   }, [questionId, run]);
 
   const handleRegenerateImage = useCallback(() => {
+    if (questionId === undefined) return;
+
     void regenerateAnswer(questionId, formatRef.current);
   }, [questionId, regenerateAnswer]);
 
@@ -208,6 +212,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
                       size={'sm'}
                       className={'ml-auto shrink-0'}
                       data-testid='chat-answer-retry'
+                      disabled={questionSending || answerApplying || loading}
                       onClick={() => void run()}
                     >
                       {t('chat.retry')}

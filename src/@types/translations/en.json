@@ -409,6 +409,8 @@
       "button": {
         "format": "Format response",
         "auto": "Auto",
+        "send": "Send message",
+        "stop": "Stop generating",
         "text": "Text",
         "textWithImage": "Text and image",
         "imageOnly": "Image only",

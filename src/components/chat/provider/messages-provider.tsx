@@ -1,15 +1,18 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useChatContext } from '@/components/chat/chat/context';
-import { ChatMessage, ChatMessageMetadata } from '@/components/chat/types';
+import { AuthorType, ChatMessage, ChatMessageMetadata } from '@/components/chat/types';
 
 export interface ChatMessagesContextTypes {
   messageIds: number[];
   getMessage: (id: number) => ChatMessage | undefined;
+  getQuestionId: (answerId: number) => number | undefined;
   addMessages: (messages: ChatMessage[]) => void;
   removeMessages: (ids: number[]) => ChatMessage[];
   insertMessage: (message: ChatMessage, index: number) => void;
   saveMessageContent: (messageId: number, content: string, metadata: ChatMessageMetadata[]) => void;
+  /** Reconciles a streamed placeholder and its question with the saved answer's identity. */
+  saveAnswerMessage: (questionId: number, placeholderId: number, answer: ChatMessage) => void;
   /** Replaces a message's text and re-renders it (used when a question is edited). */
   updateMessageContent: (messageId: number, content: string) => void;
   /** Bumped when a message changes in place, so consumers rendering content re-read it. */
@@ -45,6 +48,13 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
 
   const getMessage = useCallback((id: number) => {
     return messagesRef.current.find((message) => message.message_id === id);
+  }, []);
+
+  const getQuestionId = useCallback((answerId: number) => {
+    return messagesRef.current.find((message) => message.message_id === answerId)?.question_message_id ??
+      messagesRef.current.find((message) =>
+        message.author.author_type === AuthorType.Human && message.reply_message_id === answerId
+      )?.message_id;
   }, []);
 
   const addMessages = useCallback((messages: ChatMessage[]) => {
@@ -92,24 +102,49 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
     setMessagesVersion((version) => version + 1);
   }, []);
 
+  const saveAnswerMessage = useCallback((questionId: number, placeholderId: number, answer: ChatMessage) => {
+    messagesRef.current = messagesRef.current.map((message) => {
+      if (message.message_id === questionId) {
+        return { ...message, reply_message_id: answer.message_id };
+      }
+
+      if (message.message_id === placeholderId) {
+        // Keep the streaming component mounted when the server reused its ID.
+        return {
+          ...answer,
+          question_message_id: questionId,
+          author: answer.message_id === placeholderId ? message.author : answer.author,
+        };
+      }
+
+      return message;
+    });
+    setMessageIds(messagesRef.current.map((message) => message.message_id));
+    setMessagesVersion((version) => version + 1);
+  }, []);
+
   const contextValue = useMemo(
     () => ({
       messageIds,
       getMessage,
+      getQuestionId,
       addMessages,
       removeMessages,
       insertMessage,
       saveMessageContent,
+      saveAnswerMessage,
       updateMessageContent,
       messagesVersion,
     }),
     [
       messageIds,
       getMessage,
+      getQuestionId,
       addMessages,
       removeMessages,
       insertMessage,
       saveMessageContent,
+      saveAnswerMessage,
       updateMessageContent,
       messagesVersion,
     ]

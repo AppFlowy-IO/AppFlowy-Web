@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
-import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
+import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
+import { useMessageResponseFormatContext } from '@/components/chat/provider/response-format-provider';
 import { ChatMessageMetadata } from '@/components/chat/types';
 
 import { AnswerMd } from '../chat-messages/answer-md';
@@ -23,11 +24,16 @@ export function AIAnswer({
 }) {
   const resolvedSources = useResolvedMessageSources(sources);
   const { regenerateAnswer } = useMessagesHandlerContext();
-  const { resolveAnswerFormat } = useResponseFormatContext();
+  const { getQuestionId } = useChatMessagesContext();
+  const { resolveAnswerFormat } = useMessageResponseFormatContext();
 
   const handleRegenerateImage = useCallback(() => {
-    void regenerateAnswer(id - 1, resolveAnswerFormat(id, content));
-  }, [content, id, regenerateAnswer, resolveAnswerFormat]);
+    const questionId = getQuestionId(id);
+
+    if (questionId === undefined) return;
+
+    void regenerateAnswer(questionId, resolveAnswerFormat(id, content));
+  }, [content, getQuestionId, id, regenerateAnswer, resolveAnswerFormat]);
 
   return (
     <div className={`chat-message flex flex-col w-full pl-0.5 relative`}>

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
-import { Textarea } from '@/components/chat/components/ui/textarea';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +20,9 @@ export function ChatSettingsButton({ disabled }: { disabled?: boolean }) {
   const { t } = useTranslation();
   const { chatSettings, updateChatSettings } = useMessagesHandlerContext();
   const [open, setOpen] = useState(false);
+  const titleId = useId();
+  const instructionsId = useId();
+  const hintId = useId();
   const savedInstructions =
     typeof chatSettings?.metadata?.instructions === 'string' ? chatSettings.metadata.instructions : '';
   const [draft, setDraft] = useState(savedInstructions);
@@ -55,11 +59,15 @@ export function ChatSettingsButton({ disabled }: { disabled?: boolean }) {
               variant={'ghost'}
               size={'icon'}
               disabled={disabled}
+              aria-label={t('chat.chatSettings.title')}
               data-active={active || undefined}
               data-testid='chat-input-settings'
-              className={cn('h-7', active && 'bg-fill-content-hover')}
+              className={cn(
+                'h-7 focus-visible:ring-2 focus-visible:ring-border-theme-thick',
+                active && 'bg-fill-theme-select'
+              )}
             >
-              <SettingsIcon className={cn('h-5 w-5', active ? 'text-primary' : 'text-icon-secondary')} />
+              <SettingsIcon className={cn('h-5 w-5', active ? 'text-icon-info-thick' : 'text-icon-secondary')} />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -67,23 +75,38 @@ export function ChatSettingsButton({ disabled }: { disabled?: boolean }) {
       </Tooltip>
       <PopoverContent
         align={'start'}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        className={'flex w-[360px] flex-col gap-2 p-3'}
+        aria-labelledby={titleId}
+        className={
+          'flex max-h-[var(--radix-popover-content-available-height)] w-[360px] max-w-[calc(100vw-16px)] flex-col gap-2 overflow-y-auto rounded-400 border border-border-primary bg-surface-layer-04 p-3 text-text-primary shadow-popover'
+        }
         data-testid='chat-settings-popover'
       >
-        <div className={'text-sm font-medium text-text-primary'}>{t('chat.chatSettings.instructionsLabel')}</div>
-        <Textarea
-          rows={5}
+        <Label id={titleId} htmlFor={instructionsId} className={'text-sm leading-5 text-text-primary'}>
+          {t('chat.chatSettings.instructionsLabel')}
+        </Label>
+        <TextareaAutosize
+          id={instructionsId}
+          aria-describedby={hintId}
+          minRows={5}
+          maxRows={10}
+          disabled={disabled}
           value={draft}
           maxLength={CHAT_INSTRUCTIONS_MAX_CHARS}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t('chat.chatSettings.instructionsPlaceholder')}
-          className={'min-h-[120px] resize-none !text-sm'}
+          className={'w-full rounded-[10px] py-1.5 text-text-primary disabled:bg-fill-content-hover'}
           data-testid='chat-settings-instructions'
         />
         <div className={'flex items-center justify-between gap-2'}>
-          <span className={'text-xs text-text-tertiary'}>{t('chat.chatSettings.hint')}</span>
-          <Button size={'sm'} onClick={() => handleOpenChange(false)} data-testid='chat-settings-done'>
+          <span id={hintId} className={'text-xs leading-[18px] text-text-tertiary'}>
+            {t('chat.chatSettings.hint')}
+          </span>
+          <Button
+            size={'sm'}
+            className={'focus-visible:ring-2 focus-visible:ring-border-theme-thick'}
+            onClick={() => handleOpenChange(false)}
+            data-testid='chat-settings-done'
+          >
             {t('chat.chatSettings.done')}
           </Button>
         </div>

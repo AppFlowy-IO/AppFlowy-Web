@@ -146,18 +146,10 @@
     display: inline-flex;
     padding: 2px;
     border-radius: 6px;
-    background: var(--fill-content-hover);
-  }
-  .chat-code-toggle button {
-    padding: 1px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--text-secondary);
+    background: var(--fill-content);
   }
   .chat-code-toggle button[aria-pressed='true'] {
-    background: var(--fill-toolbar);
-    color: var(--text-primary);
+    background: var(--fill-content-visible);
   }
   .chat-code-block pre {
     margin: 0;
