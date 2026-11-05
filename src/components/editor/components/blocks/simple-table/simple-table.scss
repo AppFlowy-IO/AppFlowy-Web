@@ -45,11 +45,6 @@
   // Top border on first row cells
   tr:first-child > td[data-block-type="simple_table_cell"] {
     @apply border-t;
-    .cell-children {
-      .block-element {
-        margin: 0 !important;
-      }
-    }
   }
 
   tr[data-table-row-horizontal-align="left"] {
@@ -112,7 +107,7 @@
     @apply leading-[1.5em] tracking-wide;
 
     .block-element {
-      margin: 0 !important;
+      margin-left: 0 !important;
     }
 
     .text-element {

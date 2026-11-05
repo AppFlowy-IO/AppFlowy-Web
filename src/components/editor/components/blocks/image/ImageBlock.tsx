@@ -223,6 +223,7 @@ export const ImageBlock = memo(
       >
         <div
           contentEditable={false}
+          data-media-placeholder={!hasImage}
           className={`embed-block relative ${alignCss} ${hasImage ? '!rounded-none !border-none !bg-transparent' : 'p-4'}`}
         >
           {isDeviceLocalImage ? (

@@ -77,7 +77,7 @@ export const LinkPreview = memo(
       >
         <div
           className={`link-preview-card link-preview-card-${previewType} embed-block min-w-0 ${
-            isEmbed ? 'flex-col items-stretch p-0' : 'items-center p-4'
+            isEmbed ? 'flex-col items-stretch p-0' : `items-center p-4 ${url ? '!rounded-[16px]' : ''}`
           }`}
           contentEditable={false}
         >
