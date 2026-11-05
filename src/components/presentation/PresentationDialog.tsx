@@ -89,14 +89,23 @@ export default function PresentationDialog({
   const [error, setError] = useState('');
   const [setupPopover, setSetupPopover] = useState(false);
   const { canRead, canWrite, hasLoadedViewActionPermissions } = useViewActionPermissions(view, !!mode, permissionViewId);
+  // An access notification makes the permission report "not loaded" until the server answers
+  // again. Keep presenting a source this dialog already read: only a settled answer changes read
+  // access, so a re-check never tears down the studio, its analysis, or a running generation.
+  const [readableIdentity, setReadableIdentity] = useState<string>();
+  const sourceReadable = hasLoadedViewActionPermissions ? canRead : readableIdentity === identity;
+
+  useEffect(() => {
+    if (hasLoadedViewActionPermissions) setReadableIdentity(canRead ? identity : undefined);
+  }, [hasLoadedViewActionPermissions, canRead, identity]);
   // Only onUpgrade and canManageStyles are used here; the studio reads presentation status itself.
   const access = usePresentationAccess(false);
 
   const readSource = useCallback(
     async (signal?: AbortSignal): Promise<SourceRead> => {
-      if (!canRead) throw new Error('You no longer have access to this source page.');
+      if (!sourceReadable) throw new Error('You no longer have access to this source page.');
       if (mode === 'slides') {
-        // Saved decks carry their own scene. Prepare current evidence only in the setup panel.
+        // Saved decks carry their own scene. Prepare current evidence only after Generate.
         return {
           kind: 'server',
           snapshot: {
@@ -140,11 +149,11 @@ export default function PresentationDialog({
     },
     // Reader callbacks can change as background database rows load. Only the selected source
     // changes this read; callback churn must not cancel and restart expensive preparation.
-    [canRead, mode, workspaceId, viewId, isRow]
+    [sourceReadable, mode, workspaceId, viewId, isRow]
   );
 
   useEffect(() => {
-    if (!mode || !canRead) return;
+    if (!mode || !sourceReadable) return;
     const controller = new AbortController();
 
     // A refresh for the same identity keeps presenting the previous source until the new one arrives.
@@ -161,7 +170,7 @@ export default function PresentationDialog({
     return () => {
       controller.abort();
     };
-  }, [mode, canRead, identity, readSource]);
+  }, [mode, sourceReadable, identity, readSource]);
 
   useEffect(() => {
     const userId = user?.uid;
@@ -245,7 +254,7 @@ export default function PresentationDialog({
       anchorEl={anchorEl}
       paperClassName={mode === 'mindmap' ? 'ps-map-preview-dialog' : undefined}
     >
-      {snapshot && canRead ? (
+      {snapshot && sourceReadable ? (
         <Suspense
           fallback={
             mode === 'mindmap' ? (

@@ -896,14 +896,16 @@ test.describe('SimpleTable', () => {
     const table = getTable(page);
     const addRowBtn = table.locator('.simple-table-add-row-btn');
 
-    // Before hover
+    // Slash-menu selection can leave the pointer over the newly inserted table.
+    await page.mouse.move(1, 1);
     await expect(addRowBtn).toHaveCSS('opacity', '0');
 
     // Hover
     await table.hover();
-    await page.waitForTimeout(300);
-
     await expect(addRowBtn).toHaveCSS('opacity', '1');
+
+    await page.mouse.move(1, 1);
+    await expect(addRowBtn).toHaveCSS('opacity', '0');
   });
 
   test('action triggers should appear on cell hover', async ({ page }) => {

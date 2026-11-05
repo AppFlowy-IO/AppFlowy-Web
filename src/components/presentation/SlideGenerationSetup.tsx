@@ -5,13 +5,13 @@ import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { ReactComponent as PageIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as PaletteIcon } from '@/assets/icons/palette.svg';
+import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip as AppTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { analyzePresentationTemplate, assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from './presentation-client';
 import { COMPANY_STYLE_MESSAGE, CUSTOM_SLIDE_MESSAGE, presentationUpgradeRequired, slideCountLimitMessage, templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
-import PresentationPaywall from './PresentationPaywall';
 import PresentationSettingsDropdown from './PresentationSettingsDropdown';
 import { effectiveSlideOptions } from './slide-guidance';
 import { SLIDE_COUNT_PRESETS } from './slide-limits';
@@ -74,22 +74,16 @@ export default function SlideGenerationSetup({
   const templateApproved = !!style.serverStyle && !style.requiresReview && style.reviewed !== false;
   const [assessed, setAssessed] = useState<{
     key: string;
-    purpose?: string;
-    attempt: number;
+    sourceRevision: string;
     assessment: SlideAssessment;
   }>();
   const assessment = assessed?.key === assessmentKey ? assessed.assessment : cachedAssessment;
-  const pendingAssessment = useRef<string>();
-  const awaitingReuse = !!(props.reuse?.checking && pendingAssessment.current !== cacheKey && !cachedAssessment);
-  const hasReusable = !!props.reuse?.available;
+  const assessmentRequest = useRef<AbortController>();
   // Once asked for this source, the purpose field stays while the user answers, even if a reassessment stops asking.
   const sourceKey = JSON.stringify([scope?.workspaceId, scope?.pageId, snapshot.revision]);
   const [asked, setAsked] = useState<{ key: string; question?: string }>();
   const purposeQuestion = asked?.key === sourceKey ? asked : undefined;
-  const [assessmentAttempt, setAssessmentAttempt] = useState(0);
   const [assessing, setAssessing] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [noticeUpgrade, setNoticeUpgrade] = useState(false);
   const [importing, setImporting] = useState(false);
   const [analyzingTemplate, setAnalyzingTemplate] = useState(false);
   const templateRequest = useRef<AbortController>();
@@ -111,6 +105,18 @@ export default function SlideGenerationSetup({
   const canAssess = (props.canAssess ?? canGenerate) && !customDenied && (designMode !== 'template' || (templateApproved && !draft));
   const countPaywall = props.reuse?.available ? undefined : customDenied ? CUSTOM_SLIDE_MESSAGE : props.isPro === false ? limitMessage : undefined;
   const presetOptions = effectiveSlideOptions(options);
+  const selectionKey = JSON.stringify([assessmentKey, options, style]);
+  // A denial belongs to the submitted settings and access, not every later selection.
+  const noticeKey = JSON.stringify([
+    selectionKey, props.isPro, props.customSlideCount, props.companyStyles,
+    remainingSlides, maxSlides, maxTemplateBytes,
+  ]);
+  const [feedback, setFeedback] = useState<{ key: string; message: string; upgrade: boolean }>();
+  const activeFeedback = feedback?.key === noticeKey ? feedback : undefined;
+  const notice = activeFeedback?.message ?? '';
+  const noticeUpgrade = activeFeedback?.upgrade ?? false;
+  const setNotice = (message: string, upgrade = false) =>
+    setFeedback(message ? { key: noticeKey, message, upgrade } : undefined);
 
   useEffect(() => {
     setDraft(undefined);
@@ -136,13 +142,11 @@ export default function SlideGenerationSetup({
     templateRequest.current = controller;
     setImporting(true);
     setNotice('');
-    setNoticeUpgrade(false);
     try {
       await work(controller.signal);
     } catch (error) {
       if (!controller.signal.aborted) {
-        setNotice(error instanceof Error ? error.message : 'Unable to load the template.');
-        setNoticeUpgrade(presentationUpgradeRequired(error));
+        setNotice(error instanceof Error ? error.message : 'Unable to load the template.', presentationUpgradeRequired(error));
       }
     } finally {
       if (templateRequest.current === controller) {
@@ -162,102 +166,25 @@ export default function SlideGenerationSetup({
     if (!signal.aborted) setDraft(analyzed);
   }
 
-  useEffect(() => {
-    if (!scope || !canAssess || awaitingReuse || hasReusable || props.reuse?.error) {
-      setAssessing(false);
-      return;
-    }
-
-    if (
-      assessed?.key === assessmentKey &&
-      assessed.purpose === options.purpose &&
-      assessed.attempt === assessmentAttempt
-    ) {
-      // Returning to a completed assessment can abort a different pending request. Its
-      // finally handler must not update state, so clear that request's spinner here.
-      setAssessing(false);
-
-      return;
-    }
-
-    const cached = cachedAssessment;
-
-    if (cached && assessmentAttempt === 0) {
-      setAssessed({ key: assessmentKey, purpose: options.purpose, attempt: assessmentAttempt, assessment: cached });
-      props.assessmentCache?.set(cacheKey, cached);
-      if (cached.condition === 'ambiguous') setAsked({ key: sourceKey, question: cached.question });
-      setAssessing(false);
-      setNotice('');
-      return;
-    }
-
-    const controller = new AbortController();
-
-    pendingAssessment.current = cacheKey;
-    setAssessing(true);
-    // Debounce source/options changes; aborted requests must never replace a newer assessment.
-    const timer = window.setTimeout(() => {
-      void assessPresentation({ scope, source: snapshot, options, style }, controller.signal)
-        .then((result) => {
-          if (!controller.signal.aborted) {
-            if (props.assessmentCache) {
-              // A studio owns this bounded cache; changing actor or source scope clears it.
-              if (props.assessmentCache.size >= 20)
-                props.assessmentCache.delete(props.assessmentCache.keys().next().value);
-              props.assessmentCache.set(cacheKey, result.assessment);
-            }
-
-            setAssessed({
-              key: assessmentKey,
-              purpose: options.purpose,
-              attempt: assessmentAttempt,
-              assessment: result.assessment,
-            });
-            if (result.assessment.condition === 'ambiguous')
-              setAsked({ key: sourceKey, question: result.assessment.question });
-            setNotice('');
-          }
-        })
-        .catch((error: Error) => {
-          if (!controller.signal.aborted) {
-            // A failed reassessment must not leave the previous answer enabling generation.
-            setAssessed(undefined);
-            setNotice(error.message);
-            setNoticeUpgrade(presentationUpgradeRequired(error));
-            if (presentationUpgradeRequired(error)) void props.onStatusRefresh?.();
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setAssessing(false);
-        });
-    }, 400);
-
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-      pendingAssessment.current = undefined;
-    };
-    // Counts, palette and panel expansion do not alter source assessment.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    assessmentKey,
-    options.purpose,
-    assessmentAttempt,
-    canAssess,
-    awaitingReuse,
-    hasReusable,
-    props.reuse?.error,
-  ]);
   const hasSource =
-    !!snapshot.serverSource || !!snapshot.blocks.length || (options.includeProperties && !!snapshot.properties.length);
-  const question = assessment?.condition === 'ambiguous' && !options.purpose?.trim() && !options.reviewOutline;
-  const selectionKey = JSON.stringify([assessmentKey, options, style]);
+    !!props.onPrepareGeneration ||
+    !!snapshot.serverSource ||
+    !!snapshot.blocks.length ||
+    (options.includeProperties && !!snapshot.properties.length);
+  const question =
+    !!purposeQuestion &&
+    assessment?.condition === 'ambiguous' &&
+    !options.purpose?.trim() &&
+    !options.reviewOutline;
+  const requiresUpgrade = !props.reuse?.available && (!!countPaywall || noticeUpgrade);
   const [requestedSelection, setRequestedSelection] = useState<string>();
   const waitingForResult = requestedSelection === selectionKey;
-  const submitting = busy || waitingForResult;
+  const submitting = busy || waitingForResult || assessing;
+  const canPrepare = !!props.onPrepareGeneration;
+  const canGenerateSelection = canGenerate && canAssess && !limitMessage && !customDenied;
   const ready =
     hasSource &&
-    (props.reuse?.available || (canGenerate && !!assessment && !limitMessage && !customDenied)) &&
+    (props.reuse?.available || canPrepare || canGenerateSelection) &&
     !props.reuse?.error &&
     !busy &&
     (!assessing || props.reuse?.available) &&
@@ -265,7 +192,15 @@ export default function SlideGenerationSetup({
     !draft &&
     (designMode !== 'template' || templateApproved) &&
     (!question || props.reuse?.available);
-  const showProgress = submitting || (assessing && !props.reuse?.available && !props.reuse?.checking);
+  const showProgress = submitting;
+
+  useEffect(() => {
+    setAssessing(false);
+    return () => {
+      assessmentRequest.current?.abort();
+      assessmentRequest.current = undefined;
+    };
+  }, [selectionKey, canGenerateSelection, canPrepare]);
 
   // Only an explicit click waits for a background lookup. If a match arrives, Open must win
   // over artifact regeneration, which deliberately bypasses reuse on the server.
@@ -279,8 +214,10 @@ export default function SlideGenerationSetup({
     if (props.reuse?.checking) return;
     setRequestedSelection(undefined);
     if (props.reuse?.available) props.reuse.onOpen();
-    else onGenerate();
-  }, [requestedSelection, waitingForResult, ready, props.reuse, onGenerate]);
+    else void analyzeAndGenerate();
+    // The requested selection captures this click; later edits cancel it instead of submitting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSelection, waitingForResult, ready, props.reuse]);
   const change = (patch: Partial<typeof options>) => onOptions({ ...options, ...patch });
   const changePreset = (patch: Partial<Pick<typeof options, 'audience' | 'tone' | 'contentDensity'>>) =>
     change({
@@ -291,19 +228,11 @@ export default function SlideGenerationSetup({
       ...patch,
     });
 
-  useEffect(() => {
-    if (designMode !== 'auto') return;
-    const suggested = props.styles.find((theme) => theme.id === assessment?.recommendedThemeId);
-
-    if (suggested && style.id !== suggested.id) {
-      onStyle(suggested);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assessment?.recommendedThemeId, designMode, style.id, onStyle, props.styles]);
   const defaultStyle = props.styles.find((item) => !item.serverStyle);
   const clearTemplate = () => {
     cancelTemplateRequest();
     setDraft(undefined);
+    setNotice('');
     if (defaultStyle) onStyle(defaultStyle);
   };
 
@@ -314,10 +243,70 @@ export default function SlideGenerationSetup({
     if (mode !== 'template' && style.serverStyle && defaultStyle) onStyle(defaultStyle);
   };
 
+  async function analyzeAndGenerate() {
+    if (!scope || (!canPrepare && !canGenerateSelection) || assessmentRequest.current) return;
+    const controller = new AbortController();
+
+    assessmentRequest.current = controller;
+    setAssessing(true);
+    setNotice('');
+    try {
+      const source = props.onPrepareGeneration ? await props.onPrepareGeneration(controller.signal) : snapshot;
+
+      if (!source || controller.signal.aborted) return;
+      // Opening an existing result is free. A miss must still respect AI admission before assessment.
+      if (!canGenerateSelection) {
+        setNotice(countPaywall ?? 'New slides are unavailable right now. Please try again shortly.', !!countPaywall);
+        return;
+      }
+
+      const key = assessmentIdentity(source.revision);
+      const saved = savedDeck?.assessment && savedDeck.options && key === assessmentIdentity(
+        savedDeck.sourceRevision, savedDeck.options, savedDeck.style, savedDeck.assessment.promptBundleVersion
+      ) ? savedDeck.assessment.value : undefined;
+      const cached = props.assessmentCache?.get(key) ??
+        (assessed?.key === assessmentKey && assessed.sourceRevision === source.revision ? assessed.assessment : saved);
+      const result = cached ?? (await assessPresentation({ scope, source, options, style }, controller.signal)).assessment;
+
+      if (controller.signal.aborted) return;
+      if (props.assessmentCache) {
+        if (props.assessmentCache.size >= 20 && !props.assessmentCache.has(key))
+          props.assessmentCache.delete(props.assessmentCache.keys().next().value);
+        props.assessmentCache.set(key, result);
+      }
+
+      setAssessed({ key: assessmentKey, sourceRevision: source.revision, assessment: result });
+      if (result.condition === 'ambiguous') {
+        setAsked({ key: sourceKey, question: result.question });
+        if (!options.purpose?.trim() && !options.reviewOutline) return;
+      }
+
+      const selectedStyle = designMode === 'auto'
+        ? props.styles.find((theme) => theme.id === result.recommendedThemeId) ?? style
+        : style;
+
+      if (selectedStyle.id !== style.id) onStyle(selectedStyle);
+      // Pass the exact resolved selection; React preference updates need not finish first.
+      onGenerate(undefined, { source, options, style: selectedStyle });
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setAssessed(undefined);
+        setNotice(error instanceof Error ? error.message : 'Unable to analyze the sources.', presentationUpgradeRequired(error));
+        if (presentationUpgradeRequired(error)) void props.onStatusRefresh?.();
+      }
+    } finally {
+      if (assessmentRequest.current === controller) {
+        assessmentRequest.current = undefined;
+        setAssessing(false);
+      }
+    }
+  }
+
   const generate = () => {
+    if (!ready) return;
     if (props.reuse?.checking) setRequestedSelection(selectionKey);
     else if (props.reuse?.available) props.reuse.onOpen();
-    else onGenerate();
+    else void analyzeAndGenerate();
   };
 
   const review = draft ?? (style.templateName ? style : undefined);
@@ -328,6 +317,7 @@ export default function SlideGenerationSetup({
     if (!review?.serverStyle) return;
     const next = { ...review, ...patch };
 
+    setNotice('');
     setDraft({
       ...next,
       serverStyle: {
@@ -506,8 +496,7 @@ export default function SlideGenerationSetup({
                     e.target.value = '';
                     if (!file || !scope) return;
                     if (maxTemplateBytes !== null && file.size > maxTemplateBytes) {
-                      setNotice(templateUploadSizeMessage(maxTemplateBytes));
-                      setNoticeUpgrade(props.isPro === false);
+                      setNotice(templateUploadSizeMessage(maxTemplateBytes), props.isPro === false);
                       return;
                     }
 
@@ -659,8 +648,7 @@ export default function SlideGenerationSetup({
                     onClick={() => {
                       if (!scope) return;
                       if (review.company && props.companyStyles === false) {
-                        setNotice(COMPANY_STYLE_MESSAGE);
-                        setNoticeUpgrade(true);
+                        setNotice(COMPANY_STYLE_MESSAGE, true);
                         return;
                       }
 
@@ -725,7 +713,23 @@ export default function SlideGenerationSetup({
               {remainingSlides} slides available for this request. Generating and regenerating use this allowance.
             </p>
           )}
-          {countPaywall ? <PresentationPaywall message={countPaywall} onUpgrade={props.onUpgrade} /> : limitMessage && !props.reuse?.available && <Notice>{limitMessage}</Notice>}
+          {!countPaywall && limitMessage && !props.reuse?.available && <Notice>{limitMessage}</Notice>}
+          {requiresUpgrade && (
+            <div
+              role='status'
+              className='mt-2 flex items-start gap-3 rounded-300 border border-border-primary bg-surface-primary p-4 text-sm'
+              data-testid='presentation-upgrade-prompt'
+            >
+              <UpgradeIcon className='h-5 w-5 shrink-0 text-icon-primary' aria-hidden='true' />
+              <div className='min-w-0 flex-1'>
+                <p className='font-medium text-text-primary'>
+                  {!countPaywall ? 'Upgrade to continue' : remainingSlides === 0 ? 'Slide limit reached'
+                    : customDenied ? 'Choose a preset or upgrade' : 'Choose fewer slides or upgrade'}
+                </p>
+                <p className='mt-1 text-text-secondary'>{countPaywall ?? notice}</p>
+              </div>
+            </div>
+          )}
         </div>
         {purposeQuestion && (
           <label className='ps-field ps-ppt-question'>
@@ -800,7 +804,7 @@ export default function SlideGenerationSetup({
                 }))}
                 onValueChange={(contentDensity) =>
                   changePreset({ contentDensity: contentDensity as typeof options.contentDensity })
-                }
+        }
               />
             </div>
           </details>
@@ -811,8 +815,7 @@ export default function SlideGenerationSetup({
               <label htmlFor={`${controlsId}-outline`}>Review generated story plan</label>
             </h2>
             <p id={`${controlsId}-outline-description`}>
-              Generate and save the presentation, then review its story. Accepting it makes no additional AI call;
-              editing it requires regeneration.
+              Review the outline before presenting. Editing it regenerates the slides.
             </p>
           </div>
           <Switch
@@ -838,14 +841,15 @@ export default function SlideGenerationSetup({
             {props.reuse.error} <Action onClick={props.reuse.onRetry}>Try again</Action>
           </Notice>
         )}
-        {notice && !props.reuse?.available && (noticeUpgrade ? <PresentationPaywall message={notice} onUpgrade={props.onUpgrade} /> : (
+
+        {notice && !props.reuse?.available && !requiresUpgrade && (
           <Notice>
             {notice}{' '}
             {!assessing && (
-              <Action onClick={() => setAssessmentAttempt((attempt) => attempt + 1)}>Retry analysis</Action>
+              <Action onClick={generate}>Retry analysis</Action>
             )}
           </Notice>
-        ))}
+        )}
         {!hasSource && <Notice>Add some document content before generating.</Notice>}
       </div>
       <footer className='ps-ppt-setup-footer'>
@@ -856,7 +860,9 @@ export default function SlideGenerationSetup({
                 aria-hidden='true'
                 className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
               />
-              {waitingForResult
+              {assessing
+                ? 'Analyzing your sources…'
+                : waitingForResult
                 ? 'Preparing your presentation…'
                 : busy
                 ? props.reuse?.available
@@ -874,15 +880,17 @@ export default function SlideGenerationSetup({
         <Button
           size='lg'
           disabled={
-            !ready ||
-            // A background saved-result lookup must not flash an already-ready Generate button.
+            (requiresUpgrade ? busy || importing : !ready) ||
+            // An explicit click waits for the selected saved-result lookup before analysis.
             waitingForResult ||
-            (!!props.reuse?.checking && !assessment)
+            assessing
           }
-          onClick={generate}
+          onClick={requiresUpgrade ? props.onUpgrade : generate}
         >
-          <AIIcon className='h-4 w-4' />
-          {submitting
+          {requiresUpgrade ? <UpgradeIcon className='h-5 w-5' aria-hidden='true' /> : <AIIcon className='h-4 w-4' />}
+          {requiresUpgrade
+            ? 'Upgrade workspace'
+            : submitting
             ? props.reuse?.available
               ? 'Opening…'
               : 'Generating…'

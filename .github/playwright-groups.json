@@ -22,15 +22,15 @@
   },
   {
     "name": "dockable-outline-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js",
-    "description": "Dockable document outline, scroll tracking, themes, comments, and published display modes",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/inline-comment-mentions.feature.spec.js",
+    "description": "Dockable document outline and document comment person mentions",
     "bdd": "true",
     "shard": ""
   },
   {
     "name": "code-block-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js",
-    "description": "Code block settings, Mermaid, literal editing, clipboard, and code/callout page conversion",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/pdf-embed.feature.spec.js",
+    "description": "Code block settings, Mermaid, literal editing, clipboard, code/callout page conversion, and PDF embeds on the production server",
     "bdd": "true",
     "shard": ""
   },
@@ -57,8 +57,8 @@
   },
   {
     "name": "database-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-subpage-breadcrumb.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/relative-date-comparisons.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/board-always-renders.feature.spec.js",
-    "description": "Database row, undo/redo, Formula, Rollup and Board rendering BDD workflows",
+    "spec": "playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-page-pdf-export.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/database-pdf-export.feature.spec.js playwright/.features-gen/playwright/bdd/features/page/page-pdf-export.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-subpage-breadcrumb.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/relative-date-comparisons.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/board-always-renders.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/row-page-row-sync.feature.spec.js",
+    "description": "Database row, row, page and database PDF export, undo/redo, Formula, Rollup and Board rendering BDD workflows",
     "bdd": "true",
     "shard": ""
   },

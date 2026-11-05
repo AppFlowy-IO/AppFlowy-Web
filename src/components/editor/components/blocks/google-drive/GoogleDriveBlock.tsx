@@ -248,6 +248,7 @@ export const GoogleDriveBlock = memo(
           {!node.data.url ? (
             <div
               className='drive-empty drive-selection-surface relative flex h-11 items-center gap-2 rounded-lg bg-fill-list-active pl-3 pr-2'
+              data-media-placeholder
               role={readOnly ? undefined : 'button'}
               tabIndex={readOnly ? undefined : 0}
               onClick={edit}

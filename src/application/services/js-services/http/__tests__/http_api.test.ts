@@ -292,6 +292,28 @@ describe('http_api client (unit)', () => {
     expect(readText).not.toHaveBeenCalled();
   });
 
+  it('sends database paper options only when the caller chooses them', async () => {
+    const core = await import('../core');
+    const { getViewPdfBlob } = await import('../export-api');
+    core.initAPIService(baseConfig);
+    mockAxiosInstance.post.mockResolvedValue({
+      status: 200,
+      data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+      headers: { 'content-type': 'application/pdf' },
+    });
+
+    await getViewPdfBlob('workspace-id', 'document-view');
+    await getViewPdfBlob('workspace-id', 'board-view', { includeNested: false, pageSize: 'a3', landscape: true });
+
+    const [documentCall, databaseCall] = mockAxiosInstance.post.mock.calls;
+
+    expect(documentCall[0]).toBe('/api/export/view/workspace-id/document-view/pdf');
+    expect(documentCall[2].params).not.toHaveProperty('page_size');
+    expect(documentCall[2].params).not.toHaveProperty('landscape');
+    expect(databaseCall[0]).toBe('/api/export/view/workspace-id/board-view/pdf');
+    expect(databaseCall[2].params).toMatchObject({ include_nested: false, page_size: 'a3', landscape: true });
+  });
+
   it.each([200, 400, 503])('preserves Cloud errors returned as history ArrayBuffers under HTTP %s', async (status) => {
     global.TextDecoder = TextDecoder as typeof global.TextDecoder;
     const core = await import('../core');

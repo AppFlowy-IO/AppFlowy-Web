@@ -21,6 +21,7 @@ import {
   type SlowSyncBlockedReason,
   type SlowSyncOutboxItem,
   startDrainAll,
+  wakeOutboxDrains,
 } from '@/application/sync-outbox';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
@@ -92,6 +93,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxUpdateBytes,
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded = false,
+    supportsRealtimeUpdateAck = false,
     enableDatabaseHistory,
     databaseHistoryCapabilityLoaded = syncLimitsLoaded,
   } = useAuthInternal();
@@ -127,6 +129,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     workspaceId: currentWorkspaceId!,
     clientId: CollabService.getClientId(),
     deviceId: CollabService.getDeviceId(),
+    supportsUpdateAck: supportsRealtimeUpdateAck,
   });
 
   // Initialize sync context for collaborative editing
@@ -374,6 +377,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       // The conservative realtime fallback remains usable while server-info
       // loads; only the opt-in HTTP slow lane depends on advertised limits.
       isReady: () => canSendToServer && wsReadyStateRef.current === WS_READY_STATE_OPEN,
+      canSendObject: webSocket.canSendUpdate,
       onPersisted: bcPostOutboxReady,
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
@@ -391,6 +395,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     currentUserId,
     currentWorkspaceId,
     wsSendMessage,
+    webSocket.canSendUpdate,
     bcPostDurableMessage,
     bcPostOutboxReady,
     canSendToServer,
@@ -427,6 +432,10 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       startDrainAll();
     }
   }, [canSendToServer, drainWakeKey]);
+
+  const subscribeSendReady = webSocket.subscribeSendReady;
+
+  useEffect(() => subscribeSendReady?.(wakeOutboxDrains), [subscribeSendReady]);
 
   // Access changes do not rebuild the transport configuration. Wake only a
   // permission-blocked object so a restored grant can retry immediately,

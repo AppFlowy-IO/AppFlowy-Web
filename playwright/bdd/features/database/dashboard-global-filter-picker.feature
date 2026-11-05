@@ -75,7 +75,7 @@ Feature: Dashboard global filter picker and pills
     And the "Tasks Grid" widget shows the rows "Write launch plan"
     And the saved "Region" filter remembers the option names "Europe"
 
-  Scenario: Pills omit the default operator and turn grey without a value
+  Scenario: Pills omit the default operator and use a neutral surface without a value
     Given the dashboard is in Edit mode
     And the dashboard has a saved "Status" filter for "Doing" mapped to "Status" in "Projects"
     And the dashboard has a saved "Due" filter with no value mapped to "Due" in "Projects"
@@ -116,6 +116,6 @@ Feature: Dashboard global filter picker and pills
     When I delete the "Urgent" global filter
     Then the dashboard does not show the global filter bar
 
-  Scenario: The toolbar filter icon shows an active filter without a count
+  Scenario: The labelled toolbar filter button shows an active filter without a count
     Given the dashboard has a saved "Status" filter for "Doing" mapped to "Status" in "Projects" and "Stage" in "Tasks"
     Then the dashboard filter button is highlighted without a count badge

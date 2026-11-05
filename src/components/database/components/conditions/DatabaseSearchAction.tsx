@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { DASHBOARD_ICON_BUTTON_CLASS } from '@/components/database/dashboard/dashboard-ui';
 import { Button } from '@/components/ui/button';
 import { preventTooltipOnFocus, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -72,7 +73,7 @@ export function DatabaseSearchAction({
         <TooltipTrigger asChild onFocus={widget ? preventTooltipOnFocus : undefined}>
           <Button
             aria-label={t('search.label')}
-            className={cn(widget && '!rounded-200 text-dash-tool-icon [&_svg]:h-4 [&_svg]:w-4')}
+            className={cn(widget && DASHBOARD_ICON_BUTTON_CLASS)}
             data-parity-id={widget ? 'dash-widget-tool-search' : undefined}
             data-testid='database-actions-search'
             onClick={(event) => {
@@ -86,7 +87,7 @@ export function DatabaseSearchAction({
           >
             <SearchIcon
               aria-hidden='true'
-              className={widget ? 'h-4 w-4' : 'h-5 w-5'}
+              className='h-5 w-5'
               data-parity-id={widget ? 'dash-widget-tool-search__icon' : undefined}
             />
           </Button>
@@ -101,7 +102,7 @@ export function DatabaseSearchAction({
       className={cn(
         'flex h-6 items-center gap-1 border border-border-primary bg-fill-content px-1.5 text-sm leading-5 transition-[width,opacity] duration-150 ease-in-out motion-reduce:transition-none',
         widget
-          ? 'w-[min(200px,45cqw)] max-w-[45%] rounded-200 supports-[width:1cqw]:max-w-none'
+          ? 'h-8 w-[min(200px,45cqw)] min-w-0 max-w-[45%] gap-1.5 rounded-200 px-2 focus-within:border-border-theme-thick focus-within:ring-1 focus-within:ring-border-theme-thick hover:border-border-primary-hover supports-[width:1cqw]:max-w-full'
           : 'w-[200px] rounded-300'
       )}
       // The typed text is the committed query (the debounce has elapsed): tests wait on it.
@@ -119,7 +120,7 @@ export function DatabaseSearchAction({
     >
       <SearchIcon
         aria-hidden='true'
-        className={cn('shrink-0 text-icon-secondary', widget ? 'h-3 w-3' : 'h-4 w-4')}
+        className={cn('shrink-0 text-icon-secondary', widget ? 'h-5 w-5' : 'h-4 w-4')}
         data-parity-id={widget ? 'dash-widget-search-field__icon' : undefined}
       />
       <input
@@ -143,14 +144,19 @@ export function DatabaseSearchAction({
       {inputValue ? (
         <Button
           aria-label={t('button.clear')}
-          className={cn('rounded-200 p-0 text-icon-secondary', widget ? 'h-4 w-4' : 'h-5 w-5')}
+          className={cn(
+            'p-0 text-icon-secondary',
+            widget
+              ? 'h-6 w-6 !rounded-200 focus-visible:ring-2 focus-visible:ring-border-theme-thick'
+              : 'h-5 w-5 rounded-200'
+          )}
           data-testid='database-actions-search-clear'
           onClick={closeSearch}
           size='icon-sm'
           type='button'
           variant='ghost'
         >
-          <CloseIcon aria-hidden='true' className={widget ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+          <CloseIcon aria-hidden='true' className={widget ? 'h-5 w-5' : 'h-3.5 w-3.5'} />
         </Button>
       ) : null}
     </div>

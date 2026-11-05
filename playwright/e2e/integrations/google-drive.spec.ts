@@ -63,6 +63,11 @@ test('empty picker matches geometry and switches to the connect-account state', 
   await expect(page.getByRole('button', { name: 'Embed', exact: true })).toBeDisabled();
   await expect(page.getByTestId('google-drive-picker')).toHaveCSS('width', '400px');
   await expect(block(page).locator('.google-drive-block')).toHaveAttribute('data-selected', 'false');
+  const placeholder = block(page).locator('[data-media-placeholder="true"]');
+
+  await expect(placeholder).toHaveClass(/drive-empty/);
+  await expect(placeholder).toHaveCSS('height', '44px');
+  await expect(placeholder).toHaveCSS('padding', '8px 12px');
   await page.screenshot({ path: info.outputPath('drive-link-picker.png') });
   await page.getByRole('tab', { name: 'Browse Google Drive' }).click();
   await expect(page.getByRole('button', { name: 'Connect Google Account' })).toBeEnabled();
@@ -80,6 +85,8 @@ test('public embed keeps its iframe on focus, screenshots, hover and captions; e
   });
   await embed(page);
   await expect(block(page).locator('iframe')).toBeVisible();
+  await expect(block(page).locator('[data-media-placeholder="true"]')).toHaveCount(0);
+  await expect(block(page).locator('.drive-card')).toHaveCSS('height', '400px');
   const initial = loads;
 
   await page.evaluate(() => {
@@ -241,10 +248,19 @@ async function connected(page: Page, requests: Record<string, unknown>[] = []) {
 }
 
 async function choosePrivate(page: Page) {
+  const metadata = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/integrations/proxy') &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON()?.endpoint === `/drive/v3/files/${privateFile.id}`
+  );
+
   await insert(page);
   await page.getByRole('tab', { name: 'Browse Google Drive' }).click();
   await page.getByRole('button', { name: 'Choose from work@example.com' }).click();
   await pickDriveFile(page);
+  // Picker metadata can render the footer before the authenticated preview loads.
+  await metadata;
   await expect(block(page).locator('.drive-footer')).toContainText('Private roadmap');
 }
 
@@ -758,9 +774,10 @@ test('connected Drive image preview scrolls at full width, including read-only a
   await expect
     .poll(() => preview.evaluate((element) => element.scrollHeight - element.clientHeight))
     .toBeGreaterThan(100);
+  await image.hover({ position: { x: 100, y: 100 } });
+  // Hover may scroll the target into view; measure only the wheel's effect.
   const outerScroll = await page.evaluate(() => window.scrollY);
 
-  await image.hover({ position: { x: 100, y: 100 } });
   await page.mouse.wheel(0, 350);
   await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
   expect(await page.evaluate(() => window.scrollY)).toBe(outerScroll);

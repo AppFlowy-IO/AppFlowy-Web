@@ -1,6 +1,9 @@
 import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
 import { useWidgetContextOptional } from './WidgetContext';
 
 /**
@@ -13,31 +16,31 @@ function WidgetRowsLoadFailed({ onRetry }: { onRetry?: () => void }) {
 
   return (
     <div
-      className='absolute inset-x-0 bottom-0 z-10 flex h-9 items-center justify-center gap-2 border-t border-border-primary bg-dash-card-bg px-3 text-xs text-text-secondary'
+      className='absolute inset-x-0 bottom-0 z-10 flex min-h-10 flex-wrap items-center justify-center gap-2 border-t border-border-primary bg-surface-primary px-3 py-1 text-xs leading-[18px] text-text-secondary'
       data-testid='dashboard-widget-rows-failed'
       role='status'
     >
       <span>{t('grid.row.rowsNotLoadedYet', { defaultValue: "Some rows haven't loaded yet" })}</span>
       {onRetry ? (
-        <button
+        <Button
           type='button'
-          className='rounded-200 px-2 py-0.5 font-medium text-text-action hover:bg-dash-hover-fill'
+          variant='ghost'
+          size='sm'
+          className='!rounded-200 px-2 font-medium text-text-action focus-visible:ring-2 focus-visible:ring-border-theme-thick'
           onClick={onRetry}
         >
           {t('chart.state.retry', { defaultValue: 'Retry' })}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
 }
 
 /**
- * The widget card: the page color, radius 12, and a 1px ring drawn as a
- * shadow (never a border, so it takes no space), with a faint shadow in light
- * mode. The ring turns to the edit ring in Edit mode (`.dash-card`, see
- * `dashboard-tokens.css`). The same in View and Edit mode otherwise; the
- * content runs edge to edge. A failed row load adds its notice over the
- * bottom edge.
+ * The content of the widget's shared card surface. The surrounding frame
+ * owns its border, so the header and content read as one card without
+ * changing the stored row geometry. A failed row load keeps arrived rows
+ * visible and adds a retry at the bottom edge.
  *
  * Kept free of heavy imports: `DatabaseViews` loads it eagerly.
  */
@@ -46,7 +49,10 @@ export function WidgetBody({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className='dash-card relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-400 bg-dash-card-bg'
+      className={cn(
+        'relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-primary',
+        widget?.showWidgetTitles ? 'rounded-b-400' : 'rounded-400'
+      )}
       data-editing={widget?.editing ? 'true' : 'false'}
       data-parity-id='dash-widget-card'
       data-testid='dashboard-widget-body'

@@ -149,6 +149,9 @@ This is a regression checklist and record of user expectations, not a claim that
 - Implement invalid-link bookmark fallback and supported provider error/reconnect states. Do not invent an AppFlowy password-unlock flow for Google-hosted permissions.
 - Match Flutter access recovery for 403/404 separately from retryable provider failures such as 500. After access is restored, explicitly selecting the same file/account again must retry its preview; a subscription keyed only by file ID can stay stuck on the reconnect state. Keep ordinary focus, caption and screenshot updates stable.
 - The user switched the local environment to `beta.appflowy.cloud` and requested a restart. Read the current environment at task time; do not silently revert the backend or assume every worktree uses the same configuration.
+- When merging shared editor spacing changes, put `data-media-placeholder` on the empty Drive surface itself. Keep the populated preview outside placeholder padding, and verify both surfaces in the browser.
+- Include new Playwright configs in the dedicated test TypeScript project and the existing main ESLint exclusions. Run the full `pnpm lint` command to catch root config files missed by focused source lint.
+- In provider-error tests, wait for the initial authenticated metadata response before installing the failure mock; Picker metadata can render the footer before the preview request finishes. For scroll containment, record the outer scroll position after hovering the target, because Playwright may scroll it into view.
 
 ## Other issues from previous reviews — apply when relevant
 

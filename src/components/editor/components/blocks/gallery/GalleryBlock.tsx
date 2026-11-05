@@ -115,7 +115,8 @@ const GalleryBlock = memo(
         </div>
         <div
           contentEditable={false}
-          className={`embed-block p-4 ${photos.length > 0 ? '!rounded-none !border-none !bg-transparent' : ''}`}
+          data-media-placeholder={photos.length === 0}
+          className={`embed-block p-4 ${photos.length > 0 ? '!rounded-none !border-none !bg-transparent !p-0' : ''}`}
         >
           {photos.length > 0 ? (
             layout === GalleryLayout.Carousel ? (

@@ -114,7 +114,7 @@ describe('Dashboard widget condition tools', () => {
     expect(screen.getByTestId(testId).getAttribute('data-active')).toBe('false');
   });
 
-  it('renders the Search tool (WP09) as a quiet 24px button with a 16px glyph', () => {
+  it('renders widget Search with a 32px control and a 20px icon', () => {
     render(inWidget(<WidgetSearchTool />));
 
     const button = screen.getByTestId('database-actions-search');
@@ -123,11 +123,11 @@ describe('Dashboard widget condition tools', () => {
     expect(button.getAttribute('aria-label')).toBe('Search');
     expect(button.getAttribute('type')).toBe('button');
     expect(button.textContent).toBe('');
-    expect(button.className).toContain('h-6');
-    expect(button.className).toContain('w-6');
+    expect(button.className).toContain('h-8');
+    expect(button.className).toContain('w-8');
     expect(button.className).toContain('!rounded-200');
     expect(glyphs).toHaveLength(1);
-    expect(glyphs[0].getAttribute('class')).toContain('h-4');
+    expect(glyphs[0].getAttribute('class')).toContain('h-5');
     expect(glyphs[0].getAttribute('data-parity-id')).toBe('dash-widget-tool-search__icon');
     expect(button.getAttribute('data-parity-id')).toBe('dash-widget-tool-search');
   });

@@ -17,6 +17,9 @@ function optInSuites(): RegExp | undefined {
     ...(process.env.RUN_NATHAN_EMPLOYEES ? [] : ['@nathan-employees']),
     ...(process.env.RUN_DASHBOARD_PUBLISH_FIXTURE === '1' ? [] : ['@dashboard-publish-fixture']),
     ...(process.env.RUN_REF_PAGES_TEST ? [] : ['@local-ref-pages']),
+    // Needs AppFlowy-Cloud-Premium#1539 (paginated database PDFs on a chosen paper). Remove once
+    // CI's Cloud image includes it.
+    ...(process.env.RUN_CLOUD_DATABASE_PDF_LAYOUT ? [] : ['@cloud-database-pdf-layout']),
   ];
 
   return skipped.length > 0 ? new RegExp(skipped.join('|')) : undefined;

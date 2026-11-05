@@ -2,7 +2,12 @@
 
 This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
 
-The **Present** button in page and modal headers shows only on official AppFlowy Cloud. `usePresentationEntryEnabled` in [`feature-flags.ts`](./feature-flags.ts) reads the server's hosting mode, so self-hosted deployments never see it, and nobody sees it until server info confirms the official cloud.
+The **Present** button is enabled in page and modal headers by `PRESENTATION_ENTRY_ENABLED` in [`feature-flags.ts`](./feature-flags.ts). The entry requires server info to confirm official AppFlowy Cloud hosting.
+
+AI presentation actions also follow the server's `ai_enabled` capability through `useAIEnabled`.
+When AI is disabled, including self-hosted servers without a configured model, the AI mind-map and
+slide menu items, direct AI generation button, and **Share → AI Slides** tab are hidden. The AI
+catalog panel does not mount or load in that state. Document presentation does not require AI.
 
 ## Run locally
 
@@ -13,10 +18,8 @@ pnpm dev --host 127.0.0.1 --port 5182 --strictPort
 
 Use the app's normal server configuration and sign in at `/app`. The configured Cloud deployment must provide the presentation endpoints. This worktree does not start a model provider, mock backend, Cloud proxy, or unauthenticated presentation lab.
 
-- **Present** beside Share opens document presentation, mind maps, or AI Slides.
 - **Share → AI Slides** lists up to 30 authorized workspace presentations. Catalog cards read titles and slide counts with at most four artifact reads in flight; slide scenes load only for the deck opened by Preview, Present or Download. A failed artifact stays local to its card. This is a workspace catalog, not a current-page list. Successful metadata lists are reused for a minute per user; Retry, or closing an AI presentation dialog, lists it again.
-- **Settings → AI Settings → Presentation Styles** manages uploaded templates and their reviewed versions.
-- Prompt maintenance is a separate administrative screen. The server checks administrator access; normal generation never sends a system prompt or provider configuration from the browser.
+- Presentation style management and prompt administration remain implemented without an entry in the Settings dialog. The server checks administrator access; normal generation never sends a system prompt or provider configuration from the browser.
 
 ## Server integration
 
@@ -48,17 +51,41 @@ page, without preparing sources or assessing them. Regenerate opens settings; a 
 opens settings directly. Share-provided decks render immediately from their existing plan/scene.
 Loading, preview and settings share one dialog with fixed viewport-bounded dimensions. The footer
 stays at the bottom while the settings body scrolls; its progress line has reserved space.
-The settings panel prepares current evidence with the saved options and restores the saved job's
-assessment when its source, extraction options, purpose, reviewed template and prompt bundle match.
-Completed assessments also survive panel visits in a bounded studio cache. Built-in palette and
-slide-count changes invalidate generated-result reuse but do not repeat source analysis or interrupt
-an assessment already in flight. Changed evidence or analysis inputs require a new assessment.
-Once analysis is valid, a background saved-result lookup keeps Generate enabled. An explicit click
-waits for that lookup: a match opens the saved deck, a miss generates, and an error does neither.
-Changing settings cancels a pending click so it cannot submit an obsolete selection.
+Opening settings and editing options perform no source preparation or AI assessment. **Generate**
+first prepares current evidence with the selected options, checks for an unchanged saved result,
+and then assesses the source before submitting generation. A matching result opens without an
+assessment or generation request. The same prepared source and selected design pass into generation,
+avoiding a second preparation read. Analysis shows progress after the click; an ambiguous source
+asks for a purpose, and answering it waits for another Generate click before reassessing.
+When the selected request exceeds the allowance, an existing match still opens for free;
+otherwise, the primary action offers workspace upgrade before assessment or generation.
+Source preparation remains unavailable until status loads or when edit access is missing.
+Completed assessments survive panel visits in a bounded studio cache and saved jobs. Reuse requires
+matching source revisions, extraction options, purpose, reviewed template and prompt bundle.
+Changing settings or leaving the panel cancels the submitted analysis and ignores late replies.
+Existing background saved-result lookups never start assessment; an explicit click waits for their
+result before opening or analyzing the selected source.
 
 Session writes are scheduled by preference edits and merge only those fields into the latest saved
 payload. Opening a studio does not clear deck/narrative references or another mode's map style.
+
+Mind maps open in AI mode by default. An authorized saved AI/imported map is reused; otherwise,
+edit access and known AI availability allow one automatic generation for that opening. A saved
+page-structure map does not satisfy the AI request. Failed generation waits for an explicit retry,
+and quota or accounting failures never silently replace AI with a structural map. **From page
+structure** remains an explicit free choice. Source preparation, durable idempotency and Gateway
+settlement use the existing AI generation workflow. Late AI results remain available without
+overriding a later view choice or its session selection. Readers can explicitly open an authorized
+saved structural map without creating a new artifact.
+
+Slide setup checks saved results as part of the existing load/generation flow. The primary action
+is **Open presentation** for a match, **Generate presentation** for an allowed new selection, or
+**Upgrade workspace** for a known plan/slide restriction. It never asks users to run a separate
+saved-presentation search. A known limit has one explanatory prompt; changing to an available
+slide count restores Generate, and an existing match stays usable at zero allowance. Upgrade
+uses the existing workspace-owner/member billing flow and preserves the settings draft.
+Request errors apply only to the settings and plan access that produced them, so changing to an
+allowed design or receiving updated plan access restores the appropriate primary action.
 
 The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts. Preset/custom choices retain their explicit request mode. Proactive controls explain known restrictions; the API remains authoritative for admission. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
 
@@ -99,6 +126,11 @@ Space activation on buttons and ignore handled events, modified keys and other d
 ## Editing and compatibility
 
 Story-plan editing preserves the saved artifact version and source revision. Accepting an unchanged initial outline opens the already-generated artifact. Applying a changed outline regenerates through Cloud. Map text and appearance edits use expected-version checks; rejected writes retain the accepted content. The root map label remains the approved source title. Structural maps also come from Cloud: loading, failure and retry states never synthesize a replacement map in the browser.
+
+Reopening an imported-template deck restores its exact immutable style version, including layouts,
+text slots and analysis; scene theme tokens alone do not constitute a complete template. A new
+generation reuses the already-resolved style when its reference matches, avoiding another read.
+Words baked into template images remain artwork; only native text slots can be rewritten.
 
 Canonical source references resolve through the server evidence envelope. A historical deck/map whose source envelope cannot be proven to match the open page remains viewable but cannot silently reuse that page's citations or regeneration evidence. The artifact catalog supports a captured source-page filter. Full regeneration after a page edit creates a new deck; targeted slide/story edits still require matching evidence.
 

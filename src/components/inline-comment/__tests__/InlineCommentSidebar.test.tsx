@@ -4,6 +4,10 @@ import { InlineComment } from '@/application/inline-comment';
 
 import { InlineCommentSidebar } from '../InlineCommentSidebar';
 
+jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
+  useMentionableUsersWithAutoFetch: () => ({ users: [], loading: false }),
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     // Interpolation values are appended so plural counts and reactor names stay

@@ -71,11 +71,11 @@ test('code renders with Figma spacing, syntax colors, hover toolbar and no inter
   await language(page, 'Python');
   await expect(block(page)).toHaveAttribute('data-language', 'python');
   await expect(source(page).locator('.token.keyword').first()).toBeVisible();
-  await expect(block(page).locator('.code-block-body')).toHaveCSS('padding', '8px 20px 38px');
+  await expect(block(page).locator('.code-block-body')).toHaveCSS('padding', '8px 20px 22px');
   await expect(source(page)).toHaveCSS('font-size', '14px');
-  await expect(source(page)).toHaveCSS('line-height', '20px');
-  await expect(source(page)).toHaveCSS('height', '80px');
-  await expect(block(page).locator('.code-block-surface')).toHaveCSS('height', '156px');
+  await expect(source(page)).toHaveCSS('line-height', '21px');
+  await expect(source(page)).toHaveCSS('height', '84px');
+  await expect(block(page).locator('.code-block-surface')).toHaveCSS('height', '144px');
   await source(page).hover();
   await expect(page.getByTestId('code-toolbar')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('code-hover.png'), animations: 'disabled' });
@@ -365,7 +365,7 @@ test('language keyboard wraps, searches aliases, and retains Auto', async ({ pag
 
 test('empty AI actions disabled, delete uses red text on neutral hover, and no Comment', async ({ page }) => {
   await insertCode(page);
-  await expect(block(page).locator('.code-block-surface')).toHaveCSS('height', '96px');
+  await expect(block(page).locator('.code-block-surface')).toHaveCSS('height', '81px');
   const root = await menu(page);
 
   await expect(root.getByRole('menuitem', { name: 'Comment', exact: true })).toHaveCount(0);

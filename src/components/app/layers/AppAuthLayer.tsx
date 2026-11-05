@@ -81,6 +81,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const maxUpdateBytes = serverInfo.info?.max_update_bytes;
   const maxSlowSyncUpdateBytes = serverInfo.info?.max_slow_sync_update_bytes;
   const syncLimitsLoaded = serverInfo.status === 'available';
+  const supportsRealtimeUpdateAck = serverInfo.info?.supports_realtime_update_ack === true;
   const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
   const workspaceInfoRequestIdRef = useRef(0);
   const workspaceInfoLoadedAtRef = useRef(0);
@@ -319,6 +320,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,
+      supportsRealtimeUpdateAck,
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo,
@@ -335,6 +337,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,
+      supportsRealtimeUpdateAck,
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo,

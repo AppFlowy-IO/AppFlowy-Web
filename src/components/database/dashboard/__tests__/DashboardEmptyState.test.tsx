@@ -57,7 +57,7 @@ describe('DashboardEmptyState: View mode (WP06 §1.9)', () => {
 
     expect(illustration.getAttribute('class')).toContain('text-icon-tertiary');
     expect(illustration.getAttribute('class')).toContain('opacity-50');
-    expect(illustration.getAttribute('style')).toContain('linear-gradient(to bottom, #000 60%, transparent)');
+    expect(illustration.getAttribute('style')).toContain('linear-gradient(to bottom, currentColor 60%, transparent)');
   });
 });
 

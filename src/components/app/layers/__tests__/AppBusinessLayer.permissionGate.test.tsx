@@ -879,6 +879,110 @@ describe('AppBusinessLayer permission gates', () => {
     visibilityState.mockRestore();
   });
 
+  it.each<[string, (eventEmitter: AppEventEmitter) => void]>([
+    ['a return to the tab', () => document.dispatchEvent(new Event('visibilitychange'))],
+    ['coming online', () => window.dispatchEvent(new Event('online'))],
+    [
+      'a websocket reconnect',
+      (eventEmitter) => {
+        eventEmitter.webSocketReadyState = WebSocket.CONNECTING;
+        eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CONNECTING);
+        eventEmitter.webSocketReadyState = WebSocket.OPEN;
+        eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+      },
+    ],
+  ])('keeps verified capabilities while re-probing after %s', async (_trigger, revalidate) => {
+    const eventEmitter = new EventEmitter() as AppEventEmitter;
+    const visibilityState = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const verified = createObjectPermission(routeViewId);
+    const downgraded = createObjectPermission(routeViewId, Types.Document, { can_write: false });
+    let resolveRevalidation!: (permission: CollabObjectPermission) => void;
+    const pendingRevalidation = new Promise<CollabObjectPermission>((resolve) => {
+      resolveRevalidation = resolve;
+    });
+
+    try {
+      eventEmitter.webSocketReadyState = WebSocket.OPEN;
+      (AccessService.getObjectPermission as jest.Mock)
+        .mockResolvedValueOnce(verified)
+        .mockReturnValueOnce(pendingRevalidation);
+      renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+      await waitFor(() => {
+        expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(verified);
+      });
+
+      act(() => {
+        revalidate(eventEmitter);
+      });
+
+      // Nothing says access changed, so the page keeps its capabilities instead
+      // of flipping to read-only until the server answers.
+      await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(verified);
+
+      // A downgrade still applies as soon as it arrives.
+      await act(async () => {
+        resolveRevalidation(downgraded);
+        await pendingRevalidation;
+      });
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(downgraded);
+      expect(screen.getByTestId('no-access').textContent).toBe('false');
+    } finally {
+      visibilityState.mockRestore();
+    }
+  });
+
+  it('drops retained capabilities when a background re-probe is denied', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockRejectedValueOnce({ code: ERROR_CODE.NOT_HAS_PERMISSION });
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    // The denial carries no permission body, so the retained capabilities must
+    // not survive behind the no-access page.
+    await waitFor(() => {
+      expect(screen.getByTestId('no-access').textContent).toBe('true');
+      expect(screen.getByTestId('object-permission').textContent).toBe('null');
+    });
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+  });
+
+  it('keeps the held capability object when a background re-probe confirms it', async () => {
+    const eventEmitter = new EventEmitter();
+    const seen: Array<CollabObjectPermission | undefined> = [];
+
+    function PermissionIdentityProbe() {
+      const permission = useContext(AppNavigationContext)?.objectPermissions?.[routeViewId];
+
+      if (seen[seen.length - 1] !== permission) seen.push(permission);
+      return <span data-testid={'object-permission'}>{JSON.stringify(permission ?? null)}</span>;
+    }
+
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)], modalViewId, <PermissionIdentityProbe />);
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    // Let the whole probe chain settle; an unchanged answer has no visible signal to wait for.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // An equal answer is a new object; consumers must not see it as a change.
+    expect(seen).toEqual([createObjectPermission(routeViewId)]);
+  });
+
   it('re-probes the active route when access is restored', async () => {
     const eventEmitter = new EventEmitter();
 

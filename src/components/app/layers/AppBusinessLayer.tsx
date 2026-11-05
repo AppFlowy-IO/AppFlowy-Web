@@ -58,6 +58,7 @@ import {
   findPermissionProbeView,
   getPermissionProbePurgeObjectIds,
   isCollabObjectPermissionForTarget,
+  isSameCollabObjectPermission,
   resolvePermissionProbeTarget,
   type PermissionProbeTarget,
 } from './permissionProbe';
@@ -94,6 +95,18 @@ type RouteViewExistsCacheEntry = {
   exists: boolean;
   checkedAt: number;
 };
+
+function omitObjectPermissions(
+  permissions: Record<string, CollabObjectPermission>,
+  viewIds: readonly string[]
+): Record<string, CollabObjectPermission> {
+  if (!viewIds.some((viewId) => viewId in permissions)) return permissions;
+
+  const next = { ...permissions };
+
+  viewIds.forEach((viewId) => delete next[viewId]);
+  return next;
+}
 
 function isRouteNotFoundError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -590,7 +603,9 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
         if (permission && !cancelled) {
           setObjectPermissions((current) =>
-            current[activeViewId] === permission ? current : { ...current, [activeViewId]: permission }
+            isSameCollabObjectPermission(current[activeViewId], permission)
+              ? current
+              : { ...current, [activeViewId]: permission }
           );
         }
 
@@ -599,6 +614,9 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
           // not stay readable from the local caches.
           purgePermissionProbeTarget(workspaceId, activeViewId, result);
           if (!cancelled) {
+            // A background re-probe keeps the previous capabilities while it
+            // runs; a denial without a permission body must not leave them behind.
+            if (!permission) setObjectPermissions((current) => omitObjectPermissions(current, [activeViewId]));
             if (activeViewId === viewId) setNoAccessViewId(activeViewId);
             // ViewModal owns its loaded Y.Doc and does not consume the route's
             // no-access state, so close it to stop rendering revoked content.
@@ -655,32 +673,37 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       bumpPermissionProbeRevision(permissionProbeRevisionRef.current, cacheKey);
     };
 
-    const revalidateActiveViews = (excludedViewId?: string) => {
-      // A targeted share notification does not name affected descendants, and
-      // a broad permission notification may name a group instead of a view.
-      // Conservatively re-probe the few currently rendered targets.
+    // A targeted share notification does not name affected descendants, and a
+    // broad permission notification may name a group instead of a view.
+    // Conservatively re-probe the few currently rendered targets.
+    //
+    // What consumers see while the re-probe runs depends on why it runs:
+    // - A permission notification says access changed. Existing capabilities
+    //   may have been downgraded, so remove them first; editors, comments, and
+    //   share controls fall back to the safe read-only state instead of
+    //   retaining stale authority.
+    // - A reconnect, a return to the tab, or coming online only means a
+    //   notification may have been missed. Keep the last verified capabilities
+    //   until the server answers (`retainCapabilities`). Dropping them flipped
+    //   every open page to read-only and back, and tore down permission-gated
+    //   dialogs, each time the user came back to the tab. A denial or a
+    //   downgrade still applies as soon as the answer arrives.
+    const revalidateActiveViews = ({
+      excludedViewId,
+      retainCapabilities = false,
+    }: { excludedViewId?: string; retainCapabilities?: boolean } = {}) => {
       const activeViewIds = activePermissionViewIds.filter((activeViewId) => activeViewId !== excludedViewId);
 
       if (activeViewIds.length === 0) return;
-      // Existing capabilities may have been downgraded. Remove them before the
-      // asynchronous re-probe so editors, comments, and share controls fall back
-      // to the safe read-only state instead of retaining stale authority.
-      setObjectPermissions((current) => {
-        const next = { ...current };
-        let changed = false;
+      if (!retainCapabilities) {
+        setObjectPermissions((current) => omitObjectPermissions(current, activeViewIds));
+      }
 
-        activeViewIds.forEach((activeViewId) => {
-          if (activeViewId in next) {
-            delete next[activeViewId];
-            changed = true;
-          }
-        });
-
-        return changed ? next : current;
-      });
       activeViewIds.forEach(invalidatePermissionProbe);
       setPermissionProbeRefreshRevision((revision) => revision + 1);
     };
+
+    const revalidateAfterPossiblyMissedNotification = () => revalidateActiveViews({ retainCapabilities: true });
 
     const handlePermissionChanged = () => {
       revalidateActiveViews();
@@ -692,19 +715,13 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!revokedViewId) return;
       invalidatePermissionProbe(revokedViewId);
       setNoAccessViewId(revokedViewId);
-      setObjectPermissions((current) => {
-        if (!(revokedViewId in current)) return current;
-        const next = { ...current };
-
-        delete next[revokedViewId];
-        return next;
-      });
+      setObjectPermissions((current) => omitObjectPermissions(current, [revokedViewId]));
 
       if (revokedViewId === openModalViewId || revokedViewId === openModalEffectiveViewId) {
         setOpenModalViewId(undefined);
       }
 
-      revalidateActiveViews(revokedViewId);
+      revalidateActiveViews({ excludedViewId: revokedViewId });
     };
 
     const handleViewAccessRestored = (payload?: { viewId?: string | null }) => {
@@ -736,18 +753,18 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
       if (disconnectedSinceLastOpen) {
         disconnectedSinceLastOpen = false;
-        revalidateActiveViews();
+        revalidateAfterPossiblyMissedNotification();
       }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        revalidateActiveViews();
+        revalidateAfterPossiblyMissedNotification();
       }
     };
 
     const handleOnline = () => {
-      revalidateActiveViews();
+      revalidateAfterPossiblyMissedNotification();
     };
 
     syncContext.eventEmitter?.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);

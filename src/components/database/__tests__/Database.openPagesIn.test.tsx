@@ -164,8 +164,31 @@ describe('Database record openers (open_pages_in, WP13 §3.8)', () => {
     expect(screen.queryByTestId('center-peek')).toBeNull();
   });
 
-  it('keeps the centre modal for a standalone view with nothing stored', async () => {
+  it('opens a standalone Grid record in a side peek when nothing is stored', async () => {
     renderDatabase();
+    await openRow('r1');
+    expect(screen.getByTestId('side-peek').getAttribute('data-row-id')).toBe('r1');
+    expect(screen.queryByTestId('center-peek')).toBeNull();
+  });
+
+  it.each([DatabaseViewLayout.Board, DatabaseViewLayout.Gallery, DatabaseViewLayout.List])(
+    'opens a layout %s record in a side peek when nothing is stored',
+    async (layout) => {
+      renderDatabase({ layout });
+      await openRow('r1');
+      expect(screen.getByTestId('side-peek')).toBeTruthy();
+    }
+  );
+
+  it('keeps the Timeline centre-peek default when nothing is stored', async () => {
+    renderDatabase({ layout: DatabaseViewLayout.Timeline });
+    await openRow('r1');
+    expect(screen.getByTestId('center-peek')).toBeTruthy();
+    expect(screen.queryByTestId('side-peek')).toBeNull();
+  });
+
+  it('keeps an explicit center preference on Grid views', async () => {
+    renderDatabase({ openPagesIn: 'center_peek' });
     await openRow('r1');
     expect(screen.getByTestId('center-peek')).toBeTruthy();
   });
@@ -225,14 +248,17 @@ describe('Database record openers (open_pages_in, WP13 §3.8)', () => {
     expect(screen.queryByTestId('side-peek')).toBeNull();
   });
 
+  // A locked embed's full_page becomes a centre peek; with nothing stored the
+  // Grid's side-peek default applies (the real modal falls back to the centre
+  // when the side peek does not fit).
   it.each([
-    ['desktop full_page', 1440, 'full_page', undefined],
-    ['mobile', 390, undefined, undefined],
-    ['mobile full_page', 390, 'full_page', undefined],
-    ['desktop full_page with a view id', 1440, 'full_page', 'linked-view'],
-    ['mobile with a view id', 390, undefined, 'linked-view'],
-    ['mobile full_page with a view id', 390, 'full_page', 'linked-view'],
-  ] as const)('keeps a locked embed row local on %s', async (_label, width, openPagesIn, viewId) => {
+    ['desktop full_page', 1440, 'full_page', undefined, 'center-peek'],
+    ['mobile', 390, undefined, undefined, 'side-peek'],
+    ['mobile full_page', 390, 'full_page', undefined, 'center-peek'],
+    ['desktop full_page with a view id', 1440, 'full_page', 'linked-view', 'center-peek'],
+    ['mobile with a view id', 390, undefined, 'linked-view', 'side-peek'],
+    ['mobile full_page with a view id', 390, 'full_page', 'linked-view', 'center-peek'],
+  ] as const)('keeps a locked embed row local on %s', async (_label, width, openPagesIn, viewId, peek) => {
     window.innerWidth = width;
     const sourceDoc = createDoc();
     const rowDoc = new Y.Doc({ guid: 'r1' }) as YDoc;
@@ -248,7 +274,7 @@ describe('Database record openers (open_pages_in, WP13 §3.8)', () => {
 
     await openRow('r1', undefined, viewId);
 
-    expect(screen.getByTestId('center-peek').getAttribute('data-row-id')).toBe('r1');
+    expect(screen.getByTestId(peek).getAttribute('data-row-id')).toBe('r1');
     expect(mockRowDetailContext?.readOnly).toBe(true);
     expect(onOpenRowPage).not.toHaveBeenCalled();
     expect(navigateToView).not.toHaveBeenCalled();

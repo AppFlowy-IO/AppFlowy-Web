@@ -1,4 +1,4 @@
-import { DraftMention, serializeCommentMentions, updateDraftMentions } from '../comment-mentions';
+import { DraftMention, serializeCommentMentions, updateDraftMentions } from '@/application/comment-mentions';
 
 const mention: DraftMention = { start: 3, end: 9, name: 'Alice', personId: 'person-id' };
 

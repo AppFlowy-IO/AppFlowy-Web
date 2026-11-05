@@ -74,7 +74,7 @@ export function getBlockCssProperty(node: Element, blockElement: HTMLElement) {
   if (getCalloutBodyText(blockElement)) return 'callout-body-controls';
 
   if ((node as HeadingNode).data.level) {
-    return `level-${(node as HeadingNode).data.level} mt-[3px]`;
+    return `level-${(node as HeadingNode).data.level}`;
   }
 
   if (isDatabaseBlockType(node.type)) {

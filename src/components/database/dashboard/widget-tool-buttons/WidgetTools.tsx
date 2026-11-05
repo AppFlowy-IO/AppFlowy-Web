@@ -69,7 +69,7 @@ export function WidgetTools() {
 
   return (
     <div
-      className={cn('group/tools flex items-center gap-0.5', WIDGET_TOOLS_CONTAINER_CLASS)}
+      className={cn('group/tools flex min-w-0 items-center gap-0.5', WIDGET_TOOLS_CONTAINER_CLASS)}
       data-dashboard-widget='true'
       data-force-visible={widget.editing || widget.menuOpen || widget.settingsOpen ? 'true' : 'false'}
       data-has-active={tools.some(isActive) ? 'true' : 'false'}
@@ -81,7 +81,7 @@ export function WidgetTools() {
 
         return (
           <div
-            className={WIDGET_TOOL_SLOT_CLASS}
+            className={cn(WIDGET_TOOL_SLOT_CLASS, tool === 'search' && 'min-w-0')}
             data-active={isActive(tool) ? 'true' : 'false'}
             data-widget-tool={tool}
             key={tool}
