@@ -1,5 +1,5 @@
 /**
- * Regenerates the nine screenshots in this directory (README.md lists them). It is evidence, not a
+ * Regenerates the ten screenshots in this directory (README.md lists them). It is evidence, not a
  * test: no CI job or e2e suite runs it (see `capture.config.ts`). From the repository root:
  *
  *   BASE_URL=<web origin> APPFLOWY_BASE_URL=<cloud origin> APPFLOWY_GOTRUE_BASE_URL=<gotrue url> \
@@ -737,6 +737,27 @@ test('capture the AI apps (MCP) connect-flow screenshots', async ({ browser, req
         timeout: 15000,
       });
       await shot(owner.page, '09-owner-settings-off-connections-kept.png');
+    });
+
+    await test.step('10: a self-hosted license without MCP asks for an upgrade', async () => {
+      // Only a self-hosted server whose license is below One says `mcp_status: "license_required"`,
+      // and its MCP service then reports itself off, as this one does after 09. This stack is a
+      // hosted build, so the step adds that status to the owner's server-info responses.
+      await owner.page.route('**/api/server-info', async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as { data?: Record<string, unknown> };
+
+        if (body.data) body.data.mcp_status = 'license_required';
+        await route.fulfill({ response, json: body });
+      });
+      await openMcpSettings(owner.page);
+      await expect(owner.page.getByTestId('mcp-panel-license-required')).toBeVisible();
+      await expect(owner.page.getByTestId('mcp-panel-disabled')).toHaveCount(0);
+      await expect(owner.page.getByTestId('mcp-my-connection-row').filter({ hasText: CLAUDE_CODE })).toHaveCount(1, {
+        timeout: 15000,
+      });
+      await shot(owner.page, '10-owner-settings-license-required.png');
+      await owner.page.unroute('**/api/server-info');
     });
   } finally {
     await aiApps.restore();

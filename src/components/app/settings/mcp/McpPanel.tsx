@@ -323,7 +323,6 @@ function ApprovedForWorkspace({ apps, mode }: { apps: readonly McpApprovedApp[];
   );
 }
 
-/** AI app connections are turned off for the whole server (Admin → AI apps (MCP), or the deployment). */
 /** The upgrade prompt of a self-hosted license below One, as for the other licensed features. */
 function LicenseRequiredNotice() {
   const { t } = useTranslation();
@@ -343,6 +342,7 @@ function LicenseRequiredNotice() {
   );
 }
 
+/** MCP is turned off for the whole server, by an administrator in Admin. */
 function DisabledNotice() {
   const { t } = useTranslation();
 

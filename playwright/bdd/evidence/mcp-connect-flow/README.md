@@ -11,6 +11,7 @@
 | `07-owner-reenable-approval-confirm.png` | The confirmation shown when an owner requires approval again; apps already connected keep working |
 | `08-public-setup.png` | The signed-out setup page at `/oauth/mcp/setup` |
 | `09-owner-settings-off-connections-kept.png` | AI apps turned off again: the connection is kept and can still be disconnected |
+| `10-owner-settings-license-required.png` | A self-hosted server whose license lacks MCP (server-info `mcp_status: "license_required"`): the upgrade prompt, with the connection kept |
 
 Provenance: `capture.spec.ts` in this directory wrote all nine files in one run on 2026-11-04,
 through its own config, `capture.config.ts` (headless Chromium, 1360×900, device scale 1). 03 grows
@@ -38,6 +39,15 @@ changes the workspace's approval policy (06, 07) in Settings → MCP. The journe
 3. A member asks for approval of `Gemini CLI (e2e)` (06). The owner turns on Any app, the member
    connects it, and the owner requires approval again (07).
 4. AI apps off again: the owner's connection is kept (09).
+5. The owner's server-info says the license lacks MCP (10).
+
+Frame 10 was added on 2026-11-05 by a second run of the same script with `MCP_CAPTURE_FRAMES=10`,
+against the same stack and binaries, with AppFlowy Web from this branch at `fc60e5b1`. The run
+writes only that file; the journey before it ran whole again. Only a self-hosted server whose
+license is below One sends `mcp_status: "license_required"`, and that stack's Cloud is a hosted
+build, so the step adds the status to the owner's `/api/server-info` responses in the browser
+(`page.route`). Its MCP service reports itself off at that point, after 09, as an unlicensed
+server's does, so the panel lists the connection under the prompt.
 
 To rerun it (only against a disposable stack: it turns AI apps off and on for the whole server):
 
