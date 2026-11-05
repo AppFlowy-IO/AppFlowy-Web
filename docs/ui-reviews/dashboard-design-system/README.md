@@ -33,6 +33,15 @@ The legacy shared Web/Desktop pixel-parity contract still describes the previous
 - At 1024px with the sidebar open, checked both titled and title-hidden widgets. The title-hidden expanded search stayed inside a 282px widget (254px capsule, 97px search field); all header controls remained within the widget bounds.
 - Final localhost dashboard load has no console errors or warnings. The optional billing service on port 4242 was unavailable during paid-plan checks; existing dashboards and widget creation were verified. No hosted environment was used.
 
+### CI follow-up verification
+
+The first full CI run exposed broad descendant selectors in the Delete icon's hover/focus states and seven browser assertions for the previous dashboard design. Scoped group states preserve the destructive colors while passing the existing CSS performance budget. Browser assertions now check the new semantic colors, labelled Filter button, primary-colored edit titles and illustration-first empty state; persistence, visibility and geometry checks remain in place.
+
+- CSS shape guard and WidgetMenu tests: **29 pass**, with the optional built-CSS test skipped in this CI-equivalent invocation.
+- All **7 previously failed browser scenarios pass locally**. The first focused run passed 6 and hit a fixture-to-server sync timeout before the remaining scenario's UI assertions; that scenario passed on its isolated rerun.
+- TypeScript, product-file ESLint, formatting, BDD generation, design-token audit and production build pass after the fix.
+- An additional optional audit of the built CSS reports the existing Presentation selector `.ps-map-style-option:hover > span`, unchanged from main at `a8d65e46`. That separate Presentation rule is outside this dashboard change; the source CSS performance guard used by CI passes.
+
 Focused test command:
 
 ```sh

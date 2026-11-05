@@ -95,7 +95,7 @@ Feature: Adding dashboard widgets
 
   Scenario: The empty dashboard in View mode invites editors to edit it
     When the user clicks the dashboard Done button
-    Then the empty dashboard reads "Add charts, tables, lists" above an "Edit dashboard" button and its illustration
+    Then the empty dashboard shows its illustration above "Add charts, tables, lists" and an "Edit dashboard" button
     And the empty dashboard shows no border and no "New view" button
     When the user clicks "Edit dashboard"
     Then the dashboard is in Edit mode

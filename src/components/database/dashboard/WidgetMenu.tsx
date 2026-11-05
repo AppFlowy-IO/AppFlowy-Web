@@ -167,7 +167,15 @@ function EntryContent({ id }: { id: WidgetMenuEntryId }) {
 
   return (
     <>
-      <Icon aria-hidden='true' data-parity-id={parity.icon} />
+      <Icon
+        aria-hidden='true'
+        className={
+          id === 'delete'
+            ? 'group-hover/widget-menu-item:text-icon-error-thick group-focus/widget-menu-item:text-icon-error-thick'
+            : undefined
+        }
+        data-parity-id={parity.icon}
+      />
       <span className='min-w-0 flex-1 truncate' data-parity-id={parity.label}>
         {t(label.key, { defaultValue: label.defaultValue })}
       </span>
@@ -278,8 +286,7 @@ function MenuEntry({ entry, actions, onEditView }: EntryProps & { onEditView: ()
     <DropdownMenuItem
       className={cn(
         ITEM_CLASS,
-        entry.id === 'delete' &&
-          'hover:text-text-error focus:text-text-error [&:focus_svg]:text-icon-error-thick [&:hover_svg]:text-icon-error-thick'
+        entry.id === 'delete' && 'group/widget-menu-item hover:text-text-error focus:text-text-error'
       )}
       data-parity-id={ENTRY_PARITY_IDS[entry.id].item}
       data-testid={`dashboard-widget-menu-${entry.id}`}
