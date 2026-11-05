@@ -11,6 +11,7 @@ import GridVirtualRow from '@/components/database/components/grid/grid-row/GridV
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
 import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
 import { PADDING_INLINE, useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import { useStableVirtualItems } from '@/components/database/components/grid/grid-table/useStableVirtualItems';
 import { RowsLoadingRow } from '@/components/database/components/loading/RowsLoadingRow';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
@@ -51,7 +52,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   });
 
   const rowItems = virtualizer.getVirtualItems();
-  const columnItems = columnVirtualizer.getVirtualItems();
+  // Rows take the column items as a prop: a sideways scroll that renders the
+  // same columns keeps every row's render.
+  const columnItems = useStableVirtualItems(columnVirtualizer.getVirtualItems());
   const totalSize = columnVirtualizer.getTotalSize();
   const gridContentHeight = virtualizer.getTotalSize();
   const embeddedViewportStyle = getEmbeddedGridViewportStyle({

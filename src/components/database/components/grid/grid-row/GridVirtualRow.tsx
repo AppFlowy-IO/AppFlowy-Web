@@ -72,6 +72,9 @@ function GridVirtualRow({
   );
 
   const isRegularRow = rowType === RenderRowType.Row;
+  // Header cells read this context: a new value on each render of the row
+  // would re-render every header cell, with its field menu and dialogs.
+  const rowContextValue = useMemo(() => ({ isSticky }), [isSticky]);
 
   useEffect(() => {
     const element = innerRef.current;
@@ -154,11 +157,7 @@ function GridVirtualRow({
   }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
   return (
-    <GridRowProvider
-      value={{
-        isSticky,
-      }}
-    >
+    <GridRowProvider value={rowContextValue}>
       <div
         onMouseMove={() => setHoverRowKey(rowKey)}
         onMouseLeave={() => setHoverRowKey(undefined)}
