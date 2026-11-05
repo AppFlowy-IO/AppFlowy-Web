@@ -9,7 +9,7 @@ import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/t
 import { DatabaseViewLayout, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { GridColumnType, type RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { GridProvider } from '@/components/database/grid/GridProvider';
-import { useIsGridRowActive } from '@/components/database/grid/useGridContext';
+import { useIsGridCellActive, useIsGridRowActive } from '@/components/database/grid/useGridContext';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import GridVirtualizer from '../GridVirtualizer';
@@ -17,7 +17,9 @@ import GridVirtualizer from '../GridVirtualizer';
 // The real grid, rows, cells and TanStack windows, as in GridVirtualizer.rerenders:
 // only jsdom's missing geometry is supplied, here with a grid width the tests
 // change and a ResizeObserver they fire, as the browser does when the window,
-// the sidebar or a side peek resizes the grid.
+// the sidebar or a side peek resizes the grid. Hooks count renders: only a row
+// reads whether it has the active cell, and only a cell whether it is the
+// active cell, by its field.
 jest.mock('lodash-es', () => jest.requireActual('lodash'));
 jest.mock('preact', () => jest.requireActual(require.resolve('preact').replace('preact.module.js', 'preact.js')));
 jest.mock('preact/hooks', () => jest.requireActual(require.resolve('preact/hooks').replace('hooks.module.js', 'hooks.js')));
@@ -33,10 +35,21 @@ jest.mock('react-i18next', () => ({
 jest.mock('@/components/database/grid/useGridContext', () => {
   const actual = jest.requireActual('@/components/database/grid/useGridContext');
 
-  return { ...actual, useIsGridRowActive: jest.fn(actual.useIsGridRowActive) };
+  return {
+    ...actual,
+    useIsGridRowActive: jest.fn(actual.useIsGridRowActive),
+    useIsGridCellActive: jest.fn(actual.useIsGridCellActive),
+  };
 });
 
 const rowRenders = useIsGridRowActive as jest.Mock;
+// A data cell reads it twice, with its row cell; a New property cell names no field.
+const cellRenders = useIsGridCellActive as jest.Mock;
+const NEW_PROPERTY_COLUMN = 'new-property';
+/** The columns whose cells rendered since the counters were cleared. */
+const renderedColumns = () => [
+  ...new Set(cellRenders.mock.calls.map(([, fieldId]: [string, string | undefined]) => fieldId || NEW_PROPERTY_COLUMN)),
+];
 
 const ROW_COUNT = 3;
 const ROW_HEIGHT = 36;
@@ -101,9 +114,10 @@ beforeAll(() => {
   } as unknown as typeof IntersectionObserver;
 
   const geometry: Record<string, PropertyDescriptor> = {
-    offsetWidth: { get() { return gridWidth; } },
-    clientWidth: { get() { return gridWidth; } },
-    scrollWidth: { get() { return gridWidth; } },
+    // Integers, as in the browser: a 1199.5px grid reports 1200.
+    offsetWidth: { get() { return Math.round(gridWidth); } },
+    clientWidth: { get() { return Math.round(gridWidth); } },
+    scrollWidth: { get() { return Math.round(gridWidth); } },
     offsetHeight: { get(this: HTMLElement) { return elementHeight(this); } },
     clientHeight: { get(this: HTMLElement) { return elementHeight(this); } },
     scrollHeight: { get(this: HTMLElement) { return elementHeight(this); } },
@@ -138,6 +152,7 @@ beforeEach(() => {
   stickyHeaderOverlay.className = 'sticky-header-overlay';
   document.body.appendChild(stickyHeaderOverlay);
   rowRenders.mockClear();
+  cellRenders.mockClear();
 });
 
 afterEach(async () => {
@@ -386,6 +401,61 @@ test('a resize that changes no column width re-renders no row', async () => {
     expect(rowRenders).not.toHaveBeenCalled();
     expect(newPropertyWidths()).toEqual([`${NEW_PROPERTY_WIDTH}px`, `${NEW_PROPERTY_WIDTH}px`]);
     expect(totalWidth()).toBe(`${2 * PAGE_PADDING + 8 * COLUMN_WIDTH + NEW_PROPERTY_WIDTH}px`);
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test("a resize that only changes the fill re-renders the New property column's cells, not the other columns' cells", async () => {
+  const data = fixture();
+  const rendered = render(
+    <Providers context={data.context} grouping={data.grouping}>
+      <GridVirtualizer columns={data.columns} />
+    </Providers>
+  );
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-2 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    rowRenders.mockClear();
+    cellRenders.mockClear();
+
+    // Once per frame while a sidebar slides or the window resizes.
+    resizeGrid(900);
+
+    expect(newPropertyWidths()).toEqual([fill(900), fill(900)]);
+    // Each row places the narrower column again; its other cells keep their render.
+    expect(rowRenders).toHaveBeenCalled();
+    expect(renderedColumns()).toEqual([NEW_PROPERTY_COLUMN]);
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('a grid at a fractional width fills in whole pixels and re-renders no row when its observer reports that width', async () => {
+  // Browser zoom or a fractional sidebar width.
+  gridWidth = 1199.5;
+  const data = fixture();
+  const rendered = render(
+    <Providers context={data.context} grouping={data.grouping}>
+      <GridVirtualizer columns={data.columns} />
+    </Providers>
+  );
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-2 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    rowRenders.mockClear();
+
+    // The observer's first report right after mount, then sub-pixel jitter.
+    resizeGrid(1199.5);
+    resizeGrid(1199.75);
+
+    expect(rowRenders).not.toHaveBeenCalled();
+    expect(newPropertyWidths()).toEqual([fill(1199), fill(1199)]);
+    expect(totalWidth()).toBe('1199px');
   } finally {
     rendered.unmount();
     data.destroy();

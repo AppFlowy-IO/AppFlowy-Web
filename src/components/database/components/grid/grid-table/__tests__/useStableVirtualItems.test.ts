@@ -40,24 +40,50 @@ describe('useStableVirtualItems', () => {
     expect(result.current).toBe(first);
   });
 
-  it('takes the new array once an item moves, resizes, enters or leaves', () => {
+  it.each([
+    ['moves', { start: 120, end: 220 }],
+    ['resizes', { size: 140, end: 240 }],
+    ['takes another index', { index: 2 }],
+    ['takes another lane', { lane: 1 }],
+  ])('takes a new array once an item %s, with the objects of the items that did not change', (_label, change) => {
+    const first = [item(0), item(1), item(2)];
+    const { result, rerender } = renderHook(({ items }) => useStableVirtualItems(items), {
+      initialProps: { items: first },
+    });
+    // `measure()` rebuilt every item, and only the middle one changed.
+    const measured = [item(0), item(1, change), item(2)];
+
+    rerender({ items: measured });
+    expect(result.current).toEqual(measured);
+    expect(result.current[0]).toBe(first[0]);
+    expect(result.current[1]).toBe(measured[1]);
+    expect(result.current[2]).toBe(first[2]);
+
+    // That window is the stable one from then on.
+    const stable = result.current;
+
+    rerender({ items: [item(0), item(1, change), item(2)] });
+    expect(result.current).toBe(stable);
+  });
+
+  it('keeps the objects of the items that stay while others enter or leave', () => {
     const first = [item(0), item(1)];
     const { result, rerender } = renderHook(({ items }) => useStableVirtualItems(items), {
       initialProps: { items: first },
     });
-    const resized = [item(0), item(1, { size: 160, end: 260 })];
+    // A wider grid: a third item enters, and every item is a new object.
+    const wider = [item(0), item(1), item(2)];
 
-    rerender({ items: resized });
-    expect(result.current).toBe(resized);
+    rerender({ items: wider });
+    expect(result.current).toEqual(wider);
+    expect(result.current[0]).toBe(first[0]);
+    expect(result.current[1]).toBe(first[1]);
+    expect(result.current[2]).toBe(wider[2]);
 
-    const scrolled = [item(1, { size: 160, end: 260 }), item(2, { start: 260, end: 360 })];
-
-    rerender({ items: scrolled });
-    expect(result.current).toBe(scrolled);
-
-    const narrower = [scrolled[0]];
-
-    rerender({ items: narrower });
-    expect(result.current).toBe(narrower);
+    // A sideways scroll: the first item leaves.
+    rerender({ items: [item(1), item(2)] });
+    expect(result.current).toEqual([item(1), item(2)]);
+    expect(result.current[0]).toBe(first[1]);
+    expect(result.current[1]).toBe(wider[2]);
   });
 });
