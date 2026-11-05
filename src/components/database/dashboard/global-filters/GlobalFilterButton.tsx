@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import { UnsavedDot } from '../private/UnsavedDot';
+import { DASHBOARD_CONTROL_CLASS } from '../dashboard-ui';
 
 import { isGlobalFilterActive } from './global-filter.conditions';
 import { GlobalFilterPopover, globalFilterTriggerProps, wrapInTooltipTrigger } from './GlobalFilterPopover';
@@ -58,10 +59,10 @@ const FilterGlyphButton = forwardRef<HTMLButtonElement, FilterGlyphButtonProps>(
       variant='ghost'
       size='icon'
       aria-label={label}
-      // The dashboard toolbar button: 28×28, radius 6, a 16px glyph, accent while a filter narrows rows.
       className={cn(
-        'relative h-7 w-7 !rounded-200 p-1.5 data-[state=open]:bg-dash-hover-fill [&_svg]:h-4 [&_svg]:w-4',
-        activeCount > 0 ? 'text-dash-accent' : 'text-dash-tool-icon',
+        DASHBOARD_CONTROL_CLASS,
+        'relative w-auto min-w-8 gap-1.5 px-2 data-[state=open]:bg-fill-content-hover max-md:h-10 max-md:w-10 [&_svg]:h-5 [&_svg]:w-5',
+        activeCount > 0 ? 'bg-fill-theme-select text-text-action' : 'text-text-secondary',
         className
       )}
       data-active={activeCount > 0}
@@ -75,6 +76,7 @@ const FilterGlyphButton = forwardRef<HTMLButtonElement, FilterGlyphButtonProps>(
       data-state={open ? 'open' : 'closed'}
     >
       <FilterIcon aria-hidden='true' data-parity-id='dash-toolbar-filter__icon' />
+      <span className='max-md:hidden'>{label}</span>
       {dirty && (
         <UnsavedDot
           parityId='dash-toolbar-filter__dot'

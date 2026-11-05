@@ -14,7 +14,12 @@ import {
   savedGlobalFilter,
   setRelativeDate,
 } from '../../support/dashboard-global-filter-helpers';
-import { pressEscapeUntilHidden, WIDGET_TIMEOUT, WIDGET_TIMEOUT_MS } from '../../support/dashboard-shared-helpers';
+import {
+  pressEscapeUntilHidden,
+  resolveColor,
+  WIDGET_TIMEOUT,
+  WIDGET_TIMEOUT_MS,
+} from '../../support/dashboard-shared-helpers';
 import {
   closeGlobalFilterMenu,
   DASHBOARD_FIXTURE_DATABASES,
@@ -59,12 +64,23 @@ Then('the filter menu search box is focused', async ({ page }) => {
 
 Then(
   'the filter menu groups properties under {string} with {string}, {string} with {string} and {string} with {string}',
-  async ({ page }, first: string, firstCount: string, second: string, secondCount: string, third: string, thirdCount: string) => {
+  async (
+    { page },
+    first: string,
+    firstCount: string,
+    second: string,
+    secondCount: string,
+    third: string,
+    thirdCount: string
+  ) => {
     const expected = [
       [first, firstCount],
       [second, secondCount],
       [third, thirdCount],
-    ].map(([database, count]) => ({ databaseId: fixtureDatabase(page, database).databaseId, text: `${database} ${count}` }));
+    ].map(([database, count]) => ({
+      databaseId: fixtureDatabase(page, database).databaseId,
+      text: `${database} ${count}`,
+    }));
 
     // Groups follow the widgets' order; each header names the source and its widget count.
     await expect.poll(() => listedSourceGroups(page), WIDGET_TIMEOUT).toEqual(expected);
@@ -127,17 +143,16 @@ Then(
   }
 );
 
-Then(
-  'the filter menu lists the properties of {string} without group headers',
-  async ({ page }, database: string) => {
-    const { databaseId } = fixtureDatabase(page, database);
+Then('the filter menu lists the properties of {string} without group headers', async ({ page }, database: string) => {
+  const { databaseId } = fixtureDatabase(page, database);
 
-    await expect(DashboardSelectors.globalFilterSourceGroups(page)).toHaveCount(0);
-    // Name, Status, Estimate, Due, Urgent and Region: fewer than the flat list's 8.
-    await expect(fieldRowsOf(page, databaseId)).toHaveCount(6, WIDGET_TIMEOUT);
-    await expect.poll(async () => (await listedFieldOptions(page)).every((row) => row.databaseId === databaseId)).toBe(true);
-  }
-);
+  await expect(DashboardSelectors.globalFilterSourceGroups(page)).toHaveCount(0);
+  // Name, Status, Estimate, Due, Urgent and Region: fewer than the flat list's 8.
+  await expect(fieldRowsOf(page, databaseId)).toHaveCount(6, WIDGET_TIMEOUT);
+  await expect
+    .poll(async () => (await listedFieldOptions(page)).every((row) => row.databaseId === databaseId))
+    .toBe(true);
+});
 
 Then('the filter menu does not offer {string}', async ({ page }, label: string) => {
   expect(label).toBe('Filter multiple sources');
@@ -251,9 +266,12 @@ Then('the {string} global filter pill reads {string} and looks empty', async ({ 
   const chip = globalFilterChip(page, name);
 
   await expect(pillLabel(chip)).toHaveText(text, WIDGET_TIMEOUT);
-  // Grey: the empty pill's surface and text, not the active light blue.
+  const surface = await resolveColor(page, '--surface-primary');
+  const textColor = await resolveColor(page, '--text-secondary');
+
   await expect(chip).toHaveAttribute('data-active', 'false');
-  await expect(chip).toHaveClass(/bg-dash-pill-bg(?!-active)/);
+  await expect.poll(() => chip.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(surface);
+  await expect.poll(() => chip.evaluate((element) => getComputedStyle(element).color)).toBe(textColor);
 });
 
 Then(
@@ -352,11 +370,15 @@ Then('the dashboard shows the global filter bar with a {string} button', async (
 
 Then('the dashboard filter button is highlighted without a count badge', async ({ page }) => {
   const button = DashboardSelectors.globalFilterButton(page);
+  const textColor = await resolveColor(page, '--text-action');
+  const fill = await resolveColor(page, '--fill-theme-select');
 
   await expect(button).toHaveAttribute('data-active', 'true', WIDGET_TIMEOUT);
-  await expect(button).toHaveClass(/text-dash-accent/);
+  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).color)).toBe(textColor);
+  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(fill);
   await expect(button.getByTestId('dashboard-global-filter-button-badge')).toHaveCount(0);
-  await expect(button).toHaveText('');
+  await expect(button).toHaveText('Filter');
+  await expect(button).toHaveAccessibleName('Filter');
 });
 
 // ---------------------------------------------------------------------------

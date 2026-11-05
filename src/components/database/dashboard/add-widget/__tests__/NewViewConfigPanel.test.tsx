@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 
@@ -69,6 +69,19 @@ describe('NewViewConfigPanel', () => {
     render(<NewViewConfigPanel state={state(DatabaseViewLayout.Board)} />);
 
     expect(tiles().map((tile) => tile.textContent)).toContain('Timeline');
+  });
+
+  it('moves between layout choices with the keyboard and keeps one radio in the tab order', async () => {
+    render(<NewViewConfigPanel state={state(DatabaseViewLayout.Board)} />);
+    const board = screen.getByRole('radio', { name: 'Board' });
+
+    act(() => board.focus());
+    fireEvent.keyDown(board, { key: 'ArrowRight' });
+
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'pick_tile', layout: DatabaseViewLayout.Timeline })
+    );
+    expect(screen.getAllByRole('radio').filter((radio) => radio.tabIndex === 0)).toHaveLength(1);
   });
 
   it('switches the view from a tile', () => {

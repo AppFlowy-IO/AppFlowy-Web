@@ -313,13 +313,13 @@ describe('GlobalFilterButton', () => {
     const button = screen.getByTestId('dashboard-global-filter-button');
 
     expect(button.getAttribute('data-count')).toBe('1');
-    expect(button.className).toContain('text-dash-accent');
-    expect(button.textContent).toBe('');
+    expect(button.className).toContain('text-text-action');
+    expect(button.textContent).toBe('Filter');
     expect(screen.queryByTestId('dashboard-global-filter-button-badge')).toBeNull();
 
     mockContext = createContext({ globalFilters: [nameFilter] });
     rerender(<GlobalFilterButton key='inactive' />);
-    expect(screen.getByTestId('dashboard-global-filter-button').className).toContain('text-dash-tool-icon');
+    expect(screen.getByTestId('dashboard-global-filter-button').className).toContain('text-text-secondary');
   });
 
   it('counts a filter as active through its usable mappings only, as the pill does', () => {
@@ -338,7 +338,7 @@ describe('GlobalFilterButton', () => {
 
     expect(button().getAttribute('data-active')).toBe('false');
     expect(button().getAttribute('data-count')).toBe('0');
-    expect(button().className).toContain('text-dash-tool-icon');
+    expect(button().className).toContain('text-text-secondary');
     expect(pill().getAttribute('data-active')).toBe('false');
     expect(pill().getAttribute('data-source-count')).toBe('0');
 

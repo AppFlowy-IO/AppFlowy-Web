@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 import { DASHBOARD_MOTION_FAST_CLASS, WIDGET_HEADER_HEIGHT, WIDGET_HEADER_PADDING } from './constants';
+import { DASHBOARD_CONTROL_CLASS, DASHBOARD_ICON_BUTTON_CLASS } from './dashboard-ui';
 import { useLongPress } from './hooks/useLongPress';
 import { useWidgetSourceName } from './hooks/useWidgetSourceName';
 import { MobileWidgetSearchField } from './mobile/MobileWidgetSearchField';
@@ -52,7 +53,7 @@ function WidgetSourceTooltipContent() {
 
 /**
  * The title icon ("Show icons in heading"): the view's own icon, else the
- * glyph of its layout, drawn as the 16px icon itself (the parity probe
+ * glyph of its layout, drawn in the design system’s 20px frame (the parity probe
  * measures its svg).
  */
 function WidgetTitleIcon({ icon, layout }: { icon?: ViewIcon | null; layout: ViewLayout }) {
@@ -60,7 +61,7 @@ function WidgetTitleIcon({ icon, layout }: { icon?: ViewIcon | null; layout: Vie
     return (
       <LayoutGlyph
         aria-hidden='true'
-        className='h-4 w-4 shrink-0'
+        className='h-5 w-5 shrink-0 text-icon-secondary'
         data-parity-id='dash-widget-title-pill__icon'
         data-testid='dashboard-widget-title-icon'
         layout={layout}
@@ -71,25 +72,25 @@ function WidgetTitleIcon({ icon, layout }: { icon?: ViewIcon | null; layout: Vie
 
   return (
     <span
-      className='flex h-4 w-4 shrink-0 items-center justify-center'
+      className='flex h-5 w-5 shrink-0 items-center justify-center text-icon-secondary'
       data-parity-id='dash-widget-title-pill__icon'
       data-testid='dashboard-widget-title-icon'
     >
-      <PageIcon className='!h-4 !w-4 text-xs leading-4' iconSize={16} view={{ icon, layout }} />
+      <PageIcon className='!h-5 !w-5 text-sm leading-5' iconSize={20} view={{ icon, layout }} />
     </span>
   );
 }
 
 /**
- * The title pill (accessible name "Widget options"): a quiet 12px label,
- * blue in Edit mode, with the view icon only when "Show icons in heading" is
- * on. A click, Enter or Space, or a long touch toggles the widget menu (a
+ * The widget title uses the same 14/20 typography as other controls. The
+ * optional heading icon follows the view's saved setting. A click, Enter
+ * or Space, or a long touch toggles the widget menu (a
  * bottom sheet on a phone); the tooltip names the source database and the
  * view, except on a phone, where nothing hovers.
  */
 function WidgetTitle() {
   const { t } = useTranslation();
-  const { name, icon, layout, editing, showIcon, menuOpen, setMenuOpen, titleRef, mobileContext } = useWidgetContext();
+  const { name, icon, layout, showIcon, menuOpen, setMenuOpen, titleRef, mobileContext } = useWidgetContext();
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const labelId = useId();
   const longPress = useLongPress(() => setMenuOpen(true));
@@ -99,16 +100,17 @@ function WidgetTitle() {
   return (
     <Tooltip onOpenChange={setTooltipOpen} open={showTooltip}>
       <TooltipTrigger asChild>
-        <button
+        <Button
           aria-describedby={labelId}
           aria-expanded={menuOpen}
           aria-haspopup={mobileContext ? 'dialog' : 'menu'}
           aria-label={t('dashboard.widget.menu', { defaultValue: 'Widget options' })}
           className={cn(
-            'inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-600 px-2.5 py-1 text-left text-xs font-medium leading-4 text-dash-title outline-none',
-            'transition-colors hover:bg-dash-hover-fill focus-visible:ring-2 focus-visible:ring-border-theme-thick data-[state=open]:bg-dash-hover-fill motion-reduce:transition-none',
+            DASHBOARD_CONTROL_CLASS,
+            'min-w-0 max-w-full justify-start gap-1.5 px-2 text-left text-text-primary',
+            'transition-colors hover:bg-fill-content-hover data-[state=open]:bg-fill-content-hover motion-reduce:transition-none',
             DASHBOARD_MOTION_FAST_CLASS,
-            editing && 'text-dash-edit-title'
+            mobileContext && 'h-10 !rounded-300 text-base leading-6'
           )}
           data-parity-id='dash-widget-title-pill'
           data-state={menuOpen ? 'open' : 'closed'}
@@ -118,6 +120,7 @@ function WidgetTitle() {
             setMenuOpen(!menuOpen);
           }}
           ref={titleRef}
+          variant='ghost'
           type='button'
           {...longPress}
         >
@@ -130,7 +133,7 @@ function WidgetTitle() {
           >
             {label}
           </span>
-        </button>
+        </Button>
       </TooltipTrigger>
       {showTooltip ? (
         <TooltipContent
@@ -149,17 +152,22 @@ function WidgetTitle() {
 
 // The band is the size container of its tools: the expanded search field is
 // `min(200px, 45cqw)` wide, 45% of the band (WP09 §1.2).
-const HEADER_BAND_STYLE = { height: WIDGET_HEADER_HEIGHT, padding: WIDGET_HEADER_PADDING, containerType: 'inline-size' } as const;
+const HEADER_BAND_STYLE = {
+  height: WIDGET_HEADER_HEIGHT,
+  padding: WIDGET_HEADER_PADDING,
+  containerType: 'inline-size',
+} as const;
 
-/** The capsule's own form of the "search field expanded" visibility condition. */
-const WIDGET_SEARCH_ACTIVE_CLASS = 'has-[[data-search-active=true]]:opacity-100';
+/** Expanded search fills the available capsule width and measures its own field against it. */
+const WIDGET_SEARCH_ACTIVE_CLASS =
+  'has-[[data-search-active=true]]:opacity-100 has-[[data-search-active=true]]:w-[calc(100%-16px)] has-[[data-search-active=true]]:[container-type:inline-size]';
 
 /**
  * Header of a dashboard widget. Also rendered for placeholders (no nested
  * database), so it only depends on `WidgetContext`; the view's tools come in
  * through `actions`.
  *
- * - Titles shown: a 40px band above the card, the same in View and Edit
+ * - Titles shown: a 40px band inside the card, the same in View and Edit
  *   mode, with the title pill at the start and the tools at the end. In Edit
  *   mode the band is the drag handle.
  * - Titles hidden: a capsule floating in the card's top-right corner, with
@@ -189,7 +197,7 @@ export function WidgetHeaderFrame({ actions, settingsHost }: WidgetHeaderFramePr
     return (
       <div
         className={cn(
-          'absolute right-2 top-2 z-10 flex items-center rounded-300 border border-border-primary bg-surface-primary p-0.5 shadow-card',
+          'absolute right-2 top-2 z-10 flex max-w-[calc(100%-16px)] items-center rounded-400 border border-border-primary bg-surface-layer-04 p-1 shadow-toolbar',
           editing ? 'cursor-grab opacity-100' : WIDGET_TOOL_SLOT_CLASS,
           // An expanded search field keeps the capsule, and every tool in it, shown (WP09).
           !editing && WIDGET_SEARCH_ACTIVE_CLASS,
@@ -203,13 +211,13 @@ export function WidgetHeaderFrame({ actions, settingsHost }: WidgetHeaderFramePr
         ref={dragHandleRef}
       >
         {mobileSearch ? <MobileWidgetSearchField className='w-[min(200px,55vw)] flex-none' /> : null}
-        {actions}
+        {actions ? <div className='flex min-w-0 flex-1 items-center'>{actions}</div> : null}
         <div className='relative flex'>
           <Button
             aria-expanded={menuOpen}
             aria-haspopup='menu'
             aria-label={t('dashboard.widget.menu', { defaultValue: 'Widget options' })}
-            className='!rounded-200 text-dash-tool-icon [&_svg]:h-4 [&_svg]:w-4'
+            className={DASHBOARD_ICON_BUTTON_CLASS}
             data-parity-id='dash-widget-options-button'
             data-state={menuOpen ? 'open' : 'closed'}
             data-testid='dashboard-widget-options-button'
@@ -236,7 +244,7 @@ export function WidgetHeaderFrame({ actions, settingsHost }: WidgetHeaderFramePr
   return (
     <div
       className={cn(
-        'flex min-w-0 shrink-0 items-center gap-1',
+        'flex min-w-0 shrink-0 items-center gap-1 shadow-[inset_0_-1px_0_0_var(--border-primary)]',
         mobileContext && 'gap-2',
         dragHandleRef && 'cursor-grab',
         isDragging && 'cursor-grabbing'
@@ -246,7 +254,7 @@ export function WidgetHeaderFrame({ actions, settingsHost }: WidgetHeaderFramePr
       data-search-active={mobileSearch ? 'true' : undefined}
       data-testid='dashboard-widget-header'
       ref={dragHandleRef}
-      style={HEADER_BAND_STYLE}
+      style={mobileContext ? { ...HEADER_BAND_STYLE, padding: '0 8px' } : HEADER_BAND_STYLE}
     >
       {mobileSearch ? (
         <>

@@ -228,7 +228,7 @@ Then('the empty dashboard shows no border and no {string} button', async ({ page
 });
 
 Then(
-  'the empty dashboard reads {string} above an {string} button and its illustration',
+  'the empty dashboard shows its illustration above {string} and an {string} button',
   async ({ page }, text: string, label: string) => {
     const empty = DashboardSelectors.emptyState(page);
 
@@ -247,8 +247,8 @@ Then(
     ]);
 
     expect(textBox && buttonBox && illustrationBox).toBeTruthy();
+    expect((illustrationBox?.y ?? 0) + (illustrationBox?.height ?? 0)).toBeLessThanOrEqual(textBox?.y ?? 0);
     expect((textBox?.y ?? 0) < (buttonBox?.y ?? 0)).toBe(true);
-    expect((buttonBox?.y ?? 0) < (illustrationBox?.y ?? 0)).toBe(true);
   }
 );
 

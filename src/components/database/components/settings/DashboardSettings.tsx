@@ -5,6 +5,7 @@ import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as IconsIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import Layout from '@/components/database/components/settings/Layout';
+import { DASHBOARD_MENU_ITEM_CLASS, DASHBOARD_OVERLAY_CLASS } from '@/components/database/dashboard/dashboard-ui';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,8 +16,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 /** A menu row that toggles a boolean setting; the switch only mirrors the state. */
 function SettingsSwitchItem({
@@ -36,7 +38,9 @@ function SettingsSwitchItem({
 }) {
   return (
     <DropdownMenuItem
-      className='w-full'
+      className={cn(DASHBOARD_MENU_ITEM_CLASS, 'w-full')}
+      role='menuitemcheckbox'
+      aria-checked={checked}
       data-testid={testId}
       data-checked={checked ? 'true' : 'false'}
       disabled={disabled}
@@ -47,7 +51,13 @@ function SettingsSwitchItem({
     >
       {icon}
       <span>{label}</span>
-      <Switch aria-hidden='true' checked={checked} className='pointer-events-none ml-auto' disabled={disabled} tabIndex={-1} />
+      <Switch
+        aria-hidden='true'
+        checked={checked}
+        className='pointer-events-none ml-auto'
+        disabled={disabled}
+        tabIndex={-1}
+      />
     </DropdownMenuItem>
   );
 }
@@ -57,22 +67,27 @@ function SettingsSwitchItem({
  * (not on DashboardContext) so it also works when rendered outside the
  * dashboard provider, e.g. from a linked dashboard block toolbar.
  */
-function DashboardSettings({ children }: { children: ReactNode }) {
+function DashboardSettings({
+  children,
+  wrapTrigger,
+}: {
+  children: ReactNode;
+  wrapTrigger?: (trigger: ReactElement) => ReactElement;
+}) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const { showWidgetTitles, showIconsInHeading } = useDashboardDisplaySettings();
   const updateSetting = useUpdateDashboardSetting();
+  const trigger = <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>;
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <div className='h-7 w-7'>{children}</div>
-      </DropdownMenuTrigger>
+      {wrapTrigger ? wrapTrigger(trigger) : trigger}
       <DropdownMenuContent
         align='end'
-        className='!min-w-[200px]'
+        aria-label={t('dashboard.settings.name', { defaultValue: 'Dashboard settings' })}
+        className={cn(DASHBOARD_OVERLAY_CLASS, '!min-w-[260px] p-2')}
         data-testid='dashboard-settings-menu'
-        onCloseAutoFocus={(event) => event.preventDefault()}
         side='bottom'
       >
         <DropdownMenuLabel>{t('dashboard.settings.name', { defaultValue: 'Dashboard settings' })}</DropdownMenuLabel>
