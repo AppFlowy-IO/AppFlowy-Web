@@ -1,4 +1,4 @@
-import { BlockType, ImageType } from '@/application/types';
+import { BlockType, ImageType, SimpleTableData } from '@/application/types';
 import {
   answerBlocksToEditorData,
   parseAnswerBlocks,
@@ -64,11 +64,33 @@ describe('answer blocks', () => {
     });
     expect(data[1]).toMatchObject({
       type: 'simple_table',
+      data: { enable_header_row: true },
       children: [
-        { type: 'simple_table_row', children: [{ type: 'simple_table_cell', children: [{ type: 'paragraph', delta: [{ insert: 'h' }] }] }] },
-        { type: 'simple_table_row', children: [{ type: 'simple_table_cell', children: [{ type: 'paragraph', delta: [{ insert: 'v' }] }] }] },
+        {
+          type: 'simple_table_row',
+          children: [{ type: 'simple_table_cell', children: [{ type: 'paragraph', delta: [{ insert: 'h' }] }] }],
+        },
+        {
+          type: 'simple_table_row',
+          children: [{ type: 'simple_table_cell', children: [{ type: 'paragraph', delta: [{ insert: 'v' }] }] }],
+        },
       ],
     });
     expect(data[1]).not.toHaveProperty('delta');
+  });
+
+  it('preserves explicit table settings when translating parsed header cells', () => {
+    const [table] = parseAnswerBlocks('| Name |\n| - |\n| Ada |');
+
+    const settings: SimpleTableData = {
+      enable_header_row: false,
+      enable_header_column: true,
+      column_widths: { 0: 240 },
+    };
+
+    table.data = settings;
+    const [data] = answerBlocksToEditorData([table]);
+
+    expect(data.data).toEqual(table.data);
   });
 });

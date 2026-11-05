@@ -124,18 +124,20 @@ export function GeneratedImage({ url, alt, onRegenerate, variant = 'answer' }: G
 
   const handleCopy = useCallback(async () => {
     try {
-      let blob = await fetchImageBlob(url);
-
-      if (!blob) {
-        throw new Error('Image copy returned no data');
+      if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+        throw new Error('Image clipboard is unavailable');
       }
 
-      // Browser clipboards generally accept PNG only.
-      if (blob.type !== 'image/png') {
-        blob = await convertBlobToPng(blob);
-      }
+      const image = fetchImageBlob(url).then((blob) => {
+        if (!blob) throw new Error('Image copy returned no data');
 
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        return blob.type === 'image/png' ? blob : convertBlobToPng(blob);
+      });
+
+      // Permission can fail before image preparation completes.
+      void image.catch(() => undefined);
+      // Start writing within the click gesture so Safari can authorize it.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
       toast.success(t('chat.image.copied'), { duration: 2000 });
     } catch (error) {
       console.error('Failed to copy generated image', error);

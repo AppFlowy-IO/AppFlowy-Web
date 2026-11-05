@@ -1,6 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { ReactNode } from 'react';
 
+import { useChatMessages } from '@/components/chat/components/chat-messages/use-chat-messages';
+
 import { MessagesHandlerProvider, useMessagesHandlerContext } from '../messages-handler-provider';
 import { ChatMessagesProvider, useChatMessagesContext } from '../messages-provider';
 import { ResponseFormatProvider, useMessageResponseFormatContext } from '../response-format-provider';
@@ -8,6 +10,7 @@ import { ResponseFormatProvider, useMessageResponseFormatContext } from '../resp
 import { AuthorType, ChatMessage, ChatMessageMetadata, OutputContent, OutputLayout } from '@/components/chat/types';
 
 const requestInstance = {
+  getChatMessages: jest.fn(),
   submitQuestion: jest.fn(),
   getCurrentView: jest.fn().mockResolvedValue(undefined),
   updateQuestion: jest.fn().mockResolvedValue(undefined),
@@ -72,6 +75,8 @@ const answer: ChatMessage = {
   content: 'Original answer',
   author: { author_type: AuthorType.AI, author_uuid: 'ai' },
 };
+const laterQuestion: ChatMessage = { ...question, message_id: 20, reply_message_id: 21, content: 'Later question' };
+const laterAnswer: ChatMessage = { ...answer, message_id: 21, content: 'Later answer' };
 const imageFormat = {
   output_layout: OutputLayout.Flex,
   output_content: OutputContent.IMAGE,
@@ -91,6 +96,7 @@ const render = () =>
       handlers: useMessagesHandlerContext(),
       messages: useChatMessagesContext(),
       formats: useMessageResponseFormatContext(),
+      history: useChatMessages(),
     }),
     { wrapper }
   );
@@ -119,7 +125,7 @@ it('reconciles an edited answer with its server ID and preserves content, source
   const { result } = render();
 
   act(() => {
-    result.current.messages.addMessages([{ ...answer, message_id: 20 }, answer, question]);
+    result.current.messages.addMessages([laterAnswer, laterQuestion, answer, question]);
     result.current.formats.setResponseFormatWithId(11, imageFormat);
   });
   await act(async () => result.current.handlers.editQuestion(10, 'Edited question'));
@@ -150,7 +156,7 @@ it('reconciles an edited answer with its server ID and preserves content, source
     content: savedAnswer.content,
     meta_data: metadata,
   });
-  expect(result.current.messages.messageIds).toEqual([20, 87, 10]);
+  expect(result.current.messages.messageIds).toEqual([21, 20, 87, 10]);
   expect(result.current.messages.getMessage(11)).toBeUndefined();
   expect(result.current.messages.getMessage(87)?.content).toBe(savedAnswer.content);
   expect(result.current.messages.getMessage(87)?.meta_data).toEqual(metadata);
@@ -163,9 +169,12 @@ it('reconciles an edited answer with its server ID and preserves content, source
   act(() =>
     reloaded.result.current.messages.addMessages([
       savedAnswer,
+      laterAnswer,
+      laterQuestion,
       { ...question, content: 'Edited question', reply_message_id: 87 },
     ])
   );
+  expect(reloaded.result.current.messages.messageIds).toEqual([21, 20, 87, 10]);
   expect(reloaded.result.current.messages.getQuestionId(87)).toBe(10);
   await act(async () =>
     reloaded.result.current.handlers.regenerateAnswer(reloaded.result.current.messages.getQuestionId(87)!, imageFormat)
@@ -174,6 +183,40 @@ it('reconciles an edited answer with its server ID and preserves content, source
     jest.advanceTimersByTime(200);
   });
   expect(reloaded.result.current.messages.getMessage(87)?.question_message_id).toBe(10);
+});
+
+it('restores edited-answer order across history pages while retaining the raw pagination cursor', async () => {
+  const savedAnswer = { ...answer, message_id: 87, content: 'Replacement answer' };
+  const firstPage = { messages: [savedAnswer, laterAnswer, laterQuestion], has_more: true, total: 4 };
+  const secondPage = {
+    messages: [{ ...question, content: 'Edited question', reply_message_id: 87 }],
+    has_more: true,
+    total: 4,
+  };
+
+  requestInstance.getChatMessages
+    .mockResolvedValueOnce(firstPage)
+    .mockResolvedValueOnce(secondPage)
+    .mockResolvedValueOnce({ messages: [], has_more: false, total: 4 });
+  const { result } = render();
+
+  await act(async () => {
+    expect(await result.current.history.fetchInitialMessages()).toBe(firstPage);
+  });
+  expect(result.current.messages.messageIds).toEqual([87, 21, 20]);
+
+  await act(async () => result.current.history.loadMoreMessages());
+  expect(result.current.messages.messageIds).toEqual([21, 20, 87, 10]);
+  expect(firstPage.messages.map((message) => message.message_id)).toEqual([87, 21, 20]);
+  expect(secondPage.messages.map((message) => message.message_id)).toEqual([10]);
+
+  await act(async () => result.current.history.loadMoreMessages());
+  expect(requestInstance.getChatMessages.mock.calls).toEqual([
+    [{ limit: 20 }],
+    [{ limit: 20, before: 20 }],
+    [{ limit: 20, before: 10 }],
+  ]);
+  expect(result.current.history.hasMore).toBe(false);
 });
 
 it('links a new placeholder even when the question has no server answer yet', async () => {

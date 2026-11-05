@@ -58,10 +58,29 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addMessages = useCallback((messages: ChatMessage[]) => {
-    for(const message of messages) {
-      messagesRef.current.push(message);
+    const allMessages = [...messagesRef.current, ...messages];
+    const messagesById = new Map(allMessages.map((message) => [message.message_id, message]));
+    const repliesByQuestionId = new Map<number, ChatMessage>();
+    const replyIds = new Set<number>();
+
+    for (const message of allMessages) {
+      if (message.author.author_type !== AuthorType.Human || message.reply_message_id === undefined) continue;
+      const reply = messagesById.get(message.reply_message_id);
+
+      if (reply && reply.author.author_type !== AuthorType.Human) {
+        repliesByQuestionId.set(message.message_id, reply);
+        replyIds.add(reply.message_id);
+      }
     }
 
+    // Edited answers get newer IDs. Group replies with their questions across
+    // loaded pages, leaving the server batches untouched for pagination.
+    messagesRef.current = allMessages.flatMap((message) => {
+      if (replyIds.has(message.message_id)) return [];
+      const reply = repliesByQuestionId.get(message.message_id);
+
+      return reply ? [reply, message] : [message];
+    });
     setMessageIds(messagesRef.current.map((message) => message.message_id));
   }, []);
 

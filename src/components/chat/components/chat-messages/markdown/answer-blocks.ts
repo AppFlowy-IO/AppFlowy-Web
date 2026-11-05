@@ -39,11 +39,19 @@ export function answerBlocksToEditorData(blocks: ParsedBlock[]): EditorData {
 }
 
 function toEditorNode(block: ParsedBlock): EditorNode {
+  const data: Record<string, unknown> = { ...block.data };
+
+  if (block.type === BlockType.SimpleTableBlock) {
+    // The parser marks header cells; documents store this at table level.
+    data.enable_header_row ??=
+      block.children[0]?.children.some((cell) => (cell.data as { isHeader?: boolean }).isHeader === true) ?? false;
+  }
+
   const node: EditorNode = {
     // Document block types are a superset of the editor package's node types; the
     // consumers only forward the type string to the page endpoints.
     type: block.type as unknown as NodeType,
-    data: { ...block.data },
+    data,
     children: block.children.map(toEditorNode),
   };
 
