@@ -3,7 +3,7 @@ import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
@@ -59,6 +59,10 @@ function GridVirtualRow({
   const hasActiveCell = useIsGridRowActive(rowKey);
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
+  // A stable ref callback keeps the memoized hover controls from re-rendering with the row.
+  const setDragHandle = useCallback((element: HTMLDivElement | null) => {
+    dragHandleRef.current = element;
+  }, []);
   const [state, setState] = useState<ItemState>(idleState);
   const sorts = useSortsSelector();
 
@@ -169,9 +173,7 @@ function GridVirtualRow({
             <HoverControls
               compact={before < HOVER_CONTROLS_WIDTH}
               state={state}
-              dragHandleRef={(el) => {
-                dragHandleRef.current = el;
-              }}
+              dragHandleRef={setDragHandle}
               rowId={rowId}
               rowKey={rowKey}
               groupFieldId={rowData.groupFieldId}

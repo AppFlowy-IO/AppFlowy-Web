@@ -8,6 +8,7 @@ import * as Y from 'yjs';
 import { DatabaseContext, type DatabaseContextState, FieldType, type GridGrouping } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { DatabaseViewLayout, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { useHoverControlsDisplay } from '@/components/database/components/grid/controls/HoverControls.hooks';
 import {
   GridDragContext,
   type GridDragContextValue,
@@ -23,8 +24,9 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import GridVirtualizer from '../GridVirtualizer';
 
 // The real grid, rows, cells and TanStack windows; only jsdom's missing
-// geometry is supplied. Two hooks count renders: only a row reads whether it
-// has the active cell, and only a header cell reads the row context.
+// geometry is supplied. Three hooks count renders: only a row reads whether it
+// has the active cell, only a header cell reads the row context, and only a
+// row's hover controls read their display.
 jest.mock('lodash-es', () => jest.requireActual('lodash'));
 jest.mock('preact', () => jest.requireActual(require.resolve('preact').replace('preact.module.js', 'preact.js')));
 jest.mock('preact/hooks', () => jest.requireActual(require.resolve('preact/hooks').replace('hooks.module.js', 'hooks.js')));
@@ -47,9 +49,15 @@ jest.mock('@/components/database/components/grid/grid-row/GridRowContext', () =>
 
   return { ...actual, useGridRowContext: jest.fn(actual.useGridRowContext) };
 });
+jest.mock('@/components/database/components/grid/controls/HoverControls.hooks', () => {
+  const actual = jest.requireActual('@/components/database/components/grid/controls/HoverControls.hooks');
+
+  return { ...actual, useHoverControlsDisplay: jest.fn(actual.useHoverControlsDisplay) };
+});
 
 const rowRenders = useIsGridRowActive as jest.Mock;
 const headerCellRenders = useGridRowContext as jest.Mock;
+const hoverControlsRenders = useHoverControlsDisplay as jest.Mock;
 
 const ROW_COUNT = 12;
 const ROW_HEIGHT = 36;
@@ -59,6 +67,8 @@ const COLUMN_WIDTH = 100;
 // With the default overscan of 5, all 8 columns stay rendered wherever the
 // 480px window is: scrolling only moves the visible range.
 const COLUMN_COUNT = 8;
+// 30 columns outgrow the overscan: scrolling moves the rendered columns too.
+const WIDE_COLUMN_COUNT = 30;
 const originalResizeObserver = global.ResizeObserver;
 const originalIntersectionObserver = global.IntersectionObserver;
 const originalDescriptors = new Map<string, PropertyDescriptor | undefined>();
@@ -113,14 +123,21 @@ beforeEach(() => {
   };
 
   jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(layout.getBoundingClientRect);
+  // The page's overlay, which the grid's sticky header row portals into.
+  const stickyHeaderOverlay = document.createElement('div');
+
+  stickyHeaderOverlay.className = 'sticky-header-overlay';
+  document.body.appendChild(stickyHeaderOverlay);
   rowRenders.mockClear();
   headerCellRenders.mockClear();
+  hoverControlsRenders.mockClear();
 });
 
 afterEach(async () => {
   await act(() => jest.runOnlyPendingTimers());
   jest.useRealTimers();
   jest.restoreAllMocks();
+  document.querySelectorAll('.sticky-header-overlay').forEach((overlay) => overlay.remove());
 });
 
 afterAll(() => {
@@ -132,7 +149,7 @@ afterAll(() => {
   }
 });
 
-function fixture() {
+function fixture({ columnCount = COLUMN_COUNT, readOnly = true } = {}) {
   const databaseDoc = new Y.Doc({ guid: 'grid-rerender-database' }) as YDoc;
   const database = new Y.Map();
   const fields = new Y.Map();
@@ -140,7 +157,7 @@ function fixture() {
   const views = new Y.Map();
   const rowMap: Record<string, YDoc> = {};
   const rowOrders = Array.from({ length: ROW_COUNT }, (_, index) => ({ id: `row-${index + 1}`, height: ROW_HEIGHT }));
-  const columns: RenderColumn[] = Array.from({ length: COLUMN_COUNT }, (_, index) => ({
+  const columns: RenderColumn[] = Array.from({ length: columnCount }, (_, index) => ({
     fieldId: `field-${index}`,
     fieldType: FieldType.RichText,
     isPrimary: index === 0,
@@ -179,7 +196,7 @@ function fixture() {
   databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
 
   const context: DatabaseContextState = {
-    readOnly: true,
+    readOnly,
     databaseDoc,
     activeViewId: 'grid-rerender-view',
     databasePageId: 'grid-rerender-view',
@@ -229,6 +246,12 @@ test('scrolling sideways within the rendered columns re-renders neither rows nor
 
     expect(scroller).not.toBeNull();
     expect(screen.getAllByText(/^field-\d row-1$/)).toHaveLength(COLUMN_COUNT);
+    // Both header rows are mounted: the grid's own and the sticky one in the page overlay.
+    expect(
+      rendered.container.querySelectorAll('[data-parity-id="dash-widget-grid-header"] [data-column-id]')
+    ).toHaveLength(COLUMN_COUNT);
+    expect(document.querySelectorAll('.sticky-header-overlay [data-column-id]')).toHaveLength(COLUMN_COUNT);
+    expect(headerCellRenders.mock.calls.length).toBeGreaterThanOrEqual(2 * COLUMN_COUNT);
     commits.mockClear();
     rowRenders.mockClear();
     headerCellRenders.mockClear();
@@ -243,6 +266,46 @@ test('scrolling sideways within the rendered columns re-renders neither rows nor
     expect(rowRenders).not.toHaveBeenCalled();
     expect(headerCellRenders).not.toHaveBeenCalled();
     expect(screen.getAllByText(/^field-\d row-1$/)).toHaveLength(COLUMN_COUNT);
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('scrolling sideways past the overscan mounts the entering columns without re-rendering hover controls', async () => {
+  const data = fixture({ columnCount: WIDE_COLUMN_COUNT, readOnly: false });
+  const rendered = render(
+    <Providers data={data}>
+      <GridVirtualizer columns={data.columns} />
+    </Providers>
+  );
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-8 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    const scroller = rendered.container.querySelector<HTMLElement>('[data-parity-id="dash-widget-grid-scrollbar"]');
+
+    expect(scroller).not.toBeNull();
+    // The counter sees the hover controls render (each row's mounted).
+    expect(hoverControlsRenders.mock.calls.length).toBeGreaterThanOrEqual(ROW_COUNT);
+    // The rendered columns move from 0-8 to 4-18...
+    fireEvent.scroll(scroller as HTMLElement, { target: { scrollLeft: 1000 } });
+    await act(() => jest.advanceTimersByTime(200));
+    expect(screen.getByText('field-18 row-1')).toBeInTheDocument();
+    rowRenders.mockClear();
+    hoverControlsRenders.mockClear();
+
+    // ...then to 9-23, as many columns as before.
+    fireEvent.scroll(scroller as HTMLElement, { target: { scrollLeft: 1500 } });
+    await act(() => jest.advanceTimersByTime(200));
+
+    // The rows re-render to mount the entering columns and drop the leaving ones...
+    expect(rowRenders).toHaveBeenCalled();
+    expect(screen.getByText('field-23 row-1')).toBeInTheDocument();
+    expect(screen.queryByText('field-8 row-1')).not.toBeInTheDocument();
+    // ...while their hover controls, whose props did not change, keep their render.
+    expect(screen.getAllByTestId('row-accessory-button')).toHaveLength(ROW_COUNT);
+    expect(hoverControlsRenders).not.toHaveBeenCalled();
   } finally {
     rendered.unmount();
     data.destroy();
