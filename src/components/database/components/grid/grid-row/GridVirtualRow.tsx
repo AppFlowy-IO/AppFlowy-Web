@@ -136,6 +136,14 @@ function GridVirtualRow({
     );
   }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isGrouped, isRegularRow, readOnly]);
 
+  // Turning read-only mid-drag unregisters the row, and the adapter ends a drag (onDrop,
+  // onDragLeave) only for entries still registered, so the row resets here: not in the
+  // registrations' cleanups, which also run when a drag only re-registers (a new rowIndex), and
+  // only when it shows a drag, as setting even an unchanged state here renders every row again.
+  useEffect(() => {
+    if (readOnly && state.type !== GridDragState.IDLE) setState(idleState);
+  }, [readOnly, state.type]);
+
   useGridRowDraggable({
     elementRef: innerRef,
     dragHandleRef,

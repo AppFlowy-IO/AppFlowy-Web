@@ -112,14 +112,46 @@ const GROUP_SIZE = 3;
 const EMBEDDED_ROW_COUNT = 27;
 // Rows the grid's scroll container is tall enough to show.
 let scrollerRowCount = ROW_COUNT;
+// The element under the pointer during a drag, for the drag-and-drop adapter's hit-testing.
+let pointerTarget: Element | null = null;
 const originalResizeObserver = global.ResizeObserver;
 const originalIntersectionObserver = global.IntersectionObserver;
+const originalDOMRect = global.DOMRect;
 const originalDescriptors = new Map<string, PropertyDescriptor | undefined>();
 
 function elementHeight(element: HTMLElement) {
   if (element.matches('[data-index], .grid-cell')) return ROW_HEIGHT;
   if (element.classList.contains('appflowy-custom-scroller')) return (scrollerRowCount + 2) * ROW_HEIGHT;
   return VIEWPORT_HEIGHT;
+}
+
+/** jsdom has no DragEvent: a mouse event that carries the drag's data store. */
+class TestDragEvent extends MouseEvent {
+  readonly dataTransfer: DataTransfer;
+
+  constructor(type: string, dataTransfer: DataTransfer) {
+    // Every element is laid out from the top left, so the pointer is over all of them.
+    super(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+    this.dataTransfer = dataTransfer;
+  }
+}
+
+/** A drag's data store, in which the adapter marks the drag as its own. */
+function testDataTransfer() {
+  const data = new Map<string, string>();
+
+  return {
+    dropEffect: 'none',
+    effectAllowed: 'all',
+    get types() {
+      return Array.from(data.keys());
+    },
+    getData: (format: string) => data.get(format) ?? '',
+    setData: (format: string, value: string) => {
+      data.set(format, value);
+    },
+    setDragImage: () => undefined,
+  } as unknown as DataTransfer;
 }
 
 beforeAll(() => {
@@ -133,6 +165,13 @@ beforeAll(() => {
     unobserve() { return undefined; }
     disconnect() { return undefined; }
   } as unknown as typeof IntersectionObserver;
+  // A drag runs through the real adapter, which hit-tests the pointer and places
+  // its honey pot with DOMRect: jsdom has neither.
+  document.elementsFromPoint = () => (pointerTarget ? [pointerTarget] : []);
+  global.DOMRect = {
+    fromRect: ({ x = 0, y = 0, width = 0, height = 0 }: DOMRectInit = {}) =>
+      ({ x, y, width, height, top: y, left: x, right: x + width, bottom: y + height }),
+  } as unknown as typeof DOMRect;
 
   const geometry: Record<string, PropertyDescriptor> = {
     offsetWidth: { get() { return VIEWPORT_WIDTH; } },
@@ -181,6 +220,9 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  // Ends a drag that a failed test left running: the adapter starts no other drag until it ends.
+  fireEvent(window, new TestDragEvent('dragend', testDataTransfer()));
+  pointerTarget = null;
   await act(() => jest.runOnlyPendingTimers());
   jest.useRealTimers();
   jest.restoreAllMocks();
@@ -191,6 +233,8 @@ afterEach(async () => {
 afterAll(() => {
   global.ResizeObserver = originalResizeObserver;
   global.IntersectionObserver = originalIntersectionObserver;
+  global.DOMRect = originalDOMRect;
+  Reflect.deleteProperty(document, 'elementsFromPoint');
   for (const [name, descriptor] of originalDescriptors) {
     if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
     else Reflect.deleteProperty(HTMLElement.prototype, name);
@@ -335,6 +379,73 @@ function rowDragRegistrations() {
     ),
   };
 }
+
+/**
+ * A native drag of `source` from its drag handle, through the real adapter:
+ * each step fires what the browser would on the element under the pointer,
+ * then runs the frame in which the adapter reports the drag's start and moves.
+ */
+async function startDrag(source: HTMLElement, handle: HTMLElement) {
+  const dataTransfer = testDataTransfer();
+  const fire = async (type: string, target: Element, pointer: Element = target) => {
+    pointerTarget = pointer;
+    fireEvent(target, new TestDragEvent(type, dataTransfer));
+    await act(() => jest.runOnlyPendingTimers());
+  };
+
+  // The draggable gets the dragstart; the adapter checks that it starts on the handle.
+  await fire('dragstart', source, handle);
+
+  return {
+    over: async (target: Element) => {
+      await fire('dragenter', target);
+      await fire('dragover', target);
+    },
+    // The target gets the drop, then the source the dragend.
+    drop: async (target: Element) => {
+      await fire('drop', target);
+      await fire('dragend', source);
+    },
+  };
+}
+
+/**
+ * The drag each element shows, as `<key>:dragging` (faded) while it is dragged
+ * and `<key>:drop-indicator` while a drag is over it. The indicator is the one
+ * child drawn over the others, absolutely positioned.
+ */
+function dragStates(items: { key?: string; faded: Element; overlaid: Element }[]) {
+  return items.flatMap(({ key, faded, overlaid }) => [
+    ...(faded.classList.contains('opacity-40') ? [`${key}:dragging`] : []),
+    ...(Array.from(overlaid.children).some((child) => (child as HTMLElement).style.position === 'absolute')
+      ? [`${key}:drop-indicator`]
+      : []),
+  ]);
+}
+
+const rowContent = (rowKey: string) =>
+  document.querySelector(`[data-parity-id="dash-widget-grid-row"][data-row-key="${rowKey}"]`) as HTMLElement;
+const rowDragStates = () =>
+  dragStates(
+    Array.from(document.querySelectorAll<HTMLElement>('[data-parity-id="dash-widget-grid-row"]')).map((content) => ({
+      key: content.dataset.rowKey,
+      faded: content,
+      overlaid: content,
+    }))
+  );
+// A header cell's draggable column; its one child, the drag handle, fills the cell.
+const headerColumn = (cell: Element) => cell.firstElementChild as HTMLElement;
+// The cells of the grid's own header row: the sticky one in the page overlay has its own.
+const headerCells = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll<HTMLElement>('[data-parity-id="dash-widget-grid-header"] [data-column-id]'));
+const columnDragStates = (container: HTMLElement) =>
+  dragStates(
+    headerCells(container).map((cell) => ({
+      key: cell.dataset.columnId,
+      faded: headerColumn(cell),
+      overlaid: headerColumn(cell).firstElementChild as Element,
+    }))
+  );
 
 function GridActionsProbe({ actions }: { actions: { current?: ReturnType<typeof useGridInteractionActions> } }) {
   actions.current = useGridInteractionActions();
@@ -772,6 +883,68 @@ test('rows of a grouped grid that becomes editable register no drag source or dr
     // Grouped rows show their hover controls, whose handle only opens the row menu.
     expect(screen.getAllByTestId('row-accessory-button')).toHaveLength(GROUP_COUNT * GROUP_SIZE);
     expect(rowDragRegistrations()).toEqual(NO_DRAG_REGISTRATIONS);
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('rows of a grid that turns read-only mid-drag stop showing the drag, and only those that showed it render again', async () => {
+  const data = fixture({ readOnly: false });
+  const { rendered, setReadOnly } = renderSwitchableGrid(data);
+  const rendersOf = (rowKey: string) => rowRenders.mock.calls.filter(([key]) => key === rowKey).length;
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-7 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    const row = rowContent('row-1').parentElement as HTMLElement;
+    const drag = await startDrag(row, row.querySelector('[data-parity-id="dash-widget-grid-row-controls"]') as HTMLElement);
+
+    // Row 1 fades while dragged; row 3, under it, shows where it would drop.
+    await drag.over(rowContent('row-3'));
+    expect(rowDragStates()).toEqual(['row-1:dragging', 'row-3:drop-indicator']);
+    rowRenders.mockClear();
+
+    // The database locks mid-drag: every row leaves the adapter, which ends a
+    // drag (drop, drag leave) only for the rows still registered...
+    await setReadOnly(true);
+    expect(rowDragStates()).toEqual([]);
+    // ...so those two rows clear it in one more render, and no other row renders twice.
+    expect(ROW_KEYS.map(rendersOf)).toEqual(ROW_KEYS.map((key) => (key === 'row-1' || key === 'row-3' ? 2 : 1)));
+
+    // Neither the drop nor the unlock brings the drag back.
+    await drag.drop(rowContent('row-3'));
+    expect(rowDragStates()).toEqual([]);
+    await setReadOnly(false);
+    expect(rowDragStates()).toEqual([]);
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('header cells of a grid that turns read-only mid-drag stop showing the drag', async () => {
+  const data = fixture({ readOnly: false });
+  const { rendered, setReadOnly } = renderSwitchableGrid(data);
+  const column = (fieldId: string) =>
+    headerColumn(headerCells(rendered.container).find((cell) => cell.dataset.columnId === fieldId) as HTMLElement);
+  const handle = (fieldId: string) => column(fieldId).firstElementChild as HTMLElement;
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-7 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    const drag = await startDrag(column('field-1'), handle('field-1'));
+
+    await drag.over(handle('field-3'));
+    expect(columnDragStates(rendered.container)).toEqual(['field-1:dragging', 'field-3:drop-indicator']);
+
+    // As rows do, the header cells leave the adapter when the database locks.
+    await setReadOnly(true);
+    expect(columnDragStates(rendered.container)).toEqual([]);
+    await drag.drop(handle('field-3'));
+    expect(columnDragStates(rendered.container)).toEqual([]);
+    await setReadOnly(false);
+    expect(columnDragStates(rendered.container)).toEqual([]);
   } finally {
     rendered.unmount();
     data.destroy();
