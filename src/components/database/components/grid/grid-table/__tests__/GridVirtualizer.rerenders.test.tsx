@@ -1,5 +1,6 @@
 // eslint-disable-next-line import/no-unresolved
 import '@testing-library/jest-dom';
+import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { type VirtualItem } from '@tanstack/react-virtual';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Profiler, type ReactNode } from 'react';
@@ -8,6 +9,7 @@ import * as Y from 'yjs';
 import { DatabaseContext, type DatabaseContextState, FieldType, type GridGrouping } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { DatabaseViewLayout, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { PlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
 import { useHoverControlsDisplay } from '@/components/database/components/grid/controls/HoverControls.hooks';
 import {
   GridDragContext,
@@ -17,8 +19,13 @@ import { GridColumnType, type RenderColumn } from '@/components/database/compone
 import { RenderRowType } from '@/components/database/components/grid/grid-row';
 import { useGridRowContext } from '@/components/database/components/grid/grid-row/GridRowContext';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
+import { WIDGET_GRID_ROW_GUTTER, WIDGET_INLINE_PADDING } from '@/components/database/dashboard/constants';
 import { GridProvider } from '@/components/database/grid/GridProvider';
-import { useIsGridRowActive } from '@/components/database/grid/useGridContext';
+import {
+  type GridActiveCell,
+  useGridInteractionActions,
+  useIsGridRowActive,
+} from '@/components/database/grid/useGridContext';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import GridVirtualizer from '../GridVirtualizer';
@@ -71,6 +78,13 @@ jest.mock('@/components/database/components/grid/grid-row/GridLoadMoreRow', () =
     .requireActual('./renderCounter')
     .countDefaultExportRenders(jest.requireActual('@/components/database/components/grid/grid-row/GridLoadMoreRow'))
 );
+// The real adapter registers the rows' drag sources and drop targets; the
+// wrapper only records the handle each drag source is given.
+jest.mock('@atlaskit/pragmatic-drag-and-drop/element/adapter', () => {
+  const actual = jest.requireActual('@atlaskit/pragmatic-drag-and-drop/element/adapter');
+
+  return { ...actual, draggable: jest.fn(actual.draggable) };
+});
 
 const rowRenders = useIsGridRowActive as jest.Mock;
 const headerCellRenders = useGridRowContext as jest.Mock;
@@ -79,6 +93,7 @@ const renderCount = (path: string) => (jest.requireMock(path) as { renders: jest
 const groupHeaderRenders = renderCount('@/components/database/components/grid/grid-group/GridGroupHeader');
 const newRowRenders = renderCount('@/components/database/components/grid/grid-row/GridNewRow');
 const loadMoreRowRenders = renderCount('@/components/database/components/grid/grid-row/GridLoadMoreRow');
+const dragSourceRegistrations = jest.mocked(draggable);
 
 const ROW_COUNT = 12;
 const ROW_HEIGHT = 36;
@@ -162,6 +177,7 @@ beforeEach(() => {
   groupHeaderRenders.mockClear();
   newRowRenders.mockClear();
   loadMoreRowRenders.mockClear();
+  dragSourceRegistrations.mockClear();
 });
 
 afterEach(async () => {
@@ -287,6 +303,88 @@ function Providers({ data, children }: { data: ReturnType<typeof fixture>; child
       </DatabaseContext.Provider>
     </AFConfigContext.Provider>
   );
+}
+
+const ROW_KEYS = Array.from({ length: ROW_COUNT }, (_, index) => `row-${index + 1}`);
+const NO_DRAG_REGISTRATIONS = { dragSources: [], dropTargets: [], staleHandles: [] };
+const ALL_DRAG_REGISTRATIONS = { dragSources: ROW_KEYS, dropTargets: ROW_KEYS, staleHandles: [] };
+
+/**
+ * The rows registered with the drag-and-drop adapter, which marks a drag source
+ * `draggable` and a drop target `data-drop-target-for-element`. `staleHandles`
+ * are drag sources registered with a handle their hover controls no longer
+ * show: the adapter cancels a drag that does not start from that handle.
+ */
+function rowDragRegistrations() {
+  const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-parity-id="dash-widget-grid-row"]'));
+  const registered = (isRegistered: (row: HTMLElement) => boolean) =>
+    rows
+      .filter((content) => isRegistered(content.parentElement as HTMLElement))
+      .map((content) => content.dataset.rowKey);
+  const isDragSource = (row: HTMLElement) => row.getAttribute('draggable') === 'true';
+  const registeredHandle = (row: HTMLElement) =>
+    dragSourceRegistrations.mock.calls.filter(([{ element }]) => element === row).pop()?.[0].dragHandle;
+
+  return {
+    dragSources: registered(isDragSource),
+    dropTargets: registered((row) => row.hasAttribute('data-drop-target-for-element')),
+    staleHandles: registered(
+      (row) =>
+        isDragSource(row) &&
+        registeredHandle(row) !== row.querySelector('[data-parity-id="dash-widget-grid-row-controls"]')
+    ),
+  };
+}
+
+function GridActionsProbe({ actions }: { actions: { current?: ReturnType<typeof useGridInteractionActions> } }) {
+  actions.current = useGridInteractionActions();
+
+  return null;
+}
+
+/**
+ * The fixture's grid, whose database turns read-only or editable at runtime
+ * (locked and unlocked, say). A widget's editable grid gets the gutter of the
+ * compact hover controls, as `WidgetDatabaseHost` gives it. Its Text cells edit
+ * as plain text: dragging does not depend on the editor, and a rich one loads
+ * its menus on the first edit.
+ */
+function renderSwitchableGrid(data: ReturnType<typeof fixture>, { widget = false } = {}) {
+  const actions: { current?: ReturnType<typeof useGridInteractionActions> } = {};
+  const grid = (readOnly: boolean) => (
+    <Providers
+      data={{
+        ...data,
+        context: {
+          ...data.context,
+          readOnly,
+          ...(widget && {
+            isDashboardWidget: true,
+            paddingStart: readOnly ? WIDGET_INLINE_PADDING : WIDGET_GRID_ROW_GUTTER,
+            paddingEnd: WIDGET_INLINE_PADDING,
+          }),
+        },
+      }}
+    >
+      <GridActionsProbe actions={actions} />
+      <PlainTextCellEditing.Provider value>
+        <GridVirtualizer columns={data.columns} />
+      </PlainTextCellEditing.Provider>
+    </Providers>
+  );
+  const rendered = render(grid(data.context.readOnly));
+
+  return {
+    rendered,
+    setReadOnly: async (readOnly: boolean) => {
+      rendered.rerender(grid(readOnly));
+      await act(() => jest.runOnlyPendingTimers());
+    },
+    setActiveCell: async (activeCell?: GridActiveCell) => {
+      act(() => actions.current?.setActiveCell(activeCell));
+      await act(() => jest.runOnlyPendingTimers());
+    },
+  };
 }
 
 test('scrolling sideways within the rendered columns re-renders neither rows nor header cells', async () => {
@@ -591,6 +689,89 @@ test('a header row that re-renders keeps its header cells, when only the column 
     expect(rowRenders).toHaveBeenCalledTimes(1);
     expect(headerCellRenders).not.toHaveBeenCalled();
     expect(screen.getByText('field-7')).toBeInTheDocument();
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test.each([
+  ['a page grid', false],
+  ['a dashboard widget grid', true],
+])(
+  'rows of %s that becomes editable register for dragging in their one render, and unregister when read-only again',
+  async (_, widget) => {
+    const data = fixture({ documentBlock: widget });
+    const { rendered, setReadOnly } = renderSwitchableGrid(data, { widget });
+    const rendersOf = (rowKey: string) => rowRenders.mock.calls.filter(([key]) => key === rowKey).length;
+
+    try {
+      await waitFor(() => expect(screen.getByText('field-7 row-1')).toBeInTheDocument());
+      await act(() => jest.runOnlyPendingTimers());
+      expect(screen.queryAllByTestId('row-accessory-button')).toHaveLength(0);
+      expect(rowDragRegistrations()).toEqual(NO_DRAG_REGISTRATIONS);
+      rowRenders.mockClear();
+
+      // Every row mounts its hover controls, the drag handle with them (a widget's
+      // compact controls have no add button)...
+      await setReadOnly(false);
+      expect(screen.getAllByTestId('row-accessory-button')).toHaveLength(ROW_COUNT);
+      expect(screen.queryAllByTestId('row-add-button')).toHaveLength(widget ? 0 : ROW_COUNT);
+      // ...and becomes a drag source from that handle and a drop target, in the
+      // one render the switch gives it: the handle is a ref, not state.
+      expect(rowDragRegistrations()).toEqual(ALL_DRAG_REGISTRATIONS);
+      expect(ROW_KEYS.map(rendersOf)).toEqual(ROW_KEYS.map(() => 1));
+
+      await setReadOnly(true);
+      expect(screen.queryAllByTestId('row-accessory-button')).toHaveLength(0);
+      expect(rowDragRegistrations()).toEqual(NO_DRAG_REGISTRATIONS);
+    } finally {
+      rendered.unmount();
+      data.destroy();
+    }
+  }
+);
+
+test('rows of an editable grid that becomes read-only unregister, and register their new handles once editable again', async () => {
+  const data = fixture({ readOnly: false });
+  const { rendered, setReadOnly, setActiveCell } = renderSwitchableGrid(data);
+  // The row holding the active cell is no drag source: its text stays selectable.
+  const withActiveRow1 = { ...ALL_DRAG_REGISTRATIONS, dragSources: ROW_KEYS.slice(1) };
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-7 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    expect(rowDragRegistrations()).toEqual(ALL_DRAG_REGISTRATIONS);
+    await setActiveCell({ rowId: 'row-1', rowKey: 'row-1', fieldId: 'field-1' });
+    expect(rowDragRegistrations()).toEqual(withActiveRow1);
+
+    await setReadOnly(true);
+    expect(screen.queryAllByTestId('row-accessory-button')).toHaveLength(0);
+    expect(rowDragRegistrations()).toEqual(NO_DRAG_REGISTRATIONS);
+
+    // The hover controls mount new handles, which the rows register.
+    await setReadOnly(false);
+    expect(rowDragRegistrations()).toEqual(withActiveRow1);
+    await setActiveCell(undefined);
+    expect(rowDragRegistrations()).toEqual(ALL_DRAG_REGISTRATIONS);
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('rows of a grouped grid that becomes editable register no drag source or drop target', async () => {
+  const data = fixture({ grouped: true });
+  const { rendered, setReadOnly } = renderSwitchableGrid(data);
+
+  try {
+    await waitFor(() => expect(screen.getByTestId(`grid-group-header-group-${GROUP_COUNT - 1}`)).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    await setReadOnly(false);
+
+    // Grouped rows show their hover controls, whose handle only opens the row menu.
+    expect(screen.getAllByTestId('row-accessory-button')).toHaveLength(GROUP_COUNT * GROUP_SIZE);
+    expect(rowDragRegistrations()).toEqual(NO_DRAG_REGISTRATIONS);
   } finally {
     rendered.unmount();
     data.destroy();

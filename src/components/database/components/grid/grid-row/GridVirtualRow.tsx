@@ -57,6 +57,7 @@ function GridVirtualRow({
   const { isGrouped } = useGridContext();
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
+  const readOnly = useReadOnly();
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
   // A stable ref callback keeps the memoized hover controls from re-rendering with the row.
@@ -84,7 +85,9 @@ function GridVirtualRow({
     const element = innerRef.current;
     const dragHandle = dragHandleRef.current;
 
-    if (!element || !dragHandle || !isRegularRow || isGrouped) return;
+    // The handle mounts with the hover controls, which only an editable grid
+    // renders: `readOnly` re-runs this effect when they mount or unmount.
+    if (!element || !dragHandle || !isRegularRow || isGrouped || readOnly) return;
 
     const data = {
       instanceId,
@@ -131,19 +134,19 @@ function GridVirtualRow({
         },
       })
     );
-  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isGrouped, isRegularRow]);
+  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isGrouped, isRegularRow, readOnly]);
 
   useGridRowDraggable({
     elementRef: innerRef,
     dragHandleRef,
-    // Firefox prevents text selection inside a native draggable ancestor.
-    enabled: isRegularRow && !hasActiveCell && !isGrouped,
+    // Only an editable row has a handle. Firefox prevents text selection
+    // inside a native draggable ancestor.
+    enabled: isRegularRow && !readOnly && !hasActiveCell && !isGrouped,
     instanceId,
     rowId,
     rowIndex,
     setState,
   });
-  const readOnly = useReadOnly();
 
   const children = useMemo(() => {
     return uniqBy(columnItems, 'key').map((column) => {
