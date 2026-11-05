@@ -25,6 +25,7 @@ import './dockable-outline.scss';
 type DisplayMode = 'always' | 'hover';
 const ROW_HEIGHT = 28;
 const PANEL_CHROME_HEIGHT = 72;
+const MIN_PANEL_HEIGHT = PANEL_CHROME_HEIGHT + ROW_HEIGHT;
 const HELP_BUTTON_CLEARANCE = 112;
 
 function MaskIcon({ asset, className }: { asset: string; className?: string }) {
@@ -151,11 +152,13 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
         )
       );
       const contentTop = root.getBoundingClientRect().top;
-      const top = Math.max(defaultTop, contentTop);
+      // Tall covers and titles must not push every heading below the viewport.
+      const maxTop = Math.max(viewportTop, bottom - HELP_BUTTON_CLEARANCE - MIN_PANEL_HEIGHT);
+      const top = Math.min(Math.max(defaultTop, contentTop), maxTop);
       const next = {
         top,
         right: Math.max(0, window.innerWidth - (rect?.right ?? window.innerWidth)),
-        maxHeight: Math.max(ROW_HEIGHT, bottom - top - HELP_BUTTON_CLEARANCE),
+        maxHeight: Math.max(MIN_PANEL_HEIGHT, bottom - top - HELP_BUTTON_CLEARANCE),
       };
 
       setBounds((previous) =>
