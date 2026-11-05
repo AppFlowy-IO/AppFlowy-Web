@@ -73,6 +73,7 @@ export const VideoBlock = memo(forwardRef<HTMLDivElement, EditorElementProps<Vid
     >
       <div
         contentEditable={false}
+        data-media-placeholder={!url || !!error}
         className={`embed-block relative ${alignCss} ${url && !error ? '!bg-transparent !border-none !rounded-none' : 'p-4'}`}
       >
         {url && !error ? <VideoRender

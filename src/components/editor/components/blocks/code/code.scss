@@ -32,8 +32,8 @@
     visibility: visible;
   }
   .code-block-body {
-    padding: 8px 20px 38px;
-    min-height: 66px;
+    padding: 8px 20px 22px;
+    min-height: 51px;
     min-width: 0;
   }
   pre.code-block-source {
@@ -46,15 +46,15 @@
     overflow-x: auto;
     overflow-y: hidden;
     max-height: none;
-    min-height: 20px;
-    font: 14px/20px 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    min-height: 21px;
+    font: 14px/21px 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     tab-size: 2;
     text-shadow: none;
   }
   .code-block-source .text-element,
   .code-block-source .text-content {
     white-space: inherit;
-    line-height: 20px;
+    line-height: 21px;
   }
   .code-block-source .text-element {
     display: block;
@@ -138,9 +138,9 @@
   .code-block-caption {
     width: 100%;
     display: block;
-    margin-top: 4px;
+    margin-top: 8px;
     resize: none;
-    padding: 0;
+    padding: 0 2px;
     min-height: 18px;
     font: inherit;
     font-size: 12px;
