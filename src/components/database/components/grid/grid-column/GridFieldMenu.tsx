@@ -50,14 +50,13 @@ type FieldOperation = {
   variant?: 'destructive';
 };
 
+/** A header cell's field menu, with its property editor and confirmations; the cell renders it beside its content. */
 function GridFieldMenu({
   fieldId,
-  children,
   menuOpen,
   setMenuOpen,
 }: {
   fieldId: string;
-  children: React.ReactNode;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
 }) {
@@ -216,7 +215,6 @@ function GridFieldMenu({
 
   return (
     <>
-      {children}
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button tabIndex={-1} className={'pointer-events-none absolute left-0 right-0 top-0 z-[-1] opacity-0'} />

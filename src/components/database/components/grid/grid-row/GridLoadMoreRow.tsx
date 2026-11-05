@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
@@ -22,4 +23,5 @@ function GridLoadMoreRow({ remainingCount }: { remainingCount: number }) {
   );
 }
 
-export default GridLoadMoreRow;
+// Memoized: the grid re-renders its row list on every scroll range change, and this row's props stay the same.
+export default memo(GridLoadMoreRow);

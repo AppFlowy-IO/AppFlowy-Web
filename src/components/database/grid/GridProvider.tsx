@@ -15,6 +15,7 @@ import {
   GridContext,
   GridHydrationContext,
   GridInteractionContext,
+  GridStickyHeaderContext,
 } from '@/components/database/grid/useGridContext';
 
 type GridProviderProps = {
@@ -177,7 +178,6 @@ function GridProviderContent({
       lastVisibleRowId,
       loadMoreRows,
       revealCreatedRow,
-      showStickyHeader,
       setShowStickyHeader,
       isGrouped: grouping.isGrouped,
     }),
@@ -190,7 +190,6 @@ function GridProviderContent({
       lastVisibleRowId,
       loadMoreRows,
       revealCreatedRow,
-      showStickyHeader,
       grouping.isGrouped,
     ]
   );
@@ -207,17 +206,19 @@ function GridProviderContent({
 
   return (
     <GridContext.Provider value={contextValue}>
-      <GridHydrationContext.Provider value={hydrating}>
-        <GridInteractionContext.Provider value={interactionContextValue}>
-          <div
-            ref={ref}
-            data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
-            className={'flex min-h-0 flex-1 flex-col'}
-          >
-            {children}
-          </div>
-        </GridInteractionContext.Provider>
-      </GridHydrationContext.Provider>
+      <GridStickyHeaderContext.Provider value={showStickyHeader}>
+        <GridHydrationContext.Provider value={hydrating}>
+          <GridInteractionContext.Provider value={interactionContextValue}>
+            <div
+              ref={ref}
+              data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
+              className={'flex min-h-0 flex-1 flex-col'}
+            >
+              {children}
+            </div>
+          </GridInteractionContext.Provider>
+        </GridHydrationContext.Provider>
+      </GridStickyHeaderContext.Provider>
     </GridContext.Provider>
   );
 }

@@ -8,7 +8,7 @@ import GridFieldMenu from '@/components/database/components/grid/grid-column/Gri
 import GridNewProperty from '@/components/database/components/grid/grid-column/GridNewProperty';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { useGridRowContext } from '@/components/database/components/grid/grid-row/GridRowContext';
-import { useGridContext, useGridOptions } from '@/components/database/grid/useGridContext';
+import { useGridOptions, useGridStickyHeaderShown } from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -32,7 +32,7 @@ export function GridHeaderColumn({
   const fieldId = column.fieldId || '';
   const { t } = useTranslation();
 
-  const { showStickyHeader } = useGridContext();
+  const showStickyHeader = useGridStickyHeaderShown();
   const { isSticky } = useGridRowContext();
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
@@ -43,9 +43,12 @@ export function GridHeaderColumn({
   const name = field?.get(YjsDatabaseKey.name);
   const fieldName = typeof name === 'string' ? name : '';
   const tooltipContent = isEditingDisabled ? t('common.desktopOnly') : fieldName;
+  // The field menu belongs to the header row in view: the sticky one while it shows, else the grid's own.
+  const displayMenu = showStickyHeader === Boolean(isSticky);
   const children = useMemo(() => {
     const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
-      if (readOnly) return;
+      // The other row's copy, focused before a pin or unpin, has no menu to open.
+      if (readOnly || !displayMenu) return;
       e.stopPropagation();
       setMenuOpen(true);
     };
@@ -86,24 +89,19 @@ export function GridHeaderColumn({
         )}
       </div>
     );
-  }, [fieldId, iconClassName, isAIField, onResizeColumnStart, readOnly, tooltipContent]);
-
-  const displayMenu = useMemo(() => {
-    if (!showStickyHeader && isSticky) return false;
-    if (showStickyHeader && !isSticky) return false;
-    return true;
-  }, [showStickyHeader, isSticky]);
+  }, [displayMenu, fieldId, iconClassName, isAIField, onResizeColumnStart, readOnly, tooltipContent]);
 
   if (isNewProperty) {
     return <GridNewProperty />;
   }
 
-  if (readOnly || !displayMenu) return children;
-
+  // The menu sits beside the content, so moving it between the two header rows
+  // as the sticky header pins or unpins mounts or unmounts only the menu.
   return (
-    <GridFieldMenu menuOpen={menuOpen} setMenuOpen={setMenuOpen} fieldId={fieldId}>
+    <>
       {children}
-    </GridFieldMenu>
+      {!readOnly && displayMenu && <GridFieldMenu menuOpen={menuOpen} setMenuOpen={setMenuOpen} fieldId={fieldId} />}
+    </>
   );
 }
 

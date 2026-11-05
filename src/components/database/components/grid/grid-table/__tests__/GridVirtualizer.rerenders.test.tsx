@@ -24,9 +24,11 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import GridVirtualizer from '../GridVirtualizer';
 
 // The real grid, rows, cells and TanStack windows; only jsdom's missing
-// geometry is supplied. Three hooks count renders: only a row reads whether it
-// has the active cell, only a header cell reads the row context, and only a
-// row's hover controls read their display.
+// geometry is supplied. Hooks count renders: only a row reads whether it has
+// the active cell, only a header cell reads the row context, and only a row's
+// hover controls read their display. The group-header, new-row and load-more
+// rows count their renders through `countDefaultExportRenders`, which keeps
+// them memoized exactly as they are.
 jest.mock('lodash-es', () => jest.requireActual('lodash'));
 jest.mock('preact', () => jest.requireActual(require.resolve('preact').replace('preact.module.js', 'preact.js')));
 jest.mock('preact/hooks', () => jest.requireActual(require.resolve('preact/hooks').replace('hooks.module.js', 'hooks.js')));
@@ -54,10 +56,29 @@ jest.mock('@/components/database/components/grid/controls/HoverControls.hooks', 
 
   return { ...actual, useHoverControlsDisplay: jest.fn(actual.useHoverControlsDisplay) };
 });
+jest.mock('@/components/database/components/grid/grid-group/GridGroupHeader', () =>
+  jest
+    .requireActual('./renderCounter')
+    .countDefaultExportRenders(jest.requireActual('@/components/database/components/grid/grid-group/GridGroupHeader'))
+);
+jest.mock('@/components/database/components/grid/grid-row/GridNewRow', () =>
+  jest
+    .requireActual('./renderCounter')
+    .countDefaultExportRenders(jest.requireActual('@/components/database/components/grid/grid-row/GridNewRow'))
+);
+jest.mock('@/components/database/components/grid/grid-row/GridLoadMoreRow', () =>
+  jest
+    .requireActual('./renderCounter')
+    .countDefaultExportRenders(jest.requireActual('@/components/database/components/grid/grid-row/GridLoadMoreRow'))
+);
 
 const rowRenders = useIsGridRowActive as jest.Mock;
 const headerCellRenders = useGridRowContext as jest.Mock;
 const hoverControlsRenders = useHoverControlsDisplay as jest.Mock;
+const renderCount = (path: string) => (jest.requireMock(path) as { renders: jest.Mock }).renders;
+const groupHeaderRenders = renderCount('@/components/database/components/grid/grid-group/GridGroupHeader');
+const newRowRenders = renderCount('@/components/database/components/grid/grid-row/GridNewRow');
+const loadMoreRowRenders = renderCount('@/components/database/components/grid/grid-row/GridLoadMoreRow');
 
 const ROW_COUNT = 12;
 const ROW_HEIGHT = 36;
@@ -69,13 +90,20 @@ const COLUMN_WIDTH = 100;
 const COLUMN_COUNT = 8;
 // 30 columns outgrow the overscan: scrolling moves the rendered columns too.
 const WIDE_COLUMN_COUNT = 30;
+// A grouped grid: 3 groups of 3 rows, all inside the rendered rows.
+const GROUP_COUNT = 3;
+const GROUP_SIZE = 3;
+// An embedded grid with more rows than it first shows (25), so it has a load-more row.
+const EMBEDDED_ROW_COUNT = 27;
+// Rows the grid's scroll container is tall enough to show.
+let scrollerRowCount = ROW_COUNT;
 const originalResizeObserver = global.ResizeObserver;
 const originalIntersectionObserver = global.IntersectionObserver;
 const originalDescriptors = new Map<string, PropertyDescriptor | undefined>();
 
 function elementHeight(element: HTMLElement) {
   if (element.matches('[data-index], .grid-cell')) return ROW_HEIGHT;
-  if (element.classList.contains('appflowy-custom-scroller')) return (ROW_COUNT + 2) * ROW_HEIGHT;
+  if (element.classList.contains('appflowy-custom-scroller')) return (scrollerRowCount + 2) * ROW_HEIGHT;
   return VIEWPORT_HEIGHT;
 }
 
@@ -131,6 +159,9 @@ beforeEach(() => {
   rowRenders.mockClear();
   headerCellRenders.mockClear();
   hoverControlsRenders.mockClear();
+  groupHeaderRenders.mockClear();
+  newRowRenders.mockClear();
+  loadMoreRowRenders.mockClear();
 });
 
 afterEach(async () => {
@@ -138,6 +169,7 @@ afterEach(async () => {
   jest.useRealTimers();
   jest.restoreAllMocks();
   document.querySelectorAll('.sticky-header-overlay').forEach((overlay) => overlay.remove());
+  scrollerRowCount = ROW_COUNT;
 });
 
 afterAll(() => {
@@ -149,14 +181,20 @@ afterAll(() => {
   }
 });
 
-function fixture({ columnCount = COLUMN_COUNT, readOnly = true } = {}) {
+function fixture({
+  columnCount = COLUMN_COUNT,
+  rowCount = ROW_COUNT,
+  readOnly = true,
+  grouped = false,
+  documentBlock = false,
+} = {}) {
   const databaseDoc = new Y.Doc({ guid: 'grid-rerender-database' }) as YDoc;
   const database = new Y.Map();
   const fields = new Y.Map();
   const view = new Y.Map();
   const views = new Y.Map();
   const rowMap: Record<string, YDoc> = {};
-  const rowOrders = Array.from({ length: ROW_COUNT }, (_, index) => ({ id: `row-${index + 1}`, height: ROW_HEIGHT }));
+  const rowOrders = Array.from({ length: rowCount }, (_, index) => ({ id: `row-${index + 1}`, height: ROW_HEIGHT }));
   const columns: RenderColumn[] = Array.from({ length: columnCount }, (_, index) => ({
     fieldId: `field-${index}`,
     fieldType: FieldType.RichText,
@@ -204,10 +242,33 @@ function fixture({ columnCount = COLUMN_COUNT, readOnly = true } = {}) {
     rowMap,
     seedsReady: true,
     blobPrefetchComplete: true,
+    isDocumentBlock: documentBlock,
   };
-  const grouping: GridGrouping = {
-    rowOrders, isGrouped: false, ready: true, activeGroupIds: [], groups: [], visibleGroups: [], hideEmptyGroups: false,
-  };
+  const groups = Array.from({ length: GROUP_COUNT }, (_, index) => ({
+    id: `group-${index}`,
+    label: `Group ${index}`,
+    rows: rowOrders.slice(index * GROUP_SIZE, (index + 1) * GROUP_SIZE),
+    isDefault: false,
+    visible: true,
+    hidden: false,
+    automaticallyHidden: false,
+    collapsed: false,
+  }));
+  const grouping: GridGrouping = grouped
+    ? {
+        rowOrders,
+        isGrouped: true,
+        groupId: 'grid-rerender-group-config',
+        fieldId: 'field-1',
+        fieldName: 'field-1',
+        fieldType: FieldType.SingleSelect,
+        ready: true,
+        activeGroupIds: groups.map(({ id }) => id),
+        groups,
+        visibleGroups: groups,
+        hideEmptyGroups: false,
+      }
+    : { rowOrders, isGrouped: false, ready: true, activeGroupIds: [], groups: [], visibleGroups: [], hideEmptyGroups: false };
   const destroy = () => {
     databaseDoc.destroy();
     Object.values(rowMap).forEach((row) => row.destroy());
@@ -252,6 +313,8 @@ test('scrolling sideways within the rendered columns re-renders neither rows nor
     ).toHaveLength(COLUMN_COUNT);
     expect(document.querySelectorAll('.sticky-header-overlay [data-column-id]')).toHaveLength(COLUMN_COUNT);
     expect(headerCellRenders.mock.calls.length).toBeGreaterThanOrEqual(2 * COLUMN_COUNT);
+    // A read-only grid gives neither header row a field menu.
+    expect(document.querySelectorAll('[data-parity-id="dash-widget-grid-header"] [aria-haspopup="menu"]')).toHaveLength(0);
     commits.mockClear();
     rowRenders.mockClear();
     headerCellRenders.mockClear();
@@ -306,6 +369,175 @@ test('scrolling sideways past the overscan mounts the entering columns without r
     // ...while their hover controls, whose props did not change, keep their render.
     expect(screen.getAllByTestId('row-accessory-button')).toHaveLength(ROW_COUNT);
     expect(hoverControlsRenders).not.toHaveBeenCalled();
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('pinning and unpinning the sticky header re-renders no row and keeps every header cell mounted', async () => {
+  const data = fixture({ readOnly: false });
+  // The grid starts 100px down the page; its header pins under the 48px app bar
+  // once the page scrolls past 52px.
+  const pageLayout = {
+    getBoundingClientRect(this: HTMLElement) {
+      const height = elementHeight(this);
+      const viewport = this.closest<HTMLElement>('[data-testid="grid-rerender-viewport"]');
+      const isGrid = Boolean(viewport) && this !== viewport && this.classList.contains('appflowy-custom-scroller');
+      const top = isGrid ? 100 - (viewport?.scrollTop ?? 0) : 0;
+
+      return { x: 0, y: top, left: 0, top, width: VIEWPORT_WIDTH, height, right: VIEWPORT_WIDTH, bottom: top + height,
+        toJSON: () => ({}) };
+    },
+  };
+
+  jest.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(pageLayout.getBoundingClientRect);
+  const rendered = render(
+    <Providers data={data}>
+      <GridVirtualizer columns={data.columns} />
+    </Providers>
+  );
+
+  try {
+    await waitFor(() => expect(screen.getByText('field-7 row-1')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    const viewport = screen.getByTestId('grid-rerender-viewport');
+    // Queried afresh each time, so a remounted header row is seen too.
+    const gridHeader = () => rendered.container.querySelector<HTMLElement>('[data-parity-id="dash-widget-grid-header"]');
+    const stickyHeader = () =>
+      document.querySelector<HTMLElement>('.sticky-header-overlay [data-parity-id="dash-widget-grid-header"]');
+    const stickyContainer = () => document.querySelector<HTMLElement>('.sticky-header-overlay .grid-sticky-header');
+    const headerCell = (row: HTMLElement | null) =>
+      row?.querySelector<HTMLElement>('[data-testid="grid-field-header-field-1"]') ?? null;
+    // Header cells of a row that hold a field menu (its menus carry aria-haspopup).
+    const fieldMenus = (row: HTMLElement | null) =>
+      Array.from(row?.querySelectorAll('[data-column-id]') ?? []).filter((cell) =>
+        cell.querySelector('[aria-haspopup="menu"]')
+      ).length;
+    const gridCellBefore = headerCell(gridHeader());
+    const stickyCellBefore = headerCell(stickyHeader());
+
+    // The grid's own header is in view and holds the field menus.
+    expect(gridCellBefore).not.toBeNull();
+    expect(stickyCellBefore).not.toBeNull();
+    expect(stickyContainer()?.style.opacity).toBe('0');
+    expect(fieldMenus(gridHeader())).toBe(COLUMN_COUNT);
+    expect(fieldMenus(stickyHeader())).toBe(0);
+    rowRenders.mockClear();
+    hoverControlsRenders.mockClear();
+
+    // Pinned: the sticky header shows and takes the field menus...
+    fireEvent.scroll(viewport, { target: { scrollTop: 60 } });
+    await act(() => jest.advanceTimersByTime(200));
+    expect(stickyContainer()?.style.opacity).toBe('1');
+    expect(fieldMenus(gridHeader())).toBe(0);
+    expect(fieldMenus(stickyHeader())).toBe(COLUMN_COUNT);
+
+    // A click on the covered header (still focused, say, from before the pin) opens nothing.
+    fireEvent.click(headerCell(gridHeader()) as HTMLElement);
+    await act(() => jest.advanceTimersByTime(200));
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    // ...and unpinned: the menus move back, and none opens by itself.
+    fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+    await act(() => jest.advanceTimersByTime(200));
+    expect(stickyContainer()?.style.opacity).toBe('0');
+    expect(fieldMenus(gridHeader())).toBe(COLUMN_COUNT);
+    expect(fieldMenus(stickyHeader())).toBe(0);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    // Neither flip re-rendered a row or its hover controls, or remounted a header cell's content.
+    expect(rowRenders).not.toHaveBeenCalled();
+    expect(hoverControlsRenders).not.toHaveBeenCalled();
+    expect(headerCell(gridHeader())).toBe(gridCellBefore);
+    expect(headerCell(stickyHeader())).toBe(stickyCellBefore);
+
+    // The header in view still opens its menu.
+    fireEvent.click(headerCell(gridHeader()) as HTMLElement);
+    await act(() => jest.advanceTimersByTime(200));
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('scrolling a grouped grid sideways re-renders no group header, new-row row or hover controls', async () => {
+  const data = fixture({ readOnly: false, grouped: true });
+  const commits = jest.fn();
+  const rendered = render(
+    <Providers data={data}>
+      <Profiler id='grid' onRender={commits}>
+        <GridVirtualizer columns={data.columns} />
+      </Profiler>
+    </Providers>
+  );
+
+  try {
+    await waitFor(() => expect(screen.getByTestId(`grid-group-header-group-${GROUP_COUNT - 1}`)).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    const scroller = rendered.container.querySelector<HTMLElement>('[data-parity-id="dash-widget-grid-scrollbar"]');
+
+    expect(scroller).not.toBeNull();
+    expect(screen.getAllByTestId('grid-new-row')).toHaveLength(GROUP_COUNT);
+    // The counters see every group header and new-row row render.
+    expect(groupHeaderRenders.mock.calls.length).toBeGreaterThanOrEqual(GROUP_COUNT);
+    expect(newRowRenders.mock.calls.length).toBeGreaterThanOrEqual(GROUP_COUNT);
+    commits.mockClear();
+    rowRenders.mockClear();
+    hoverControlsRenders.mockClear();
+    groupHeaderRenders.mockClear();
+    newRowRenders.mockClear();
+
+    fireEvent.scroll(scroller as HTMLElement, { target: { scrollLeft: 250 } });
+    await act(() => jest.advanceTimersByTime(200));
+
+    expect(commits).toHaveBeenCalled();
+    expect(rowRenders).not.toHaveBeenCalled();
+    expect(hoverControlsRenders).not.toHaveBeenCalled();
+    expect(groupHeaderRenders).not.toHaveBeenCalled();
+    expect(newRowRenders).not.toHaveBeenCalled();
+  } finally {
+    rendered.unmount();
+    data.destroy();
+  }
+});
+
+test('scrolling an embedded grid sideways re-renders neither its load-more row nor its new-row row', async () => {
+  // Tall enough to show every row of the embedded grid, its load-more and new-row rows.
+  scrollerRowCount = EMBEDDED_ROW_COUNT + 4;
+  const data = fixture({ readOnly: false, rowCount: EMBEDDED_ROW_COUNT, documentBlock: true });
+  const commits = jest.fn();
+  const rendered = render(
+    <Providers data={data}>
+      <Profiler id='grid' onRender={commits}>
+        <GridVirtualizer columns={data.columns} />
+      </Profiler>
+    </Providers>
+  );
+
+  try {
+    await waitFor(() => expect(screen.getByTestId('grid-load-more-row')).toBeInTheDocument());
+    await act(() => jest.runOnlyPendingTimers());
+    const scroller = rendered.container.querySelector<HTMLElement>('[data-parity-id="dash-widget-grid-scrollbar"]');
+
+    expect(scroller).not.toBeNull();
+    expect(screen.getByTestId('grid-load-more-row')).toHaveTextContent(`(${EMBEDDED_ROW_COUNT - 25})`);
+    expect(screen.getByTestId('grid-new-row')).toBeInTheDocument();
+    expect(loadMoreRowRenders).toHaveBeenCalled();
+    expect(newRowRenders).toHaveBeenCalled();
+    commits.mockClear();
+    rowRenders.mockClear();
+    loadMoreRowRenders.mockClear();
+    newRowRenders.mockClear();
+
+    fireEvent.scroll(scroller as HTMLElement, { target: { scrollLeft: 250 } });
+    await act(() => jest.advanceTimersByTime(200));
+
+    expect(commits).toHaveBeenCalled();
+    expect(rowRenders).not.toHaveBeenCalled();
+    expect(loadMoreRowRenders).not.toHaveBeenCalled();
+    expect(newRowRenders).not.toHaveBeenCalled();
   } finally {
     rendered.unmount();
     data.destroy();

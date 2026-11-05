@@ -137,12 +137,24 @@ export type GridContextType = {
   lastVisibleRowId?: string;
   loadMoreRows: () => void;
   revealCreatedRow: () => void;
-  showStickyHeader: boolean;
   setShowStickyHeader: (show: boolean) => void;
   isGrouped: boolean;
 };
 
 export const GridContext = createContext<GridContextType | undefined>(undefined);
+
+/**
+ * Whether the page shows the grid's sticky header, the copy of the column
+ * header pinned under the app bar. Kept out of `GridContext`: it flips each
+ * time a page scroll takes the grid's own header under the app bar, only header
+ * cells read it, and every row, its hover controls and the calculation cells
+ * read `GridContext`.
+ */
+export const GridStickyHeaderContext = createContext(false);
+
+export function useGridStickyHeaderShown() {
+  return useContext(GridStickyHeaderContext);
+}
 
 /**
  * How far an ungrouped grid still reading its rows got. Kept out of
