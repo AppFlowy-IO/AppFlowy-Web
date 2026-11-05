@@ -67,17 +67,20 @@ function ImageRender({
       }}
       className={`image-render relative min-h-[48px] ${!rendered ? 'w-full' : 'w-fit'}`}
     >
-      <Img
-        width={rendered ? (newWidth ?? '100%') : 0}
-        imgRef={imgRef}
-        url={url}
-        // `ImageBlockData` has no caption field today, so let `Img` derive
-        // an alt from the URL filename. This avoids screen readers reading
-        // the raw blob URL or skipping the image entirely.
-        onLoad={() => {
-          setRendered(true);
-        }}
-      />
+      {/* Match desktop ResizableImage: clip media, keeping resize handles outside. */}
+      <div className="relative overflow-hidden rounded-[12px]">
+        <Img
+          width={rendered ? (newWidth ?? '100%') : 0}
+          imgRef={imgRef}
+          url={url}
+          // `ImageBlockData` has no caption field today, so let `Img` derive
+          // an alt from the URL filename. This avoids screen readers reading
+          // the raw blob URL or skipping the image entirely.
+          onLoad={() => {
+            setRendered(true);
+          }}
+        />
+      </div>
 
       {!readOnly && initialWidth && (
         <>

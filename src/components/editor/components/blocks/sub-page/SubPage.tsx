@@ -12,10 +12,10 @@ export const SubPage = memo(
         attributes.className ?? '',
         'relative',
         'w-full',
-        'h-full',
+        'h-[32px]',
         'overflow-hidden',
         'hover:bg-fill-content-hover',
-        'rounded-[8px] p-1 cursor-pointer',
+        'rounded-[4px] px-[10px] cursor-pointer justify-center',
       ];
 
       return classList.join(' ');
