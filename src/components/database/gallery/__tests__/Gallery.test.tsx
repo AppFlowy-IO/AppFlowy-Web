@@ -235,6 +235,40 @@ describe('Gallery pagination lifecycle', () => {
     expect(screen.getByTestId('mock-gallery-card-row-99')).toBeTruthy();
   });
 
+  it('pages broad search matches and resets the window when the query changes', () => {
+    const candidates = Array.from({ length: 2_000 }, (_, index) => ({ height: 36, id: `row-${index}` }));
+
+    scrollHeight = 2_000;
+    mockUseRowOrdersSelector.mockReturnValue(candidates);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'gallery-view',
+      isDocumentBlock: true,
+    } as ReturnType<typeof useDatabaseContext>);
+    mockUseDatabaseSearch.mockReturnValue({ query: 'row', setQuery: jest.fn() });
+    const { rerender } = render(<Gallery />);
+
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(50);
+    expect(screen.getByTestId('gallery-load-more').textContent).toContain('1950');
+    expect(mockUsePublishRowOrders).toHaveBeenLastCalledWith(candidates, true, { layout: 'gallery', query: 'row' });
+    fireEvent.click(screen.getByTestId('gallery-load-more'));
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(80);
+
+    mockUseDatabaseSearch.mockReturnValue({ query: 'row-', setQuery: jest.fn() });
+    rerender(<Gallery />);
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(50);
+    expect(screen.getByTestId('gallery-load-more').textContent).toContain('1950');
+  });
+
+  it('loads the next search page when scrolling an overflowing standalone gallery', () => {
+    scrollHeight = 2_000;
+    mockUseDatabaseSearch.mockReturnValue({ query: 'row', setQuery: jest.fn() });
+    render(<Gallery />);
+
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(50);
+    fireEvent.scroll(screen.getByTestId('database-gallery'), { target: { scrollTop: 1_000 } });
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(rows.length);
+  });
+
   it('publishes the search-narrowed order for the row peek instead of the raw view order', () => {
     const matching = [rows[0], rows[99]];
 

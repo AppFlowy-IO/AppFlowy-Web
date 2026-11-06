@@ -7,7 +7,7 @@ import { Suggestions } from '@/components/chat/types';
 interface SuggestionsContextTypes {
   registerFetchSuggestions: (messageId: number) => void;
   unregisterFetchSuggestions: (messageId: number) => void;
-  startFetchSuggestions: (questionMessageId: number) => Promise<void>;
+  startFetchSuggestions: (questionMessageId: number, isCurrent?: () => boolean) => Promise<void>;
   getMessageSuggestions: (messageId: number) => Suggestions | undefined;
   clearSuggestions: () => void;
 }
@@ -62,22 +62,19 @@ export const SuggestionsProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const startFetchSuggestions = useCallback(
-    async (questionMessageId: number) => {
+    async (questionMessageId: number, isCurrent: () => boolean = () => true) => {
+      if (!isCurrent()) return;
       try {
         const data = await requestInstance.getSuggestions(questionMessageId);
 
-        setSuggestions(() => {
-          const newSuggestions = new Map();
-
-          newSuggestions.set(questionMessageId, data);
-          return newSuggestions;
-        });
+        if (!isCurrent()) return;
+        setSuggestions(new Map([[questionMessageId, data]]));
 
         // eslint-disable-next-line
       } catch (e: any) {
-        toast.error(e.message);
+        if (isCurrent()) toast.error(e.message);
       } finally {
-        unregisterFetchSuggestions(questionMessageId);
+        if (isCurrent()) unregisterFetchSuggestions(questionMessageId);
       }
     },
     [requestInstance, unregisterFetchSuggestions]
