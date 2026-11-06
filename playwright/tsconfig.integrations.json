@@ -20,7 +20,9 @@
     "support/dashboard-view-startup.fixture.tsx",
     "support/chart-settings.fixture.tsx",
     "../playwright.google-drive.config.ts",
-    "support/google-drive.fixture.tsx"
+    "support/google-drive.fixture.tsx",
+    "e2e/calendar/calendar-popup.spec.ts",
+    "support/calendar-popup.fixture.tsx"
   ],
   "references": []
 }

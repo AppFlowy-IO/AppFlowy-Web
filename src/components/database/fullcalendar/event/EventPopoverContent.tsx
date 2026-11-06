@@ -110,7 +110,7 @@ function EventPopoverContent({
   return (
     <div
       data-testid={isDraft ? 'calendar-event-draft-editor' : undefined}
-      className={'appflowy-scroller max-h-[560px] w-[360px] overflow-y-auto px-3 py-2'}
+      className={'appflowy-scroller max-h-[560px] w-full min-w-0 overflow-y-auto px-3 py-2'}
     >
       {/* Desktop's `EventEditorControls` order: delete, open as side peek,
           duplicate. Close is web-only; desktop dismisses the popover by
