@@ -25,7 +25,6 @@ const MAX_PROGRESS_STEPS = 5;
 
 export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boolean }) {
   const isOfficialHosted = useIsOfficialHosted();
-  const isInitialLoad = useRef(true);
   const { getMessage } = useChatMessagesContext();
   const { responseFormat, responseMode } = useResponseFormatContext();
   const { fetchAnswerStream } = useMessagesHandlerContext();
@@ -57,22 +56,35 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
     });
   }, []);
 
-  useEffect(() => {
-    if (!questionId || !isInitialLoad.current || loading) return;
-    void (async () => {
-      setLoading(true);
+  const requestRef = useRef({ fetchAnswerStream, responseMode, responseFormat, handleProgress, t });
 
+  requestRef.current = { fetchAnswerStream, responseMode, responseFormat, handleProgress, t };
+
+  useEffect(() => {
+    if (!questionId) return;
+    const controller = new AbortController();
+    const request = requestRef.current;
+
+    // A question owns one request per mounted effect. StrictMode may replay it;
+    // unrelated context renders and a manual stop must not start another answer.
+    setLoading(true);
+    setError(null);
+    setContent('');
+    setDone(false);
+    setProgressSteps([]);
+    stepIdRef.current = 0;
+    void (async () => {
       try {
-        isInitialLoad.current = false;
-        await fetchAnswerStream(
+        await request.fetchAnswerStream(
           questionId,
-          responseMode === ChatInputMode.FormatResponse
+          request.responseMode === ChatInputMode.FormatResponse
             ? {
-                output_content: responseFormat.output_content,
-                output_layout: responseFormat.output_layout,
+                output_content: request.responseFormat.output_content,
+                output_layout: request.responseFormat.output_layout,
               }
             : undefined,
           (text, done) => {
+            if (controller.signal.aborted) return;
             if (done || text) {
               setLoading(false);
             }
@@ -80,18 +92,24 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
             setDone(done || false);
             setContent(text);
           },
-          handleProgress
+          (step) => {
+            if (!controller.signal.aborted) request.handleProgress(step);
+          },
+          controller.signal
         );
       } catch (e) {
+        if (controller.signal.aborted) return;
         console.error(e);
         setError({
-          message: getErrorMessage(e, '') || t('chat.errors.responseUnavailable'),
+          message: getErrorMessage(e, '') || request.t('chat.errors.responseUnavailable'),
           isResponseLimit: isAPIErrorCode(e, ERROR_CODE_NO_LIMIT),
         });
         setLoading(false);
       }
     })();
-  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading, handleProgress, t]);
+
+    return () => controller.abort();
+  }, [questionId]);
 
   const suggestions = useMemo(() => {
     if (!questionId) return null;

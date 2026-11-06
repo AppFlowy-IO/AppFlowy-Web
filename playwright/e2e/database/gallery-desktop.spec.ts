@@ -4,6 +4,13 @@ import { expect, test as base, type Page } from '@playwright/test';
 const test = base.extend<{}, { galleryFixtureURL: string }>({
   galleryFixtureURL: [
     async ({}, use, workerInfo) => {
+      // A separately launched Vite avoids in-process PostCSS loading differences
+      // in local Playwright runtimes while serving the same fixture module.
+      if (process.env.APPFLOWY_GALLERY_FIXTURE_URL) {
+        await use(process.env.APPFLOWY_GALLERY_FIXTURE_URL);
+        return;
+      }
+
       const { createServer } = await import('vite');
       const server = await createServer({
         cacheDir: `node_modules/.vite/gallery-desktop-${workerInfo.workerIndex}`,
@@ -26,8 +33,8 @@ const test = base.extend<{}, { galleryFixtureURL: string }>({
 test.describe.configure({ mode: 'default' });
 const rowId = '00000000-0000-4000-8000-000000000001';
 
-async function openFixture(page: Page, url: string, dark = false) {
-  await page.route('**/gallery-desktop-fixture', (route) =>
+async function openFixture(page: Page, url: string, dark = false, rows = 3, embedded = false) {
+  await page.route('**/gallery-desktop-fixture*', (route) =>
     route.fulfill({
       contentType: 'text/html',
       body: `<!doctype html><html data-dark-mode="${dark}"><body id="body" style="background:var(--surface-primary)"><div id="root"></div>
@@ -41,7 +48,10 @@ async function openFixture(page: Page, url: string, dark = false) {
       </script></body></html>`,
     })
   );
-  await page.goto(new URL('/gallery-desktop-fixture', url).href);
+  const fixtureUrl = new URL('/gallery-desktop-fixture', url);
+  fixtureUrl.searchParams.set('rows', String(rows));
+  fixtureUrl.searchParams.set('embedded', String(embedded));
+  await page.goto(fixtureUrl.href);
   await expect(page.getByTestId(`gallery-card-${rowId}`)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('The Art of Living in the Moment')).toBeVisible();
 }
@@ -112,7 +122,9 @@ test('cover changes can be saved or canceled, and read-only cards open from the 
   // A 30px upward drag moves the cover by 30 / (half the cover height); the cover is 16:9 of the card width.
   const dragOffset = Math.min(1, 30 / (box.height / 2));
   const objectOffset = async () =>
-    Number((await image.evaluate((element) => (element as HTMLElement).style.objectPosition)).split(' ')[1].replace('%', ''));
+    Number(
+      (await image.evaluate((element) => (element as HTMLElement).style.objectPosition)).split(' ')[1].replace('%', '')
+    );
   const toPercent = (offset: number) => ((offset + 1) / 2) * 100;
   await page.mouse.move(box.x + 30, box.y + 80);
   await page.mouse.down();
@@ -192,4 +204,24 @@ test('groups, searches and collapses cards using the shared desktop grouping for
   await expect(page.getByTestId('gallery-group-camellia')).toHaveCount(0);
   await page.getByRole('textbox', { name: 'Search Gallery' }).fill('unmatched');
   await expect(page.locator('[data-testid^="gallery-tile-"]')).toHaveCount(0);
+});
+
+test('broad gallery searches retain the card budget and reset it for a new query', async ({
+  page,
+  galleryFixtureURL,
+}) => {
+  await openFixture(page, galleryFixtureURL, false, 200, true);
+  const cards = page.getByTestId(/^gallery-card-[0-9a-f-]{36}$/);
+  const search = page.getByRole('textbox', { name: 'Search Gallery' });
+
+  await expect(cards).toHaveCount(50);
+  await search.fill('Gallery budget');
+  await expect(cards).toHaveCount(50);
+  await page.getByTestId('gallery-load-more').click();
+  await expect(cards).toHaveCount(80);
+  await search.fill('budget');
+  await expect(cards).toHaveCount(50);
+  await search.fill('Gallery budget 199');
+  await expect(cards).toHaveCount(1);
+  await expect(page.getByTestId('gallery-load-more')).toHaveCount(0);
 });

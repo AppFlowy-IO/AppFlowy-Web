@@ -3,10 +3,9 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { useDatabaseContextOptional } from '@/application/database-yjs';
 import { metaIdFromRowId } from '@/application/database-yjs/const';
 import { RowMetaKey } from '@/application/database-yjs/database.type';
-import { YDoc, YjsEditorKey } from '@/application/types';
+import { LoadRowDocument, YDoc, YjsEditorKey } from '@/application/types';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { Editor } from '@/components/editor';
-
 import type { EditorContentPadding } from '@/components/editor/EditorContext';
 
 /**
@@ -35,45 +34,40 @@ export const PublishRowSubDocument = memo(({ rowId, contentPadding }: PublishRow
     return metaIdFromRowId(rowId)(RowMetaKey.DocumentId);
   }, [rowId]);
 
-  const [doc, setDoc] = useState<YDoc | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Results belong to both the row identity and the snapshot loader. A route-only row
+  // change must never pair the previous document with the new row's metadata, even
+  // during the render before effect cleanup or when the new row has no document.
+  const [loaded, setLoaded] = useState<{
+    documentId: string;
+    loader: LoadRowDocument;
+    doc: YDoc | null;
+  }>();
 
   useEffect(() => {
-    // documentId is computed from rowId, so should always be available
-    if (!documentId || !loadRowDocument) {
-      setLoading(false);
-      return;
-    }
+    setLoaded(undefined);
+    if (!documentId || !loadRowDocument) return;
 
     let cancelled = false;
+    const settle = (doc: YDoc | null) => {
+      if (!cancelled) setLoaded({ documentId, loader: loadRowDocument, doc });
+    };
 
-    setLoading(true);
-
-    loadRowDocument(documentId)
-      .then((loadedDoc) => {
-        if (!cancelled && loadedDoc) {
-          setDoc(loadedDoc);
-        }
-      })
-      .catch(() => {
-        // Failed to load, will show nothing
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
+    void loadRowDocument(documentId)
+      .then(settle)
+      .catch(() => settle(null));
 
     return () => {
       cancelled = true;
     };
   }, [documentId, loadRowDocument]);
 
-  if (loading) {
+  if (!documentId || !loadRowDocument) return null;
+  if (loaded?.documentId !== documentId || loaded.loader !== loadRowDocument) {
     return <EditorSkeleton />;
   }
 
   // Check if document has the expected structure
+  const doc = loaded.doc;
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
 
   if (!doc || !documentId || !document || !context) {
@@ -85,7 +79,7 @@ export const PublishRowSubDocument = memo(({ rowId, contentPadding }: PublishRow
       {...context}
       fullWidth
       contentPadding={contentPadding}
-      workspaceId="publish"
+      workspaceId='publish'
       viewId={documentId}
       doc={doc}
       readOnly={true}
