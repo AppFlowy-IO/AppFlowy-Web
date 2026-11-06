@@ -60,6 +60,7 @@ export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes 
 
 interface AnswerStreamRequest {
   scope: { disposed: boolean };
+  controller: AbortController;
   obsolete: boolean;
   stopRequested: boolean;
   completed: boolean;
@@ -68,6 +69,7 @@ interface AnswerStreamRequest {
 
 function invalidateAnswerStream(stream: AnswerStreamRequest) {
   stream.obsolete = true;
+  stream.controller.abort();
   const cancel = stream.cancel;
 
   stream.cancel = undefined;
@@ -370,6 +372,7 @@ function useMessagesHandler() {
       if (activeStreamRef.current) invalidateAnswerStream(activeStreamRef.current);
       const stream: AnswerStreamRequest = {
         scope: streamScope,
+        controller: new AbortController(),
         obsolete: false,
         stopRequested: false,
         completed: false,
@@ -411,7 +414,7 @@ function useMessagesHandler() {
               if (!isCurrent()) return;
               setAnswerApplying(false);
               if (answerId && messageIdsRef.current.indexOf(answerId) === 0) {
-                await startFetchSuggestions(questionId);
+                await startFetchSuggestions(questionId, isCurrent);
               }
             })();
           } else {
@@ -441,7 +444,8 @@ function useMessagesHandler() {
           handleMessageProgress,
           (step) => {
             if (isCurrent() && !stream.stopRequested && !stream.completed) onProgress?.(step);
-          }
+          },
+          stream.controller.signal
         );
 
         // Fetch may still be waiting for response headers when its owner unmounts.

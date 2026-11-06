@@ -98,10 +98,12 @@ then 30 per page), resetting the budget for a new query.
 Associate asynchronous document results with their source and loader before rendering or
 inserting content. Clearing state in an effect alone does not prevent a previous document from
 rendering with the next source's metadata. A chat answer stream belongs to both its provider's
-workspace/chat and the mounted assistant request. Teardown cancels transport and ignores late
-callbacks, including cancellation handles that arrive after teardown. Manual Stop can persist
-the final partial answer. Exercise the real consumer under Strict Mode so effect replay starts
-a replacement request instead of leaving a canceled answer on screen.
+workspace/chat and the mounted assistant request. Pass its AbortSignal through to fetch so
+teardown also cancels requests still waiting for headers. Fence in-flight suggestions with the
+same ownership check, including late failures. Teardown ignores late callbacks and cancels
+handles that arrive after teardown. Manual Stop can persist the final partial answer. Exercise
+the real consumer under Strict Mode so effect replay starts a replacement request instead of
+leaving a canceled answer on screen.
 
 Optimistic reaction intent must be computed outside React state updaters. Serialize changes to
 the same reaction and rebase pending intent on the initial server read so rapid toggles retain

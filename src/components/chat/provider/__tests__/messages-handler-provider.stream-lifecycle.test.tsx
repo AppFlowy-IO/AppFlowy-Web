@@ -183,10 +183,30 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
     await act(async () => undefined);
   });
 
+  it('aborts the transport on unmount while response headers are still pending', async () => {
+    const stream = createStream(true);
+    const view = renderHandler();
+    const { pending } = await startStream();
+    const signal = mockRequest.fetchAnswerStream.mock.calls[0][3] as AbortSignal | undefined;
+
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      stream.response.reject(new DOMException('Aborted', 'AbortError'));
+      await pending;
+    });
+
+    expect(mockToastError).not.toHaveBeenCalled();
+    expect(mockRequest.saveAnswer).not.toHaveBeenCalled();
+  });
+
   it.each(['chat', 'workspace'])('invalidates the old stream after a %s change', async (identity) => {
     const stream = createStream();
     const view = renderHandler();
     const { pending, onMessage } = await startStream();
+    const signal = mockRequest.fetchAnswerStream.mock.calls[0][3] as AbortSignal;
 
     if (identity === 'chat') mockChatId = 'chat-B';
     else mockWorkspaceId = 'workspace-B';
@@ -202,6 +222,7 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
     });
 
     expect(stream.handle.cancel).toHaveBeenCalledTimes(1);
+    expect(signal.aborted).toBe(true);
     expect(onMessage).not.toHaveBeenCalled();
     expect(mockRequest.saveAnswer).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
@@ -251,9 +272,13 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
       meta_data: metadata,
     });
     expect(mockSaveMessageContent).toHaveBeenCalledWith(11, 'complete answer', metadata);
-    expect(mockStartFetchSuggestions).toHaveBeenCalledWith(10);
+    expect(mockStartFetchSuggestions).toHaveBeenCalledWith(10, expect.any(Function));
+    const isCurrent = mockStartFetchSuggestions.mock.calls[0][1];
+
+    expect(isCurrent()).toBe(true);
     expect(messagesContext.answerApplying).toBe(false);
     view.unmount();
+    expect(isCurrent()).toBe(false);
     expect(stream.handle.cancel).not.toHaveBeenCalled();
   });
 

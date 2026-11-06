@@ -885,6 +885,8 @@ test('turn text into code, undo and redo preserve its content and identity (#814
   });
   const original = JSON.parse((await snapshot(page).textContent()) ?? '[]')[0];
 
+  // The editor connects before its lazy overlay installs hover listeners.
+  await expect(page.getByTestId('hover-controls')).toBeAttached();
   await editor(page).getByText(text, { exact: true }).hover();
   await page.getByTestId('drag-block').click();
   await page.getByRole('button', { name: 'Turn into', exact: true }).click();
