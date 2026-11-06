@@ -20,7 +20,8 @@
     "support/dashboard-view-startup.fixture.tsx",
     "support/chart-settings.fixture.tsx",
     "../playwright.google-drive.config.ts",
-    "support/google-drive.fixture.tsx"
+    "support/google-drive.fixture.tsx",
+    "support/row-text-page-link.fixture.tsx"
   ],
   "references": []
 }

@@ -180,6 +180,46 @@ describe('RichTextCellEditor', () => {
     mockContext = { workspaceId: 'ws', eventEmitter: new EventEmitter(), databaseDoc };
   });
 
+  it('saves a copied AppFlowy page link pasted through the row property editor as a page mention', async () => {
+    const workspaceId = '2f8365f8-ce19-4376-8ba0-2b4948ed0f4a';
+    const pageId = 'd996a5f3-0bca-40ed-96b7-5938de6cdd5d';
+    const pageLink = `http://localhost/app/${workspaceId}/${pageId}`;
+    const originalPath = window.location.pathname;
+
+    window.history.replaceState({}, '', `/app/${workspaceId}/${pageId}`);
+    mockContext = { ...mockContext, workspaceId, loadViewMeta: async () => view(pageId, 'Mention target') };
+    try {
+      const { editable } = await renderEditor({ value: '' });
+      const clipboardData = {
+        files: [],
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? pageLink : ''),
+      };
+
+      await act(async () => {
+        fireEvent.paste(editable, { clipboardData });
+      });
+      await flush();
+      await pressEnter(editable);
+      await flush();
+
+      expect(mockUpdateCell).toHaveBeenCalledTimes(1);
+      const [, , options] = mockUpdateCell.mock.calls[0];
+      const saved = JSON.parse(options.richText);
+
+      expect(saved.delta).toEqual([
+        expect.objectContaining({
+          insert: '@',
+          attributes: expect.objectContaining({
+            mention: expect.objectContaining({ type: MentionType.PageRef, page_id: pageId }),
+          }),
+        }),
+      ]);
+    } finally {
+      window.history.replaceState({}, '', originalPath);
+    }
+  });
+
   it.each(['row', 'field', 'workspace'])('keeps a dirty draft with its original cell when the %s changes', async (identity) => {
     const first = await renderEditor();
 
