@@ -25,6 +25,15 @@ This is a regression checklist and record of user expectations, not a claim that
 - Existing Codex sessions may still have the old `--autoConnect` MCP process loaded. Do not call its browser tools until it has been restarted with the isolated configuration. Do not enumerate personal browser tabs to verify isolation.
 - These preferences apply across projects, including when a skill suggests reusing an existing Chrome session. If isolation cannot be established, report the blocker instead of accessing the user's browser.
 
+## Database Text property paste (reported 2026-11-06)
+
+- Pasting a standard AppFlowy page link into a row's Text property should create a page mention. The row title shares this paste handler and needs coverage too.
+- Desktop widget tests and Web Slate/React paste-and-save tests reproduced the current gap: both save the full URL with `href`, without `mention`. Ordinary URL paste and copying existing rich mentions already have separate coverage.
+- Fixes prepared in the Desktop and Web task worktrees recognize same-workspace page/block targets before generic URL insertion, using the existing cell insertion/save path. Preserve host/workspace boundaries, external links, selected-text linking, plain-text paste, and typing beside a mention; check persisted attributes as well as appearance.
+- Database-row (`?r=`) and selected-tab (`?v=`) links need their separate target/title resolution. Keep those URLs intact in the page-only conversion path.
+- Browser theme cases must mount the real `AppTheme` provider and assert `data-dark-mode`; setting a dark browser preference alone does not activate AppFlowy's semantic tokens. Browser regression data belongs to an isolated Yjs/Storage fixture, without a live account or Cloud round trip.
+- These findings establish a missing conversion in the rich-text cell handlers, rather than a proven regression from previously working automatic conversion. Integration of the prepared fixes is pending.
+
 ## Shared issues reported across embed PRs
 
 ### Menus, icons, hover, and placement

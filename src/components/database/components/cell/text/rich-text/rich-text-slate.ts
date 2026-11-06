@@ -12,8 +12,9 @@ import {
   sanitizeRichTextAttributes,
 } from '@/application/database-yjs/fields/text/rich-text';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { MentionType } from '@/application/types';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
-import { isSingleURLText, processUrl } from '@/utils/url';
+import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
 
 /**
  * Slate model for a Text cell: one paragraph of marked text, with line breaks
@@ -339,6 +340,31 @@ function insertLink(editor: Editor, url: string) {
   editor.removeMark(EditorMarkFormat.Href);
 }
 
+function insertAppFlowyPageMention(editor: Editor, url: string) {
+  // A URL pasted over selected text still links that text. At the caret,
+  // match the document editor's host/workspace rules for automatic mentions.
+  if (!editor.selection || Range.isExpanded(editor.selection)) return false;
+  const target = parseAppFlowyPageLink(url, window.location.hostname);
+  const workspaceId = workspaceIdFromAppPathname(window.location.pathname);
+
+  if (!target || target.rowId || !workspaceId || target.workspaceId.toLowerCase() !== workspaceId.toLowerCase()) {
+    return false;
+  }
+
+  insertTexts(editor, [
+    {
+      text: '@',
+      mention: {
+        type: MentionType.PageRef,
+        page_id: target.viewId,
+        ...(target.blockId ? { block_id: target.blockId } : {}),
+      },
+    },
+  ]);
+  editor.removeMark(EditorMarkFormat.Mention);
+  return true;
+}
+
 type InlineMarkdownRule = {
   match: RegExp;
   /** The text the matched source turns into, and the marks it gets. */
@@ -604,7 +630,7 @@ export function withRichTextCell<T extends ReactEditor>(
     if (!plain) return;
 
     if (isSingleURLText(plain)) {
-      insertLink(editor, plain.trim());
+      if (!insertAppFlowyPageMention(editor, plain.trim())) insertLink(editor, plain.trim());
       return;
     }
 
