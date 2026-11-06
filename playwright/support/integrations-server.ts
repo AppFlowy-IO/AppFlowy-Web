@@ -22,6 +22,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
             'playwright/support/code-block.fixture.tsx',
             'playwright/support/pdf.fixture.tsx',
             'playwright/support/image.fixture.tsx',
+            'playwright/support/google-drive.fixture.tsx',
             'playwright/support/dashboard-owned-clone.fixture.tsx',
             'playwright/support/dashboard-view-startup.fixture.tsx',
             'playwright/support/chart-settings.fixture.tsx',
@@ -49,6 +50,7 @@ export function fixtureHTML(
     | 'code-block'
     | 'pdf'
     | 'image'
+    | 'google-drive'
     | 'dashboard-owned-clone'
     | 'dashboard-view-startup'
     | 'chart-settings'

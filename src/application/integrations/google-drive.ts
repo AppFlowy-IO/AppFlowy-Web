@@ -7,6 +7,8 @@ export interface DriveFile {
   webViewLink?: string;
   thumbnailLink?: string;
   trashed?: boolean;
+  size?: string;
+  modifiedTime?: string;
 }
 
 export interface DriveFiles {
@@ -14,7 +16,7 @@ export interface DriveFiles {
   nextPageToken?: string;
 }
 
-const FILE_FIELDS = 'id,name,mimeType,webViewLink,thumbnailLink,trashed';
+const FILE_FIELDS = 'id,name,mimeType,webViewLink,thumbnailLink,trashed,size,modifiedTime';
 
 export function listDriveFiles(
   workspaceId: string,

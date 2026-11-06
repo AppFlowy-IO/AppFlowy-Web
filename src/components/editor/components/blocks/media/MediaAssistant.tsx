@@ -23,7 +23,7 @@ import { ModelSelectorContext } from '@/components/chat/contexts/model-selector-
 import { WriterRequest } from '@/components/chat/request/writer-request';
 import { AIAssistantType, CompletionResult, CompletionRole } from '@/components/chat/types';
 import { MathEquationAILoading } from '@/components/editor/components/blocks/math-equation/MathEquationAILoading';
-import { PDFNode, ImageBlockNode } from '@/components/editor/editor.type';
+import { PDFNode, ImageBlockNode, GoogleDriveBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -38,7 +38,7 @@ export default function MediaAssistant({
   mode,
   onClose,
 }: {
-  node: PDFNode | ImageBlockNode;
+  node: PDFNode | ImageBlockNode | GoogleDriveBlockNode;
   text: string;
   mode: PDFAIMode;
   onClose: () => void;
@@ -75,10 +75,11 @@ export default function MediaAssistant({
   const originalUrl = useRef(node.data.url);
   const source = useRef(text);
   const summaryPrompt = `${t('document.plugins.pdf.summaryPrompt')}\n\n${source.current}`;
-  const dismissible = mode === 'ask' && !input.trim() && !busy && !last.current;
+  const escapeDismissible = !input.trim() && !busy;
+  const dismissible = mode === 'ask' && escapeDismissible && !last.current;
 
   useEffect(() => {
-    if (!dismissible) return;
+    if (!escapeDismissible) return;
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.isComposing) return;
       // A tooltip may consume Escape on a composer control. Portaled model
@@ -90,7 +91,7 @@ export default function MediaAssistant({
 
     document.addEventListener('keydown', dismissOnEscape);
     return () => document.removeEventListener('keydown', dismissOnEscape);
-  }, [dismissible, onClose]);
+  }, [escapeDismissible, onClose]);
 
   const generate = useCallback(
     async (prompt: string, previous: CompletionResult[]) => {
@@ -149,7 +150,11 @@ export default function MediaAssistant({
   }, []);
 
   const insertBelow = () => {
-    const live = findSlateEntryByBlockId(editor, node.blockId)?.[0] as PDFNode | ImageBlockNode | undefined;
+    const live = findSlateEntryByBlockId(editor, node.blockId)?.[0] as
+      | PDFNode
+      | ImageBlockNode
+      | GoogleDriveBlockNode
+      | undefined;
 
     if (
       !complete ||
@@ -183,7 +188,13 @@ export default function MediaAssistant({
       <section
         ref={panel}
         className='mt-1 overflow-hidden rounded-xl border border-border-primary bg-surface-layer-02 text-sm shadow-menu'
-        data-testid={node.type === 'image' ? 'image-assistant' : 'pdf-assistant'}
+        data-testid={
+          node.type === 'google_drive'
+            ? 'google-drive-assistant'
+            : node.type === 'image'
+            ? 'image-assistant'
+            : 'pdf-assistant'
+        }
         aria-label={t(title === 'summary' ? 'document.plugins.pdf.summarizePDF' : 'document.plugins.pdf.askAI')}
         contentEditable={false}
         onClick={(event) => event.stopPropagation()}
@@ -265,7 +276,7 @@ export default function MediaAssistant({
               onKeyDown={(event) => {
                 event.stopPropagation();
                 if (event.nativeEvent.isComposing) return;
-                if (event.key === 'Escape') {
+                if (event.key === 'Escape' && escapeDismissible) {
                   event.preventDefault();
                   onClose();
                 }

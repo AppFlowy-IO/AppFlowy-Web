@@ -1,0 +1,10 @@
+// Google's SDK portals outside MUI. Keep its modal above the block popover;
+// Google owns all picker content, navigation, selection and keyboard behavior.
+body:has([data-google-drive-native-picker]) {
+  .picker-dialog-bg {
+    z-index: 1600 !important;
+  }
+  .picker-dialog {
+    z-index: 1601 !important;
+  }
+}

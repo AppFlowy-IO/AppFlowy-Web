@@ -35,7 +35,8 @@ function BlockPopover() {
   const { open, anchorEl, close, type, blockId } = usePopoverContext();
   const { setSelectedBlockIds } = useEditorLocalState();
   const editor = useSlateStatic() as YjsEditor;
-  const mediaPicker = type === BlockType.PDFBlock || type === BlockType.ImageBlock;
+  const mediaPicker =
+    type === BlockType.PDFBlock || type === BlockType.ImageBlock || type === BlockType.GoogleDriveBlock;
   const [origins, setOrigins] = useState<Origins>(defaultOrigins);
 
   const handleClose = useCallback(() => {
@@ -73,7 +74,8 @@ function BlockPopover() {
       case BlockType.AudioBlock:
         return <AudioBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.GoogleDriveBlock:
-        return <GoogleDriveBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+        // A new target owns a fresh draft, replacement guard, and account picker.
+        return <GoogleDriveBlockPopoverContent key={blockId} blockId={blockId} onClose={handleClose} />;
       default:
         return null;
     }
@@ -165,6 +167,8 @@ function BlockPopover() {
         },
       }}
       {...origins}
+      // Google Picker owns a portal outside this popover and manages its own focus.
+      disableEnforceFocus={type === BlockType.GoogleDriveBlock}
       disableRestoreFocus={true}
     >
       <Suspense fallback={null}>{content}</Suspense>

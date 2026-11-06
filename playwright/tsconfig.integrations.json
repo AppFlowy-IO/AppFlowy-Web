@@ -18,7 +18,9 @@
     "../playwright.image.config.ts",
     "support/dashboard-owned-clone.fixture.tsx",
     "support/dashboard-view-startup.fixture.tsx",
-    "support/chart-settings.fixture.tsx"
+    "support/chart-settings.fixture.tsx",
+    "../playwright.google-drive.config.ts",
+    "support/google-drive.fixture.tsx"
   ],
   "references": []
 }

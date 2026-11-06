@@ -5,7 +5,7 @@ import base from './playwright.config';
 export default defineConfig(base, {
   testDir: './playwright/e2e/integrations',
   // Media suites have dedicated light/dark CI jobs.
-  testIgnore: ['**/code-block*.spec.ts', '**/pdf.spec.ts', '**/image*.spec.ts'],
+  testIgnore: ['**/code-block*.spec.ts', '**/pdf.spec.ts', '**/image*.spec.ts', '**/google-drive.spec.ts'],
   // Each worker starts Vite; keep the local default as small as the CI default.
   workers: 1,
   use: {

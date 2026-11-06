@@ -27,6 +27,7 @@ import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { GoogleDriveBlockMenu } from '@/components/editor/components/blocks/google-drive/GoogleDriveBlockMenu';
 import { hasUnfinishedImageUpload } from '@/components/editor/components/blocks/image/image-duplication';
 import { ImageBlockMenu } from '@/components/editor/components/blocks/image/ImageBlockMenu';
 import { MathEquationMenu } from '@/components/editor/components/blocks/math-equation/MathEquationMenu';
@@ -42,6 +43,7 @@ import {
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
 import {
   ImageBlockNode,
+  GoogleDriveBlockNode,
   PDFNode,
   CalloutNode,
   CodeNode,
@@ -720,6 +722,18 @@ function ControlsMenu({
     return (
       <ImageBlockMenu
         node={node as ImageBlockNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
+
+  if (onlySingleBlockSelected && node?.type === BlockType.GoogleDriveBlock && anchorEl && open) {
+    return (
+      <GoogleDriveBlockMenu
+        node={node as GoogleDriveBlockNode}
         anchorEl={anchorEl}
         onClose={onClose}
         anchorOrigin={popoverProps.anchorOrigin}
