@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RefObject } from 'react';
 
-import { getImageUrl } from '@/utils/authenticated-image';
+import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
 import { acquireDisplaySizeImage } from '@/utils/display-size-image-cache';
 
 import { useAuthenticatedImage, useAuthenticatedOriginalImage } from '../useAuthenticatedImage';
@@ -125,6 +125,29 @@ describe('useAuthenticatedImage', () => {
     await waitFor(() => expect(result.current).toBe('blob:full-photo'));
     expect(mockGetImageUrl).toHaveBeenCalledWith(FILE_URL);
     expect(mockAcquire).not.toHaveBeenCalled();
+  });
+
+  it('does not revoke a local preview when the fullscreen viewer closes', async () => {
+    mockGetImageUrl.mockResolvedValue('blob:local-preview');
+    const { result, unmount } = renderHook(() => useAuthenticatedOriginalImage('blob:local-preview'));
+
+    await waitFor(() => expect(mockGetImageUrl).toHaveBeenCalledWith('blob:local-preview'));
+    expect(result.current).toBe('blob:local-preview');
+    unmount();
+    expect(revokeBlobUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('releases its fetched URL even if it resolves after unmount (late=%s)', async (late) => {
+    let resolve!: (url: string) => void;
+
+    mockGetImageUrl.mockReturnValue(new Promise((done) => { resolve = done; }));
+    const { unmount } = renderHook(() => useAuthenticatedImage(FILE_URL));
+
+    if (late) unmount();
+    await act(async () => resolve('blob:owned-preview'));
+    if (!late) unmount();
+    expect(revokeBlobUrl).toHaveBeenCalledTimes(1);
+    expect(revokeBlobUrl).toHaveBeenCalledWith('blob:owned-preview');
   });
 
   it('leaves external URLs to the browser even with the option', async () => {

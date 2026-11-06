@@ -8,6 +8,7 @@ import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { getBlock, getBlockIndex } from '@/application/slate-yjs/utils/yjs';
 import { BlockData, CollabOrigin, YjsEditorKey } from '@/application/types';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
+import { hasUnfinishedImageUpload } from '@/components/editor/components/blocks/image/image-duplication';
 import { EditorContextState } from '@/components/editor/EditorContext';
 import { containsSubpage, prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
@@ -43,7 +44,7 @@ export async function duplicateBlockSelection(
     return entry ? [{ source: entry[0], blockId }] : [];
   });
 
-  if (selected.length === 0) return [];
+  if (selected.length === 0 || selected.some(({ source }) => hasUnfinishedImageUpload(editor, source))) return [];
   const prepared = await prepareSubpageFragment(
     selected.map(({ source }) => source),
     context
@@ -54,6 +55,14 @@ export async function duplicateBlockSelection(
     if (editor.readOnly || !YjsEditor.connected(editor)) return [];
     editor.flushLocalChanges();
     if (selected.some(({ blockId }) => !getBlock(blockId, editor.sharedRoot))) return [];
+    if (
+      selected.some(({ blockId }) => {
+        const live = findSlateEntryByBlockId(editor, blockId)?.[0];
+
+        return live && hasUnfinishedImageUpload(editor, live);
+      })
+    )
+      return [];
     const fragments = prepared.fragment.map((node, index) =>
       containsSubpage([selected[index].source]) ? convertSlateFragmentTo(stripInlineCommentIds([node])) : undefined
     );

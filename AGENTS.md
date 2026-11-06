@@ -87,6 +87,7 @@ This is a regression checklist and record of user expectations, not a claim that
 - Test actual pointer dragging across a cross-origin iframe, not just keyboard resizing. Suspend preview pointer input only during an active resize and restore it on completion/cancellation, keeping normal scrolling and pagination available.
 - Cancel captured resize gestures when the source, account, alignment, or saved dimensions change; do not apply an old gesture to a replacement file or overwrite a collaborator's resize.
 - Resize keyboard arrows must match the handle's axis and edge: Left/Right for horizontal handles, Up/Down for vertical handles, with the correct direction for top/left edges.
+- Persisting a resize must not remount the handle and lose keyboard focus. Verify repeated arrow presses, while still cancelling an active pointer gesture when a collaborator changes the saved dimensions.
 - Preserve plan-dependent upload limits. Verify free-plan rejection/upgrade behavior and permitted Pro-plan file sizes; do not bypass the limit while simplifying upload UX.
 
 ## Block-specific issue history and acceptance criteria
@@ -122,6 +123,8 @@ This is a regression checklist and record of user expectations, not a claim that
 
 ### Image
 
+- CI follow-up (2026-11-05): alignment options use “Align left/center/right”. When testing lazy-loaded duplicates after reload, scroll the stable block rather than the image node, which is replaced when validation supplies its source. Keep dedicated Playwright configs aligned with `.eslintignore.web` and type-check them through the integration-test tsconfig.
+- Preserve the shared editor's 40px image placeholder and 24px trailing action slot. Apply `data-media-placeholder` to the empty surface so shared padding does not wrap or inset a populated image.
 - Fullscreen copy action uses the normal copy icon and a success toast.
 - Duplicate must load correctly without a spurious error banner.
 - Pasted block-link mentions use the photo filename and shared truncation/style rules.
@@ -133,6 +136,10 @@ This is a regression checklist and record of user expectations, not a claim that
 - Image upload copy uses “Drag & drop a file or click to Browse”; no paste-URL suffix.
 - Empty Ask AI dismisses on Escape/outside click.
 - Use the specified Figma slash-menu icons.
+- Clipboard data can contain both image bytes and HTML. Insert one image from the file bytes; do not also parse the HTML into a duplicate. Chromium rich/file paste tests must exercise beforeinput or the native clipboard.
+- Preserve typed captions, IME, multiline input, and removal. Unsplash needs keyboard navigation, cancellable search, and best-effort download tracking that cannot block insertion.
+- Persist safe upload-limit classifications across reload, including workspace storage limits, and suppress Retry for terminal quotas. Ignore stale upload completion after source-type transitions, even if the source type later becomes supported again.
+- Fullscreen backdrop clicks must close the viewer; only an actual drag should suppress dismissal. Copy failures must show error feedback without a success toast.
 
 ### Google Drive Embed
 
@@ -149,6 +156,7 @@ This is a regression checklist and record of user expectations, not a claim that
 - Implement invalid-link bookmark fallback and supported provider error/reconnect states. Do not invent an AppFlowy password-unlock flow for Google-hosted permissions.
 - Match Flutter access recovery for 403/404 separately from retryable provider failures such as 500. After access is restored, explicitly selecting the same file/account again must retry its preview; a subscription keyed only by file ID can stay stuck on the reconnect state. Keep ordinary focus, caption and screenshot updates stable.
 - The user switched the local environment to `beta.appflowy.cloud` and requested a restart. Read the current environment at task time; do not silently revert the backend or assume every worktree uses the same configuration.
+- For local testing against beta, verify the exact origin. On 2026-11-02, beta allowed `http://localhost:3006` but omitted Access-Control-Allow-Origin for `http://127.0.0.1:3006`, blocking login. Prefer the verified localhost URL; restart the task frontend after `.env` changes and check the served runtime config. A credential rejection after CORS is fixed is a separate sign-in problem, not an image-block failure.
 - When merging shared editor spacing changes, put `data-media-placeholder` on the empty Drive surface itself. Keep the populated preview outside placeholder padding, and verify both surfaces in the browser.
 - Include new Playwright configs in the dedicated test TypeScript project and the existing main ESLint exclusions. Run the full `pnpm lint` command to catch root config files missed by focused source lint.
 - In provider-error tests, wait for the initial authenticated metadata response before installing the failure mock; Picker metadata can render the footer before the preview request finishes. For scroll containment, record the outer scroll position after hovering the target, because Playwright may scroll it into view.

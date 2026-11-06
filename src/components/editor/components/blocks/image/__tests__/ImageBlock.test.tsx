@@ -31,6 +31,7 @@ jest.mock('slate-react', () => ({
 }));
 
 jest.mock('@/components/editor/EditorContext', () => ({
+  useBlockSelected: () => false,
   useEditorContext: () => ({
     uploadFile: jest.fn(),
     viewId: 'view-id',
@@ -41,6 +42,8 @@ jest.mock('@/components/editor/EditorContext', () => ({
 jest.mock('@/components/editor/components/block-popover/BlockPopoverContext', () => ({
   usePopoverContext: () => ({ openPopover: mockOpenPopover }),
 }));
+
+jest.mock('@/application/slate-yjs/utils/editor', () => ({ findSlateEntryByBlockId: () => null }));
 
 jest.mock('@/application/slate-yjs/command', () => ({
   CustomEditor: { setBlockData: (...args: unknown[]) => mockSetBlockData(...args) },
@@ -60,13 +63,12 @@ jest.mock('@/utils/file', () => ({
 
 jest.mock('@/components/editor/components/blocks/image/ImageRender', () => ({
   __esModule: true,
-  default: ({ localUrl, node, showToolbar }: { localUrl?: string; node: ImageBlockNode; showToolbar?: boolean }) => (
+  default: ({ localUrl, node }: { localUrl?: string; node: ImageBlockNode }) => (
     <div
       data-testid='image-render'
       data-display-url={localUrl || node.data.url}
       data-local-url={localUrl}
       data-url={node.data.url}
-      data-show-toolbar={showToolbar ? 'true' : 'false'}
     />
   ),
 }));
@@ -93,33 +95,48 @@ beforeEach(() => {
   mockGetStoredFile.mockResolvedValue({ url: 'blob:local-preview' });
 });
 
+jest.mock('@/components/app/app.hooks', () => ({ useAIEnabled: () => false }));
+jest.mock('@/components/editor/components/blocks/pdf/PDFUploadLimitDialog', () => ({
+  PDFUploadLimitDialog: () => null,
+}));
+
+it('keeps unknown source metadata opaque and recovers when a supported source arrives', () => {
+  const original = imageNode({ url: 'https://example.com/opaque', image_type: 99 as ImageType });
+  const saved = JSON.stringify(original);
+  const { rerender } = render(
+    <ImageBlock node={original}>
+      <span />
+    </ImageBlock>
+  );
+
+  expect(screen.queryByTestId('image-render')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'web.imageBlock.options' })).toBeNull();
+  expect(JSON.stringify(original)).toBe(saved);
+  rerender(
+    <ImageBlock node={imageNode({ url: 'https://example.com/photo.png', image_type: ImageType.External })}>
+      <span />
+    </ImageBlock>
+  );
+  expect(screen.getByTestId('image-render')).toBeTruthy();
+  expect(mockSetBlockData).not.toHaveBeenCalled();
+});
+
+it('offers no editing actions for an empty read-only image', () => {
+  mockReadOnly = true;
+  render(
+    <ImageBlock node={imageNode({})}>
+      <span />
+    </ImageBlock>
+  );
+  expect(screen.queryByRole('button', { name: 'web.imageBlock.options' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'document.plugins.image.addAnImageDesktop' })).toHaveProperty(
+    'disabled',
+    true
+  );
+});
+
 describe('ImageBlock upload status', () => {
-  it.each([true, false])('keeps current hover state when upload finishes (still inside: %s)', async (stillInside) => {
-    const { container, rerender } = render(
-      <ImageBlock node={imageNode({ pending_upload_id: 'pending', retry_local_url: 'local-file', url: '' })}>
-        <span />
-      </ImageBlock>
-    );
-
-    await screen.findByTestId('image-render');
-    fireEvent.mouseEnter(container.firstElementChild!);
-    expect(screen.getByTestId('image-render').getAttribute('data-show-toolbar')).toBe('false');
-    if (!stillInside) fireEvent.mouseLeave(container.firstElementChild!);
-
-    rerender(
-      <ImageBlock node={imageNode({ pending_upload_id: '', retry_local_url: '', url: 'https://example.com/image.png' })}>
-        <span />
-      </ImageBlock>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('image-render').getAttribute('data-show-toolbar')).toBe(String(stillInside));
-    });
-    fireEvent.mouseLeave(container.firstElementChild!);
-    expect(screen.getByTestId('image-render').getAttribute('data-show-toolbar')).toBe('false');
-    expect(mockSetBlockData).not.toHaveBeenCalled();
-  });
-
+  // CSS hover after upload completion is exercised in image-hover.spec.ts with the real renderer.
   it('keeps the rendered local preview when the pending upload succeeds', async () => {
     const retryLocalUrl = 'stored-file-id';
     const { rerender } = render(

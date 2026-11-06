@@ -7,11 +7,13 @@ export const test = base.extend<object, { integrationsURL: string }>({
   integrationsURL: [
     async ({ browserName }, use, workerInfo) => {
       const { createServer } = await import('vite');
+      // Load CJS plugins natively; Playwright's ESM transform removes require.cache
+      // when Vite discovers this config through its dynamic config loader.
+      const postcss = createRequire(import.meta.url)('../../postcss.config.cjs');
       const server = await createServer({
         cacheDir: `node_modules/.vite/integrations-${browserName}-${workerInfo.workerIndex}`,
         logLevel: 'error',
-        // Load CJS plugins with Node, outside Playwright's module transform.
-        css: { postcss: createRequire(import.meta.url)('../../postcss.config.cjs') },
+        css: { postcss },
         optimizeDeps: {
           entries: [
             'playwright/support/connections.fixture.tsx',
@@ -19,6 +21,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
             'playwright/support/math-equation.fixture.tsx',
             'playwright/support/code-block.fixture.tsx',
             'playwright/support/pdf.fixture.tsx',
+            'playwright/support/image.fixture.tsx',
             'playwright/support/google-drive.fixture.tsx',
             'playwright/support/dashboard-owned-clone.fixture.tsx',
             'playwright/support/dashboard-view-startup.fixture.tsx',
@@ -41,12 +44,13 @@ export const test = base.extend<object, { integrationsURL: string }>({
 
 export function fixtureHTML(
   entry:
-    | 'google-drive'
     | 'connections'
     | 'integrations'
     | 'math-equation'
     | 'code-block'
     | 'pdf'
+    | 'image'
+    | 'google-drive'
     | 'dashboard-owned-clone'
     | 'dashboard-view-startup'
     | 'chart-settings'

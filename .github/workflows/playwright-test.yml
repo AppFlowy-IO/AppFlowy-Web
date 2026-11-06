@@ -86,7 +86,8 @@ jobs:
     if: ${{ !inputs.interop_only }}
     name: 'Code blocks and Mermaid (light and dark)'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -134,6 +135,34 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pdf-browser-results
+          path: test-results/
+          retention-days: 7
+
+  image:
+    if: ${{ !inputs.interop_only }}
+    name: 'Image blocks (light and dark)'
+    runs-on: ubuntu-24.04
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test image editing and appearance
+        run: pnpm test:e2e:image
+      - name: Upload image screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-browser-results
           path: test-results/
           retention-days: 7
 

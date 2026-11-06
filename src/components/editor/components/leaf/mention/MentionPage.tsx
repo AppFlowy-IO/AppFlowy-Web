@@ -12,6 +12,7 @@ import { getBlocks } from '@/application/slate-yjs/utils/yjs';
 import {
   BlockType,
   GoogleDriveBlockData,
+  ImageBlockData,
   MentionType,
   PDFBlockData,
   ViewLayout,
@@ -22,6 +23,7 @@ import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.sv
 import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { driveName } from '@/components/editor/components/blocks/google-drive/drive-data';
+import { imageName } from '@/components/editor/components/blocks/image/image-data';
 import { pdfFileName } from '@/components/editor/components/blocks/pdf/pdf-data';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
@@ -31,6 +33,10 @@ import { usePageReferenceMetadata } from './usePageReferenceMetadata';
 import './style.css';
 
 function blockReferenceText(node: Element | Text): string {
+  if (Element.isElement(node) && node.type === BlockType.ImageBlock) {
+    return imageName(node.data as ImageBlockData);
+  }
+
   if (Element.isElement(node) && node.type === BlockType.PDFBlock) {
     return pdfFileName(node.data as PDFBlockData);
   }

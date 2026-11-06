@@ -4,11 +4,10 @@ import { checkImage, CheckImageErrorKind, CheckImageResult } from '@/utils/image
 import { Log } from '@/utils/log';
 
 /**
- * Polling state machine. Note: this tracks the *fetch* lifecycle, not the
- * rendered `<img>`'s decode lifecycle — the `<img>`'s native onLoad is what
- * flips `isImageReady` independently.
+ * Polling state machine. Fetch success stays in loading until the rendered
+ * `<img>` has decoded; its native onLoad transitions to ready.
  */
-export type LoadPhase = 'loading' | 'pending' | 'failed';
+export type LoadPhase = 'loading' | 'pending' | 'failed' | 'ready';
 
 /**
  * Backoff schedules (ms). Total wall-clock budget is ~5 minutes — long
@@ -67,7 +66,7 @@ function useLatest<T>(value: T) {
 export interface UseImageWithRetryResult {
   /** URL to put on the rendered `<img src>`. Empty until the fetch succeeds. */
   src: string;
-  /** Fetch-loop phase (independent of `<img>` decode). */
+  /** Fetch/decode phase. Only the rendered `<img>` can mark it ready. */
   phase: LoadPhase;
   /** True once the `<img>` has actually painted. Use to gate visibility. */
   isImageReady: boolean;
@@ -87,21 +86,17 @@ export interface UseImageWithRetryResult {
  * URL change / manual retry.
  *
  * Why this is a hook, not inline in `Img.tsx`:
- *   - The state machine is non-trivial (3 phases × abort controllers ×
+ *   - The state machine is non-trivial (phases × abort controllers ×
  *     timers × refs to dodge stale closures). Keeping it outside the
  *     render function makes both the orchestration and the JSX readable
  *     in isolation.
  *   - Unit-testable with React Testing Library + a `fetch` mock; the JSX
  *     stays focused on accessibility / styling.
  */
-export function useImageWithRetry(
-  url: string,
-  onReady?: () => void
-): UseImageWithRetryResult {
+export function useImageWithRetry(url: string, onReady?: () => void): UseImageWithRetryResult {
   const [phase, setPhase] = useState<LoadPhase>('loading');
   const [src, setSrc] = useState('');
   const [lastError, setLastError] = useState<CheckImageResult | null>(null);
-  const [isImageReady, setIsImageReady] = useState(false);
 
   // Refs let event handlers and async loops read the latest values without
   // subscribing — keeps `runCheck`'s identity stable so its useEffect
@@ -109,10 +104,11 @@ export function useImageWithRetry(
   const onReadyRef = useLatest(onReady);
   const urlRef = useLatest(url);
   const phaseRef = useLatest(phase);
-  // The blob URL we're currently rendering. Tracked separately from `src`
-  // state because we need ref-stable access from the async loop in order
-  // to revoke it correctly on swap/unmount.
-  const currentBlobUrlRef = useRef<string>('');
+  const currentUrlRef = useRef('');
+  const notifiedUrlRef = useRef('');
+  // Only fetched blob URLs belong to this hook. Upload previews are borrowed
+  // from FileHandler and can still be in use by another image or the gallery.
+  const ownedBlobUrlRef = useRef('');
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const timersRef = useRef<Set<number>>(new Set());
 
@@ -134,18 +130,18 @@ export function useImageWithRetry(
   }, []);
 
   const revokePreviousBlob = useCallback(() => {
-    if (currentBlobUrlRef.current && currentBlobUrlRef.current.startsWith('blob:')) {
-      URL.revokeObjectURL(currentBlobUrlRef.current);
-      currentBlobUrlRef.current = '';
-    }
+    if (ownedBlobUrlRef.current) URL.revokeObjectURL(ownedBlobUrlRef.current);
+    ownedBlobUrlRef.current = '';
+    currentUrlRef.current = '';
   }, []);
 
   const runCheck = useCallback(
     async (targetUrl: string) => {
       cancelAllInflight();
-      setIsImageReady(false);
+      notifiedUrlRef.current = '';
 
       if (!targetUrl) {
+        setSrc('');
         setPhase('loading');
         setLastError(null);
         return;
@@ -219,7 +215,7 @@ export function useImageWithRetry(
         }
 
         if (controller.signal.aborted) {
-          if (result.ok && result.validatedUrl?.startsWith('blob:')) {
+          if (result.ok && result.validatedUrl !== targetUrl && result.validatedUrl?.startsWith('blob:')) {
             URL.revokeObjectURL(result.validatedUrl);
           }
 
@@ -229,19 +225,15 @@ export function useImageWithRetry(
         if (result.ok) {
           const newUrl = result.validatedUrl || '';
 
-          if (
-            currentBlobUrlRef.current &&
-            currentBlobUrlRef.current !== newUrl &&
-            currentBlobUrlRef.current.startsWith('blob:')
-          ) {
-            URL.revokeObjectURL(currentBlobUrlRef.current);
-          }
+          if (ownedBlobUrlRef.current && ownedBlobUrlRef.current !== newUrl)
+            URL.revokeObjectURL(ownedBlobUrlRef.current);
 
-          currentBlobUrlRef.current = newUrl;
+          ownedBlobUrlRef.current = newUrl !== targetUrl && newUrl.startsWith('blob:') ? newUrl : '';
+          currentUrlRef.current = newUrl;
           setSrc(newUrl);
           setLastError(null);
-          // Stay in 'loading' until <img> fires onLoad and we flip
-          // isImageReady. That keeps the spinner up across the decode.
+          // Stay in 'loading' until <img> fires onLoad. That keeps the
+          // spinner up across the decode.
           setPhase('loading');
           settled = true;
           controllersRef.current.delete(controller);
@@ -310,22 +302,21 @@ export function useImageWithRetry(
   }, [runCheck, urlRef]);
 
   const onImageLoaded = useCallback(() => {
-    if (!currentBlobUrlRef.current) return;
-    setIsImageReady(true);
+    if (!currentUrlRef.current) return;
+    setPhase('ready');
     setLastError(null);
     // Notify the parent once the bytes are visible, not just downloaded.
-    onReadyRef.current?.();
+    if (notifiedUrlRef.current !== currentUrlRef.current) {
+      notifiedUrlRef.current = currentUrlRef.current;
+      onReadyRef.current?.();
+    }
   }, [onReadyRef]);
 
   const onImageError = useCallback(() => {
-    // Ignore the initial empty-src error: React renders `<img src="">`
-    // before the fetch loop has produced a validated URL, and some browsers
-    // fire `error` for that. Only treat errors as terminal once we've
-    // actually handed the <img> a real source.
-    if (!currentBlobUrlRef.current) return;
+    // Only treat errors as terminal once we've handed the <img> a real source.
+    if (!currentUrlRef.current) return;
     // The browser couldn't decode the bytes we gave it (rare — corrupted
     // blob, format mismatch). Treat as a format error and stop retrying.
-    setIsImageReady(false);
     setLastError({
       ok: false,
       status: 0,
@@ -338,7 +329,7 @@ export function useImageWithRetry(
   return {
     src,
     phase,
-    isImageReady,
+    isImageReady: phase === 'ready',
     lastError,
     retry,
     onImageLoaded,
