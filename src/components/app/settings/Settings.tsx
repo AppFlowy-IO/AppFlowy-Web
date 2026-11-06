@@ -14,6 +14,7 @@ import SettingMenu from '@/components/app/settings/SettingMenu';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { useMcpConfiguration, useMcpLicenseRequired } from '@/components/mcp/useMcpConfiguration';
 import { Progress } from '@/components/ui/progress';
+import { isLocalDevelopment } from '@/utils/runtime-config';
 import { canManageWorkspaceBilling } from '@/utils/subscription';
 
 const ConnectionsPanel = lazy(() =>
@@ -51,10 +52,13 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   );
   // Billing exists only on the official cloud, and only the owner can change a workspace's plan.
   const showBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isOfficialHosted);
+  // The MCP service is not ready on the servers yet, so only local development (`pnpm dev`) offers the MCP tab.
+  // Production builds hide it, even where server-info names the service.
+  const aiAppsAllowed = isLocalDevelopment();
   // The MCP tab exists where the MCP service is known (APPFLOWY_MCP_BASE_URL or Cloud server-info's mcp_url), and
   // on a self-hosted server whose license does not include MCP, where it asks for a license upgrade.
-  const showAiApps = mcpConfiguration.status === 'configured' || mcpLicenseRequired;
-  const aiAppsMissing = mcpConfiguration.status === 'not_configured' && !mcpLicenseRequired;
+  const showAiApps = aiAppsAllowed && (mcpConfiguration.status === 'configured' || mcpLicenseRequired);
+  const aiAppsMissing = !aiAppsAllowed || (mcpConfiguration.status === 'not_configured' && !mcpLicenseRequired);
   // Owners see how many AI app approval requests are waiting.
   const aiAppsPendingRequests = useMcpPendingRequestCount(
     workspaceId,
@@ -78,14 +82,17 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     const item = search.get('setting');
 
     if (item) {
-      setSelectedItem(Object.values(SettingMenuItem).find((value) => value === item) ?? SettingMenuItem.ACCOUNT);
+      const requested = Object.values(SettingMenuItem).find((value) => value === item) ?? SettingMenuItem.ACCOUNT;
+
+      // Without the MCP tab, its deep link opens Account rather than flashing the tab's loading state.
+      setSelectedItem(requested === SettingMenuItem.AI_APPS && !aiAppsAllowed ? SettingMenuItem.ACCOUNT : requested);
       onRequestOpen?.();
       setSearch((prev) => {
         prev.delete('setting');
         return prev;
       });
     }
-  }, [search, setSearch, onRequestOpen]);
+  }, [search, setSearch, onRequestOpen, aiAppsAllowed]);
 
   const handleImport = useCallback(() => {
     // Reuse the workspace importer after closing Settings so only one dialog owns focus.

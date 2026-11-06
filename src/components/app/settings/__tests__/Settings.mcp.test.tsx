@@ -26,12 +26,15 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) =>
 // Modules read the runtime config while they load, so it lives inside the mock.
 jest.mock('@/utils/runtime-config', () => {
   const config: Record<string, string> = {};
+  // Settings offers the MCP tab only under the Vite dev server for now.
+  const localDevelopment = { value: true };
 
   return {
     mockRuntimeConfig: config,
+    mockLocalDevelopment: localDevelopment,
     getConfigValue: (key: string, fallback: string) => config[key] ?? fallback,
     isDevelopmentOrTestEnvironment: () => true,
-    isLocalDevelopment: () => false,
+    isLocalDevelopment: () => localDevelopment.value,
   };
 });
 // Inside the app the auth layer refreshes server-info; Settings only reads the snapshot.
@@ -58,9 +61,10 @@ jest.mock('@/components/app/settings/mcp/McpPanel', () => ({
   default: ({ workspaceId }: { workspaceId: string }) => <div data-testid='mcp-panel' data-workspace-id={workspaceId} />,
 }));
 
-const mockConfig = jest.requireMock<{ mockRuntimeConfig: Record<string, string> }>(
-  '@/utils/runtime-config'
-).mockRuntimeConfig;
+const { mockRuntimeConfig: mockConfig, mockLocalDevelopment } = jest.requireMock<{
+  mockRuntimeConfig: Record<string, string>;
+  mockLocalDevelopment: { value: boolean };
+}>('@/utils/runtime-config');
 
 // Without APPFLOWY_BASE_URL in the config, the snapshot belongs to the default Cloud URL.
 const CLOUD = 'https://test.appflowy.cloud';
@@ -84,6 +88,7 @@ function renderSettings({ search = '', onRequestOpen = jest.fn() } = {}) {
 describe('Settings AI apps entry', () => {
   beforeEach(() => {
     mockWorkspaceId = 'workspace-1';
+    mockLocalDevelopment.value = true;
     Object.keys(mockConfig).forEach((key) => delete mockConfig[key]);
     resetMcpConfigurationForTests();
     updateServerInfo(CLOUD, SERVER_INFO_LOADING);
@@ -176,6 +181,41 @@ describe('Settings AI apps entry', () => {
     expect(screen.queryByTestId('mcp-panel')).toBeNull();
     expect(screen.getByTestId('account-panel')).toBeTruthy();
   });
+
+  // Until the MCP service is ready, production builds hide the tab however the server offers it.
+  it.each([
+    ['server-info names the MCP service', () => setServerInfo(serverInfo('https://mcp.example.com'))],
+    [
+      'APPFLOWY_MCP_BASE_URL names it',
+      () => {
+        mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
+      },
+    ],
+    [
+      'a self-hosted license lacks it',
+      () => setServerInfo({ status: 'available', info: { enable_page_history: true, mcp_status: 'license_required' } }),
+    ],
+  ])('hides AI apps outside local development when %s', (_case, arrange) => {
+    mockLocalDevelopment.value = false;
+    arrange();
+    renderSettings();
+
+    expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
+    expect(screen.getByTestId('settings-menu-connections')).toBeTruthy();
+  });
+
+  it('opens Account from the AI apps deep link outside local development', () => {
+    mockLocalDevelopment.value = false;
+    setServerInfo(serverInfo('https://mcp.example.com'));
+    const onRequestOpen = jest.fn();
+
+    renderSettings({ search: '?setting=AI_APPS', onRequestOpen });
+
+    expect(onRequestOpen).toHaveBeenCalled();
+    expect(screen.getByTestId('account-panel')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-panel')).toBeNull();
+    expect(screen.queryByRole('status', { name: 'settings.mcp.loading' })).toBeNull();
+  });
 });
 
 interface Settle {
@@ -251,6 +291,7 @@ describe('Settings AI apps badge', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWorkspaceId = 'workspace-1';
+    mockLocalDevelopment.value = true;
     Object.keys(mockConfig).forEach((key) => delete mockConfig[key]);
     resetMcpConfigurationForTests();
     resetMcpPendingRequestCountsForTests();
@@ -376,6 +417,18 @@ describe('Settings AI apps badge', () => {
     }
 
     expect(screen.getByTestId('settings-menu-ai_apps-badge').textContent).toBe('1');
+  });
+
+  it('asks the MCP service nothing outside local development', async () => {
+    mockLocalDevelopment.value = false;
+    mockWorkspaceInfo = workspaceInfo(Role.Owner);
+    requests.mockResolvedValue(pending(3));
+    renderSettings();
+    await act(settleAnswers);
+
+    expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
+    expect(status).not.toHaveBeenCalled();
+    expect(requests).not.toHaveBeenCalled();
   });
 
   it('never asks for members', () => {
