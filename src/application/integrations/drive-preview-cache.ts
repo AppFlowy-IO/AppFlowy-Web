@@ -27,6 +27,13 @@ interface WorkspacePreviewCache {
 const workspaces = new Map<string, WorkspacePreviewCache>();
 const CACHE_TTL_MS = 60_000;
 
+export interface DrivePreviewSnapshot {
+  thumbnail?: string;
+  metadata?: DriveFile;
+  status: 'loading' | 'ready' | 'reconnect' | 'error';
+  version: number;
+}
+
 function cachedRequest<T>(cache: Map<string, CachedRequest<T>>, key: string, load: () => Promise<T>) {
   const cached = cache.get(key);
 
@@ -105,7 +112,7 @@ export function subscribeDrivePreview(
   fileId: string,
   userId: string,
   email: string | undefined,
-  onChange: (snapshot: { thumbnail?: string; version: number }) => void
+  onChange: (snapshot: DrivePreviewSnapshot) => void
 ) {
   const workspace = workspaceCache(workspaceId, userId);
   let file = workspace.files.get(fileId);
@@ -124,7 +131,7 @@ export function subscribeDrivePreview(
     const isCurrent = () =>
       active && version === currentVersion && !signal.aborted && getTokenParsed()?.user.id === userId;
 
-    onChange({ version: currentVersion });
+    onChange({ version: currentVersion, status: 'loading' });
     if (!isCurrent()) return;
     void (async () => {
       const connections = (
@@ -137,28 +144,48 @@ export function subscribeDrivePreview(
           (first, second) => Number(second.account_identifier === email) - Number(first.account_identifier === email)
         );
 
+      let failed = false;
+
       for (const connection of connections) {
         if (!isCurrent()) return;
         const metadata = await cachedRequest(fileCache.requests, connection.id, () =>
           getDriveFile(workspaceId, connection.id, fileId, signal)
-        ).catch(() => undefined);
+        ).catch((error: unknown) => {
+          const failure = error as { httpStatus?: number; code?: number; response?: { status?: number } } | null;
+          const status = failure?.httpStatus || failure?.response?.status || failure?.code;
+
+          // Match Flutter's access recovery for 403/404. Transport/provider
+          // failures should offer retry rather than starting another OAuth flow.
+          if (status !== 401 && status !== 403 && status !== 404 && status !== 1003) failed = true;
+          return undefined;
+        });
         const url = metadata?.thumbnailLink;
 
-        if (url && !metadata.trashed && isCurrent()) {
-          const parsed = new URL(url);
+        if (metadata?.trashed) failed = true;
 
-          if (
-            parsed.protocol === 'https:' &&
-            (parsed.hostname.endsWith('.googleusercontent.com') || parsed.hostname === 'drive.google.com')
-          ) {
-            onChange({ thumbnail: url, version: currentVersion });
+        if (metadata && !metadata.trashed && isCurrent()) {
+          let thumbnail: string | undefined;
+
+          try {
+            const parsed = new URL(url || '');
+
+            if (
+              parsed.protocol === 'https:' &&
+              (parsed.hostname.endsWith('.googleusercontent.com') || parsed.hostname === 'drive.google.com')
+            )
+              thumbnail = url;
+          } catch {
+            /* Missing or malformed thumbnails still allow the Google preview. */
           }
 
+          onChange({ thumbnail, metadata, status: 'ready', version: currentVersion });
           return;
         }
       }
+
+      if (isCurrent()) onChange({ status: failed ? 'error' : 'reconnect', version: currentVersion });
     })().catch(() => {
-      /* Keep the original Google preview on permission/network failures. */
+      if (isCurrent()) onChange({ status: 'error', version: currentVersion });
     });
   };
 

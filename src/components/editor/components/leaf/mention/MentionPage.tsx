@@ -9,10 +9,21 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { getBlocks } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, MentionType, PDFBlockData, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  BlockType,
+  GoogleDriveBlockData,
+  ImageBlockData,
+  MentionType,
+  PDFBlockData,
+  ViewLayout,
+  YjsEditorKey,
+  YSharedRoot,
+} from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
 import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { driveName } from '@/components/editor/components/blocks/google-drive/drive-data';
+import { imageName } from '@/components/editor/components/blocks/image/image-data';
 import { pdfFileName } from '@/components/editor/components/blocks/pdf/pdf-data';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
@@ -22,9 +33,15 @@ import { usePageReferenceMetadata } from './usePageReferenceMetadata';
 import './style.css';
 
 function blockReferenceText(node: Element | Text): string {
+  if (Element.isElement(node) && node.type === BlockType.ImageBlock) {
+    return imageName(node.data as ImageBlockData);
+  }
+
   if (Element.isElement(node) && node.type === BlockType.PDFBlock) {
     return pdfFileName(node.data as PDFBlockData);
   }
+
+  if (Element.isElement(node) && node.type === BlockType.GoogleDriveBlock) return driveName(node.data as GoogleDriveBlockData);
 
   return CustomEditor.getBlockTextContent(node, 2);
 }

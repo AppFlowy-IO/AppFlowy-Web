@@ -182,4 +182,67 @@ describe('shared Drive previews', () => {
     expect(api.listConnections).toHaveBeenCalledTimes(2);
     expect(api.getDriveFile).toHaveBeenCalledTimes(2);
   });
+  it('reports missing authorization instead of spinning indefinitely', async () => {
+    mockUserId = undefined;
+    const guest = renderHook(() => useDrivePreview('workspace', 'file'));
+
+    expect(guest.result.current.status).toBe('reconnect');
+    expect(api.listConnections).not.toHaveBeenCalled();
+    mockUserId = 'user';
+    api.listConnections.mockResolvedValue([]);
+    guest.rerender();
+    await waitFor(() => expect(guest.result.current.status).toBe('reconnect'));
+  });
+
+  it('keeps metadata without a thumbnail and never refreshes on focus or visibility changes', async () => {
+    api.getDriveFile.mockResolvedValue({
+      id: 'file',
+      name: 'Roadmap',
+      mimeType: 'application/vnd.google-apps.document',
+    });
+    const preview = renderHook(() => useDrivePreview('workspace', 'file'));
+
+    await waitFor(() => expect(preview.result.current.status).toBe('ready'));
+    expect(preview.result.current.metadata?.name).toBe('Roadmap');
+    expect(preview.result.current.thumbnail).toBeUndefined();
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(flush);
+    expect(api.getDriveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [401, 'reconnect'],
+    [403, 'reconnect'],
+    [404, 'reconnect'],
+    [500, 'error'],
+    [503, 'error'],
+  ])('distinguishes provider failure %s from reconnect', async (httpStatus, status) => {
+    api.getDriveFile.mockRejectedValue({ httpStatus });
+    const preview = renderHook(() => useDrivePreview('workspace', 'file'));
+
+    await waitFor(() => expect(preview.result.current.status).toBe(status));
+    api.getDriveFile.mockResolvedValue(file('file', 'recovered'));
+    act(() => preview.result.current.reload());
+    await waitFor(() => expect(preview.result.current.status).toBe('ready'));
+  });
+
+  it('retries the same file after explicit reselection but not ordinary rerenders', async () => {
+    api.getDriveFile.mockRejectedValue({ httpStatus: 403 });
+    const preview = renderHook(({ selectedAt }) => useDrivePreview('workspace', 'file', undefined, selectedAt), {
+      initialProps: { selectedAt: 1 },
+    });
+
+    await waitFor(() => expect(preview.result.current.status).toBe('reconnect'));
+    api.getDriveFile.mockResolvedValue(file('file', 'recovered'));
+    preview.rerender({ selectedAt: 1 });
+    await act(flush);
+    expect(api.getDriveFile).toHaveBeenCalledTimes(1);
+    preview.rerender({ selectedAt: 2 });
+    await waitFor(() => expect(preview.result.current.status).toBe('ready'));
+    expect(preview.result.current.thumbnail).toBe(file('file', 'recovered').thumbnailLink);
+    expect(api.getDriveFile).toHaveBeenCalledTimes(2);
+  });
 });

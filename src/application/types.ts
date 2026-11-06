@@ -155,6 +155,12 @@ export enum ImageType {
 }
 
 export interface ImageBlockData extends BlockData {
+  name?: string;
+  caption?: string;
+  link?: string;
+  source?: 'upload' | 'network' | 'unsplash';
+  upload_error?: boolean;
+  upload_error_code?: number | null;
   url?: string;
   width?: number;
   align?: AlignType;
@@ -205,6 +211,7 @@ export interface AudioBlockData extends BlockData {
 }
 
 export interface GoogleDriveBlockData extends BlockData {
+  caption?: string;
   file_id?: string;
   url?: string;
   name?: string;
@@ -212,6 +219,9 @@ export interface GoogleDriveBlockData extends BlockData {
   uploaded_at?: number;
   width_factor?: number;
   height_factor?: number;
+  mime_type?: string;
+  size?: string;
+  modified_time?: string;
 }
 
 export interface AIMeetingBlockData extends BlockData {

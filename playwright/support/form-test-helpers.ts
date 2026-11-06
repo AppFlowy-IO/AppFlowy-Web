@@ -196,7 +196,7 @@ export async function toggleQuestionMenuItem(page: Page, questionIndex: number, 
  * skeleton can't navigate to actual controls. After the popover
  * mounts, wait until the share controls land before returning.
  */
-export async function openSharePopover(page: Page): Promise<void> {
+export async function openSharePopover(page: Page, loadingTimeout = 60000): Promise<void> {
   await FormSelectors.shareButton(page).click();
   // First wait — popover surface exists at all.
   await expect(page.locator('[data-slot="popover-content"]').first()).toBeVisible({
@@ -205,7 +205,7 @@ export async function openSharePopover(page: Page): Promise<void> {
   // Cloud can spend ~14s checking permissions before returning a retryable
   // 1054 during form creation. Give the controller's bootstrap retry time to
   // finish, while still checking the actual controls (or failure) below.
-  await expect(page.getByTestId('form-share-popover-loading')).toBeHidden({ timeout: 60000 });
+  await expect(page.getByTestId('form-share-popover-loading')).toBeHidden({ timeout: loadingTimeout });
   // The loading skeleton is not a settled state. The Anonymous toggle
   // is mounted only after the share bootstrap has completed.
   await expect(page.getByTestId('form-share-anonymous-toggle')).toBeVisible({

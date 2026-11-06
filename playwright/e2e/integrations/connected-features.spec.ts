@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 
+import { mockGooglePicker, pickDriveFile } from '../../support/google-picker';
 import { fixtureHTML, test } from '../../support/integrations-server';
 
 test.use({ launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } });
@@ -10,6 +11,7 @@ test('connected Drive browsing and Calendar reminders lead to private, transcrib
   context,
 }, testInfo) => {
   await context.grantPermissions(['microphone']);
+  await mockGooglePicker(page);
   const event = {
     id: 'planning',
     summary: 'Product planning',
@@ -48,18 +50,11 @@ test('connected Drive browsing and Calendar reminders lead to private, transcrib
 
       if (endpoint.startsWith('/drive/'))
         data = {
-          data: {
-            files: [
-              {
-                id: 'file',
-                name: body?.connection_id === 'drive-work' ? 'Private roadmap' : 'Personal notes',
-                mimeType: 'application/vnd.google-apps.document',
-              },
-            ],
-          },
+          data: { id: 'private-file', name: 'Private roadmap', mimeType: 'application/vnd.google-apps.document' },
         };
       else data = { data: endpoint.endsWith('/planning') ? event : { items: [event] } };
-    } else if (path.endsWith('/streaming-token')) data = { token: 'test-ephemeral-token', expires_in_seconds: 60 };
+    } else if (path.endsWith('/token')) data = { access_token: 'test-google-token' };
+    else if (path.endsWith('/streaming-token')) data = { token: 'test-ephemeral-token', expires_in_seconds: 60 };
     else if (path.endsWith('/update-used-transcribe-duration')) data = { remaining_duration: 3600 };
 
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 0, data, message: '' }) });
@@ -100,14 +95,14 @@ test('connected Drive browsing and Calendar reminders lead to private, transcrib
     })
   );
   await page.goto(new URL('/integrations-fixture', integrationsURL).href);
-  await expect(page.getByRole('button', { name: 'Personal notes', exact: true })).toBeVisible({ timeout: 60_000 });
-  await page.getByLabel('Google Drive account').selectOption('drive-work');
-  await page.getByRole('button', { name: 'Private roadmap', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose from work@example.com' }).click();
+  await pickDriveFile(page);
   await expect(page.getByTestId('selected-file')).toHaveText('Private roadmap · work@example.com');
-  await page.getByLabel('Search files').fill("O'Brien");
-  await expect
-    .poll(() => requests.some((request) => String((request.params as { q?: string })?.q).includes("O\\'Brien")))
-    .toBe(true);
+  expect(
+    requests.some(
+      (request) => request.connection_id === 'drive-work' && request.endpoint === '/drive/v3/files/private-file'
+    )
+  ).toBe(true);
   await expect(page.getByText('Your meeting is starting soon')).toBeVisible();
   const popup = page.waitForEvent('popup');
 

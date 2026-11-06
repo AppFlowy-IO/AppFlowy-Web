@@ -3,11 +3,11 @@ import { PopoverProps } from '@mui/material/Popover';
 import { useCallback, useContext, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Path, Transforms } from 'slate';
-import { ReactEditor, useSlateStatic } from 'slate-react';
+import { ReactEditor, useSlateSelector, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
-import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
@@ -27,6 +27,9 @@ import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { GoogleDriveBlockMenu } from '@/components/editor/components/blocks/google-drive/GoogleDriveBlockMenu';
+import { hasUnfinishedImageUpload } from '@/components/editor/components/blocks/image/image-duplication';
+import { ImageBlockMenu } from '@/components/editor/components/blocks/image/ImageBlockMenu';
 import { MathEquationMenu } from '@/components/editor/components/blocks/math-equation/MathEquationMenu';
 import { PDFBlockMenu } from '@/components/editor/components/blocks/pdf/PDFBlockMenu';
 import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
@@ -38,9 +41,21 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { PDFNode , CalloutNode, CodeNode, DatabaseNode, MathEquationNode, OutlineNode } from '@/components/editor/editor.type';
+import {
+  ImageBlockNode,
+  GoogleDriveBlockNode,
+  PDFNode,
+  CalloutNode,
+  CodeNode,
+  DatabaseNode,
+  MathEquationNode,
+  OutlineNode,
+} from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
-import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
+import {
+  captureBlockCreationTarget,
+  captureExistingDatabaseBlock,
+} from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -275,11 +290,22 @@ function ControlsMenu({
     createDatabaseView,
     deletePage,
     updatePage,
-  } = useEditorContext();
+  } = editorContext;
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
   const selectedBlockId = selectedBlockIds?.[0];
   const node = useBlockMenuNode(selectedBlockId);
+  const duplicateBlocked = useSlateSelector(
+    useCallback(
+      (current) =>
+        (selectedBlockIds ?? []).some((id) => {
+          const live = findSlateEntryByBlockId(current, id)?.[0];
+
+          return live && hasUnfinishedImageUpload(current as YjsEditor, live);
+        }),
+      [selectedBlockIds]
+    )
+  );
   const isSimpleTable = onlySingleBlockSelected && node?.type === BlockType.SimpleTableBlock;
   const isSimpleTextBlock = !!node && simpleTextBlockTypes.has(node.type);
   const isCallout = node?.type === BlockType.CalloutBlock;
@@ -376,10 +402,14 @@ function ControlsMenu({
 
             if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
             const layouts: Partial<Record<ViewLayout, DatabaseViewLayout>> = {
-              [ViewLayout.Grid]: DatabaseViewLayout.Grid, [ViewLayout.Board]: DatabaseViewLayout.Board,
-              [ViewLayout.Calendar]: DatabaseViewLayout.Calendar, [ViewLayout.Chart]: DatabaseViewLayout.Chart,
-              [ViewLayout.List]: DatabaseViewLayout.List, [ViewLayout.Gallery]: DatabaseViewLayout.Gallery,
-              [ViewLayout.Feed]: DatabaseViewLayout.Feed, [ViewLayout.Form]: DatabaseViewLayout.Form,
+              [ViewLayout.Grid]: DatabaseViewLayout.Grid,
+              [ViewLayout.Board]: DatabaseViewLayout.Board,
+              [ViewLayout.Calendar]: DatabaseViewLayout.Calendar,
+              [ViewLayout.Chart]: DatabaseViewLayout.Chart,
+              [ViewLayout.List]: DatabaseViewLayout.List,
+              [ViewLayout.Gallery]: DatabaseViewLayout.Gallery,
+              [ViewLayout.Feed]: DatabaseViewLayout.Feed,
+              [ViewLayout.Form]: DatabaseViewLayout.Form,
               [ViewLayout.Timeline]: DatabaseViewLayout.Timeline,
             };
             const requestedLayout = layouts[layout];
@@ -387,18 +417,26 @@ function ControlsMenu({
               const current = creationRef.current;
 
               target.assertCurrent();
-              if (current.context.workspaceId !== workspaceId ||
-                current.context.viewId !== editorContext.viewId || editor.firstBody) {
+              if (
+                current.context.workspaceId !== workspaceId ||
+                current.context.viewId !== editorContext.viewId ||
+                editor.firstBody
+              ) {
                 throw new Error('Linked Database creation owner changed');
               }
             };
 
             if (requestedLayout === undefined) throw new Error('Unsupported Database view layout');
             const response = await createLinkedDefaultDatabaseView({
-              workspaceId, requestViewId: parentId, sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+              workspaceId,
+              requestViewId: parentId,
+              sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
               layout: requestedLayout,
               payload: { parent_view_id: parentId, database_id: databaseId, name: sourceView?.name, embedded: true },
-              loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+              loadView,
+              bindViewSync,
+              scheduleDeferredCleanup,
+              assertCurrent,
               findExistingActivation: (id) => captureExistingDatabaseBlock(editor, parentId, databaseId, id),
               activate: async (id) => {
                 const ensure = creationRef.current.outline?.ensureViewVisibleInOutline;
@@ -587,7 +625,10 @@ function ControlsMenu({
         hasDatabaseBlock = true;
 
         try {
-          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(selectedNode as DatabaseNode, newBlockId);
+          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(
+            selectedNode as DatabaseNode,
+            newBlockId
+          );
 
           setDatabaseBlockData(newBlockId, nextDatabaseBlockData);
         } catch (error) {
@@ -627,7 +668,9 @@ function ControlsMenu({
         onClick: () => {
           const blockIds = selectedBlockIds ?? [];
 
-          if (blockIds.some((blockId) => findSlateEntryByBlockId(editor, blockId)?.[0].type === BlockType.SimpleTableBlock)) {
+          if (
+            blockIds.some((blockId) => findSlateEntryByBlockId(editor, blockId)?.[0].type === BlockType.SimpleTableBlock)
+          ) {
             deleteBlocksWithSimpleTable(editor, blockIds);
           } else {
             blockIds.forEach((blockId) => CustomEditor.deleteBlock(editor, blockId));
@@ -675,9 +718,40 @@ function ControlsMenu({
     );
   }
 
+  if (onlySingleBlockSelected && node?.type === BlockType.ImageBlock && anchorEl && open) {
+    return (
+      <ImageBlockMenu
+        node={node as ImageBlockNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
+
+  if (onlySingleBlockSelected && node?.type === BlockType.GoogleDriveBlock && anchorEl && open) {
+    return (
+      <GoogleDriveBlockMenu
+        node={node as GoogleDriveBlockNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
+
   if (onlySingleBlockSelected && node?.type === BlockType.PDFBlock && anchorEl && open) {
-    return <PDFBlockMenu node={node as PDFNode} anchorEl={anchorEl} onClose={onClose}
-      anchorOrigin={popoverProps.anchorOrigin} transformOrigin={popoverProps.transformOrigin} />;
+    return (
+      <PDFBlockMenu
+        node={node as PDFNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
   }
 
   if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
@@ -706,21 +780,25 @@ function ControlsMenu({
         onClose();
       }}
       open={open}
-      onWheel={isSimpleTable ? (event) => {
-        const entry = findSlateEntryByBlockId(editor, selectedBlockIds?.[0] ?? '');
+      onWheel={
+        isSimpleTable
+          ? (event) => {
+              const entry = findSlateEntryByBlockId(editor, selectedBlockIds?.[0] ?? '');
 
-        if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
-      } : undefined}
+              if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
+            }
+          : undefined
+      }
       {...popoverProps}
       PaperProps={
-        hasTextBlockMenu
-          ? { ...popoverProps?.PaperProps, className: 'text-block-menu-paper' }
-          : popoverProps?.PaperProps
+        hasTextBlockMenu ? { ...popoverProps?.PaperProps, className: 'text-block-menu-paper' } : popoverProps?.PaperProps
       }
     >
       <div
         data-testid='controls-menu'
-        className={`flex flex-col p-2 ${hasTextBlockMenu ? 'text-block-menu w-[238px]' : 'w-[240px]'} ${isSimpleTable ? 'simple-table-block-menu' : ''} ${isCallout ? 'callout-block-menu' : ''}`}
+        className={`flex flex-col p-2 ${hasTextBlockMenu ? 'text-block-menu w-[238px]' : 'w-[240px]'} ${
+          isSimpleTable ? 'simple-table-block-menu' : ''
+        } ${isCallout ? 'callout-block-menu' : ''}`}
       >
         {isCallout && (
           <div className='px-2 py-1.5 text-xs font-medium leading-[18px] text-text-tertiary'>
@@ -732,6 +810,7 @@ function ControlsMenu({
             <Button
               data-testid={option.key}
               key={option.key}
+              disabled={option.key === 'duplicate' && duplicateBlocked}
               startIcon={option.icon}
               size={'small'}
               color={'inherit'}
@@ -752,7 +831,9 @@ function ControlsMenu({
 
         {onlySingleBlockSelected && node && <BlockTurnInto key={node.blockId} node={node} onClose={onClose} />}
 
-        {isSimpleTable && selectedBlockId ? <SimpleTableBlockControls key={selectedBlockId} blockId={selectedBlockId} onClose={onClose} /> : null}
+        {isSimpleTable && selectedBlockId ? (
+          <SimpleTableBlockControls key={selectedBlockId} blockId={selectedBlockId} onClose={onClose} />
+        ) : null}
 
         {isSimpleTextBlock && node && (
           <>

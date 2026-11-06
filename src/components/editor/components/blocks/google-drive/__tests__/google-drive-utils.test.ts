@@ -97,9 +97,7 @@ describe('buildGoogleDriveEmbeddedUrl', () => {
     });
 
     it('on Drive folder URL — placed before #grid fragment', () => {
-      const result = buildGoogleDriveEmbeddedUrl(
-        'https://drive.google.com/drive/folders/folder123?resourcekey=key-xyz'
-      );
+      const result = buildGoogleDriveEmbeddedUrl('https://drive.google.com/drive/folders/folder123?resourcekey=key-xyz');
 
       expect(result).toBe('https://drive.google.com/embeddedfolderview?id=folder123&resourcekey=key-xyz#grid');
       // Make absolutely sure the key is not after the fragment (would be ignored by browser)
@@ -119,9 +117,7 @@ describe('buildGoogleDriveEmbeddedUrl', () => {
     });
 
     it('url-encodes resourcekey values that contain special characters', () => {
-      const result = buildGoogleDriveEmbeddedUrl(
-        'https://drive.google.com/file/d/abc123/view?resourcekey=a+b%2Fc'
-      );
+      const result = buildGoogleDriveEmbeddedUrl('https://drive.google.com/file/d/abc123/view?resourcekey=a+b%2Fc');
 
       // The original raw value (decoded by URL parser) is "a b/c"; output must re-encode.
       expect(result).toBe('https://drive.google.com/file/d/abc123/preview?resourcekey=a%20b%2Fc');
