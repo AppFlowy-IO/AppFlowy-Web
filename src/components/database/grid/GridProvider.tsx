@@ -5,6 +5,8 @@ import type { GridGrouping } from '@/application/database-yjs';
 import {
   EMBEDDED_GRID_INITIAL_ROW_LIMIT,
   EMBEDDED_GRID_LOAD_MORE_INCREMENT,
+  getRenderRowKey,
+  RenderRowType,
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
@@ -15,6 +17,7 @@ import {
   GridContext,
   GridHydrationContext,
   GridInteractionContext,
+  GridStickyHeaderContext,
 } from '@/components/database/grid/useGridContext';
 
 type GridProviderProps = {
@@ -28,6 +31,27 @@ type GridProviderContentProps = GridProviderProps & {
   historyScopeId: string;
   ownsHistoryScope: boolean;
 };
+
+/**
+ * The header row of `rows` that shows the open property editor: the one it was
+ * opened from (`openedFrom`) while the stream still has it, else the first. A
+ * grouped stream repeats its header row once per expanded group; the sticky
+ * header is not in the stream.
+ */
+function getPropertyEditorRowKey(rows: RenderRow[], openedFrom?: string) {
+  let firstRowKey: string | undefined;
+
+  for (const row of rows) {
+    if (row.type !== RenderRowType.Header) continue;
+
+    const rowKey = getRenderRowKey(row);
+
+    if (rowKey === openedFrom) return rowKey;
+    firstRowKey ??= rowKey;
+  }
+
+  return firstRowKey;
+}
 
 export const GridProvider = (props: GridProviderProps) => {
   const inheritedHistoryScope = useDatabaseHistoryScopeContext();
@@ -70,7 +94,11 @@ function GridProviderContent({
   ownsHistoryScope,
 }: GridProviderContentProps) {
   const { rowOrders, hydrating } = grouping;
-  const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
+  // The field whose property editor is open, and the header row it was opened from.
+  const [activeProperty, setActiveProperty] = useState<{ fieldId: string; rowKey?: string }>();
+  const setActivePropertyId = useCallback((fieldId?: string, rowKey?: string) => {
+    setActiveProperty(fieldId ? { fieldId, rowKey } : undefined);
+  }, []);
   const { isDocumentBlock, activeViewId } = useDatabaseContext();
   // Each database view owns independent transient interaction state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,6 +126,11 @@ function GridProviderContent({
   const setRows = useCallback((value: RenderRow[]) => {
     setOptimisticRows({ base: initialRowsRef.current, value });
   }, []);
+  const activePropertyId = activeProperty?.fieldId;
+  const activePropertyRowKey = useMemo(
+    () => (activeProperty ? getPropertyEditorRowKey(rows, activeProperty.rowKey) : undefined),
+    [activeProperty, rows]
+  );
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -172,12 +205,12 @@ function GridProviderContent({
       rows,
       setRows,
       activePropertyId,
+      activePropertyRowKey,
       setActivePropertyId,
       remainingRowCount,
       lastVisibleRowId,
       loadMoreRows,
       revealCreatedRow,
-      showStickyHeader,
       setShowStickyHeader,
       isGrouped: grouping.isGrouped,
     }),
@@ -186,11 +219,12 @@ function GridProviderContent({
       rows,
       setRows,
       activePropertyId,
+      activePropertyRowKey,
+      setActivePropertyId,
       remainingRowCount,
       lastVisibleRowId,
       loadMoreRows,
       revealCreatedRow,
-      showStickyHeader,
       grouping.isGrouped,
     ]
   );
@@ -207,17 +241,19 @@ function GridProviderContent({
 
   return (
     <GridContext.Provider value={contextValue}>
-      <GridHydrationContext.Provider value={hydrating}>
-        <GridInteractionContext.Provider value={interactionContextValue}>
-          <div
-            ref={ref}
-            data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
-            className={'flex min-h-0 flex-1 flex-col'}
-          >
-            {children}
-          </div>
-        </GridInteractionContext.Provider>
-      </GridHydrationContext.Provider>
+      <GridStickyHeaderContext.Provider value={showStickyHeader}>
+        <GridHydrationContext.Provider value={hydrating}>
+          <GridInteractionContext.Provider value={interactionContextValue}>
+            <div
+              ref={ref}
+              data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
+              className={'flex min-h-0 flex-1 flex-col'}
+            >
+              {children}
+            </div>
+          </GridInteractionContext.Provider>
+        </GridHydrationContext.Provider>
+      </GridStickyHeaderContext.Provider>
     </GridContext.Provider>
   );
 }

@@ -101,7 +101,6 @@ function Providers({ children }: { children: ReactNode }) {
     remainingRowCount: 0,
     loadMoreRows: () => undefined,
     revealCreatedRow: () => undefined,
-    showStickyHeader: false,
     setShowStickyHeader: () => undefined,
     isGrouped: false,
   } as GridContextType;

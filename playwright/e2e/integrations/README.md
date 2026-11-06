@@ -1,5 +1,11 @@
 # Browser integration tests
 
+## Code blocks and Mermaid
+
+Run `pnpm test:e2e:code-block` for the light and dark editor suites. CI allows
+25 minutes for Chromium/system dependency setup, both theme projects, and
+uploading `code-block-browser-results` screenshots and traces.
+
 ## PDF Embed
 
 ```sh

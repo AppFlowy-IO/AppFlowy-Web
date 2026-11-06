@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SettingMenuItem } from '@/application/types';
+import { ReactComponent as AiAppsIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ManageDataIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as ConnectionsIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as BillingIcon } from '@/assets/icons/settings_credit_card.svg';
@@ -15,10 +16,21 @@ interface SettingMenuProps {
   onSelectItem: (item: SettingMenuItem) => void;
   /** Plan and Billing exist only for workspace owners on the official AppFlowy cloud. */
   showBilling?: boolean;
+  /** The MCP tab exists only once the MCP service is known (`useMcpConfiguration()`). */
+  showAiApps?: boolean;
+  /** Pending AI app approval requests an owner can answer; a count badge on the MCP tab when above 0. */
+  aiAppsPendingRequests?: number;
 }
 
-function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: SettingMenuProps) {
+function SettingMenu({
+  selectedItem,
+  onSelectItem,
+  showBilling = false,
+  showAiApps = false,
+  aiAppsPendingRequests,
+}: SettingMenuProps) {
   const { t } = useTranslation();
+  const aiAppsBadge = aiAppsPendingRequests && aiAppsPendingRequests > 0 ? aiAppsPendingRequests : undefined;
 
   const options = useMemo(() => {
     return [
@@ -47,6 +59,15 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
         label: t('settings.connections.menuLabel'),
         IconComponent: ConnectionsIcon,
       },
+      ...(showAiApps
+        ? [
+            {
+              value: SettingMenuItem.AI_APPS,
+              label: t('settings.mcp.menuLabel'),
+              IconComponent: AiAppsIcon,
+            },
+          ]
+        : []),
       ...(showBilling
         ? [
             {
@@ -62,7 +83,7 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
           ]
         : []),
     ];
-  }, [showBilling, t]);
+  }, [showAiApps, showBilling, t]);
 
   return (
     <div
@@ -81,6 +102,18 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
         >
           <option.IconComponent className={'h-5 w-5'} />
           <span className={'text-sm font-medium'}>{option.label}</span>
+          {option.value === SettingMenuItem.AI_APPS && aiAppsBadge !== undefined && (
+            <span
+              className={
+                'ml-auto inline-flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-fill-theme-thick px-1.5 text-xs font-medium text-text-on-fill'
+              }
+              title={t('settings.mcp.pendingRequestsBadge', { count: aiAppsBadge })}
+              aria-label={t('settings.mcp.pendingRequestsBadge', { count: aiAppsBadge })}
+              data-testid={'settings-menu-ai_apps-badge'}
+            >
+              {aiAppsBadge > 99 ? '99+' : aiAppsBadge}
+            </span>
+          )}
         </div>
       ))}
     </div>

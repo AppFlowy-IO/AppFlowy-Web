@@ -1,0 +1,114 @@
+import { ReactNode, useId } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import type { McpSetupAppId } from '@/application/mcp/setupApps';
+import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down_small.svg';
+import { cn } from '@/lib/utils';
+
+/**
+ * Lettered tiles in place of logos: the guide ships no third-party artwork.
+ * Colors are Badge pairs (light-2 background, thick-3 text), the avatar-initials palette, which has light and dark variants.
+ */
+const MONOGRAMS: Record<McpSetupAppId, { text: string; className: string }> = {
+  claude: { text: 'Cl', className: 'bg-badge-color-2-light-2 text-badge-color-2-thick-3' },
+  chatgpt: { text: 'Ch', className: 'bg-badge-color-10-light-2 text-badge-color-10-thick-3' },
+  'claude-code': { text: 'CC', className: 'bg-badge-color-4-light-2 text-badge-color-4-thick-3' },
+  codex: { text: 'Cx', className: 'bg-badge-color-20-light-2 text-badge-color-20-thick-3' },
+  vscode: { text: 'VS', className: 'bg-badge-color-12-light-2 text-badge-color-12-thick-3' },
+  other: { text: '+', className: 'bg-fill-content-visible text-text-secondary' },
+};
+
+export interface McpSetupAppCardProps {
+  app: McpSetupAppId;
+  name: string;
+  description: string;
+  /** This card's steps are shown. */
+  selected: boolean;
+  /** One of the caller's connections is this app (its verified catalog id matches). */
+  connected: boolean;
+  /** Id of the steps region this card expands. */
+  panelId: string;
+  onToggle: () => void;
+  /** The card's primary action (install link, vendor page or copy); it sits above the card's click area. */
+  action?: ReactNode;
+}
+
+/**
+ * One app of the setup gallery. The name is a disclosure button whose click
+ * area stretches over the whole card (an `::after` overlay), so a click
+ * anywhere expands the app's steps; the primary action stacks above it.
+ */
+export function McpSetupAppCard({
+  app,
+  name,
+  description,
+  selected,
+  connected,
+  panelId,
+  onToggle,
+  action,
+}: McpSetupAppCardProps) {
+  const { t } = useTranslation();
+  const descriptionId = useId();
+  const badgeId = useId();
+  const monogram = MONOGRAMS[app];
+
+  return (
+    <div
+      className={cn(
+        'relative flex min-w-0 flex-col gap-2 rounded-300 border px-4 py-3 transition-colors',
+        selected ? 'border-border-theme-thick' : 'border-border-primary hover:border-border-primary-hover'
+      )}
+      data-testid={`mcp-setup-app-card-${app}`}
+      data-selected={selected}
+      data-connected={connected}
+    >
+      <div className='flex min-w-0 items-center gap-3'>
+        <span
+          aria-hidden='true'
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-200 text-sm font-normal',
+            monogram.className
+          )}
+        >
+          {monogram.text}
+        </span>
+        <div className='flex min-w-0 flex-1 flex-col'>
+          <button
+            type='button'
+            aria-expanded={selected}
+            aria-controls={selected ? panelId : undefined}
+            aria-describedby={connected ? `${descriptionId} ${badgeId}` : descriptionId}
+            onClick={onToggle}
+            className={cn(
+              'min-w-0 break-words text-left text-sm font-medium text-text-primary outline-none',
+              "after:absolute after:inset-0 after:rounded-300 after:content-['']",
+              'focus-visible:after:ring-2 focus-visible:after:ring-border-theme-thick'
+            )}
+            data-testid={`mcp-client-tab-${app}`}
+          >
+            {name}
+          </button>
+          <p id={descriptionId} className='text-xs leading-[18px] text-text-secondary'>
+            {description}
+          </p>
+        </div>
+        <ChevronDownIcon
+          aria-hidden='true'
+          className={cn('h-5 w-5 shrink-0 text-icon-secondary transition-transform', selected && 'rotate-180')}
+        />
+      </div>
+      {connected && (
+        <span
+          id={badgeId}
+          className='inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full bg-fill-success-light px-2 py-px text-sm text-text-success-on-fill'
+          data-testid={`mcp-setup-app-connected-${app}`}
+        >
+          {t('mcp.setup.connected')}
+        </span>
+      )}
+      {/* Above the stretched click area, so the action keeps its own click. */}
+      {action && <div className='relative z-10 mt-auto min-w-0 pt-1'>{action}</div>}
+    </div>
+  );
+}

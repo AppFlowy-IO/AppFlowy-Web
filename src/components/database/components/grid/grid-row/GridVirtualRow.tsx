@@ -3,7 +3,7 @@ import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
@@ -57,8 +57,13 @@ function GridVirtualRow({
   const { isGrouped } = useGridContext();
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
+  const readOnly = useReadOnly();
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
+  // A stable ref callback keeps the memoized hover controls from re-rendering with the row.
+  const setDragHandle = useCallback((element: HTMLDivElement | null) => {
+    dragHandleRef.current = element;
+  }, []);
   const [state, setState] = useState<ItemState>(idleState);
   const sorts = useSortsSelector();
 
@@ -72,12 +77,17 @@ function GridVirtualRow({
   );
 
   const isRegularRow = rowType === RenderRowType.Row;
+  // Header cells read this context: a new value on each render of the row
+  // would re-render every header cell, with its field menu and dialogs.
+  const rowContextValue = useMemo(() => ({ isSticky }), [isSticky]);
 
   useEffect(() => {
     const element = innerRef.current;
     const dragHandle = dragHandleRef.current;
 
-    if (!element || !dragHandle || !isRegularRow || isGrouped) return;
+    // The handle mounts with the hover controls, which only an editable grid
+    // renders: `readOnly` re-runs this effect when they mount or unmount.
+    if (!element || !dragHandle || !isRegularRow || isGrouped || readOnly) return;
 
     const data = {
       instanceId,
@@ -124,19 +134,27 @@ function GridVirtualRow({
         },
       })
     );
-  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isGrouped, isRegularRow]);
+  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isGrouped, isRegularRow, readOnly]);
+
+  // Turning read-only mid-drag unregisters the row, and the adapter ends a drag (onDrop,
+  // onDragLeave) only for entries still registered, so the row resets here: not in the
+  // registrations' cleanups, which also run when a drag only re-registers (a new rowIndex), and
+  // only when it shows a drag, as setting even an unchanged state here renders every row again.
+  useEffect(() => {
+    if (readOnly && state.type !== GridDragState.IDLE) setState(idleState);
+  }, [readOnly, state.type]);
 
   useGridRowDraggable({
     elementRef: innerRef,
     dragHandleRef,
-    // Firefox prevents text selection inside a native draggable ancestor.
-    enabled: isRegularRow && !hasActiveCell && !isGrouped,
+    // Only an editable row has a handle. Firefox prevents text selection
+    // inside a native draggable ancestor.
+    enabled: isRegularRow && !readOnly && !hasActiveCell && !isGrouped,
     instanceId,
     rowId,
     rowIndex,
     setState,
   });
-  const readOnly = useReadOnly();
 
   const children = useMemo(() => {
     return uniqBy(columnItems, 'key').map((column) => {
@@ -154,11 +172,7 @@ function GridVirtualRow({
   }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
   return (
-    <GridRowProvider
-      value={{
-        isSticky,
-      }}
-    >
+    <GridRowProvider value={rowContextValue}>
       <div
         onMouseMove={() => setHoverRowKey(rowKey)}
         onMouseLeave={() => setHoverRowKey(undefined)}
@@ -170,9 +184,7 @@ function GridVirtualRow({
             <HoverControls
               compact={before < HOVER_CONTROLS_WIDTH}
               state={state}
-              dragHandleRef={(el) => {
-                dragHandleRef.current = el;
-              }}
+              dragHandleRef={setDragHandle}
               rowId={rowId}
               rowKey={rowKey}
               groupFieldId={rowData.groupFieldId}

@@ -11,6 +11,7 @@ import GridVirtualRow from '@/components/database/components/grid/grid-row/GridV
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
 import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
 import { PADDING_INLINE, useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import { useStableVirtualItems } from '@/components/database/components/grid/grid-table/useStableVirtualItems';
 import { RowsLoadingRow } from '@/components/database/components/loading/RowsLoadingRow';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
@@ -45,13 +46,16 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { dataSource, embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
   const isHistoryPreview = dataSource?.type === 'history';
 
-  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady, pinColumnHeader } = useGridVirtualizer({
-    data,
-    columns,
-  });
+  const { parentRef, virtualizer, columnVirtualizer, getColumnWidth, scrollMarginTop, isReady, pinColumnHeader } =
+    useGridVirtualizer({
+      data,
+      columns,
+    });
 
   const rowItems = virtualizer.getVirtualItems();
-  const columnItems = columnVirtualizer.getVirtualItems();
+  // Rows take the column items as a prop: a sideways scroll that renders the
+  // same columns keeps every row's render.
+  const columnItems = useStableVirtualItems(columnVirtualizer.getVirtualItems());
   const totalSize = columnVirtualizer.getTotalSize();
   const gridContentHeight = virtualizer.getTotalSize();
   const embeddedViewportStyle = getEmbeddedGridViewportStyle({
@@ -70,11 +74,16 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { setShowStickyHeader } = useGridContext();
   const stickyHeaderVisibleRef = useRef<boolean | null>(null);
 
+  // TanStack keeps the column sizes it computed until `measure()`, whatever
+  // `estimateSize` returns since. `getColumnWidth` is new whenever a width may
+  // change: new columns, or the New property column's fill once the grid or its
+  // paddings resize. While a column is dragged to a new width, its header
+  // follows the pointer outside React: re-measure when the drag ends.
   useEffect(() => {
     if (!isResizing) {
       columnVirtualizer.measure();
     }
-  }, [columnVirtualizer, isResizing, columns]);
+  }, [columnVirtualizer, isResizing, columns, getColumnWidth]);
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;

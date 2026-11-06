@@ -43,6 +43,8 @@ jest.mock('@/components/app/app.hooks', () => ({
   useRefreshUserWorkspaceInfo: () => jest.fn(),
   useAIEnabled: () => false,
   useAppOperations: () => ({ onChangeWorkspace: jest.fn() }),
+  // Self-hosted (useIsOfficialHosted above) with no subscription fetcher: billing entries stay hidden.
+  useGetSubscriptions: () => undefined,
 }));
 
 describe('Workspaces dropdown list visibility', () => {

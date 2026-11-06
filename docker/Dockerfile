@@ -19,6 +19,11 @@ RUN corepack enable && \
 # Copy source code
 COPY . .
 
+# Optional Google Drive Picker settings. .dockerignore keeps .env files out of
+# the build, so pass these as build args; unset, the build uses its defaults.
+ARG APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID
+ARG APPFLOWY_GOOGLE_DRIVE_PICKER_API_KEY
+
 # Build the application
 RUN APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
 

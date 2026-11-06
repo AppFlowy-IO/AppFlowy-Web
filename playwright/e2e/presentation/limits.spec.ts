@@ -50,6 +50,49 @@ for (const theme of ['light', 'dark']) {
   }
 }
 
+const SOURCE_TOO_LARGE = 'The source is too large for the AI model. Select fewer pages, a smaller view or shorter media.';
+
+for (const theme of ['light', 'dark']) {
+  for (const { width, message, actionOnFirstLine } of [
+    // Short enough for Retry analysis to share the first line, which the button makes taller.
+    { width: 1280, message: 'The source is too large for the AI model.', actionOnFirstLine: true },
+    // Wraps over several lines: the icon stays on the first.
+    { width: 390, message: SOURCE_TOO_LARGE, actionOnFirstLine: false },
+  ]) {
+    test(`${theme} ${width}px: a notice's icon is centred on its first line${actionOnFirstLine ? ', beside its action' : ''}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openFixture(page, `theme=${theme}&remaining=4&analysisError=${encodeURIComponent(message)}`);
+      await page.getByRole('button', { name: '4', exact: true }).click();
+      await page.getByRole('button', { name: 'Generate presentation' }).click();
+      const notice = page.locator('.ps-notice').filter({ hasText: message });
+
+      await expect(notice.getByRole('button', { name: 'Retry analysis' })).toBeVisible();
+      await notice.scrollIntoViewIfNeeded();
+      await notice.screenshot({ path: testInfo.outputPath('notice.png') });
+      const geometry = await notice.evaluate((element) => {
+        const centre = (rect: DOMRect) => rect.top + rect.height / 2;
+        const icon = element.querySelector('svg')!.getBoundingClientRect();
+        const text = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+          acceptNode: (node) => (node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+        }).nextNode()!;
+        const range = document.createRange();
+
+        range.selectNodeContents(text);
+        const firstLine = range.getClientRects()[0];
+        const action = element.querySelector('button')!.getBoundingClientRect();
+
+        return {
+          offset: centre(icon) - centre(firstLine),
+          actionOnFirstLine: action.top < firstLine.bottom && action.bottom > firstLine.top,
+        };
+      });
+
+      if (actionOnFirstLine) expect(geometry.actionOnFirstLine).toBe(true);
+      expect(Math.abs(geometry.offset), 'icon centre against the first text line').toBeLessThanOrEqual(1);
+    });
+  }
+}
+
 for (const role of ['owner', 'member']) {
   test(`zero allowance uses the existing ${role} workspace-upgrade flow`, async ({ page }) => {
     await openFixture(page, `remaining=0&role=${role}`);

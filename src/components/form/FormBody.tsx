@@ -65,6 +65,9 @@ export function FormBody({
 }) {
   const [answers, setAnswers] = useState<Record<string, FormAnswerValue>>(() => seedAnswers(schema.questions));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const questionsRef = useRef<HTMLFieldSetElement>(null);
+  const pendingInvalidQuestionRef = useRef<string>();
+  const fieldErrorCount = Object.keys(fieldErrors).length;
   const [submitState, setSubmitState] = useState<
     | { kind: 'idle' }
     | { kind: 'submitting' }
@@ -110,6 +113,38 @@ export function FormBody({
     });
   }, []);
 
+  const reportFieldErrors = useCallback(
+    (errors: Record<string, string>) => {
+      // Focus once per rejected submission, in authored question order. Editing
+      // an answer clears its error without jumping to another question.
+      pendingInvalidQuestionRef.current = schema.questions.find((question) => errors[question.id])?.id;
+      setFieldErrors(errors);
+    },
+    [schema.questions]
+  );
+
+  useEffect(() => {
+    const questionId = pendingInvalidQuestionRef.current;
+
+    pendingInvalidQuestionRef.current = undefined;
+    if (!questionId) return;
+
+    const question = Array.from(questionsRef.current?.querySelectorAll<HTMLElement>('[data-question-id]') ?? []).find(
+      (element) => element.dataset.questionId === questionId
+    );
+
+    if (!question) return;
+
+    // Long forms scroll inside the app shell, so window.scrollTo cannot reveal
+    // an error above the submit button. Reveal the question in its own scroller.
+    const input = question.querySelector<HTMLElement>(
+      'input:not(:disabled), textarea:not(:disabled), button:not(:disabled), [contenteditable="true"], [role="checkbox"]'
+    );
+
+    (input ?? question).focus({ preventScroll: true });
+    question.scrollIntoView?.({ block: 'center' });
+  }, [fieldErrors]);
+
   const handleSubmit = useCallback(async () => {
     if (submittingRef.current || retryBlocked) return;
 
@@ -120,7 +155,7 @@ export function FormBody({
     const localErrors = collectLocalErrors(schema.questions, answers);
 
     if (Object.keys(localErrors).length > 0) {
-      setFieldErrors(localErrors);
+      reportFieldErrors(localErrors);
       return;
     }
 
@@ -182,7 +217,7 @@ export function FormBody({
 
       if (res.kind === 'invalid') {
         submittingRef.current = false;
-        setFieldErrors(res.field_errors);
+        reportFieldErrors(res.field_errors);
         setSubmitState({ kind: 'idle' });
         return;
       }
@@ -222,7 +257,7 @@ export function FormBody({
       submittingRef.current = false;
       setSubmitState({ kind: 'error', message, loginUrl: publicError.loginUrl });
     }
-  }, [answers, previewMode, retryBlocked, schema.questions, token]);
+  }, [answers, previewMode, reportFieldErrors, retryBlocked, schema.questions, token]);
 
   const handleSubmitAnother = useCallback(() => {
     submittingRef.current = false;
@@ -265,6 +300,7 @@ export function FormBody({
       {!previewMode ? <FormRespondentStatus anonymous={schema.anonymous} /> : null}
 
       <fieldset
+        ref={questionsRef}
         data-testid='public-form-questions'
         disabled={submitState.kind === 'submitting'}
         aria-busy={submitState.kind === 'submitting'}
@@ -284,6 +320,11 @@ export function FormBody({
       </fieldset>
 
       <div className='flex flex-col items-start gap-2'>
+        {fieldErrorCount > 0 && (
+          <p role='alert' className='text-sm text-fill-default'>
+            Please review {fieldErrorCount} {fieldErrorCount === 1 ? 'answer' : 'answers'} before submitting.
+          </p>
+        )}
         {submitState.kind === 'error' && <p className='text-sm text-fill-default'>{submitState.message}</p>}
         {submitState.kind === 'error' && submitState.loginUrl ? (
           <Button data-testid='public-form-login' onClick={() => beginPublicFormAuthentication(token, 'login')}>

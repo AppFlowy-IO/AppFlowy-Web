@@ -1,10 +1,4 @@
-interface RuntimeConfig {
-  APPFLOWY_BASE_URL?: string;
-  APPFLOWY_GOTRUE_BASE_URL?: string;
-  APPFLOWY_WS_BASE_URL?: string;
-  APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID?: string;
-  APPFLOWY_GOOGLE_DRIVE_PICKER_API_KEY?: string;
-}
+import { resolveConfigValue, type RuntimeConfig } from './runtime-config-value';
 
 declare global {
   interface Window {
@@ -12,24 +6,17 @@ declare global {
   }
 }
 
+/**
+ * The runtime config the Docker entrypoint injected, else the build-time
+ * environment from Vite, else `defaultValue` (see `resolveConfigValue`).
+ */
 export function getConfigValue(key: keyof RuntimeConfig, defaultValue: string): string {
-  // First check runtime config (injected by Docker entrypoint)
-  if (typeof window !== 'undefined' && window.__APP_CONFIG__) {
-    const runtimeValue = window.__APP_CONFIG__[key];
-
-    if (runtimeValue && !runtimeValue.startsWith('${')) {
-      return runtimeValue;
-    }
-  }
-
-  // Fall back to build-time environment variables from Vite
-  const envValue = import.meta.env[key];
-
-  if (envValue) {
-    return envValue;
-  }
-
-  return defaultValue;
+  return resolveConfigValue(
+    key,
+    defaultValue,
+    typeof window === 'undefined' ? undefined : window.__APP_CONFIG__,
+    import.meta.env
+  );
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSortsSelector } from '@/application/database-yjs';
@@ -60,7 +60,7 @@ function RowMenuTooltipText({ canDrag }: { canDrag: boolean }) {
   );
 }
 
-export function HoverControls({
+function HoverControlsImpl({
   rowId,
   rowKey,
   groupFieldId,
@@ -238,5 +238,11 @@ export function HoverControls({
     </HoverControlsProvider>
   );
 }
+
+/**
+ * Memoized: a row re-renders whenever a sideways scroll changes the columns it
+ * renders, and its controls (two tooltips, a menu, buttons) have nothing new then.
+ */
+export const HoverControls = memo(HoverControlsImpl);
 
 export default HoverControls;

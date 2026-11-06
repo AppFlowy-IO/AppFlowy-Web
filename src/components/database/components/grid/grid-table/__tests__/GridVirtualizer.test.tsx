@@ -97,7 +97,6 @@ function GridHarness({ rowOrders, hydrating }: { rowOrders?: Row[]; hydrating?: 
     remainingRowCount: 0,
     loadMoreRows: noop,
     revealCreatedRow: noop,
-    showStickyHeader: false,
     setShowStickyHeader: noop,
     isGrouped: false,
   };

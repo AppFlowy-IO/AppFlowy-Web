@@ -50,14 +50,19 @@ type FieldOperation = {
   variant?: 'destructive';
 };
 
+/** A header cell's field menu, with its property editor and confirmations; the cell renders it beside its content. */
 function GridFieldMenu({
   fieldId,
-  children,
+  rowKey,
+  isSticky,
   menuOpen,
   setMenuOpen,
 }: {
   fieldId: string;
-  children: React.ReactNode;
+  /** The render key of the cell's header row. */
+  rowKey: string;
+  /** Whether the cell is in the sticky header, which holds every field menu while it shows. */
+  isSticky?: boolean;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
 }) {
@@ -72,7 +77,11 @@ function GridFieldMenu({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearCellsConfirmOpen, setClearCellsConfirmOpen] = useState(false);
 
-  const { activePropertyId, setActivePropertyId } = useGridContext();
+  const { activePropertyId, activePropertyRowKey, setActivePropertyId } = useGridContext();
+  // A grouped grid repeats its header row once per group, and one copy of the
+  // cell shows the property editor: the sticky header's while it holds the
+  // field menus, else the one in the header row `activePropertyRowKey` names.
+  const propertyMenuOpen = activePropertyId === fieldId && (isSticky || activePropertyRowKey === rowKey);
 
   const onDuplicateProperty = useDuplicatePropertyDispatch();
   const onHideProperty = useHidePropertyDispatch();
@@ -116,7 +125,7 @@ function GridFieldMenu({
         label: t('grid.field.editProperty'),
         icon: <EditIcon />,
         onSelect: () => {
-          setActivePropertyId(fieldId);
+          setActivePropertyId(fieldId, rowKey);
           setMenuOpen(false);
         },
       });
@@ -130,7 +139,7 @@ function GridFieldMenu({
         onSelect: () => {
           const id = onAddPropertyLeft(fieldId);
 
-          setActivePropertyId(id);
+          setActivePropertyId(id, rowKey);
         },
       },
       {
@@ -140,7 +149,7 @@ function GridFieldMenu({
         onSelect: () => {
           const id = onAddPropertyRight(fieldId);
 
-          setActivePropertyId(id);
+          setActivePropertyId(id, rowKey);
         },
       },
       {
@@ -201,6 +210,7 @@ function GridFieldMenu({
     isPrimary,
     setActivePropertyId,
     fieldId,
+    rowKey,
     setMenuOpen,
     onAddPropertyLeft,
     onAddPropertyRight,
@@ -216,7 +226,6 @@ function GridFieldMenu({
 
   return (
     <>
-      {children}
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button tabIndex={-1} className={'pointer-events-none absolute left-0 right-0 top-0 z-[-1] opacity-0'} />
@@ -293,7 +302,7 @@ function GridFieldMenu({
       </DropdownMenu>
 
       <PropertyMenu
-        open={activePropertyId === fieldId}
+        open={propertyMenuOpen}
         onOpenChange={(status) => {
           if (!status) {
             setActivePropertyId(undefined);
