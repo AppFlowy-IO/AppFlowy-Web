@@ -10,7 +10,10 @@ test -f "$cloud/docker-compose-web-ci.yml"
 admission="$cloud/libs/database/src/gateway_api_limits.rs"
 routes="$cloud/nginx/api-limits-ci.conf"
 if [[ -f "$admission" || -f "$routes" ]]; then
-  if [[ ! -f "$admission" || ! -f "$routes" || ! -f "$cloud/docker-compose-ci.yml" ]]; then
+  # Newer sources build Gateway separately, so Cloud no longer contains the
+  # former admission module. Its routes and canonical Compose fixture remain
+  # the capability contract; the caller validates the merged services.
+  if [[ ! -f "$routes" || ! -f "$cloud/docker-compose-ci.yml" ]]; then
     echo 'Incomplete Server Gateway admission fixture' >&2
     exit 1
   fi
