@@ -1,0 +1,9 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Image / Error / Lose Connection">
+<path id="Subtract" d="M18 8C15.7909 8 14 9.79086 14 12V52C14 54.2091 15.7909 56 18 56H46C48.2091 56 50 54.2091 50 52V20L38 8H18Z" fill-rule="evenodd" clip-rule="evenodd" fill="white"/>
+<rect id="Rectangle 1611231684" x="24" y="24" width="3" height="6" rx="1.5" fill="#B5BBD3"/>
+<rect id="Rectangle 1611231685" x="37" y="24" width="3" height="6" rx="1.5" fill="#B5BBD3"/>
+<path id="Rectangle 1611231687" d="M38 8L50 20L40 20C38.8954 20 38 19.1046 38 18L38 8Z" fill="#CED3E6"/>
+<path id="Subtract_2" d="M38 40C38 36.6863 35.3137 34 32 34C28.6863 34 26 36.6863 26 40H38Z" fill-rule="evenodd" clip-rule="evenodd" fill="#CED3E6"/>
+</g>
+</svg>

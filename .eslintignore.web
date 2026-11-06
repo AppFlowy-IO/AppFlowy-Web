@@ -16,6 +16,7 @@ playwright.block-spacing.config.ts
 playwright.document-width.config.ts
 playwright.code-block.config.ts
 playwright.pdf.config.ts
+playwright.google-drive.config.ts
 playwright.integrations.config.ts
 playwright.presentation.config.ts
 playwright.presentation-live.config.ts

@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+
 import { test as base } from '@playwright/test';
 
 /** A separate Vite instance per worker keeps these browser tests independent of a running app or Cloud. */
@@ -8,6 +10,8 @@ export const test = base.extend<object, { integrationsURL: string }>({
       const server = await createServer({
         cacheDir: `node_modules/.vite/integrations-${browserName}-${workerInfo.workerIndex}`,
         logLevel: 'error',
+        // Load CJS plugins with Node, outside Playwright's module transform.
+        css: { postcss: createRequire(import.meta.url)('../../postcss.config.cjs') },
         optimizeDeps: {
           entries: [
             'playwright/support/connections.fixture.tsx',
@@ -15,6 +19,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
             'playwright/support/math-equation.fixture.tsx',
             'playwright/support/code-block.fixture.tsx',
             'playwright/support/pdf.fixture.tsx',
+            'playwright/support/google-drive.fixture.tsx',
             'playwright/support/dashboard-owned-clone.fixture.tsx',
             'playwright/support/dashboard-view-startup.fixture.tsx',
             'playwright/support/chart-settings.fixture.tsx',
@@ -34,7 +39,18 @@ export const test = base.extend<object, { integrationsURL: string }>({
   ],
 });
 
-export function fixtureHTML(entry: 'connections' | 'integrations' | 'math-equation' | 'code-block' | 'pdf' | 'dashboard-owned-clone' | 'dashboard-view-startup' | 'chart-settings') {
+export function fixtureHTML(
+  entry:
+    | 'google-drive'
+    | 'connections'
+    | 'integrations'
+    | 'math-equation'
+    | 'code-block'
+    | 'pdf'
+    | 'dashboard-owned-clone'
+    | 'dashboard-view-startup'
+    | 'chart-settings'
+) {
   return `<!doctype html><html lang="en"><head><title>AppFlowy integration tests</title></head>
   <body id="body"><div id="root"></div><script type="module">
     import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);
