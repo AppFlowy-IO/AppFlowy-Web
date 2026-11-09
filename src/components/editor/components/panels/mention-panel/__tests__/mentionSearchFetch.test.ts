@@ -249,6 +249,35 @@ describe('fetchMentionSearchSections', () => {
       expect(jest.getTimerCount()).toBe(0);
     });
 
+    it.each([false, true])('keeps the first answer current when the rows retry fails (refresh: %s)', async (refresh) => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const retryError = new Error('rows retry failed');
+      const lanes = new MentionRequestLanes('session');
+      const search = createTicketSearch({
+        primary: [() => later(80, pages)],
+        rows: [() => later(80, partialRows), () => later(80, { error: retryError })],
+      });
+      const result = fetchMentionSearchSections({
+        searchMentions: search,
+        requests: typedRequests,
+        cacheKey: CACHE_KEY,
+        hasQuery: true,
+        isCurrent: () => true,
+        issueTicket: issueOn(lanes, refresh),
+      });
+
+      await jest.advanceTimersByTimeAsync(660);
+      const settled = await result;
+
+      expect(search).toHaveBeenCalledTimes(3);
+      expect(settled.sections).toEqual(mergeMentionSearchResponses([pages, partialRows]).sections);
+      expect(settled.databaseRowResponse).toBe(partialRows);
+      // The retry replaced the first rows ticket on its lane, so the answer rests on the primary.
+      expect(settled.tickets.map(({ lane }) => lane)).toEqual([refresh ? 'refresh' : 'primary']);
+      expect(settled.tickets.every((ticket) => lanes.isCurrent(ticket))).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith(retryError);
+    });
+
     it('sends a cache refresh on the refresh lanes', async () => {
       const lanes = new MentionRequestLanes('session');
       const search = createTicketSearch({ primary: [() => later(80, pages)], rows: [() => later(80, rows)] });

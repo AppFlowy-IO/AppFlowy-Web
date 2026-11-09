@@ -543,15 +543,12 @@ export function MentionPanel({
 
           // An answer that a newer request on its lane replaced, or that was aborted, must not
           // overwrite the cached entry.
-          if (!isCurrentResult(result)) return;
+          if (isCurrentResult(result)) cacheMentionSections(result);
+          if (!isCurrentRequest()) return;
 
-          cacheMentionSections(result);
-
-          if (isCurrentRequest()) {
-            applied = true;
-            setMentionSections(result.sections);
-            setMentionSearchFailed(false);
-          }
+          applied = true;
+          setMentionSections(result.sections);
+          setMentionSearchFailed(false);
         })
           .then(() => {
             if (applied || !isCurrentRequest()) return;
@@ -595,7 +592,10 @@ export function MentionPanel({
       lanes.abort(MENTION_TYPED_LANES);
     }
 
-    // Current on every lane it came from: no newer request replaced it and nothing aborted it.
+    // Current on every lane it came from: no newer request replaced it and nothing aborted it. This
+    // decides only whether the answer may be cached. Whether it is shown depends on the effect:
+    // while the effect is current, only its own rows retry replaces one of its requests, and the
+    // fetch leaves that ticket out.
     function isCurrentResult(result: MentionSectionsFetchResult) {
       return result.tickets.every((ticket) => lanes.isCurrent(ticket));
     }
@@ -632,11 +632,8 @@ export function MentionPanel({
     function runSearch() {
       void fetchMentionSections({ refresh: false, onSections: setMentionSections })
         .then((result) => {
-          if (!isCurrentResult(result)) return;
-
           // A bare answer is not aborted by typing, so it is still cached after the query changed.
-          cacheMentionSections(result);
-
+          if (isCurrentResult(result)) cacheMentionSections(result);
           if (!isCurrentRequest()) return;
 
           setMentionSections(result.sections);

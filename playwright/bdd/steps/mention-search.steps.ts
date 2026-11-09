@@ -1,4 +1,4 @@
-import { APIRequestContext, expect, Page } from '@playwright/test';
+import { APIRequestContext, expect, Page, Request } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -71,10 +71,16 @@ type MentionSearchResponse = {
 type RecordedMentionRequest = {
   body: { query?: string; include?: string[] } | null;
   headers: Record<string, string>;
+  status: number;
 };
 
 type MentionFixtureState = {
+  /** Mention searches that got a response, in the order their responses finished. */
   mentionRequests?: RecordedMentionRequest[];
+  /** Why mention searches failed without a response: aborts, and rejected CORS preflights. */
+  failedMentionRequests?: string[];
+  /** The panel session that the typed mention requests were sent in. */
+  mentionStreamSession?: string;
   ownerEmail: string;
   memberEmail: string;
   memberName: string;
@@ -139,16 +145,30 @@ Given('a blank mention search document page is open', async ({ page }) => {
 });
 
 Given('mention search requests are recorded', async ({ page }) => {
-  const recorded: RecordedMentionRequest[] = [];
+  const state = getState(page);
+  const answered: RecordedMentionRequest[] = [];
+  const failed: string[] = [];
 
-  getState(page).mentionRequests = recorded;
-  page.on('request', (request) => {
-    if (request.method() !== 'POST' || !request.url().includes('/mentions/search')) return;
+  state.mentionRequests = answered;
+  state.failedMentionRequests = failed;
+  // Only requests that got a response count. One whose CORS preflight was rejected was never sent,
+  // and the page sends it again without the stream headers.
+  page.on('requestfinished', async (request) => {
+    if (!isMentionSearchRequest(request)) return;
 
-    recorded.push({
+    const status = await request.response().then(
+      (response) => response?.status() ?? 0,
+      () => 0
+    );
+
+    answered.push({
       body: request.postDataJSON() as RecordedMentionRequest['body'],
       headers: request.headers(),
+      status,
     });
+  });
+  page.on('requestfailed', (request) => {
+    if (isMentionSearchRequest(request)) failed.push(request.failure()?.errorText ?? 'unknown error');
   });
 });
 
@@ -300,37 +320,61 @@ Then('the mention panel shows an external link for {string}', async ({ page }, h
 });
 
 Then(
-  'the typed mention requests for {string} were sent on two streams of one session',
+  'the typed mention requests for {string} were answered on two streams of one session',
   async ({ page }, query: string) => {
-    const recorded = requireMentionRequests(getState(page));
-    const typed = () => recorded.filter((request) => request.body?.query === query);
+    const state = getState(page);
+    const answered = requireMentionRequests(state);
+    const typed = () => answered.filter((request) => request.body?.query === query);
+    const primaryOf = () => typed().find((request) => !isDatabaseRowOnlyRecordedRequest(request));
+    const rowsOf = () => typed().find(isDatabaseRowOnlyRecordedRequest);
 
     // The primary request and the rows-only request leave together after the typing debounce.
     await expect
-      .poll(() => typed().filter(isDatabaseRowOnlyRecordedRequest).length, { timeout: 15000 })
-      .toBeGreaterThan(0);
+      .poll(() => Boolean(primaryOf() && rowsOf()), {
+        timeout: 15000,
+        message: `answered primary and rows mention requests for "${query}". ${mentionFailureHint(state)}`,
+      })
+      .toBe(true);
 
-    const primary = typed().find((request) => !isDatabaseRowOnlyRecordedRequest(request));
-    const rows = typed().find(isDatabaseRowOnlyRecordedRequest);
+    const primary = primaryOf();
+    const rows = rowsOf();
     const primaryStream = primary?.headers['x-request-stream-id'] ?? '';
     const session = /^web-mention-(.+)-primary$/.exec(primaryStream)?.[1];
 
     expect(primary?.body?.include ?? []).not.toContain('database_row');
-    expect(session, `primary stream id "${primaryStream}"`).toBeTruthy();
+    expect(session, `primary stream id "${primaryStream}". ${mentionFailureHint(state)}`).toBeTruthy();
     expect(rows?.headers['x-request-stream-id']).toBe(`web-mention-${session}-rows`);
     expect(primary?.headers['x-request-time']).toMatch(/^\d+$/);
     expect(rows?.headers['x-request-time']).toMatch(/^\d+$/);
+    expect([primary?.status, rows?.status]).toEqual([200, 200]);
+    state.mentionStreamSession = session;
   }
 );
 
-Then('the empty mention request was sent on the bare stream without database rows', async ({ page }) => {
-  const bare = requireMentionRequests(getState(page)).find((request) => (request.body?.query ?? '') === '');
+Then(
+  'the empty mention request was answered on the bare stream of that session without database rows',
+  async ({ page }) => {
+    const state = getState(page);
+    const session = state.mentionStreamSession;
+    const bareOf = () => requireMentionRequests(state).find((request) => (request.body?.query ?? '') === '');
 
-  expect(bare, 'the empty-query mention request').toBeDefined();
-  expect(bare?.body?.include ?? []).not.toContain('database_row');
-  expect(bare?.headers['x-request-stream-id']).toMatch(/^web-mention-.+-bare$/);
-  expect(bare?.headers['x-request-time']).toMatch(/^\d+$/);
-});
+    expect(session, 'the session of the typed mention requests').toBeTruthy();
+    await expect
+      .poll(() => Boolean(bareOf()), {
+        timeout: 15000,
+        message: `an answered empty-query mention request. ${mentionFailureHint(state)}`,
+      })
+      .toBe(true);
+
+    const bare = bareOf();
+
+    expect(bare?.body?.include ?? []).not.toContain('database_row');
+    // Typing does not end the panel session, so the bare request shares the typed requests' session.
+    expect(bare?.headers['x-request-stream-id']).toBe(`web-mention-${session}-bare`);
+    expect(bare?.headers['x-request-time']).toMatch(/^\d+$/);
+    expect(bare?.status).toBe(200);
+  }
+);
 
 Then('the browser sent a database-row mention search request', async ({ page }) => {
   const body = getState(page).rowSearchRequestBody as {
@@ -847,6 +891,25 @@ function requireMentionRequests(state: MentionFixtureState): RecordedMentionRequ
   }
 
   return state.mentionRequests;
+}
+
+function isMentionSearchRequest(request: Request): boolean {
+  return request.method() === 'POST' && request.url().includes('/mentions/search');
+}
+
+// Mention searches that failed without a response explain a missing stream header: the page sends a
+// search again without the headers when a CORS preflight rejects them, as a Cloud nginx.conf whose
+// $cors_headers lacks x-request-time and x-request-stream-id does for a Web on another origin.
+function mentionFailureHint(state: MentionFixtureState): string {
+  const failed = state.failedMentionRequests ?? [];
+
+  if (failed.length === 0) return 'No mention request failed without a response.';
+
+  return (
+    `${failed.length} mention request(s) failed without a response (${[...new Set(failed)].join(', ')}). ` +
+    'A CORS preflight that rejects x-request-time and x-request-stream-id makes the page send ' +
+    'mention searches without them.'
+  );
 }
 
 function isDatabaseRowOnlyRecordedRequest(request: RecordedMentionRequest): boolean {

@@ -542,13 +542,29 @@ export async function getMentionableUsers(workspaceId: string) {
   }));
 }
 
-// Set once a mention search sent with the stream headers failed without a response while the same
-// search without them was answered: a proxy, such as a self-hosted nginx whose CORS allow-list
-// predates these headers, rejects them in the preflight. This tab then leaves them out.
-let mentionStreamHeadersRejected = false;
+// A self-hosted proxy whose CORS allow-list predates the stream headers fails the preflight of a
+// mention search that carries them, and the page sees a network error without a response. A
+// dropped connection, or a proxy error page without CORS headers, looks the same. So a tab leaves
+// the headers out only after separate searches failed that way twice in a row while the same
+// searches without them were answered, and only for a while. A same-origin search sends no
+// preflight and never falls back.
+
+/** Separate rejections in a row, with no answered search between them, that turn the headers off. */
+const MENTION_STREAM_HEADER_REJECTION_LIMIT = 2;
+
+/** How long a tab leaves the stream headers out before it sends them again. */
+export const MENTION_STREAM_HEADERS_OFF_MS = 10 * 60_000;
+
+let streamHeaderRejections = 0;
+// Counts the outcomes that change `streamHeaderRejections`. A search that was already in flight
+// when one was recorded, such as the other request of a pair on one dropped connection, adds no
+// evidence of its own.
+let streamHeaderOutcomes = 0;
+let streamHeadersOffUntil = 0;
+let streamHeadersWarned = false;
 
 function mentionStreamHeaders({ streamId, requestTime }: MentionSearchOptions) {
-  if (mentionStreamHeadersRejected) return undefined;
+  if (Date.now() < streamHeadersOffUntil) return undefined;
 
   const headers: Record<string, string> = {};
 
@@ -561,34 +577,68 @@ function mentionStreamHeaders({ streamId, requestTime }: MentionSearchOptions) {
   return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
+// A same-origin request sends no CORS preflight, so its headers cannot be why it failed.
+function isCrossOriginRequest(url: string) {
+  try {
+    return new URL(getAxios()?.getUri({ url }) ?? url, window.location.href).origin !== window.location.origin;
+  } catch {
+    return true;
+  }
+}
+
 // A rejected CORS preflight reaches the page as a network error on this request, with no response.
+// The URL check leaves out a failure of another request, such as the token refresh that the
+// request interceptor runs first.
 function mayBeRejectedStreamHeaders(error: unknown, url: string) {
   return (
-    axios.isAxiosError(error) && error.code === AxiosError.ERR_NETWORK && !error.response && error.config?.url === url
+    axios.isAxiosError(error) &&
+    error.code === AxiosError.ERR_NETWORK &&
+    !error.response &&
+    error.config?.url === url &&
+    isCrossOriginRequest(url)
   );
 }
 
-function rejectMentionStreamHeaders() {
-  if (mentionStreamHeadersRejected) return;
+function noteStreamHeadersAnswered() {
+  streamHeaderRejections = 0;
+  streamHeaderOutcomes += 1;
+}
 
-  mentionStreamHeadersRejected = true;
+function noteStreamHeadersRejected(outcomesAtSend: number) {
+  if (outcomesAtSend !== streamHeaderOutcomes) return;
+
+  streamHeaderOutcomes += 1;
+  streamHeaderRejections += 1;
+  if (streamHeaderRejections < MENTION_STREAM_HEADER_REJECTION_LIMIT) return;
+
+  streamHeaderRejections = 0;
+  streamHeadersOffUntil = Date.now() + MENTION_STREAM_HEADERS_OFF_MS;
+  if (streamHeadersWarned) return;
+
+  streamHeadersWarned = true;
   console.warn(
-    '[mention-search] The x-request-time and x-request-stream-id headers were rejected, probably by a ' +
-      'CORS preflight. This tab now sends mention searches without them. A self-hosted proxy needs both ' +
-      'headers in its CORS allow-list.'
+    '[mention-search] Mention searches with the x-request-time and x-request-stream-id headers ' +
+      'failed twice without a response, while the same searches without them were answered. A CORS ' +
+      'preflight probably rejects these headers: a self-hosted proxy needs both in its CORS ' +
+      `allow-list. This tab leaves them out of mention searches for ${MENTION_STREAM_HEADERS_OFF_MS / 60_000} ` +
+      'minutes at a time.'
   );
 }
 
-/** Forgets a header rejection recorded by an earlier test. */
+/** Forgets the header rejections recorded by an earlier test. */
 export function resetMentionStreamHeadersForTests() {
-  mentionStreamHeadersRejected = false;
+  streamHeaderRejections = 0;
+  streamHeaderOutcomes = 0;
+  streamHeadersOffUntil = 0;
+  streamHeadersWarned = false;
 }
 
 /**
  * Searches mention targets. `options` carries the request's abort signal and its Search
- * supersession stream (`x-request-stream-id`, `x-request-time`). When a request with those headers
- * fails without any response, it is retried once without them; if that retry is answered, the tab
- * stops sending them.
+ * supersession stream (`x-request-stream-id`, `x-request-time`). A cross-origin search with those
+ * headers that fails without any response is retried once without them. After two separate such
+ * failures in a row whose retries were answered, the tab leaves the headers out for
+ * `MENTION_STREAM_HEADERS_OFF_MS`.
  */
 export async function searchMentions(
   workspaceId: string,
@@ -608,15 +658,22 @@ export async function searchMentions(
 
     if (!headers) return post();
 
+    const outcomesAtSend = streamHeaderOutcomes;
+
     try {
-      return await post(headers);
+      const response = await post(headers);
+
+      noteStreamHeadersAnswered();
+      return response;
     } catch (error) {
+      // Any response, an error status included, got past the preflight with the headers.
+      if (axios.isAxiosError(error) && error.response) noteStreamHeadersAnswered();
       if (signal?.aborted || !mayBeRejectedStreamHeaders(error, url)) throw error;
 
-      // A real outage fails this retry as well and leaves the headers on.
+      // A real outage fails this retry as well, and counts as no rejection.
       const response = await post();
 
-      rejectMentionStreamHeaders();
+      noteStreamHeadersRejected(outcomesAtSend);
       return response;
     }
   });

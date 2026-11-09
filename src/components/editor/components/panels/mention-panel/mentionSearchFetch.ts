@@ -18,7 +18,10 @@ const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 export interface MentionSectionsFetchResult {
   sections: MentionSearchSection[];
   databaseRowResponse?: MentionSearchResponse;
-  /** The tickets of the responses that make up `sections`. Cache them only while all are current. */
+  /**
+   * The tickets of the responses that make up `sections`, except a rows ticket that this fetch's
+   * own retry replaced. Cache the sections only while all of them are current.
+   */
   tickets: MentionRequestTicket[];
 }
 
@@ -167,9 +170,11 @@ async function retryDatabaseRowSearch(
     return initialResult;
   }
 
+  const nonRowResponses = fulfilledResponses.filter(({ request }) => request !== rowRequest);
+
   try {
     const rowRetry = await sendMentionSearch(options, rowRequest);
-    const searched = [...fulfilledResponses.filter(({ request }) => request !== rowRequest), rowRetry];
+    const searched = [...nonRowResponses, rowRetry];
 
     return {
       sections: mergeMentionSearchResponses(searched.map(({ response }) => response)).sections ?? [],
@@ -178,7 +183,9 @@ async function retryDatabaseRowSearch(
     };
   } catch (error) {
     reportDatabaseRowSearchError(cacheKey, error);
-    return initialResult;
+    // The retry replaced the first rows request on its lane, which made that ticket stale. The
+    // first answer is still this fetch's own, so its currency rests on the other requests.
+    return { ...initialResult, tickets: ticketsOf(nonRowResponses) };
   }
 }
 

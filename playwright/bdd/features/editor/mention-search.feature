@@ -13,12 +13,15 @@ Feature: Mention panel search
     And the mention panel does not show a links section
     And the mention panel does not show database rows
 
+  # Opt-in (RUN_CLOUD_MENTION_STREAM_HEADERS=1): with Web and the API on different origins, as in
+  # CI, the Cloud nginx.conf must allow x-request-time and x-request-stream-id in CORS preflights.
+  @cloud-mention-stream-headers
   Scenario: Mention requests carry per-lane stream headers
     Given a blank mention search document page is open
     And mention search requests are recorded
     When I search mentions for "example.com"
-    Then the typed mention requests for "example.com" were sent on two streams of one session
-    And the empty mention request was sent on the bare stream without database rows
+    Then the typed mention requests for "example.com" were answered on two streams of one session
+    And the empty mention request was answered on the bare stream of that session without database rows
 
   Scenario: Typed mention query filters fixture people
     Given a blank mention search document page is open
