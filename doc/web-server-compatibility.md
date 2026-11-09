@@ -124,3 +124,41 @@ samples. Older servers may lack the collector; that does not change search behav
 these reports as `cloud_search_client_milestone_seconds` and `cloud_search_client_reports_total`,
 with fixed mode/transport/outcome/milestone labels. The Search dashboard distinguishes these
 client-reported timings and their sample counts from Search/Cloud server-side measurements.
+
+## Mention picker session reports
+
+Each opening of the mention picker by typing `@`, `+` or `[[` is one session. When the picker
+inserts an item or closes, also when the editor unmounts, it sends one best-effort report to
+`POST /api/workspace/{workspace_id}/mentions/metrics` (`mention-presentation-metrics.ts`, Cloud
+`MentionPickerSessionReport`). It sends only while the web server-info snapshot lists
+`session_metrics_v1` in `mention_features`. Older servers, self-hosted servers that leave the
+feature off, loading or failed server-info, and pages without the auth layer get nothing. A 404
+from the route (a server that advertises the feature without the route, as after a rollback) stops
+reports for the rest of the tab. A picker opened from a menu (the slash menu's "Link to page" or
+"Date or reminder") is not reported, because Cloud's trigger labels are `at`, `plus` and
+`page_link` only.
+
+- `outcome`: `selected` when an item or a created page was inserted; `error` when the picker
+  closed while it showed a failure (unavailable, offline or busy) and no result; else `dismissed`.
+- `query_len`: code points typed after the trigger; Cloud counts a bucket.
+- `selected_rank`: the 1-based position among the result options on screen, across sections.
+  "N more", Retry and "Create" rows hold none, and an expanded section ranks what it reveals. A
+  created page has no rank, section or source.
+- `selected_section`: the rendered section; databases and rows render inside Pages.
+- `selected_source`: `cache` while a stored answer is on screen, `server` once an answer arrived,
+  `local` for the picker's local fallback without server search. `selected_tier` is not sent:
+  Web does not compute match tiers yet.
+- `time_to_first_paint_ms`, `server_ms`, `time_to_select_ms`: from the opening (PanelsContext's
+  `performance.now()`) to React's commit of the first render with a result, of the first render
+  of a server answer, and the pick. A commit precedes the browser's paint by up to a frame, so
+  these are not comparable with the search dialog's two-frame `first_result_visible_ms`.
+- `requests_sent`, `requests_aborted`: the requests the session's lanes issued, and those it
+  aborted while they were pending (replaced on their lane, stopped by a query change or the close,
+  or past their deadline). A refresh that joins one an earlier opening sent counts there.
+- `zero_result_shown`: a settled answer showed no result for a typed query, or for the local pages.
+
+The request has a three-second timeout, no transport retry, no authentication recovery and no
+signal shared with the search, and its errors are swallowed. Only these fields are sent, and labels
+outside Cloud's vocabularies are left out. Numbers are whole and within Cloud's bounds: a duration
+above 600,000 ms or a rank outside 1-1,000 is left out, and counts stop at 1,000. The body carries
+no query text and no object, user or workspace identity.

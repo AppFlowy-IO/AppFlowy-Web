@@ -23,6 +23,12 @@ import {
     initAPIService,
     setActiveTestToken,
 } from './setup';
+import {
+    isMentionSessionMetricsAdvertised,
+    MentionPickerSession,
+    reportMentionPickerSession,
+} from '../mention-presentation-metrics';
+import type { ServerInfoState } from '@/utils/server-info';
 import { v4 as uuidv4 } from 'uuid';
 
 const FEATURE_NAME = 'mention-api';
@@ -96,6 +102,8 @@ describe('HTTP API - Mention Search', () => {
     let debugSpy: jest.SpiedFunction<typeof console.debug>;
     let owner: FeatureFixtureAccount;
     let member: FeatureFixtureAccount;
+    // Not a member of the owner's workspace.
+    let outsider: FeatureFixtureAccount;
     let workspaceId: string;
     let contextPageId: string;
     let searchablePageName: string;
@@ -122,6 +130,7 @@ describe('HTTP API - Mention Search', () => {
 
         owner = await getFeatureFixtureAccount(authHelper, FEATURE_NAME, 'owner');
         member = await getFeatureFixtureAccount(authHelper, FEATURE_NAME, 'member');
+        outsider = await getFeatureFixtureAccount(authHelper, FEATURE_NAME, 'outsider');
         workspaceId = owner.workspaceId;
 
         await ensureMemberJoinedWorkspace(owner, member, workspaceId);
@@ -239,4 +248,56 @@ describe('HTTP API - Mention Search', () => {
         });
         expect(section(response, MentionSearchSectionKind.Dates)).toBeUndefined();
     }, 30000);
+
+    describe('picker session reports (MEN-CLOUD-05)', () => {
+        const session: MentionPickerSession = {
+            trigger: 'at',
+            outcome: 'selected',
+            query_len: 4,
+            selected_rank: 3,
+            selected_section: 'pages',
+            selected_source: 'server',
+            time_to_first_paint_ms: 40,
+            time_to_select_ms: 1_200,
+            server_ms: 160,
+            requests_sent: 3,
+            requests_aborted: 0,
+            zero_result_shown: false,
+        };
+        let serverInfo: ServerInfoState;
+
+        beforeAll(async () => {
+            serverInfo = { status: 'available', info: await APIService.getServerInfo() };
+        });
+
+        // Servers without MEN-CLOUD-05, and self-hosted ones without
+        // APPFLOWY_MENTION_SESSION_METRICS=true, advertise nothing, and the Web never calls them.
+        function advertised() {
+            const offered = isMentionSessionMetricsAdvertised(serverInfo);
+
+            if (!offered) console.warn('Skipped: this server does not advertise session_metrics_v1');
+            return offered;
+        }
+
+        it('takes a member report as the Web builds it, and a dismissed one without selection fields', async () => {
+            if (!advertised()) return;
+
+            setActiveTestToken(member.token);
+            await expect(reportMentionPickerSession(workspaceId, session, serverInfo)).resolves.toBe('sent');
+            await expect(
+                reportMentionPickerSession(
+                    workspaceId,
+                    { ...session, outcome: 'dismissed', trigger: 'page_link', zero_result_shown: true },
+                    serverInfo
+                )
+            ).resolves.toBe('sent');
+        }, 30000);
+
+        it("refuses a report to a workspace the user is not a member of, inside HTTP 200", async () => {
+            if (!advertised()) return;
+
+            setActiveTestToken(outsider.token);
+            await expect(reportMentionPickerSession(workspaceId, session, serverInfo)).resolves.toBe('refused');
+        }, 30000);
+    });
 });

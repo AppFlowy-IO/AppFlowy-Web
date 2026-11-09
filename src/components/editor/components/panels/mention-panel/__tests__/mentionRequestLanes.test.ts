@@ -139,6 +139,69 @@ describe('MentionRequestLanes', () => {
     expect(aborted.deadlineExceeded()).toBe(false);
   });
 
+  describe('request counts for the session report', () => {
+    it('counts every request the session issued, on every lane', () => {
+      const lanes = new MentionRequestLanes('session');
+
+      expect(lanes.requestCounts()).toEqual({ sent: 0, aborted: 0 });
+      ALL_LANES.forEach((lane) => lanes.issue(lane).settle());
+      lanes.issue('primary');
+      expect(lanes.requestCounts()).toEqual({ sent: ALL_LANES.length + 1, aborted: 0 });
+    });
+
+    it('counts a pending request a newer one replaced on its lane, or the panel aborted', () => {
+      const lanes = new MentionRequestLanes('session');
+
+      lanes.issue('primary');
+      lanes.issue('rows');
+      // A keystroke: the new pair replaces the pending one.
+      lanes.issue('primary');
+      lanes.issue('rows');
+      expect(lanes.requestCounts()).toEqual({ sent: 4, aborted: 2 });
+
+      // The query changes again, or the panel closes: the typed lanes are stopped.
+      lanes.abort(MENTION_TYPED_LANES);
+      expect(lanes.requestCounts()).toEqual({ sent: 4, aborted: 4 });
+    });
+
+    it('counts a request its deadline aborted, once', () => {
+      const lanes = new MentionRequestLanes('session');
+      const ticket = lanes.issue('bare');
+
+      jest.advanceTimersByTime(MENTION_BARE_DEADLINE_MS);
+      expect(ticket.deadlineExceeded()).toBe(true);
+      expect(lanes.requestCounts()).toEqual({ sent: 1, aborted: 1 });
+
+      // Replacing or stopping the already aborted request counts nothing more.
+      lanes.abort(['bare']);
+      lanes.issue('bare');
+      expect(lanes.requestCounts()).toEqual({ sent: 2, aborted: 1 });
+    });
+
+    it('does not count a request that settled before it was replaced or stopped', () => {
+      const lanes = new MentionRequestLanes('session');
+
+      lanes.issue('primary').settle();
+      lanes.issue('primary').settle();
+      lanes.issue('rows').settle();
+      lanes.abort(MENTION_TYPED_LANES);
+      expect(lanes.requestCounts()).toEqual({ sent: 3, aborted: 0 });
+    });
+
+    it('counts each session on its own', () => {
+      const first = new MentionRequestLanes('first');
+      const second = new MentionRequestLanes('second');
+
+      first.issue('primary');
+      first.abort(['primary']);
+      second.issue('primary');
+      expect([first.requestCounts(), second.requestCounts()]).toEqual([
+        { sent: 1, aborted: 1 },
+        { sent: 1, aborted: 0 },
+      ]);
+    });
+  });
+
   it('passes the stream, the request time and the signal as transport options', () => {
     const lanes = new MentionRequestLanes('session', () => 42);
     const ticket = lanes.issue('rows');

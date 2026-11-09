@@ -7,6 +7,7 @@ import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slat
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { APP_EVENTS } from '@/application/constants';
+import type { MentionSessionSource } from '@/application/services/js-services/http/mention-presentation-metrics';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -67,6 +68,7 @@ import {
   normalizeMentionSearchSectionsForPicker,
   reconcileMentionOptionSelection,
 } from './mentionUtils';
+import { useMentionPickerSession } from './useMentionPickerSession';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
 
 enum MentionTag {
@@ -87,6 +89,9 @@ const MENTION_RETRY_OPTION_KEY = 'status|retry';
  * - `offline`: the browser is offline; the search is sent again when it is back online.
  */
 type MentionSearchStatus = 'idle' | 'loading' | 'ok' | 'unavailable' | 'busy' | 'offline';
+
+/** Where the search's sections on screen came from: a server answer, or a cached one. */
+type MentionSectionsSource = Extract<MentionSessionSource, 'server' | 'cache'>;
 
 type MentionPanelOption =
   | {
@@ -490,7 +495,16 @@ export function MentionPanel({
   notifyOnInsert = true,
   onPersonPicked,
 }: { notifyOnInsert?: boolean; onPersonPicked?: (personId: string, requireNotification: boolean) => void } = {}) {
-  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
+  const {
+    isPanelOpen,
+    panelPosition,
+    closePanel,
+    searchText,
+    removeContent,
+    activePanel,
+    activeTrigger,
+    panelOpenedAt,
+  } = usePanelContext();
   const {
     workspaceId,
     viewId,
@@ -518,6 +532,8 @@ export function MentionPanel({
   }, []);
   const editor = useSlateStatic() as YjsEditor;
   const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
+  // Set with the sections, for the session report of a pick.
+  const [mentionSectionsSource, setMentionSectionsSource] = useState<MentionSectionsSource | undefined>(undefined);
   const [searchStatus, setSearchStatus] = useState<MentionSearchStatus>('idle');
   // An explicit retry (the Retry row, or the browser coming back online) is pending.
   const [retrying, setRetrying] = useState(false);
@@ -649,6 +665,7 @@ export function MentionPanel({
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
+      setMentionSectionsSource(undefined);
       setSearchStatus('idle');
       setRetrying(false);
       setBusyUntil(undefined);
@@ -728,10 +745,16 @@ export function MentionPanel({
       }).then((result) => ({ ...result, sections: visible(result.sections) }));
     }
 
+    // Shows `sections` and where they came from, which a session report gives for a pick.
+    function showSections(sections: MentionSearchSection[], source?: MentionSectionsSource) {
+      setMentionSections(sections);
+      setMentionSectionsSource(source);
+    }
+
     // Sections that arrive while the rest of the answer is pending. Without items they would only
     // blank what is on screen, such as the previous attempt of a retry, so they are not shown.
     function showInterimSections(sections: MentionSearchSection[]) {
-      if (hasMentionItems(sections)) setMentionSections(sections);
+      if (hasMentionItems(sections)) showSections(sections, 'server');
     }
 
     function settle(status: Exclude<MentionSearchStatus, 'busy'>) {
@@ -763,16 +786,21 @@ export function MentionPanel({
           if (!isCurrentRequest()) return;
 
           if (result.state === 'complete') {
-            setMentionSections(result.sections);
+            showSections(result.sections, 'server');
             settle('ok');
             return;
           }
 
           // Keep what the requests that answered found. Without any, keep what is on screen (the
           // previous attempt of a retry), or a cached answer.
-          const fallback = hasMentionItems(result.sections) ? result.sections : getCachedMentionSections(cacheKey);
+          if (hasMentionItems(result.sections)) {
+            showSections(result.sections, 'server');
+          } else {
+            const cachedSections = getCachedMentionSections(cacheKey);
 
-          if (fallback) setMentionSections(fallback);
+            if (cachedSections) showSections(cachedSections, 'cache');
+          }
+
           if (result.state === 'busy') sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), runSearch);
           else settle(result.state);
         })
@@ -800,7 +828,7 @@ export function MentionPanel({
           if (!isCurrentRequest()) return;
 
           if (result.state === 'complete') {
-            setMentionSections(result.sections);
+            showSections(result.sections, 'server');
             settle('ok');
           } else if (result.state === 'busy') {
             sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), refreshCachedAnswer);
@@ -815,7 +843,7 @@ export function MentionPanel({
     }
 
     if (cached) {
-      setMentionSections(cached.sections);
+      showSections(cached.sections, 'cache');
       if (!isRetry) settle('ok');
 
       // A fresh answer needs no request, unless the user asked to retry.
@@ -827,7 +855,7 @@ export function MentionPanel({
       return stopSearch;
     }
 
-    if (!isRetry) setMentionSections([]);
+    if (!isRetry) showSections([]);
 
     if (retryLaterMs > 0) {
       sendAfterCooldown(retryLaterMs, runSearch);
@@ -932,7 +960,7 @@ export function MentionPanel({
     useLocalMentionFallback && searchStatus !== 'loading' && Boolean(addPage && viewId);
   // Offline is a reason for missing suggestions too, so it offers the same Retry row.
   const showRetryOption = searchStatus === 'unavailable' || searchStatus === 'offline';
-  const { mentionResultSections, mentionPanelOptions, retryOption, createPageOptions } = useMemo(() => {
+  const { mentionResultSections, mentionPanelOptions, retryOption, createPageOptions, resultRanks } = useMemo(() => {
     const resultsBySection = new Map<number, MentionPanelSearchResult[]>();
 
     rawMentionSearchResults.forEach((result) => {
@@ -1002,11 +1030,20 @@ export function MentionPanel({
     if (statusOption) options.push(statusOption);
     options.push(...createOptions);
 
+    // The 1-based display position of each result on screen, across sections, as a session report
+    // ranks a pick. "N more", Retry and "Create" rows hold no position.
+    const ranks = new Map<string, number>();
+
+    options.forEach((option) => {
+      if (option.kind === 'result') ranks.set(option.key, ranks.size + 1);
+    });
+
     return {
       mentionResultSections: sections,
       mentionPanelOptions: options,
       retryOption: statusOption,
       createPageOptions: createOptions,
+      resultRanks: ranks,
     };
   }, [canCreatePageInLocalFallback, pickerMentionSections, rawMentionSearchResults, showMorePages, showRetryOption]);
   const { mentionOptionByKey, mentionOptionIndexByKey } = useMemo(
@@ -1030,6 +1067,24 @@ export function MentionPanel({
 
     if (next !== current) setSelection(next);
   }, [mentionOptionByKey, mentionPanelOptions, setSelection]);
+
+  // One report per opening of the panel ('@', '+' or '[['), sent when it inserts an item or closes,
+  // to servers that advertise session_metrics_v1.
+  const shownSource: MentionSessionSource | undefined = useLocalMentionFallback ? 'local' : mentionSectionsSource;
+  const { beginSelection } = useMentionPickerSession({
+    lanes: mentionRequestLanes,
+    trigger: activeTrigger,
+    openedAt: panelOpenedAt,
+    workspaceId,
+    query: searchText,
+    view: {
+      results: resultRanks.size,
+      source: shownSource,
+      // What "No result" stands for, also where the local fallback offers "Create" options instead.
+      empty: searchStatus === 'ok' && resultRanks.size === 0 && (Boolean(searchText) || useLocalMentionFallback),
+      failed: searchStatus === 'unavailable' || searchStatus === 'offline' || searchStatus === 'busy',
+    },
+  });
 
   // The skeleton stands in for results only while the first answer is pending. A failure, busy or
   // offline row never shows it, and neither does a retry, whose row says "Retrying…".
@@ -1095,17 +1150,21 @@ export function MentionPanel({
     async (type: MentionType.childPage | MentionType.PageRef = MentionType.PageRef) => {
       if (!addPage || !viewId) return;
 
+      const recordSelection = beginSelection();
+
       try {
         const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
 
         if (handleAddMention({ page_id: response.view_id, type })) {
+          // The created page was no result, so the report gives no rank, section or source.
+          recordSelection();
           openPageModal?.(response.view_id);
         }
       } catch (error) {
         console.error(error);
       }
     },
-    [addPage, handleAddMention, openPageModal, searchText, viewId]
+    [addPage, beginSelection, handleAddMention, openPageModal, searchText, viewId]
   );
 
   const notifyPersonMention = useNotifyPersonMention();
@@ -1113,6 +1172,7 @@ export function MentionPanel({
 
   const handleSelectedSearchResult = useCallback(
     (result: MentionPanelSearchResult) => {
+      const recordSelection = beginSelection();
       const selectedBlockId = getSelectedBlockId(editor);
       const mention =
         result.mention.type === MentionType.Person
@@ -1124,12 +1184,16 @@ export function MentionPanel({
             }
           : result.mention;
 
-      if (handleAddMention(mention) && mention.type === MentionType.Person && mention.person_id) {
+      if (!handleAddMention(mention)) return;
+
+      recordSelection({ rank: resultRanks.get(result.key), section: result.sectionKind, source: shownSource });
+      if (mention.type === MentionType.Person && mention.person_id) {
         if (onPersonPicked) onPersonPicked(mention.person_id, sendNotification);
         else if (notifyOnInsert) void notifyPersonMention(mention, sendNotification);
       }
     },
     [
+      beginSelection,
       editor,
       handleAddMention,
       mentionContext?.row_id,
@@ -1137,7 +1201,9 @@ export function MentionPanel({
       notifyOnInsert,
       notifyPersonMention,
       onPersonPicked,
+      resultRanks,
       sendNotification,
+      shownSource,
       viewId,
     ]
   );
