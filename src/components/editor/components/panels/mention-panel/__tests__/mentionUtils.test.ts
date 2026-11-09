@@ -1,6 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { MentionSearchSectionKind, MentionTargetKind, MentionType } from '@/application/types';
+import {
+  MentionSearchResultItem,
+  MentionSearchSection,
+  MentionSearchSectionKind,
+  MentionTargetKind,
+  MentionType,
+} from '@/application/types';
 
 import {
   buildMentionSearchCacheKey,
@@ -8,11 +14,257 @@ import {
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
+  mentionItemNavKey,
+  MentionPanelSearchResult,
   mentionSearchItemToMention,
   mergeMentionSearchResponses,
   normalizeMentionSearchSectionsForPicker,
+  reconcileMentionOptionSelection,
   shouldCacheMentionSearchSections,
 } from '../mentionUtils';
+
+function person(id: string, name = id): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Person,
+    object_id: id,
+    title: name,
+    mention: { type: MentionTargetKind.Person, person_id: id, person_name: name, page_id: 'page' },
+  };
+}
+
+function page(id: string, title = id): MentionSearchResultItem {
+  return { kind: MentionTargetKind.Page, object_id: id, title, mention: { type: MentionTargetKind.Page, page_id: id } };
+}
+
+// As Search builds it: object_id is the database id, and the view travels beside it.
+function database(databaseId: string, viewId?: string, title = databaseId): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Database,
+    object_id: databaseId,
+    title,
+    database_id: databaseId,
+    database_view_id: viewId,
+    mention: { type: MentionTargetKind.Database, database_id: databaseId, database_view_id: viewId },
+  };
+}
+
+function row(databaseId: string, rowId: string, viewId?: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.DatabaseRow,
+    object_id: rowId,
+    title: rowId,
+    database_id: databaseId,
+    database_view_id: viewId,
+    database_row_id: rowId,
+    mention: { type: 'databaseRow', database_id: databaseId, database_view_id: viewId, row_id: rowId },
+  };
+}
+
+// Server quick picks carry no object id, and "Reminder 1 week" gets a new time on every request.
+function quickPick(kind: MentionTargetKind.Date | MentionTargetKind.Reminder, title: string, date: string) {
+  const item: MentionSearchResultItem = {
+    kind,
+    title,
+    subtitle: date,
+    mention: { type: MentionTargetKind.Date, date, include_time: kind === MentionTargetKind.Reminder },
+  };
+
+  return item;
+}
+
+function link(text: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.ExternalLink,
+    title: text,
+    subtitle: `https://${text}`,
+    mention: { type: MentionType.externalLink, url: `https://${text}` },
+  };
+}
+
+function sectionOf(kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection {
+  return { kind, title: kind, has_more: false, status: 'ready', items };
+}
+
+function resultsByKey(sections: MentionSearchSection[]) {
+  return new Map<string, MentionPanelSearchResult>(
+    flattenMentionSearchSections(sections).map((result) => [result.key, result])
+  );
+}
+
+describe('mention option keys', () => {
+  it('derives navKeys from the identity each payload carries', () => {
+    expect(mentionItemNavKey(person('ada', 'Ada'))).toBe('person:ada');
+    expect(mentionItemNavKey(page('page-1', 'Roadmap'))).toBe('page:page-1');
+    expect(mentionItemNavKey(database('db-1', 'grid-1'))).toBe('database:db-1:grid-1');
+    expect(mentionItemNavKey(database('db-1'))).toBe('database:db-1:-');
+    expect(mentionItemNavKey(row('db-1', 'row-1', 'grid-1'))).toBe('row:db-1:row-1');
+    expect(mentionItemNavKey(link('road.example'))).toBe('link:https://road.example');
+    expect(mentionItemNavKey(quickPick(MentionTargetKind.Date, 'Today', '2026-11-09T00:00:00+08:00'))).toBe(
+      'date:Today'
+    );
+    expect(
+      mentionItemNavKey(quickPick(MentionTargetKind.Reminder, 'Reminder 1 week', '2026-11-16T10:00:00+08:00'))
+    ).toBe('reminder:Reminder 1 week');
+  });
+
+  it('falls back to item fields when a payload lacks its id', () => {
+    const pageWithoutPayloadId = { ...page('page-1'), mention: { type: MentionTargetKind.Page } };
+    const emptyIdDatabase: MentionSearchResultItem = {
+      kind: MentionTargetKind.Database,
+      object_id: 'grid-1',
+      title: 'Roadmap DB',
+      database_id: '',
+      database_view_id: 'grid-1',
+      mention: { type: MentionTargetKind.Database, database_id: '' },
+    };
+
+    expect(mentionItemNavKey(pageWithoutPayloadId as unknown as MentionSearchResultItem)).toBe('page:page-1');
+    expect(mentionItemNavKey(emptyIdDatabase)).toBe('database:grid-1:grid-1');
+  });
+
+  it('keeps quick-pick keys stable when the server recomputes their time', () => {
+    const first = quickPick(MentionTargetKind.Reminder, 'Reminder 1 week', '2026-11-16T10:00:00.120+08:00');
+    const refreshed = quickPick(MentionTargetKind.Reminder, 'Reminder 1 week', '2026-11-16T10:00:03.480+08:00');
+
+    expect(mentionItemNavKey(refreshed)).toBe(mentionItemNavKey(first));
+  });
+
+  it('keeps every key when an item or a section is inserted anywhere around it', () => {
+    const seed = [
+      sectionOf(MentionSearchSectionKind.People, [person('ada'), person('bob')]),
+      sectionOf(MentionSearchSectionKind.Pages, [page('a'), database('db', 'grid'), row('db', 'r1')]),
+      sectionOf(MentionSearchSectionKind.Dates, [quickPick(MentionTargetKind.Date, 'Today', '2026-11-09')]),
+      sectionOf(MentionSearchSectionKind.Links, [link('road.example')]),
+    ];
+    const baseline = resultsByKey(seed);
+    const variants: MentionSearchSection[][] = [];
+
+    seed.forEach((section, sectionIndex) => {
+      for (let at = 0; at <= section.items.length; at += 1) {
+        const inserted = page(`new-${sectionIndex}-${at}`);
+
+        variants.push(
+          seed.map((candidate, index) =>
+            index === sectionIndex
+              ? { ...candidate, items: [...candidate.items.slice(0, at), inserted, ...candidate.items.slice(at)] }
+              : candidate
+          )
+        );
+      }
+    });
+    for (let at = 0; at <= seed.length; at += 1) {
+      variants.push([
+        ...seed.slice(0, at),
+        sectionOf(MentionSearchSectionKind.Suggested, [page('fresh')]),
+        ...seed.slice(at),
+      ]);
+    }
+
+    expect(baseline.size).toBe(7);
+    variants.forEach((variant) => {
+      const results = resultsByKey(variant);
+
+      baseline.forEach((result, key) => {
+        expect(results.get(key)?.item).toBe(result.item);
+      });
+    });
+  });
+
+  it('keeps a folded-in database key when typed rows merge into Pages ahead of it', () => {
+    const primary = {
+      sections: [
+        sectionOf(MentionSearchSectionKind.Pages, [page('a')]),
+        sectionOf(MentionSearchSectionKind.Databases, [database('dbX', 'grid')]),
+      ],
+    };
+    // Search returns typed rows inside the Pages section.
+    const rows = { sections: [sectionOf(MentionSearchSectionKind.Pages, [row('dbY', 'r1'), row('dbY', 'r2')])] };
+    const keysOf = (sections: MentionSearchSection[]) =>
+      flattenMentionSearchSections(normalizeMentionSearchSectionsForPicker(sections)).map((result) => result.key);
+
+    const before = keysOf(mergeMentionSearchResponses([primary]).sections);
+    const after = keysOf(mergeMentionSearchResponses([primary, rows]).sections);
+
+    expect(before).toEqual(['pages|page:a', 'pages|database:dbX:grid']);
+    expect(after).toEqual(['pages|page:a', 'pages|row:dbY:r1', 'pages|row:dbY:r2', 'pages|database:dbX:grid']);
+  });
+
+  it('suffixes only real duplicates within one section', () => {
+    const results = flattenMentionSearchSections([
+      sectionOf(MentionSearchSectionKind.Suggested, [person('ada')]),
+      sectionOf(MentionSearchSectionKind.People, [person('ada'), person('bob')]),
+      sectionOf(MentionSearchSectionKind.Pages, [page('a'), page('a'), database('db', 'grid'), database('db', 'board')]),
+    ]);
+
+    expect(results.map((result) => result.key)).toEqual([
+      'suggested|person:ada',
+      'people|person:ada',
+      'people|person:bob',
+      'pages|page:a',
+      'pages|page:a#2',
+      'pages|database:db:grid',
+      'pages|database:db:board',
+    ]);
+    expect(results.map((result) => result.navKey)).toEqual([
+      'person:ada',
+      'person:ada',
+      'person:bob',
+      'page:a',
+      'page:a',
+      'database:db:grid',
+      'database:db:board',
+    ]);
+  });
+
+  it('does not count an item the picker cannot insert as an occurrence', () => {
+    // Without a database id in its payload the row cannot become a mention, so it is skipped.
+    const unresolvableRow = { ...row('db', 'r1'), mention: { type: 'databaseRow', row_id: 'r1' } };
+    const results = flattenMentionSearchSections([
+      sectionOf(MentionSearchSectionKind.Pages, [
+        unresolvableRow as unknown as MentionSearchResultItem,
+        row('db', 'r1'),
+      ]),
+    ]);
+
+    expect(results.map((result) => result.key)).toEqual(['pages|row:db:r1']);
+  });
+});
+
+describe('reconcileMentionOptionSelection', () => {
+  const options = [
+    { key: 'people|person:bob', navKey: 'person:bob' },
+    { key: 'people|person:ada', navKey: 'person:ada' },
+    { key: 'pages|more' },
+  ];
+
+  it('keeps the same selection while its option is listed', () => {
+    const selection = { key: 'people|person:ada', navKey: 'person:ada' };
+
+    expect(reconcileMentionOptionSelection(selection, options)).toBe(selection);
+    expect(reconcileMentionOptionSelection(null, options)).toBeNull();
+  });
+
+  it('follows the same object into another section', () => {
+    expect(reconcileMentionOptionSelection({ key: 'suggested|person:ada', navKey: 'person:ada' }, options)).toEqual({
+      key: 'people|person:ada',
+      navKey: 'person:ada',
+    });
+  });
+
+  it('falls back to the first option when the object is gone', () => {
+    expect(
+      reconcileMentionOptionSelection({ key: 'pages|database:db:grid', navKey: 'database:db:grid' }, options)
+    ).toEqual({ key: 'people|person:bob', navKey: 'person:bob' });
+    expect(reconcileMentionOptionSelection({ key: 'pages|more' }, options.slice(0, 1))).toEqual({
+      key: 'people|person:bob',
+      navKey: 'person:bob',
+    });
+  });
+
+  it('clears the selection when no option is left', () => {
+    expect(reconcileMentionOptionSelection({ key: 'people|person:ada', navKey: 'person:ada' }, [])).toBeNull();
+  });
+});
 
 describe('mention panel API mapping', () => {
   it('maps database row search items to editor mention marks with display data', () => {

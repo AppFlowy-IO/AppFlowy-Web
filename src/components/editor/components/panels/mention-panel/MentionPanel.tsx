@@ -51,19 +51,16 @@ import {
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
+  MentionOptionSelection,
   MentionPanelSearchResult,
   normalizeMentionSearchSectionsForPicker,
+  reconcileMentionOptionSelection,
   shouldCacheMentionSearchSections,
 } from './mentionUtils';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
 
 enum MentionTag {
   Result = 'result',
-}
-
-interface Option {
-  index: number;
-  optionKey: string;
 }
 
 const MENTION_SEARCH_LIMIT = 20;
@@ -73,12 +70,15 @@ type MentionPanelOption =
   | {
       kind: 'result';
       key: string;
+      navKey: string;
       result: MentionPanelSearchResult;
     }
   | {
       kind: 'morePages';
       key: string;
       remainingCount: number;
+      // The first collapsed result: Enter on this row expands the section and highlights it.
+      firstHidden: MentionOptionSelection;
     }
   | {
       kind: 'createPage';
@@ -87,7 +87,12 @@ type MentionPanelOption =
     };
 
 type MentionPanelResultOption = Extract<MentionPanelOption, { kind: 'result' | 'morePages' }>;
+type MentionPanelMorePagesOption = Extract<MentionPanelOption, { kind: 'morePages' }>;
 type MentionPanelCreatePageOption = Extract<MentionPanelOption, { kind: 'createPage' }>;
+
+function mentionOptionSelection(option: MentionPanelOption): MentionOptionSelection {
+  return option.kind === 'result' ? { key: option.key, navKey: option.navKey } : { key: option.key };
+}
 
 interface MentionPanelResultSection {
   section: MentionSearchSection;
@@ -230,11 +235,13 @@ function MentionResultIcon({ item, title }: { item: MentionSearchResultItem; tit
 
 function MentionResultButton({
   result,
+  optionKey,
   index,
   selected,
   onClick,
 }: {
   result: MentionPanelSearchResult;
+  optionKey: string;
   index: number;
   selected: boolean;
   onClick: () => void;
@@ -254,6 +261,7 @@ function MentionResultButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-option-key={optionKey}
       data-selected={selected || undefined}
       data-option-kind={item.kind}
       startIcon={<MentionResultIcon item={item} title={title} />}
@@ -272,11 +280,13 @@ function MentionResultButton({
 
 function MentionMoreResultsButton({
   remainingCount,
+  optionKey,
   index,
   selected,
   onClick,
 }: {
   remainingCount: number;
+  optionKey: string;
   index: number;
   selected: boolean;
   onClick: () => void;
@@ -292,6 +302,7 @@ function MentionMoreResultsButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-option-key={optionKey}
       data-selected={selected || undefined}
       startIcon={<MoreIcon className={'h-5 w-5 min-w-5 text-icon-tertiary'} />}
       className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-tertiary hover:bg-fill-content-hover ${
@@ -307,12 +318,14 @@ function MentionMoreResultsButton({
 function MentionCreatePageButton({
   createType,
   searchText,
+  optionKey,
   index,
   selected,
   onClick,
 }: {
   createType: MentionType.childPage | MentionType.PageRef;
   searchText?: string;
+  optionKey: string;
   index: number;
   selected: boolean;
   onClick: () => void;
@@ -326,6 +339,7 @@ function MentionCreatePageButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-option-key={optionKey}
       data-selected={selected || undefined}
       startIcon={
         isChildPage ? (
@@ -385,8 +399,14 @@ export function MentionPanel({
   const open = isPanelOpen(PanelType.Mention) || isPanelOpen(PanelType.PageReference);
   const useLocalMentionFallback = open && !searchMentions && Boolean(loadViews);
   const hasMentionPanelSource = Boolean(searchMentions) || useLocalMentionFallback;
-  const selectedOptionRef = useRef<Option | null>(null);
-  const [selectedOption, setSelectedOption] = useState<Option | null>(null);
+  // The highlight is held by option key, never by position. The ref mirrors it at once for the
+  // native keydown listener, which can run before React renders the change.
+  const selectionRef = useRef<MentionOptionSelection | null>(null);
+  const [selection, setSelectionState] = useState<MentionOptionSelection | null>(null);
+  const setSelection = useCallback((next: MentionOptionSelection | null) => {
+    selectionRef.current = next;
+    setSelectionState(next);
+  }, []);
   const editor = useSlateStatic() as YjsEditor;
   const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
   const [mentionSearchLoading, setMentionSearchLoading] = useState(false);
@@ -466,11 +486,10 @@ export function MentionPanel({
 
   useEffect(() => {
     if (!open) {
-      selectedOptionRef.current = null;
-      setSelectedOption(null);
+      setSelection(null);
       setShowMorePages(false);
     }
-  }, [open]);
+  }, [open, setSelection]);
 
   useEffect(() => {
     setShowMorePages(false);
@@ -487,8 +506,7 @@ export function MentionPanel({
       return;
     }
 
-    selectedOptionRef.current = null;
-    setSelectedOption(null);
+    setSelection(null);
 
     const searchMentionsFn = searchMentions;
     let cancelled = false;
@@ -640,6 +658,7 @@ export function MentionPanel({
     mentionSearchRequests,
     open,
     searchMentions,
+    setSelection,
     useLocalMentionFallback,
   ]);
 
@@ -648,8 +667,7 @@ export function MentionPanel({
 
     let cancelled = false;
 
-    selectedOptionRef.current = null;
-    setSelectedOption(null);
+    setSelection(null);
     setMentionSearchFailed(false);
     setMentionSearchDeferred(false);
     setMentionSearchLoading(true);
@@ -677,7 +695,7 @@ export function MentionPanel({
     return () => {
       cancelled = true;
     };
-  }, [loadViews, useLocalMentionFallback]);
+  }, [loadViews, setSelection, useLocalMentionFallback]);
 
   useEffect(() => {
     if (useLocalMentionFallback) return;
@@ -688,9 +706,8 @@ export function MentionPanel({
   useEffect(() => {
     if (!useLocalMentionFallback) return;
 
-    selectedOptionRef.current = null;
-    setSelectedOption(null);
-  }, [searchText, useLocalMentionFallback]);
+    setSelection(null);
+  }, [searchText, setSelection, useLocalMentionFallback]);
 
   const rawMentionSearchResults = useMemo(
     () =>
@@ -725,14 +742,18 @@ export function MentionPanel({
         const sectionOptions: MentionPanelResultOption[] = visibleResults.map((result) => ({
           kind: 'result',
           key: result.key,
+          navKey: result.navKey,
           result,
         }));
 
         if (shouldCollapse) {
+          const firstHidden = results[PAGE_RESULT_COLLAPSE_LIMIT];
+
           sectionOptions.push({
             kind: 'morePages',
-            key: `${section.kind}:${sectionIndex}:more`,
+            key: `${section.kind}|more`,
             remainingCount: results.length - PAGE_RESULT_COLLAPSE_LIMIT,
+            firstHidden: { key: firstHidden.key, navKey: firstHidden.navKey },
           });
         }
 
@@ -767,37 +788,42 @@ export function MentionPanel({
       createPageOptions: createOptions,
     };
   }, [canCreatePageInLocalFallback, pickerMentionSections, rawMentionSearchResults, showMorePages]);
-  const mentionOptionIndexByKey = useMemo(() => {
-    return new Map(mentionPanelOptions.map((option, index) => [option.key, index]));
-  }, [mentionPanelOptions]);
+  const { mentionOptionByKey, mentionOptionIndexByKey } = useMemo(
+    () => ({
+      mentionOptionByKey: new Map(mentionPanelOptions.map((option) => [option.key, option])),
+      mentionOptionIndexByKey: new Map(mentionPanelOptions.map((option, index) => [option.key, index])),
+    }),
+    [mentionPanelOptions]
+  );
 
-  // Database rows can merge in after the user started navigating. Re-point the index before paint
-  // so the highlight stays on the same option instead of whatever shifted into its position.
+  // Typed rows or a cache refresh can merge in after the user started navigating. Before paint,
+  // keep the highlight on the same option, else on the same object in another section, else on
+  // the first option, so it never lands on whatever moved into its old position.
   useLayoutEffect(() => {
-    setSelectedOption((current) => {
-      const index = current ? mentionOptionIndexByKey.get(current.optionKey) : undefined;
+    const current = selectionRef.current;
+    const next = reconcileMentionOptionSelection(current, mentionPanelOptions);
 
-      return current && index !== undefined && index !== current.index ? { ...current, index } : current;
-    });
-  }, [mentionOptionIndexByKey]);
+    if (next !== current) setSelection(next);
+  }, [mentionPanelOptions, setSelection]);
 
   const showMentionSearchLoadingState =
     hasMentionPanelSource && (mentionSearchLoading || mentionSearchDeferred) && rawMentionSearchResults.length === 0;
+  const selectedOptionKey = selection?.key;
+  const selectedOptionIndex =
+    selectedOptionKey === undefined ? undefined : mentionOptionIndexByKey.get(selectedOptionKey);
 
   useEffect(() => {
-    selectedOptionRef.current = selectedOption;
-    if (!selectedOption) return;
-    const { index } = selectedOption;
+    if (selectedOptionIndex === undefined) return;
 
     const el = ref.current?.querySelector(
-      `[data-option-category="${MentionTag.Result}"] [data-option-index="${index}"]`
+      `[data-option-category="${MentionTag.Result}"] [data-option-index="${selectedOptionIndex}"]`
     ) as HTMLButtonElement | null;
 
     el?.scrollIntoView({
       behavior: 'smooth',
       block: 'nearest',
     });
-  }, [selectedOption]);
+  }, [selectedOptionKey, selectedOptionIndex]);
 
   const handleAddMention = useCallback(
     (mention: Mention) => {
@@ -888,6 +914,15 @@ export function MentionPanel({
     ]
   );
 
+  const expandMorePages = useCallback(
+    (option: MentionPanelMorePagesOption) => {
+      setShowMorePages(true);
+      // Expanding from the highlighted row hands the highlight to the first item it reveals.
+      if (selectionRef.current?.key === option.key) setSelection(option.firstHidden);
+    },
+    [setSelection]
+  );
+
   const handlePanelKeyDown = useCallback(
     (e: KeyboardEvent) => {
       // This native listener runs before the host editor's React handler.
@@ -897,22 +932,23 @@ export function MentionPanel({
       const { key } = e;
 
       switch (key) {
-        case 'Enter':
+        case 'Enter': {
           e.preventDefault();
-          if (selectedOptionRef.current) {
-            const index = selectedOptionRef.current.index;
-            const option = mentionPanelOptions[index];
+          // Resolve by key: after a merge, the option at the highlight's old position is another item.
+          const current = selectionRef.current;
+          const option = current ? mentionOptionByKey.get(current.key) : undefined;
 
-            if (option?.kind === 'result') {
-              handleSelectedSearchResult(option.result);
-            } else if (option?.kind === 'morePages') {
-              setShowMorePages(true);
-            } else if (option?.kind === 'createPage') {
-              void handleAddPage(option.createType);
-            }
+          if (option?.kind === 'result') {
+            handleSelectedSearchResult(option.result);
+          } else if (option?.kind === 'morePages') {
+            expandMorePages(option);
+          } else if (option?.kind === 'createPage') {
+            void handleAddPage(option.createType);
           }
 
           break;
+        }
+
         case 'Escape':
           e.stopPropagation();
           e.preventDefault();
@@ -926,20 +962,18 @@ export function MentionPanel({
 
           if (optionCount === 0) break;
 
-          const current = selectedOptionRef.current;
+          const current = selectionRef.current;
+          const currentIndex = current ? mentionOptionIndexByKey.get(current.key) : undefined;
+          let nextIndex: number;
 
-          if (!current || current.index < 0 || current.index >= optionCount) {
-            const index = key === 'ArrowDown' ? 0 : optionCount - 1;
-
-            setSelectedOption({ index, optionKey: mentionPanelOptions[index].key });
-            break;
+          if (currentIndex === undefined) {
+            nextIndex = key === 'ArrowDown' ? 0 : optionCount - 1;
+          } else {
+            nextIndex =
+              key === 'ArrowDown' ? (currentIndex + 1) % optionCount : (currentIndex - 1 + optionCount) % optionCount;
           }
 
-          const nextIndex =
-            key === 'ArrowDown' ? (current.index + 1) % optionCount : (current.index - 1 + optionCount) % optionCount;
-
-          setSelectedOption({ index: nextIndex, optionKey: mentionPanelOptions[nextIndex].key });
-
+          setSelection(mentionOptionSelection(mentionPanelOptions[nextIndex]));
           break;
         }
 
@@ -947,11 +981,21 @@ export function MentionPanel({
           break;
       }
     },
-    [closePanel, handleAddPage, handleSelectedSearchResult, mentionPanelOptions]
+    [
+      closePanel,
+      expandMorePages,
+      handleAddPage,
+      handleSelectedSearchResult,
+      mentionOptionByKey,
+      mentionOptionIndexByKey,
+      mentionPanelOptions,
+      setSelection,
+    ]
   );
   const handlePanelKeyDownRef = useRef(handlePanelKeyDown);
 
-  useEffect(() => {
+  // Refresh before paint, so a key pressed right after new options render acts on those options.
+  useLayoutEffect(() => {
     handlePanelKeyDownRef.current = handlePanelKeyDown;
   }, [handlePanelKeyDown]);
 
@@ -1046,15 +1090,17 @@ export function MentionPanel({
                   />
                   {options.map((option) => {
                     const index = mentionOptionIndexByKey.get(option.key) ?? 0;
+                    const selected = selectedOptionKey === option.key;
 
                     if (option.kind === 'morePages') {
                       return (
                         <MentionMoreResultsButton
                           key={option.key}
+                          optionKey={option.key}
                           remainingCount={option.remainingCount}
                           index={index}
-                          selected={selectedOption?.index === index}
-                          onClick={() => setShowMorePages(true)}
+                          selected={selected}
+                          onClick={() => expandMorePages(option)}
                         />
                       );
                     }
@@ -1062,9 +1108,10 @@ export function MentionPanel({
                     return (
                       <MentionResultButton
                         key={option.key}
+                        optionKey={option.key}
                         result={option.result}
                         index={index}
-                        selected={selectedOption?.index === index}
+                        selected={selected}
                         onClick={() => handleSelectedSearchResult(option.result)}
                       />
                     );
@@ -1090,10 +1137,11 @@ export function MentionPanel({
                   return (
                     <MentionCreatePageButton
                       key={option.key}
+                      optionKey={option.key}
                       createType={option.createType}
                       searchText={searchText}
                       index={index}
-                      selected={selectedOption?.index === index}
+                      selected={selectedOptionKey === option.key}
                       onClick={() => void handleAddPage(option.createType)}
                     />
                   );

@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
-import { MentionSearchRequest, MentionTargetKind, View, ViewLayout } from '@/application/types';
+import { MentionSearchRequest, MentionTargetKind, MentionType, View, ViewLayout } from '@/application/types';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 
 import { MentionPanel } from '../MentionPanel';
@@ -50,6 +50,8 @@ describe('MentionPanel composition', () => {
     mockPanelContext.searchText = 'Target';
     mockEditorContext.searchMentions = undefined;
     mockEditorContext.enableReminderMentions = undefined;
+    mockEditorContext.addPage = undefined;
+    mockEditorContext.viewId = undefined;
     mockLoadViews.mockResolvedValue([{ view_id: 'target-page', name: 'Target', layout: ViewLayout.Document } as View]);
   });
 
@@ -187,5 +189,57 @@ describe('MentionPanel composition', () => {
       expect(mockRemoveContent).toHaveBeenCalledTimes(1);
       expect(mockAddMark).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it('highlights the create-page options by key and runs the highlighted one on Enter', async () => {
+    const addPage = jest.fn(async () => ({ view_id: 'new-page' }));
+
+    mockEditorContext.addPage = addPage;
+    mockEditorContext.viewId = 'current-page';
+    const editor = Object.assign(withReact(createEditor()), { flushLocalChanges: jest.fn() });
+
+    render(
+      <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@Target' }] }]}>
+        <Editable data-testid='editor' />
+        <MentionPanel notifyOnInsert={false} />
+      </Slate>
+    );
+    const editable = screen.getByTestId('editor');
+
+    await screen.findByRole('button', { name: 'Target' });
+    const createButtons = Array.from(document.querySelectorAll<HTMLElement>('[data-option-key^="createPage:"]'));
+    const scrollIntoView = jest.fn();
+
+    expect(createButtons.map((button) => button.getAttribute('data-option-key'))).toEqual([
+      'createPage:childPage',
+      'createPage:pageReference',
+    ]);
+    document.querySelectorAll('[data-option-index]').forEach((button) => {
+      Object.defineProperty(button, 'scrollIntoView', { value: scrollIntoView });
+    });
+    await act(async () => {
+      Transforms.select(editor, Editor.end(editor, []));
+    });
+
+    // From no highlight, ArrowUp wraps to the last option, then moves up one.
+    await act(async () => {
+      fireEvent.keyDown(editable, { key: 'ArrowUp' });
+    });
+    expect(createButtons[1].getAttribute('data-selected')).toBe('true');
+    await act(async () => {
+      fireEvent.keyDown(editable, { key: 'ArrowUp' });
+    });
+    expect(createButtons[0].getAttribute('data-selected')).toBe('true');
+    expect(createButtons[1].getAttribute('data-selected')).toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      fireEvent.keyDown(editable, { key: 'Enter', keyCode: 13, which: 13 });
+    });
+    expect(addPage).toHaveBeenCalledWith('current-page', { name: 'Target', layout: ViewLayout.Document });
+    expect(mockAddMark).toHaveBeenCalledWith(
+      editor,
+      expect.objectContaining({ value: { page_id: 'new-page', type: MentionType.childPage } })
+    );
   });
 });

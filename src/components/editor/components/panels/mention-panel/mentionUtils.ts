@@ -12,7 +12,10 @@ import {
 } from '@/application/types';
 
 export interface MentionPanelSearchResult {
+  /** The option key: the picker section kind plus `navKey`, holding no position. */
   key: string;
+  /** The item's section-free identity, from {@link mentionItemNavKey}. */
+  navKey: string;
   item: MentionSearchResultItem;
   mention: Mention;
   sectionKind: MentionSearchSectionKind;
@@ -309,16 +312,80 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
   }
 }
 
+function mentionPayloadString(item: MentionSearchResultItem, field: string): string | undefined {
+  const value = (item.mention as unknown as Record<string, unknown>)[field];
+
+  return typeof value === 'string' ? value : undefined;
+}
+
+function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
+  return values.find((value) => Boolean(value));
+}
+
+/**
+ * The section-free identity of a mention result. The same object gets the same key in every
+ * section, response and merge, so the picker can keep its highlight on it, and lanes that merge
+ * results later can deduplicate by it.
+ *
+ * Objects and links use the cross-client format proposed for MEN-X-02: `person:<person_id>`,
+ * `page:<page_id>`, `database:<database_id>:<database_view_id|->`, `row:<database_id>:<row_id>`
+ * and `link:<url>`. Date and reminder quick picks have no object id and a time computed per
+ * request ("Reminder 1 week"), so they use their kind and title, for example `date:Today`.
+ */
+export function mentionItemNavKey(item: MentionSearchResultItem): string {
+  const payload = (field: string) => mentionPayloadString(item, field);
+
+  switch (item.kind) {
+    case MentionTargetKind.Person:
+      return `person:${firstNonEmpty(payload('person_id'), item.object_id) ?? item.title}`;
+    case MentionTargetKind.Page:
+      return `page:${firstNonEmpty(payload('page_id'), item.object_id) ?? item.title}`;
+    case MentionTargetKind.Database: {
+      const databaseId = firstNonEmpty(payload('database_id'), item.database_id, item.object_id) ?? '-';
+      const viewId = firstNonEmpty(payload('database_view_id'), item.database_view_id) ?? '-';
+
+      return `database:${databaseId}:${viewId}`;
+    }
+
+    case MentionTargetKind.DatabaseRow: {
+      const databaseId = firstNonEmpty(payload('database_id'), item.database_id) ?? '-';
+      const rowId = firstNonEmpty(payload('row_id'), item.database_row_id, item.object_id) ?? '-';
+
+      return `row:${databaseId}:${rowId}`;
+    }
+
+    case MentionTargetKind.ExternalLink:
+      return `link:${firstNonEmpty(payload('url')) ?? item.title}`;
+    default:
+      return `${item.kind}:${item.title}`;
+  }
+}
+
+/**
+ * Flattens picker sections into selectable results. A key holds the section kind and the item's
+ * navKey but no position, so results that merge in later (typed rows, a cache refresh) never
+ * re-key the options already on screen. Only a real duplicate inside one section gets an
+ * occurrence suffix (`#2`, `#3`, …).
+ */
 export function flattenMentionSearchSections(sections: MentionSearchSection[]): MentionPanelSearchResult[] {
+  const occurrences = new Map<string, number>();
+
   return sections.flatMap((section, sectionIndex) =>
-    section.items.flatMap((item, itemIndex) => {
+    section.items.flatMap((item) => {
       const mention = mentionSearchItemToMention(item);
 
       if (!mention) return [];
 
+      const navKey = mentionItemNavKey(item);
+      const baseKey = `${section.kind}|${navKey}`;
+      const occurrence = (occurrences.get(baseKey) ?? 0) + 1;
+
+      occurrences.set(baseKey, occurrence);
+
       return [
         {
-          key: `${section.kind}:${sectionIndex}:${item.kind}:${item.object_id ?? item.title}:${itemIndex}`,
+          key: occurrence === 1 ? baseKey : `${baseKey}#${occurrence}`,
+          navKey,
           item,
           mention,
           sectionKind: section.kind,
@@ -327,6 +394,31 @@ export function flattenMentionSearchSections(sections: MentionSearchSection[]): 
       ];
     })
   );
+}
+
+/** The highlighted picker option, held by key so that a merge cannot move it onto another item. */
+export interface MentionOptionSelection {
+  key: string;
+  /** The highlighted item's navKey, used to find the same object again in another section. */
+  navKey?: string;
+}
+
+/**
+ * Re-resolves the highlight after the option list changed. It stays on the same option while its
+ * key is listed, else moves to the same object in another section, else to the first option.
+ * Returns `selection` itself when nothing changed.
+ */
+export function reconcileMentionOptionSelection(
+  selection: MentionOptionSelection | null,
+  options: readonly MentionOptionSelection[]
+): MentionOptionSelection | null {
+  if (!selection || options.some((option) => option.key === selection.key)) return selection;
+
+  const sameObject =
+    selection.navKey === undefined ? undefined : options.find((option) => option.navKey === selection.navKey);
+  const next = sameObject ?? options[0];
+
+  return next ? { key: next.key, navKey: next.navKey } : null;
 }
 
 function normalizeOptionalString(value?: string | null) {
