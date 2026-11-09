@@ -25,6 +25,17 @@ This is a regression checklist and record of user expectations, not a claim that
 - Existing Codex sessions may still have the old `--autoConnect` MCP process loaded. Do not call its browser tools until it has been restarted with the isolated configuration. Do not enumerate personal browser tabs to verify isolation.
 - These preferences apply across projects, including when a skill suggests reusing an existing Chrome session. If isolation cannot be established, report the blocker instead of accessing the user's browser.
 
+## Collaboration branch identity
+
+- Regression checked 2026-11-09: missing remote collab-version metadata is no evidence of a branch
+  change. Preserve the known Y.Doc version, local cache, and pending outbox edits. Only a concrete
+  differing version may trigger history recovery.
+- Sibling-tab edits can be broadcast before server acceptance. An unversioned peer update must not
+  enter a known restored branch; retain local state until authoritative catch-up arrives.
+- Cover versionless Update and Manifest delivery over WebSocket and BroadcastChannel with queued
+  edits before and after the message. Assert that uploads retain the version and both edits reach
+  a server replica, without cache reopening, outbox discard, or document destruction.
+
 ## Shared issues reported across embed PRs
 
 ### Menus, icons, hover, and placement
