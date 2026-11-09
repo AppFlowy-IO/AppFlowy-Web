@@ -206,3 +206,10 @@ Use the relevant MCP frame and latest user screenshot; these links are reference
 - Check applicable upload limits and account/auth boundaries without weakening them for the test.
 - Run focused regression tests with real Slate/Yjs and browser interactions where relevant. Mock external service boundaries deterministically, and explicitly distinguish mocked-provider tests from live provider verification.
 - Summarize effects on shared menus, captions, mentions, upload controls, media AI, selection, and other blocks. Report remaining limitations rather than claiming untested parity.
+
+## Calendar popup regression (2026-11-06)
+
+- With the navigation sidebar hidden, a selected multi-day range can span the full calendar width. Event editor popovers must stay within the viewport even when their anchor is wider than the available side space; prefer bottom/top placement with collision shifting for both draft and saved events; left/right placement can leave a wide anchor with no usable side space.
+- Constrain editor width and height for narrow/short viewports, keep all properties reachable by scrolling, and cover wide anchors near viewport edges.
+
+- Follow-up (2026-11-06): the user still saw `data-side="left"`, a fixed `w-[360px]` draft editor and negative popup X after the first fix. The running main-checkout server had not received the worktree change. Verify the actual user-facing origin serves the changed component; a passing isolated wrapper test does not prove the real application loaded the fix.
