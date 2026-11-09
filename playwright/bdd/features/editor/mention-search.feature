@@ -13,6 +13,13 @@ Feature: Mention panel search
     And the mention panel does not show a links section
     And the mention panel does not show database rows
 
+  Scenario: Mention requests carry per-lane stream headers
+    Given a blank mention search document page is open
+    And mention search requests are recorded
+    When I search mentions for "example.com"
+    Then the typed mention requests for "example.com" were sent on two streams of one session
+    And the empty mention request was sent on the bare stream without database rows
+
   Scenario: Typed mention query filters fixture people
     Given a blank mention search document page is open
     When I search mentions for the fixture member

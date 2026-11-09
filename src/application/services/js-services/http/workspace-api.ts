@@ -1,3 +1,5 @@
+import axios, { AxiosError } from 'axios';
+
 import {
   AccessLevel,
   AddSpaceGroupPermissionPayload,
@@ -9,6 +11,7 @@ import {
   GuestConversionCodeInfo,
   GuestInvitation,
   MentionablePerson,
+  MentionSearchOptions,
   MentionSearchRequest,
   MentionSearchResponse,
   Role,
@@ -539,12 +542,84 @@ export async function getMentionableUsers(workspaceId: string) {
   }));
 }
 
-export async function searchMentions(workspaceId: string, payload: MentionSearchRequest): Promise<MentionSearchResponse> {
-  const url = `/api/workspace/${workspaceId}/mentions/search`;
+// Set once a mention search sent with the stream headers failed without a response while the same
+// search without them was answered: a proxy, such as a self-hosted nginx whose CORS allow-list
+// predates these headers, rejects them in the preflight. This tab then leaves them out.
+let mentionStreamHeadersRejected = false;
 
-  return executeAPIRequest<MentionSearchResponse>(() =>
-    getAxios()?.post<APIResponse<MentionSearchResponse>>(url, payload)
+function mentionStreamHeaders({ streamId, requestTime }: MentionSearchOptions) {
+  if (mentionStreamHeadersRejected) return undefined;
+
+  const headers: Record<string, string> = {};
+
+  if (requestTime !== undefined && Number.isSafeInteger(requestTime) && requestTime >= 0) {
+    headers['x-request-time'] = String(requestTime);
+  }
+
+  if (streamId) headers['x-request-stream-id'] = streamId;
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+// A rejected CORS preflight reaches the page as a network error on this request, with no response.
+function mayBeRejectedStreamHeaders(error: unknown, url: string) {
+  return (
+    axios.isAxiosError(error) && error.code === AxiosError.ERR_NETWORK && !error.response && error.config?.url === url
   );
+}
+
+function rejectMentionStreamHeaders() {
+  if (mentionStreamHeadersRejected) return;
+
+  mentionStreamHeadersRejected = true;
+  console.warn(
+    '[mention-search] The x-request-time and x-request-stream-id headers were rejected, probably by a ' +
+      'CORS preflight. This tab now sends mention searches without them. A self-hosted proxy needs both ' +
+      'headers in its CORS allow-list.'
+  );
+}
+
+/** Forgets a header rejection recorded by an earlier test. */
+export function resetMentionStreamHeadersForTests() {
+  mentionStreamHeadersRejected = false;
+}
+
+/**
+ * Searches mention targets. `options` carries the request's abort signal and its Search
+ * supersession stream (`x-request-stream-id`, `x-request-time`). When a request with those headers
+ * fails without any response, it is retried once without them; if that retry is answered, the tab
+ * stops sending them.
+ */
+export async function searchMentions(
+  workspaceId: string,
+  payload: MentionSearchRequest,
+  options: MentionSearchOptions = {}
+): Promise<MentionSearchResponse> {
+  const url = `/api/workspace/${workspaceId}/mentions/search`;
+  const { signal } = options;
+  const post = (headers?: Record<string, string>) =>
+    getAxios()?.post<APIResponse<MentionSearchResponse>>(url, payload, {
+      ...(headers ? { headers } : {}),
+      ...(signal ? { signal } : {}),
+    });
+
+  return executeAPIRequest<MentionSearchResponse>(async () => {
+    const headers = mentionStreamHeaders(options);
+
+    if (!headers) return post();
+
+    try {
+      return await post(headers);
+    } catch (error) {
+      if (signal?.aborted || !mayBeRejectedStreamHeaders(error, url)) throw error;
+
+      // A real outage fails this retry as well and leaves the headers on.
+      const response = await post();
+
+      rejectMentionStreamHeaders();
+      return response;
+    }
+  });
 }
 
 export interface PageMentionUpdate {

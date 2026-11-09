@@ -504,7 +504,23 @@ export interface MentionSearchResponse {
   partial?: boolean;
 }
 
-export type SearchMentions = (request: MentionSearchRequest) => Promise<MentionSearchResponse>;
+/** Transport options for one mention search request. */
+export interface MentionSearchOptions {
+  /** Aborts the request. */
+  signal?: AbortSignal;
+  /**
+   * Sent as `x-request-stream-id`. Search cancels an in-flight request when a newer one arrives on
+   * the same stream, so requests that must both complete need different streams.
+   */
+  streamId?: string;
+  /** Sent as `x-request-time`, in epoch milliseconds. It must strictly increase within a stream. */
+  requestTime?: number;
+}
+
+export type SearchMentions = (
+  request: MentionSearchRequest,
+  options?: MentionSearchOptions
+) => Promise<MentionSearchResponse>;
 
 export interface FolderMeta {
   current_view: ViewId;

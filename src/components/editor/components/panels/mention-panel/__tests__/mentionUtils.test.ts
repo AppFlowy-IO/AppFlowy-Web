@@ -14,6 +14,7 @@ import {
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
+  isDatabaseRowOnlyMentionRequest,
   mentionItemNavKey,
   MentionPanelSearchResult,
   mentionSearchItemToMention,
@@ -635,13 +636,54 @@ describe('mention panel API mapping', () => {
     ]);
   });
 
-  it('keeps empty mention search as one request so rows stay hidden by UI policy', () => {
-    const request = {
-      query: '',
-      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
-    };
+  it.each([
+    {
+      panel: '@',
+      include: [
+        MentionTargetKind.Person,
+        MentionTargetKind.Page,
+        MentionTargetKind.Database,
+        MentionTargetKind.DatabaseRow,
+        MentionTargetKind.Date,
+        MentionTargetKind.Reminder,
+        MentionTargetKind.ExternalLink,
+      ],
+    },
+    {
+      panel: 'page-reference',
+      include: [MentionTargetKind.Page, MentionTargetKind.Database, MentionTargetKind.DatabaseRow],
+    },
+  ])('sends a bare $panel query as one request that does not ask for database rows', ({ include }) => {
+    for (const query of ['', '  ']) {
+      const request = { query, limit: 20, include, context: { view_id: 'document-1', row_id: 'row-1' } };
 
-    expect(buildMentionSearchRequests(request)).toEqual([request]);
+      expect(buildMentionSearchRequests(request)).toEqual([
+        { ...request, include: include.filter((kind) => kind !== MentionTargetKind.DatabaseRow) },
+      ]);
+    }
+
+    expect(include).toContain(MentionTargetKind.DatabaseRow);
+  });
+
+  it('leaves a bare request alone when dropping database rows would empty its include', () => {
+    const everyKind = { query: '', include: [] };
+    const rowsOnly = { query: '', include: [MentionTargetKind.DatabaseRow] };
+    const withoutRows = { query: '', include: [MentionTargetKind.Page] };
+
+    expect(buildMentionSearchRequests(everyKind)).toEqual([everyKind]);
+    expect(buildMentionSearchRequests(rowsOnly)).toEqual([rowsOnly]);
+    expect(buildMentionSearchRequests(withoutRows)[0]).toBe(withoutRows);
+  });
+
+  it('recognizes only the typed rows request as database-row only', () => {
+    const [primary, rows] = buildMentionSearchRequests({
+      query: 'road',
+      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
+    });
+
+    expect(isDatabaseRowOnlyMentionRequest(primary)).toBe(false);
+    expect(isDatabaseRowOnlyMentionRequest(rows)).toBe(true);
+    expect(isDatabaseRowOnlyMentionRequest({ query: 'road' })).toBe(false);
   });
 
   it('keeps date and reminder in the primary typed search request when rows are split out', () => {

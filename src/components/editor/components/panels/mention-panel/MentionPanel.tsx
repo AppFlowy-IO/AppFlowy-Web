@@ -38,6 +38,12 @@ import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
 import {
+  isMentionSearchCancelled,
+  MENTION_TYPED_LANES,
+  mentionRequestLane,
+  MentionRequestLanes,
+} from './mentionRequestLanes';
+import {
   getCachedMentionSections,
   isMentionSearchRetryLater,
   markMentionSearchRetryLater,
@@ -415,6 +421,8 @@ export function MentionPanel({
   const [showMorePages, setShowMorePages] = useState(false);
   const [localFallbackViews, setLocalFallbackViews] = useState<View[]>([]);
   const mentionSearchRequestIdRef = useRef(0);
+  // Each opening of the panel is a session with its own request lanes, so it sends on new streams.
+  const mentionRequestLanes = useMemo(() => (open ? new MentionRequestLanes() : null), [open]);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
   const mentionInclude = activePanel === PanelType.PageReference
     ? PAGE_REFERENCE_INCLUDE
@@ -496,7 +504,7 @@ export function MentionPanel({
   }, [mentionSearchCacheKey]);
 
   useEffect(() => {
-    if (!open || !searchMentions) {
+    if (!open || !searchMentions || !mentionRequestLanes) {
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
@@ -509,6 +517,7 @@ export function MentionPanel({
     setSelection(null);
 
     const searchMentionsFn = searchMentions;
+    const lanes = mentionRequestLanes;
     let cancelled = false;
     let timer: number | undefined;
     const requestId = mentionSearchRequestIdRef.current + 1;
@@ -530,7 +539,11 @@ export function MentionPanel({
         let applied = false;
 
         void startMentionSearchRefresh(mentionSearchCacheKey, async () => {
-          const result = await fetchMentionSections();
+          const result = await fetchMentionSections({ refresh: true });
+
+          // An answer that a newer request on its lane replaced, or that was aborted, must not
+          // overwrite the cached entry.
+          if (!isCurrentResult(result)) return;
 
           cacheMentionSections(result);
 
@@ -551,6 +564,8 @@ export function MentionPanel({
             }
           })
           .catch((error) => {
+            if (isMentionSearchCancelled(error)) return;
+
             if (isMentionSearchRetryLater(error)) {
               markMentionSearchRetryLater(mentionSearchCacheKey, error);
               return;
@@ -560,9 +575,7 @@ export function MentionPanel({
           });
       }
 
-      return () => {
-        cancelled = true;
-      };
+      return stopSearch;
     }
 
     setMentionSections([]);
@@ -573,19 +586,40 @@ export function MentionPanel({
       return !cancelled && mentionSearchRequestIdRef.current === requestId;
     }
 
+    // Runs when the query changes, the panel closes or it unmounts. Only the typed requests are
+    // aborted: bare and refresh requests run to their deadline, so a complete answer still reaches
+    // the cache.
+    function stopSearch() {
+      cancelled = true;
+      window.clearTimeout(timer);
+      lanes.abort(MENTION_TYPED_LANES);
+    }
+
+    // Current on every lane it came from: no newer request replaced it and nothing aborted it.
+    function isCurrentResult(result: MentionSectionsFetchResult) {
+      return result.tickets.every((ticket) => lanes.isCurrent(ticket));
+    }
+
     function cacheMentionSections(result: MentionSectionsFetchResult) {
       if (shouldCacheMentionSearchSections(mentionSearchRequests, result.databaseRowResponse, hasMentionSearchQuery)) {
         setCachedMentionSections(mentionSearchCacheKey, result.sections);
       }
     }
 
-    function fetchMentionSections(onSections?: (sections: MentionSearchSection[]) => void) {
+    function fetchMentionSections({
+      refresh,
+      onSections,
+    }: {
+      refresh: boolean;
+      onSections?: (sections: MentionSearchSection[]) => void;
+    }) {
       return fetchMentionSearchSections({
         searchMentions: searchMentionsFn,
         requests: mentionSearchRequests,
         cacheKey: mentionSearchCacheKey,
         hasQuery: hasMentionSearchQuery,
         isCurrent: isCurrentRequest,
+        issueTicket: (request) => lanes.issue(mentionRequestLane(request, refresh)),
         onSections,
       });
     }
@@ -596,17 +630,21 @@ export function MentionPanel({
     }
 
     function runSearch() {
-      void fetchMentionSections(setMentionSections)
+      void fetchMentionSections({ refresh: false, onSections: setMentionSections })
         .then((result) => {
+          if (!isCurrentResult(result)) return;
+
+          // A bare answer is not aborted by typing, so it is still cached after the query changed.
+          cacheMentionSections(result);
+
           if (!isCurrentRequest()) return;
 
-          cacheMentionSections(result);
           setMentionSections(result.sections);
           setMentionSearchFailed(false);
           setMentionSearchDeferred(false);
         })
         .catch((error) => {
-          if (!isCurrentRequest()) return;
+          if (!isCurrentRequest() || isMentionSearchCancelled(error)) return;
 
           if (isMentionSearchRetryLater(error)) {
             markMentionSearchRetryLater(mentionSearchCacheKey, error);
@@ -648,12 +686,10 @@ export function MentionPanel({
       scheduleSearch(hasMentionSearchQuery ? 120 : 0);
     }
 
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+    return stopSearch;
   }, [
     hasMentionSearchQuery,
+    mentionRequestLanes,
     mentionSearchCacheKey,
     mentionSearchRequests,
     open,

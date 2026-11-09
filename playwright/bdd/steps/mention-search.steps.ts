@@ -68,7 +68,13 @@ type MentionSearchResponse = {
   sections: MentionSearchSection[];
 };
 
+type RecordedMentionRequest = {
+  body: { query?: string; include?: string[] } | null;
+  headers: Record<string, string>;
+};
+
 type MentionFixtureState = {
+  mentionRequests?: RecordedMentionRequest[];
   ownerEmail: string;
   memberEmail: string;
   memberName: string;
@@ -130,6 +136,20 @@ Given('the mention search fixture member can be mentioned', async ({ page, reque
 Given('a blank mention search document page is open', async ({ page }) => {
   await createDocumentPageAndNavigate(page);
   await focusEditor(page);
+});
+
+Given('mention search requests are recorded', async ({ page }) => {
+  const recorded: RecordedMentionRequest[] = [];
+
+  getState(page).mentionRequests = recorded;
+  page.on('request', (request) => {
+    if (request.method() !== 'POST' || !request.url().includes('/mentions/search')) return;
+
+    recorded.push({
+      body: request.postDataJSON() as RecordedMentionRequest['body'],
+      headers: request.headers(),
+    });
+  });
 });
 
 Given('database-row mention search retries later for {string}', async ({ page }, query: string) => {
@@ -277,6 +297,39 @@ Then('the mention panel shows an external link for {string}', async ({ page }, h
 
   await expect(linksSection.getByText('Links', { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(linksSection.getByRole('button', { name: hostnamePattern })).toBeVisible({ timeout: 15000 });
+});
+
+Then(
+  'the typed mention requests for {string} were sent on two streams of one session',
+  async ({ page }, query: string) => {
+    const recorded = requireMentionRequests(getState(page));
+    const typed = () => recorded.filter((request) => request.body?.query === query);
+
+    // The primary request and the rows-only request leave together after the typing debounce.
+    await expect
+      .poll(() => typed().filter(isDatabaseRowOnlyRecordedRequest).length, { timeout: 15000 })
+      .toBeGreaterThan(0);
+
+    const primary = typed().find((request) => !isDatabaseRowOnlyRecordedRequest(request));
+    const rows = typed().find(isDatabaseRowOnlyRecordedRequest);
+    const primaryStream = primary?.headers['x-request-stream-id'] ?? '';
+    const session = /^web-mention-(.+)-primary$/.exec(primaryStream)?.[1];
+
+    expect(primary?.body?.include ?? []).not.toContain('database_row');
+    expect(session, `primary stream id "${primaryStream}"`).toBeTruthy();
+    expect(rows?.headers['x-request-stream-id']).toBe(`web-mention-${session}-rows`);
+    expect(primary?.headers['x-request-time']).toMatch(/^\d+$/);
+    expect(rows?.headers['x-request-time']).toMatch(/^\d+$/);
+  }
+);
+
+Then('the empty mention request was sent on the bare stream without database rows', async ({ page }) => {
+  const bare = requireMentionRequests(getState(page)).find((request) => (request.body?.query ?? '') === '');
+
+  expect(bare, 'the empty-query mention request').toBeDefined();
+  expect(bare?.body?.include ?? []).not.toContain('database_row');
+  expect(bare?.headers['x-request-stream-id']).toMatch(/^web-mention-.+-bare$/);
+  expect(bare?.headers['x-request-time']).toMatch(/^\d+$/);
 });
 
 Then('the browser sent a database-row mention search request', async ({ page }) => {
@@ -786,6 +839,20 @@ function requireOwnerToken(state: MentionFixtureState): string {
   }
 
   return state.ownerToken;
+}
+
+function requireMentionRequests(state: MentionFixtureState): RecordedMentionRequest[] {
+  if (!state.mentionRequests) {
+    throw new Error('Mention search requests are not being recorded');
+  }
+
+  return state.mentionRequests;
+}
+
+function isDatabaseRowOnlyRecordedRequest(request: RecordedMentionRequest): boolean {
+  const include = request.body?.include;
+
+  return Array.isArray(include) && include.length === 1 && include[0] === 'database_row';
 }
 
 function requireRowKeyword(state: MentionFixtureState): string {

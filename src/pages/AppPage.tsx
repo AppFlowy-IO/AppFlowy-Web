@@ -5,6 +5,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import {
+  MentionSearchOptions,
   MentionSearchRequest,
   Types,
   UIVariant,
@@ -83,12 +84,12 @@ function AppPage() {
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
   const searchMentions = useCallback(
-    (request: MentionSearchRequest) => {
+    (request: MentionSearchRequest, options?: MentionSearchOptions) => {
       if (!workspaceId) {
         return Promise.reject(new Error('workspaceId is required'));
       }
 
-      return WorkspaceService.searchMentions(workspaceId, request);
+      return WorkspaceService.searchMentions(workspaceId, request, options);
     },
     [workspaceId]
   );

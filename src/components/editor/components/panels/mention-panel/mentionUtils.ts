@@ -456,12 +456,28 @@ interface MentionSearchCacheScope {
   userId?: string | null;
 }
 
+/** Whether the request asks for database rows only, as the typed rows request does. */
+export function isDatabaseRowOnlyMentionRequest(request: MentionSearchRequest) {
+  const include = request.include ?? [];
+
+  return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
+}
+
 export function buildMentionSearchRequests(request: MentionSearchRequest): MentionSearchRequest[] {
   const query = request.query?.trim() ?? '';
   const include = request.include ?? [];
   const includesDatabaseRows = include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
 
-  if (!query || !includesDatabaseRows) {
+  if (!query) {
+    // The picker never shows database rows for an empty query, so it does not ask for them. An
+    // empty include means every kind, and is left to the server.
+    const bareInclude = include.filter((kind) => kind !== MentionTargetKind.DatabaseRow);
+    const dropsRows = bareInclude.length > 0 && bareInclude.length < include.length;
+
+    return [dropsRows ? { ...request, include: bareInclude } : request];
+  }
+
+  if (!includesDatabaseRows) {
     return [request];
   }
 

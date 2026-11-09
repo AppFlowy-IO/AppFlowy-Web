@@ -1,19 +1,25 @@
-import {
-  MentionSearchRequest,
-  MentionSearchResponse,
-  MentionSearchSection,
-  MentionTargetKind,
-  SearchMentions,
-} from '@/application/types';
+import { MentionSearchRequest, MentionSearchResponse, MentionSearchSection, SearchMentions } from '@/application/types';
 
+import {
+  isMentionSearchCancelled,
+  MentionRequestTicket,
+  mentionTicketFailure,
+  mentionTicketOptions,
+} from './mentionRequestLanes';
 import { isMentionSearchRetryLater, markMentionSearchRetryLater } from './mentionSearchCache';
-import { mergeMentionSearchResponses, shouldCacheMentionSearchSections } from './mentionUtils';
+import {
+  isDatabaseRowOnlyMentionRequest,
+  mergeMentionSearchResponses,
+  shouldCacheMentionSearchSections,
+} from './mentionUtils';
 
 const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 
 export interface MentionSectionsFetchResult {
   sections: MentionSearchSection[];
   databaseRowResponse?: MentionSearchResponse;
+  /** The tickets of the responses that make up `sections`. Cache them only while all are current. */
+  tickets: MentionRequestTicket[];
 }
 
 export interface FetchMentionSectionsOptions {
@@ -22,6 +28,11 @@ export interface FetchMentionSectionsOptions {
   cacheKey: string;
   hasQuery: boolean;
   isCurrent: () => boolean;
+  /**
+   * Issues the ticket that each request, including the rows retry, is sent on: its stream, request
+   * time, abort signal and deadline. Without it, requests are sent without them.
+   */
+  issueTicket?: (request: MentionSearchRequest) => MentionRequestTicket;
   // Receives merged sections while the database-row search or its retry is still pending. The
   // final sections are only returned, so callers decide whether to cache them.
   onSections?: (sections: MentionSearchSection[]) => void;
@@ -30,15 +41,10 @@ export interface FetchMentionSectionsOptions {
 interface SearchedMentions {
   request: MentionSearchRequest;
   response: MentionSearchResponse;
+  ticket?: MentionRequestTicket;
 }
 
 type DeliverSections = (responses: MentionSearchResponse[]) => void;
-
-function isDatabaseRowOnlyRequest(request: MentionSearchRequest) {
-  const include = request.include ?? [];
-
-  return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
-}
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
@@ -46,7 +52,30 @@ function delay(ms: number) {
   });
 }
 
+function ticketsOf(searched: SearchedMentions[]) {
+  return searched.flatMap(({ ticket }) => (ticket ? [ticket] : []));
+}
+
+async function sendMentionSearch(
+  { searchMentions, issueTicket }: FetchMentionSectionsOptions,
+  request: MentionSearchRequest
+): Promise<SearchedMentions> {
+  const ticket = issueTicket?.(request);
+
+  if (!ticket) return { request, response: await searchMentions(request) };
+
+  try {
+    return { request, response: await searchMentions(request, mentionTicketOptions(ticket)), ticket };
+  } catch (error) {
+    throw mentionTicketFailure(ticket, error);
+  } finally {
+    ticket.settle();
+  }
+}
+
 function reportDatabaseRowSearchError(cacheKey: string, error: unknown) {
+  if (isMentionSearchCancelled(error)) return;
+
   if (isMentionSearchRetryLater(error)) {
     markMentionSearchRetryLater(cacheKey, error);
   } else {
@@ -72,7 +101,7 @@ function deliverPrimaryBeforeRows(
   pendingResponses: Promise<SearchedMentions>[],
   deliver: DeliverSections
 ) {
-  const rowIndex = requests.findIndex(isDatabaseRowOnlyRequest);
+  const rowIndex = requests.findIndex(isDatabaseRowOnlyMentionRequest);
 
   if (rowIndex === -1) return;
 
@@ -104,7 +133,7 @@ function collectSettledResponses(
     if (result.status === 'fulfilled') {
       fulfilledResponses.push(result.value);
 
-      if (isDatabaseRowOnlyRequest(result.value.request)) {
+      if (isDatabaseRowOnlyMentionRequest(result.value.request)) {
         databaseRowResponse = result.value.response;
       }
 
@@ -113,7 +142,7 @@ function collectSettledResponses(
 
     const request = requests[index];
 
-    if (request && isDatabaseRowOnlyRequest(request)) {
+    if (request && isDatabaseRowOnlyMentionRequest(request)) {
       reportDatabaseRowSearchError(cacheKey, result.reason);
       return;
     }
@@ -125,11 +154,13 @@ function collectSettledResponses(
 }
 
 async function retryDatabaseRowSearch(
-  { searchMentions, cacheKey, isCurrent }: FetchMentionSectionsOptions,
+  options: FetchMentionSectionsOptions,
   rowRequest: MentionSearchRequest,
   fulfilledResponses: SearchedMentions[],
   initialResult: MentionSectionsFetchResult
 ): Promise<MentionSectionsFetchResult> {
+  const { cacheKey, isCurrent } = options;
+
   await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
 
   if (!isCurrent()) {
@@ -137,14 +168,13 @@ async function retryDatabaseRowSearch(
   }
 
   try {
-    const rowRetryResponse = await searchMentions(rowRequest);
-    const nonRowResponses = fulfilledResponses
-      .filter(({ request }) => request !== rowRequest)
-      .map(({ response }) => response);
+    const rowRetry = await sendMentionSearch(options, rowRequest);
+    const searched = [...fulfilledResponses.filter(({ request }) => request !== rowRequest), rowRetry];
 
     return {
-      sections: mergeMentionSearchResponses([...nonRowResponses, rowRetryResponse]).sections ?? [],
-      databaseRowResponse: rowRetryResponse,
+      sections: mergeMentionSearchResponses(searched.map(({ response }) => response)).sections ?? [],
+      databaseRowResponse: rowRetry.response,
+      tickets: ticketsOf(searched),
     };
   } catch (error) {
     reportDatabaseRowSearchError(cacheKey, error);
@@ -155,12 +185,10 @@ async function retryDatabaseRowSearch(
 export async function fetchMentionSearchSections(
   options: FetchMentionSectionsOptions
 ): Promise<MentionSectionsFetchResult> {
-  const { searchMentions, requests, cacheKey, hasQuery } = options;
+  const { requests, cacheKey, hasQuery } = options;
   const deliver = createSectionsDelivery(options);
-  const pendingResponses = requests.map(async (request) => ({
-    request,
-    response: await searchMentions(request),
-  }));
+  // Every request is issued in this tick, each on its own ticket.
+  const pendingResponses = requests.map((request) => sendMentionSearch(options, request));
 
   deliverPrimaryBeforeRows(requests, pendingResponses, deliver);
 
@@ -175,8 +203,12 @@ export async function fetchMentionSearchSections(
   }
 
   const responses = fulfilledResponses.map(({ response }) => response);
-  const initialResult = { sections: mergeMentionSearchResponses(responses).sections ?? [], databaseRowResponse };
-  const rowRequest = requests.find(isDatabaseRowOnlyRequest);
+  const initialResult = {
+    sections: mergeMentionSearchResponses(responses).sections ?? [],
+    databaseRowResponse,
+    tickets: ticketsOf(fulfilledResponses),
+  };
+  const rowRequest = requests.find(isDatabaseRowOnlyMentionRequest);
 
   if (!rowRequest || shouldCacheMentionSearchSections(requests, databaseRowResponse, hasQuery)) {
     return initialResult;
