@@ -73,6 +73,29 @@ describe('useMentionLocalIndexSources', () => {
     expect(ids('B')).toEqual(['b-page']);
   });
 
+  it('gives a new workspace none of the sources the previous one left until the data layer replaces them', () => {
+    const outline = [page('a-page')];
+    // The same id in both workspaces, so a trash list given to the wrong one would show.
+    const trash = [page('shared-id')];
+    const { rerender } = renderSources({ workspaceId: 'A', requesterId: 'user-1', outline, trashList: trash });
+
+    expect(ids('A')).toEqual(['a-page']);
+
+    // `useWorkspaceData` resets the outline and the trash in an effect after the switch: the first
+    // render for B still holds A's. B's recent views are tagged with their workspace already.
+    const bRecent = [page('shared-id')];
+
+    rerender({ workspaceId: 'B', requesterId: 'user-1', outline, trashList: trash, recentViews: bRecent });
+    expect(getMentionLocalSnapshot('A')).toBe(EMPTY_MENTION_LOCAL_SNAPSHOT);
+    expect(ids('B')).toEqual(['shared-id']);
+
+    // The reset, then B's own outline.
+    rerender({ workspaceId: 'B', requesterId: 'user-1', outline: [], recentViews: bRecent });
+    expect(ids('B')).toEqual(['shared-id']);
+    rerender({ workspaceId: 'B', requesterId: 'user-1', outline: [page('b-page')], recentViews: bRecent });
+    expect(ids('B')).toEqual(['b-page', 'shared-id']);
+  });
+
   it('forgets this tab’s events when another account takes over, and keeps the sources', () => {
     const outline = [page('a-page')];
     const { rerender } = renderSources({ workspaceId: 'A', requesterId: 'user-1', outline });

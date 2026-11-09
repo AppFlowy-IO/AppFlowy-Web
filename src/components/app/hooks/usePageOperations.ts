@@ -204,7 +204,8 @@ export function usePageOperations({
         const deletedView = findView(outlineRef.current || [], id);
 
         await PageService.moveToTrash(currentWorkspaceId, id);
-        recordMentionViewDeleted(currentWorkspaceId, id);
+        // The view from before the move: the index's outline may have dropped its subtree since.
+        recordMentionViewDeleted(currentWorkspaceId, id, deletedView);
         if (isDatabaseCatalogView(deletedView)) {
           refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         }

@@ -20,9 +20,15 @@
  *
  * This tab's events show at once and give way to the sources once they catch up: a creation is
  * listed until the outline, the recent views or the trash list it; a rename shows until they show
- * it or a later name; a deletion hides the view until the trash list shows it. This is settled
- * when the sources change or an event is recorded, never when a snapshot is read, so a snapshot
- * depends only on what was written, in which order.
+ * it or a name this tab did not send; a deletion hides the view until the trash list shows it.
+ *
+ * A view the trash list showed and then dropped is gone (deleted for good, or restored where the
+ * outline does not list it yet) for the recent views and this tab's creations, subtree included,
+ * until the outline lists it again, this tab restores it, or reloaded recent views list it or a
+ * view below it. The outline decides for the views it lists, so a restore elsewhere shows them.
+ *
+ * All of this is settled when the sources change or an event is recorded, never when a snapshot
+ * is read, so a snapshot depends only on what was written, in which order.
  *
  * Limits:
  * - The outline covers six levels (`?depth=6`) and lazily loaded subtrees. Deeper pages count only
@@ -52,8 +58,14 @@ import {
 
 import { mentionDatabaseNavKey, mentionPageNavKey } from './mentionUtils';
 
-/** At most this many views keep this tab's events per workspace; the least recently touched go first. */
+/**
+ * At most this many views keep this tab's events per workspace, and as many are remembered as gone
+ * from the trash; the least recently touched go first.
+ */
 export const MENTION_LOCAL_SESSION_LIMIT = 500;
+
+/** At most this many names a view's pending rename keeps for the sources to show before it. */
+const STALE_NAME_LIMIT = 5;
 
 /** What lists a candidate: the outline, only the recent views, or only this tab's creation. */
 export type MentionLocalViewSource = 'outline' | 'recent' | 'session';
@@ -129,17 +141,18 @@ interface SessionView {
   /** This tab's latest name for the view, shown until the sources catch up with it. */
   name?: string;
   /**
-   * The name `name` replaced, as the sources show it until they catch up. For a creation the
-   * sources do not list yet, the name they will first show. Unset when unknown: the sources' name
-   * then wins as soon as they list the view.
+   * The names the sources may show before they show `name`: the one this tab's renames replaced
+   * and the earlier ones it sent (two sends can land within one echo), oldest first. For a creation
+   * the sources do not list yet, the name they will first show. Unset when none is known: the
+   * sources' name then wins as soon as they list the view.
    */
-  replacedName?: string;
+  staleNames?: readonly string[];
   /** Moved to trash in this tab: hidden until the trash list shows it or this tab restores it. */
   deleted?: boolean;
   /**
    * The views the outline listed below it when this tab moved it to the trash. Where the outline no
-   * longer places them (recent views, creations), they stay hidden until the outline lists the view
-   * again outside the trash, or this tab restores it.
+   * longer places them (recent views, creations), they stay hidden while the view is: in the trash,
+   * deleted here or gone from the trash, and not listed by the outline outside the trash.
    */
   deletedSubtree?: ReadonlySet<string>;
   /** Set for this tab's creations, which are listed from here until the sources list them. */
@@ -161,6 +174,15 @@ interface BuiltViews {
 interface WorkspaceIndex {
   sources: MentionIndexSources;
   session: Map<string, SessionView>;
+  /**
+   * Views the trash list showed and then dropped, least recently first: deleted for good, or
+   * restored where the outline does not list them yet. Hidden from the recent views and this tab's
+   * creations until the outline lists them, this tab restores them, or reloaded recent views list
+   * them or a view below them.
+   */
+  goneFromTrash: Set<string>;
+  /** Views this tab restored while the trash list showed them: its dropping them is no deletion. */
+  restoring: Set<string>;
   /** Changes with the sources and the session. */
   viewsVersion: number;
   /** Changes with everything, the roster included. */
@@ -216,6 +238,19 @@ function touchSession(index: WorkspaceIndex, viewId: string): SessionView {
   return entry;
 }
 
+/** The trash list dropped the view without this tab restoring it. */
+function rememberGoneFromTrash(index: WorkspaceIndex, viewId: string) {
+  const gone = index.goneFromTrash;
+
+  gone.delete(viewId);
+  gone.add(viewId);
+  if (gone.size > MENTION_LOCAL_SESSION_LIMIT) {
+    const oldest = gone.values().next().value;
+
+    if (oldest !== undefined) gone.delete(oldest);
+  }
+}
+
 /** Visits outline views depth first, each id once, until `visit` returns true. */
 function walkOutline(views: readonly View[] | undefined, visit: (view: View) => boolean) {
   const stack = views ? [...views].reverse() : [];
@@ -243,15 +278,19 @@ function findOutlineView(outline: readonly View[] | undefined, viewId: string): 
   return found;
 }
 
-/** The ids of every view below `view` in the outline. */
-function subtreeIds(view: View): Set<string> {
+/** The ids of every view below `views` (copies of one outline view) in the outline. */
+function subtreeIds(views: readonly (View | undefined)[]): Set<string> {
   const ids = new Set<string>();
 
-  walkOutline(view.children, (child) => {
-    ids.add(child.view_id);
-    return false;
+  views.forEach((view) =>
+    walkOutline(view?.children, (child) => {
+      ids.add(child.view_id);
+      return false;
+    })
+  );
+  views.forEach((view) => {
+    if (view) ids.delete(view.view_id);
   });
-  ids.delete(view.view_id);
   return ids;
 }
 
@@ -266,19 +305,18 @@ function sourceName(sources: MentionIndexSources, viewId: string): string | unde
   return view ? view.name ?? '' : undefined;
 }
 
-/** The names the sources give each of `entries`' views that they list, the outline's first. */
-function sourceNames(sources: MentionIndexSources, entries: ReadonlyMap<string, SessionView>): Map<string, string> {
-  const names = new Map<string, string>();
-  const take = (view: View) => {
-    if (entries.has(view.view_id) && !names.has(view.view_id)) names.set(view.view_id, view.name ?? '');
-  };
+/**
+ * `names` without `latest` and repeats, oldest first, keeping the newest `STALE_NAME_LIMIT`; unset
+ * when none is left.
+ */
+function staleNamesOf(names: readonly string[], latest: string): readonly string[] | undefined {
+  const kept: string[] = [];
 
-  walkOutline(sources.outline, (view) => {
-    take(view);
-    return names.size === entries.size;
-  });
-  sources.recent?.forEach(take);
-  return names;
+  for (let i = names.length - 1; i >= 0 && kept.length < STALE_NAME_LIMIT; i -= 1) {
+    if (names[i] !== latest && !kept.includes(names[i])) kept.unshift(names[i]);
+  }
+
+  return kept.length > 0 ? kept : undefined;
 }
 
 /** The trash list shows the view: it hides the view from now on, and decides about a creation. */
@@ -289,14 +327,14 @@ function settleTrashed(entry: SessionView) {
 
 /**
  * The outline or the recent views list the view under `listedName`. They decide about a creation
- * from now on, and their name wins for good once it is this tab's or a later one. Dropping the
- * override then changes no output.
+ * from now on, and their name wins for good once it is this tab's latest or one this tab did not
+ * send. Dropping the override then changes no output.
  */
 function settleListed(entry: SessionView, listedName: string) {
   if (entry.created) entry.listed = true;
   if (entry.name !== undefined && shownName(listedName, entry) === listedName) {
     entry.name = undefined;
-    entry.replacedName = undefined;
+    entry.staleNames = undefined;
   }
 }
 
@@ -310,12 +348,43 @@ function settleWithSources(sources: MentionIndexSources, viewId: string, entry: 
 }
 
 /**
- * Retires the events the new sources caught up with: a deletion or creation the new trash list
- * shows, and a creation or rename the outline or the recent views list. Only a changed trash list
- * is read, and the outline only while a creation or rename waits for it (once per change).
+ * A changed trash list: a deletion or creation waiting for it that it shows is settled, and a view
+ * it dropped is gone unless this tab restored it.
+ */
+function settleTrash(
+  index: WorkspaceIndex,
+  previousTrash: readonly View[] | undefined,
+  waiting: Map<string, SessionView>
+) {
+  const { goneFromTrash, restoring } = index;
+  const shown = new Set<string>();
+
+  index.sources.trash?.forEach((view) => {
+    const entry = waiting.get(view.view_id);
+
+    shown.add(view.view_id);
+    goneFromTrash.delete(view.view_id);
+    if (entry) settleTrashed(entry);
+  });
+  previousTrash?.forEach((view) => {
+    if (shown.has(view.view_id) || restoring.delete(view.view_id)) return;
+    rememberGoneFromTrash(index, view.view_id);
+  });
+}
+
+/**
+ * Retires what the new sources caught up with:
+ * - a changed trash list: a deletion or creation it shows, and the views it dropped (gone);
+ * - reloaded recent views: the server leaves views in or below the trash, and deleted ones, out of
+ *   them, so a view they list and its parent are not gone;
+ * - a changed outline: the gone views it lists again;
+ * - a changed outline or recent views: the creations and renames they list.
+ * Only changed sources are read, the outline only while a view waits for it, in one walk per change.
  */
 function settleSession(index: WorkspaceIndex, previous: MentionIndexSources) {
-  const { session, sources } = index;
+  const { session, sources, goneFromTrash } = index;
+  const outlineChanged = sources.outline !== previous.outline;
+  const recentChanged = sources.recent !== previous.recent;
   const waitingForTrash = new Map<string, SessionView>();
   const waitingForListing = new Map<string, SessionView>();
 
@@ -323,21 +392,37 @@ function settleSession(index: WorkspaceIndex, previous: MentionIndexSources) {
     const pendingCreation = entry.created !== undefined && !entry.listed;
 
     if (entry.deleted || pendingCreation) waitingForTrash.set(viewId, entry);
-    if (pendingCreation || entry.replacedName !== undefined) waitingForListing.set(viewId, entry);
+    if (pendingCreation || entry.staleNames !== undefined) waitingForListing.set(viewId, entry);
   });
 
-  if (waitingForTrash.size > 0 && sources.trash !== previous.trash && sources.trash?.length) {
-    sources.trash.forEach((view) => {
-      const entry = waitingForTrash.get(view.view_id);
-
-      if (entry) settleTrashed(entry);
+  if (sources.trash !== previous.trash) settleTrash(index, previous.trash, waitingForTrash);
+  if (recentChanged && goneFromTrash.size > 0) {
+    sources.recent?.forEach((view) => {
+      goneFromTrash.delete(view.view_id);
+      if (view.parent_view_id) goneFromTrash.delete(view.parent_view_id);
     });
   }
 
-  if (waitingForListing.size === 0) return;
-  if (sources.outline === previous.outline && sources.recent === previous.recent) return;
+  const findGone = outlineChanged && goneFromTrash.size > 0;
+  const findNames = waitingForListing.size > 0 && (outlineChanged || recentChanged);
 
-  sourceNames(sources, waitingForListing).forEach((name, viewId) => {
+  if (!findGone && !findNames) return;
+
+  // The names the sources give the waiting views, the outline's first.
+  const names = new Map<string, string>();
+  const take = (view: View) => {
+    if (waitingForListing.has(view.view_id) && !names.has(view.view_id)) names.set(view.view_id, view.name ?? '');
+  };
+
+  walkOutline(sources.outline, (view) => {
+    if (findGone) goneFromTrash.delete(view.view_id);
+    if (findNames) take(view);
+    return (!findGone || goneFromTrash.size === 0) && (!findNames || names.size === waitingForListing.size);
+  });
+  if (!findNames) return;
+
+  sources.recent?.forEach(take);
+  names.forEach((name, viewId) => {
     const entry = waitingForListing.get(viewId);
 
     if (entry) settleListed(entry, name);
@@ -367,6 +452,8 @@ export function setMentionIndexSources(workspaceId: string, sources: MentionInde
   const created: WorkspaceIndex = {
     sources: { outline, recent, trash },
     session: new Map(),
+    goneFromTrash: new Set(),
+    restoring: new Set(),
     viewsVersion: 0,
     version: 0,
   };
@@ -386,7 +473,7 @@ export function recordMentionViewCreated(workspaceId: string, view: MentionCreat
   entry.createdAt ??= at;
   entry.created = { layout: view.layout, parentViewId: view.parentViewId, databaseId: view.databaseId };
   entry.name = view.name;
-  entry.replacedName = undefined;
+  entry.staleNames = undefined;
   entry.deleted = false;
   // The sources may list it already: a default creation resolves once the outline shows the page.
   settleWithSources(index.sources, view.viewId, entry);
@@ -400,20 +487,16 @@ export function recordMentionViewRenamed(workspaceId: string, viewId: string, na
   if (!index) return;
 
   const listedName = sourceName(index.sources, viewId);
+  const shown = shownName(listedName, index.session.get(viewId));
 
-  if (shownName(listedName, index.session.get(viewId)) === name) return;
+  if (shown === name) return;
 
   const entry = touchSession(index, viewId);
+  // Until they show `name`, the sources may show what they show now, or one of this tab's names
+  // they have not caught up with: the pending one, and those it kept (a creation's first name).
+  const pending = entry.name !== undefined && shown === entry.name ? [...(entry.staleNames ?? []), entry.name] : [];
 
-  if (listedName !== undefined) {
-    entry.replacedName = listedName;
-  } else if (entry.created && !entry.listed) {
-    // The sources will first list the creation under its first name.
-    entry.replacedName ??= entry.name;
-  } else {
-    entry.replacedName = undefined;
-  }
-
+  entry.staleNames = staleNamesOf(listedName === undefined ? pending : [...pending, listedName], name);
   entry.name = name;
   entry.renamedAt = at;
   markChanged(index, true);
@@ -421,26 +504,30 @@ export function recordMentionViewRenamed(workspaceId: string, viewId: string, na
 
 /**
  * This tab moved the view to the trash: it and its subtree leave the candidates at once, and the
- * subtree the outline shows now stays out of the other lanes once the outline drops it.
+ * subtree the outline showed stays out of the other lanes once the outline drops it. `outlineView`
+ * is the view as the caller's outline held it before the move: a folder notification can drop it
+ * from the index's outline while the move is in flight.
  */
-export function recordMentionViewDeleted(workspaceId: string, viewId: string) {
+export function recordMentionViewDeleted(workspaceId: string, viewId: string, outlineView?: View | null) {
   const index = indexes.get(workspaceId);
 
   if (!index || index.session.get(viewId)?.deleted) return;
 
-  const outlineView = findOutlineView(index.sources.outline, viewId);
-  const subtree = outlineView?.children?.length ? subtreeIds(outlineView) : undefined;
+  index.restoring.delete(viewId);
+
+  const before = outlineView?.view_id === viewId ? outlineView : undefined;
+  const subtree = subtreeIds([before, findOutlineView(index.sources.outline, viewId)]);
   // A trash refresh that won the race hides the view already. A deletion recorded now would never
   // see the trash list change to show it, and would outlive a restore elsewhere.
   const inTrash = isInTrash(index.sources, viewId);
 
-  if (inTrash && !subtree?.size) return;
+  if (inTrash && subtree.size === 0) return;
 
   const entry = touchSession(index, viewId);
 
   if (inTrash) settleTrashed(entry);
   else entry.deleted = true;
-  if (subtree?.size) entry.deletedSubtree = subtree;
+  if (subtree.size > 0) entry.deletedSubtree = subtree;
   markChanged(index, true);
 }
 
@@ -461,6 +548,17 @@ export function recordMentionViewRestored(workspaceId: string, viewId?: string) 
 
   if (viewId === undefined) index.session.forEach(restore);
   else restore(index.session.get(viewId));
+
+  // The trash list dropping what this tab restored is no deletion; a trash refresh that won the
+  // race already counted the view as gone. Restoring everything brings back nothing deleted before.
+  if (viewId === undefined) {
+    index.sources.trash?.forEach((view) => index.restoring.add(view.view_id));
+  } else if (isInTrash(index.sources, viewId)) {
+    index.restoring.add(viewId);
+  } else if (index.goneFromTrash.delete(viewId)) {
+    restored = true;
+  }
+
   if (restored) markChanged(index, true);
 }
 
@@ -583,12 +681,13 @@ function answeredDatabaseViewId(view: View, databaseId: string | undefined): str
 }
 
 /**
- * The name to show: this tab's name while the sources do not list the view, or still show the name
- * it replaced; else the sources' name (`listedName`, `undefined` when they do not list the view).
+ * The name to show: this tab's name while the sources do not list the view, or still show a name
+ * it replaced or sent before; else the sources' name (`listedName`, `undefined` when they do not
+ * list the view).
  */
 function shownName(listedName: string | undefined, entry: SessionView | undefined): string | undefined {
   if (entry?.name === undefined) return listedName;
-  if (listedName === undefined || (listedName !== entry.name && listedName === entry.replacedName)) return entry.name;
+  if (listedName === undefined || entry.staleNames?.includes(listedName)) return entry.name;
   return listedName;
 }
 
@@ -677,7 +776,7 @@ interface OutlineFrame {
  */
 function buildViews(index: WorkspaceIndex): Omit<BuiltViews, 'version'> {
   const { outline, recent, trash } = index.sources;
-  const { session } = index;
+  const { session, goneFromTrash } = index;
   const trashed = new Set<string>();
   const recentById = new Map<string, View>();
   // Every view the outline lists, candidate or not; a view listed twice is read once. Those it
@@ -763,12 +862,13 @@ function buildViews(index: WorkspaceIndex): Omit<BuiltViews, 'version'> {
     );
   }
 
-  // The subtrees this tab saw when it moved a view to the trash, unless the outline lists that view
-  // again outside the trash.
+  // The subtrees this tab saw when it moved a view to the trash, while that view is hidden: in the
+  // trash, deleted here or gone from the trash, and not listed by the outline outside the trash.
   const deletedSubtrees: ReadonlySet<string>[] = [];
 
   session.forEach((entry, viewId) => {
     if (!entry.deletedSubtree || (outlineViews.has(viewId) && !removedInOutline.has(viewId))) return;
+    if (!trashed.has(viewId) && !entry.deleted && !goneFromTrash.has(viewId)) return;
     deletedSubtrees.push(entry.deletedSubtree);
   });
 
@@ -777,8 +877,8 @@ function buildViews(index: WorkspaceIndex): Omit<BuiltViews, 'version'> {
     recentById.get(viewId)?.parent_view_id ?? session.get(viewId)?.created?.parentViewId;
   const verdicts = new Map<string, boolean>();
   // Whether a view is removed. The outline decides for the views it lists. Any other view is
-  // removed in the trash, when deleted in this tab or in a subtree it deleted, or below a removed
-  // view, following the parents the recent views and this tab's creations give.
+  // removed in the trash, gone from it, when deleted in this tab or in a subtree it deleted, or
+  // below a removed view, following the parents the recent views and this tab's creations give.
   const isRemovedId = (viewId: string): boolean => {
     const chain = new Set<string>();
     let removed = false;
@@ -798,7 +898,7 @@ function buildViews(index: WorkspaceIndex): Omit<BuiltViews, 'version'> {
       }
 
       chain.add(current);
-      if (isTrashedOrDeleted(current) || inDeletedSubtree(current)) {
+      if (isTrashedOrDeleted(current) || goneFromTrash.has(current) || inDeletedSubtree(current)) {
         removed = true;
         break;
       }

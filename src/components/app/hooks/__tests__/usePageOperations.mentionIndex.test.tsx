@@ -64,17 +64,19 @@ function snapshot() {
   return getMentionLocalSnapshot(WORKSPACE_ID);
 }
 
-/** A space with one page; the outline refresh after a mutation never answers. */
-function renderOperations() {
-  const outline = [
-    view('space', { is_space: true, children: [view('roadmap', { name: 'Roadmap', parent_view_id: 'space' })] }),
-  ];
+/** A space with `pages`. */
+function spaceOutline(pages: View[] = [view('roadmap', { name: 'Roadmap', parent_view_id: 'space' })]): View[] {
+  return [view('space', { is_space: true, children: pages })];
+}
+
+/** The outline and recent views the app holds; the outline refresh after a mutation never answers. */
+function renderOperations(outline = spaceOutline(), recent?: View[]) {
   const outlineRef: MutableRefObject<View[] | undefined> = { current: outline };
   const loadOutline = jest.fn(() => new Promise<void>(() => undefined));
   const loadTrash = jest.fn(() => new Promise<void>(() => undefined));
   const ensureViewVisibleInOutline = jest.fn(async () => []);
 
-  setMentionIndexSources(WORKSPACE_ID, { outline });
+  setMentionIndexSources(WORKSPACE_ID, { outline, recent });
 
   const rendered = renderHook(
     () => usePageOperations({ outlineRef, loadOutline, loadTrash, ensureViewVisibleInOutline }),
@@ -218,6 +220,39 @@ describe('usePageOperations and the mention picker’s local candidates', () => 
       await result.current.restorePage('roadmap');
     });
     expect(snapshot().viewsById.has('roadmap')).toBe(true);
+  });
+
+  it('hides what lay below a page when the outline drops it before its move to the trash resolves', async () => {
+    let resolveMove: () => void = () => undefined;
+
+    jest.mocked(PageService.moveToTrash).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveMove = resolve;
+      })
+    );
+
+    const detail = view('detail', { parent_view_id: 'notes' });
+    const notes = view('notes', { parent_view_id: 'roadmap', children: [detail] });
+    // Only the recent views list `detail` once the outline drops the page; they do not list `notes`.
+    const recent = [{ ...detail, last_viewed_at: '2026-11-09T10:00:00Z' }];
+    const { result } = renderOperations(
+      spaceOutline([view('roadmap', { name: 'Roadmap', parent_view_id: 'space', children: [notes] })]),
+      recent
+    );
+    let pending: Promise<void> = Promise.resolve();
+
+    act(() => {
+      pending = result.current.deletePage('roadmap');
+    });
+    // The folder notification of the move lands before the request's continuation runs.
+    setMentionIndexSources(WORKSPACE_ID, { outline: spaceOutline([]), recent });
+    expect(snapshot().viewsById.has('detail')).toBe(true);
+
+    await act(async () => {
+      resolveMove();
+      await pending;
+    });
+    expect(snapshot().viewsById.has('detail')).toBe(false);
   });
 
   it('keeps a page whose move to the trash failed', async () => {
