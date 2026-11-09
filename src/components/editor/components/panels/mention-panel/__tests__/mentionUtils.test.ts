@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import {
+  MentionSearchResponse,
   MentionSearchResultItem,
   MentionSearchSection,
   MentionSearchSectionKind,
@@ -10,18 +11,22 @@ import {
 
 import {
   buildMentionSearchCacheKey,
+  buildMentionSearchCacheScopeKey,
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
+  hasFailedMentionSection,
+  isCompleteMentionResponse,
   isDatabaseRowOnlyMentionRequest,
+  isSupersededMentionResponse,
   mentionItemNavKey,
   MentionPanelSearchResult,
   mentionSearchItemToMention,
   mergeMentionSearchResponses,
   normalizeMentionSearchSectionsForPicker,
   reconcileMentionOptionSelection,
-  shouldCacheMentionSearchSections,
+  shouldRetryMentionRowsResponse,
 } from '../mentionUtils';
 
 function person(id: string, name = id): MentionSearchResultItem {
@@ -904,47 +909,108 @@ describe('mention panel API mapping', () => {
     expect(sections[0].items[0].kind).toBe(MentionTargetKind.DatabaseRow);
   });
 
-  it('caches a successful empty database-row search response', () => {
-    const requests = buildMentionSearchRequests({
-      query: 'hr',
-      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
-      context: { view_id: 'document-1' },
-    });
-    const emptyRowResponse = {
-      sections: [
-        {
-          kind: MentionSearchSectionKind.DatabaseRows,
-          title: 'Database rows',
-          has_more: false,
-          status: 'ready',
-          items: [],
-        },
-      ],
-    };
+  it('puts the scope key first in every request group cache key', () => {
+    const scope = { workspaceId: ' workspace-1 ', userId: 'user-1' };
+    const requests = buildMentionSearchRequests({ query: 'hr', include: [MentionTargetKind.Page] });
 
-    expect(shouldCacheMentionSearchSections(requests, emptyRowResponse, true)).toBe(true);
+    expect(buildMentionSearchCacheScopeKey(scope)).toBe('{"workspace_id":"workspace-1","user_id":"user-1"}');
+    expect(buildMentionSearchRequestsCacheKey(requests, scope).split('\n')[0]).toBe(
+      buildMentionSearchCacheScopeKey(scope)
+    );
+  });
+});
+
+describe('mention response completeness', () => {
+  const [primary, rows] = buildMentionSearchRequests({
+    query: 'hr',
+    include: [
+      MentionTargetKind.Person,
+      MentionTargetKind.Page,
+      MentionTargetKind.Database,
+      MentionTargetKind.DatabaseRow,
+      MentionTargetKind.Date,
+    ],
+    context: { view_id: 'document-1' },
+  });
+  const bare = buildMentionSearchRequests({ query: '', include: [MentionTargetKind.Person, MentionTargetKind.Page] })[0];
+
+  function section(kind: MentionSearchSectionKind, status = 'ok', items: MentionSearchResultItem[] = []) {
+    return { kind, title: kind, items, has_more: false, status } as MentionSearchSection;
+  }
+
+  const people = section(MentionSearchSectionKind.People, 'ok', [person('ada')]);
+  const dates = section(MentionSearchSectionKind.Dates);
+  const pagesWithItem = section(MentionSearchSectionKind.Pages, 'ok', [page('hr-page')]);
+
+  it('finds a failed section, and only one with status failed', () => {
+    expect(
+      hasFailedMentionSection({ sections: [pagesWithItem, section(MentionSearchSectionKind.Databases, 'failed')] })
+    ).toBe(true);
+    expect(
+      hasFailedMentionSection({ sections: [section(MentionSearchSectionKind.Pages, 'partial', [page('hr')]), people] })
+    ).toBe(false);
+    // Older answers and the local fallback use other or no statuses.
+    expect(hasFailedMentionSection({ sections: [section(MentionSearchSectionKind.Pages, 'ready')] })).toBe(false);
+    expect(hasFailedMentionSection({ sections: [{ ...pagesWithItem, status: undefined as unknown as string }] })).toBe(
+      false
+    );
   });
 
-  it('does not cache a missing or partial database-row search response', () => {
-    const requests = buildMentionSearchRequests({
-      query: 'hr',
-      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
-      context: { view_id: 'document-1' },
-    });
-    const partialRowResponse = {
-      sections: [
-        {
-          kind: MentionSearchSectionKind.DatabaseRows,
-          title: 'Database rows',
-          has_more: false,
-          status: 'ready',
-          items: [],
-        },
-      ],
-      partial: true,
-    };
+  it.each<[string, Parameters<typeof isSupersededMentionResponse>[0], MentionSearchResponse, boolean]>([
+    ['the rows-only shape Search answers', rows, { sections: [], partial: true }, true],
+    ['the primary shape Cloud wraps in People and Dates', primary, { sections: [people, dates], partial: true }, true],
+    ['a bare answer with People only', bare, { sections: [people], partial: true }, true],
+    ['an empty answer that is not partial', rows, { sections: [] }, false],
+    ['a path-shed answer with items', primary, { sections: [people, pagesWithItem], partial: true }, false],
+    [
+      'a degraded answer with a failed section',
+      rows,
+      { sections: [section(MentionSearchSectionKind.Pages, 'failed')], partial: true },
+      false,
+    ],
+    [
+      'a Cloud object failure',
+      rows,
+      { sections: [section(MentionSearchSectionKind.DatabaseRows, 'failed')], partial: true },
+      false,
+    ],
+    [
+      'a databases-only answer',
+      primary,
+      { sections: [section(MentionSearchSectionKind.Databases, 'ok')], partial: true },
+      false,
+    ],
+  ])('recognizes %s', (_name, request, response, superseded) => {
+    expect(isSupersededMentionResponse(request, response)).toBe(superseded);
+  });
 
-    expect(shouldCacheMentionSearchSections(requests, undefined, true)).toBe(false);
-    expect(shouldCacheMentionSearchSections(requests, partialRowResponse, true)).toBe(false);
+  it('treats a partial answer without a failed section as complete, and nothing else that is degraded', () => {
+    expect(isCompleteMentionResponse(primary, { sections: [people, pagesWithItem], partial: true })).toBe(true);
+    expect(isCompleteMentionResponse(rows, { sections: [] })).toBe(true);
+    expect(isCompleteMentionResponse(rows, { sections: [], partial: true })).toBe(false);
+    expect(
+      isCompleteMentionResponse(primary, {
+        sections: [section(MentionSearchSectionKind.People, 'failed'), pagesWithItem],
+        partial: true,
+      })
+    ).toBe(false);
+  });
+
+  it('retries rows only after a retryable failed section or a superseded answer', () => {
+    const failedPages = section(MentionSearchSectionKind.Pages, 'failed');
+
+    expect(shouldRetryMentionRowsResponse(rows, { sections: [failedPages], partial: true })).toBe(true);
+    expect(
+      shouldRetryMentionRowsResponse(rows, {
+        sections: [section(MentionSearchSectionKind.DatabaseRows, 'failed')],
+        partial: true,
+      })
+    ).toBe(true);
+    expect(shouldRetryMentionRowsResponse(rows, { sections: [], partial: true })).toBe(true);
+    // A disabled keyword index fails the section for good, and leaves `partial` unset.
+    expect(shouldRetryMentionRowsResponse(rows, { sections: [failedPages] })).toBe(false);
+    // Load-shed breadcrumb paths leave every row in place.
+    expect(shouldRetryMentionRowsResponse(rows, { sections: [pagesWithItem], partial: true })).toBe(false);
+    expect(shouldRetryMentionRowsResponse(rows, { sections: [] })).toBe(false);
   });
 });

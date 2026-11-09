@@ -3241,7 +3241,12 @@
       "openTrash": "Open Trash",
       "deletedPage": "Deleted page",
       "trashHint": " - in trash",
-      "morePages": "more pages"
+      "morePages": "more pages",
+      "suggestionsUnavailable": "Suggestions unavailable",
+      "offline": "You're offline",
+      "retry": "Retry",
+      "retrying": "Retrying…",
+      "busyRetryingIn": "Busy, retrying in {{seconds}} s"
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"

@@ -20,6 +20,7 @@ import {
   ViewLayout,
 } from '@/application/types';
 import { isDashboardOwnedView, isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
+import { ReactComponent as CloudOffIcon } from '@/assets/icons/cloud_off.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
@@ -28,6 +29,8 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
+import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
+import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
@@ -37,22 +40,21 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
+import { MENTION_TYPED_LANES, mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
 import {
-  isMentionSearchCancelled,
-  MENTION_TYPED_LANES,
-  mentionRequestLane,
-  MentionRequestLanes,
-} from './mentionRequestLanes';
-import {
+  ensureMentionSearchCacheScope,
+  getCachedMentionSearch,
   getCachedMentionSections,
-  isMentionSearchRetryLater,
-  markMentionSearchRetryLater,
+  mentionSearchCacheStamp,
+  MentionSearchCacheStamp,
   mentionSearchRetryLaterRemainingMs,
   setCachedMentionSections,
   startMentionSearchRefresh,
+  subscribeMentionSearchCacheInvalidation,
 } from './mentionSearchCache';
 import { fetchMentionSearchSections, MentionSectionsFetchResult } from './mentionSearchFetch';
 import {
+  buildMentionSearchCacheScopeKey,
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
@@ -61,7 +63,6 @@ import {
   MentionPanelSearchResult,
   normalizeMentionSearchSectionsForPicker,
   reconcileMentionOptionSelection,
-  shouldCacheMentionSearchSections,
 } from './mentionUtils';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
 
@@ -71,6 +72,18 @@ enum MentionTag {
 
 const MENTION_SEARCH_LIMIT = 20;
 const PAGE_RESULT_COLLAPSE_LIMIT = 4;
+/** The key of the "Suggestions unavailable · Retry" row, which holds no position either. */
+const MENTION_RETRY_OPTION_KEY = 'status|retry';
+
+/**
+ * What the panel's search is showing:
+ * - `loading`: a search is pending and nothing failed yet;
+ * - `ok`: the server answered completely, or a cached answer is shown;
+ * - `unavailable`: some suggestions are missing, and a Retry row is offered;
+ * - `busy`: the server asked to wait, and the search is sent again when the countdown ends;
+ * - `offline`: the browser is offline; the search is sent again when it is back online.
+ */
+type MentionSearchStatus = 'idle' | 'loading' | 'ok' | 'unavailable' | 'busy' | 'offline';
 
 type MentionPanelOption =
   | {
@@ -87,6 +100,10 @@ type MentionPanelOption =
       firstHidden: MentionOptionSelection;
     }
   | {
+      kind: 'retry';
+      key: string;
+    }
+  | {
       kind: 'createPage';
       key: string;
       createType: MentionType.childPage | MentionType.PageRef;
@@ -94,7 +111,12 @@ type MentionPanelOption =
 
 type MentionPanelResultOption = Extract<MentionPanelOption, { kind: 'result' | 'morePages' }>;
 type MentionPanelMorePagesOption = Extract<MentionPanelOption, { kind: 'morePages' }>;
+type MentionPanelRetryOption = Extract<MentionPanelOption, { kind: 'retry' }>;
 type MentionPanelCreatePageOption = Extract<MentionPanelOption, { kind: 'createPage' }>;
+
+function hasMentionItems(sections: MentionSearchSection[]) {
+  return sections.some((section) => section.items.length > 0);
+}
 
 function mentionOptionSelection(option: MentionPanelOption): MentionOptionSelection {
   return option.kind === 'result' ? { key: option.key, navKey: option.navKey } : { key: option.key };
@@ -368,6 +390,74 @@ function MentionCreatePageButton({
   );
 }
 
+/** "Suggestions unavailable · Retry", or "You're offline · Retry": a keyboard-selectable option. */
+function MentionRetryButton({
+  offline,
+  retrying,
+  optionKey,
+  index,
+  selected,
+  onClick,
+}: {
+  offline: boolean;
+  retrying: boolean;
+  optionKey: string;
+  index: number;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const { t } = useTranslation();
+  const StatusIcon = offline ? CloudOffIcon : WarningIcon;
+
+  return (
+    <Button
+      color={'inherit'}
+      size={'small'}
+      data-option-index={index}
+      data-option-key={optionKey}
+      data-selected={selected || undefined}
+      data-testid={'mention-panel-retry'}
+      data-status={offline ? 'offline' : 'unavailable'}
+      startIcon={<StatusIcon className={'h-5 w-5 min-w-5 text-icon-tertiary'} />}
+      className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-secondary hover:bg-fill-content-hover ${
+        selected ? 'bg-fill-content-hover' : ''
+      }`}
+      onClick={onClick}
+    >
+      {retrying ? (
+        <span className={'truncate'}>{t('document.mention.retrying')}</span>
+      ) : (
+        <span className={'flex min-w-0 items-center gap-1'}>
+          <span className={'truncate'}>
+            {offline ? t('document.mention.offline') : t('document.mention.suggestionsUnavailable')}
+          </span>
+          <span aria-hidden={'true'}>·</span>
+          <span className={'shrink-0 text-text-action'}>{t('document.mention.retry')}</span>
+        </span>
+      )}
+    </Button>
+  );
+}
+
+/** "Busy, retrying in N s" while the server's RetryLater cooldown runs, then "Retrying…". */
+function MentionBusyRow({ seconds }: { seconds: number }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      role={'status'}
+      data-testid={'mention-panel-busy'}
+      data-retry-in-seconds={seconds}
+      className={'flex min-h-[40px] items-center gap-2 px-3 text-sm text-text-secondary'}
+    >
+      <TimeIcon className={'h-5 w-5 min-w-5 text-icon-tertiary'} />
+      <span className={'truncate'}>
+        {seconds > 0 ? t('document.mention.busyRetryingIn', { seconds }) : t('document.mention.retrying')}
+      </span>
+    </div>
+  );
+}
+
 function MentionSectionTitle({ section, trailing }: { section: MentionSearchSection; trailing?: ReactNode }) {
   return (
     <div className={'flex min-h-7 items-center px-0 text-sm font-semibold text-text-tertiary'}>
@@ -398,7 +488,17 @@ export function MentionPanel({
   onPersonPicked,
 }: { notifyOnInsert?: boolean; onPersonPicked?: (personId: string, requireNotification: boolean) => void } = {}) {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
-  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal, enableReminderMentions } = useEditorContext();
+  const {
+    workspaceId,
+    viewId,
+    searchMentions,
+    mentionContext,
+    loadViews,
+    addPage,
+    openPageModal,
+    enableReminderMentions,
+    eventEmitter,
+  } = useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -415,9 +515,15 @@ export function MentionPanel({
   }, []);
   const editor = useSlateStatic() as YjsEditor;
   const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
-  const [mentionSearchLoading, setMentionSearchLoading] = useState(false);
-  const [mentionSearchFailed, setMentionSearchFailed] = useState(false);
-  const [mentionSearchDeferred, setMentionSearchDeferred] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<MentionSearchStatus>('idle');
+  // An explicit retry (the Retry row, or the browser coming back online) is pending.
+  const [retrying, setRetrying] = useState(false);
+  // When the RetryLater cooldown of a busy search ends, and `busyClock` is the countdown's clock.
+  const [busyUntil, setBusyUntil] = useState<number | undefined>(undefined);
+  const [busyClock, setBusyClock] = useState(() => Date.now());
+  // Bumped to send the same search again; the search effect depends on it.
+  const [retryNonce, setRetryNonce] = useState(0);
+  const lastSearchRef = useRef<{ key: string; nonce: number } | undefined>(undefined);
   const [showMorePages, setShowMorePages] = useState(false);
   const [localFallbackViews, setLocalFallbackViews] = useState<View[]>([]);
   const mentionSearchRequestIdRef = useRef(0);
@@ -437,6 +543,10 @@ export function MentionPanel({
     [mentionContext, mentionInclude, searchText]
   );
   const mentionSearchRequests = useMemo(() => buildMentionSearchRequests(mentionSearchRequest), [mentionSearchRequest]);
+  const mentionSearchCacheScope = useMemo(
+    () => buildMentionSearchCacheScopeKey({ workspaceId, userId: currentUser?.uuid }),
+    [currentUser?.uuid, workspaceId]
+  );
   const mentionSearchCacheKey = useMemo(
     () =>
       buildMentionSearchRequestsCacheKey(mentionSearchRequests, {
@@ -503,81 +613,48 @@ export function MentionPanel({
     setShowMorePages(false);
   }, [mentionSearchCacheKey]);
 
+  // One listener set per app emitter marks cached answers stale on workspace events.
+  useEffect(() => {
+    subscribeMentionSearchCacheInvalidation(eventEmitter);
+  }, [eventEmitter]);
+
+  // Sends the panel's search again: from the Retry row, or when the browser is back online.
+  const retrySearch = useCallback(() => {
+    setRetrying(true);
+    setRetryNonce((nonce) => nonce + 1);
+  }, []);
+
   useEffect(() => {
     if (!open || !searchMentions || !mentionRequestLanes) {
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
-      setMentionSearchFailed(false);
-      setMentionSearchDeferred(false);
-      setMentionSearchLoading(false);
+      setSearchStatus('idle');
+      setRetrying(false);
+      setBusyUntil(undefined);
+      lastSearchRef.current = undefined;
       return;
     }
 
-    setSelection(null);
+    ensureMentionSearchCacheScope(mentionSearchCacheScope);
+
+    const previousSearch = lastSearchRef.current;
+    // The same search sent again: the sections and the highlight on the Retry row stay.
+    const isRetry = previousSearch?.key === mentionSearchCacheKey && previousSearch.nonce !== retryNonce;
+
+    lastSearchRef.current = { key: mentionSearchCacheKey, nonce: retryNonce };
+    if (!isRetry) setSelection(null);
 
     const searchMentionsFn = searchMentions;
     const lanes = mentionRequestLanes;
+    const cacheKey = mentionSearchCacheKey;
     let cancelled = false;
     let timer: number | undefined;
     const requestId = mentionSearchRequestIdRef.current + 1;
-    const cachedSections = getCachedMentionSections(mentionSearchCacheKey);
+    const cached = getCachedMentionSearch(cacheKey);
+    const retryLaterMs = mentionSearchRetryLaterRemainingMs(cacheKey);
 
     mentionSearchRequestIdRef.current = requestId;
-
-    if (cachedSections) {
-      setMentionSections(cachedSections);
-      setMentionSearchFailed(false);
-      setMentionSearchDeferred(false);
-      setMentionSearchLoading(false);
-
-      if (mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey) === 0) {
-        // Tracks whether our own refresh callback applied the results. When a
-        // refresh for this key is already in flight, startMentionSearchRefresh
-        // joins it without invoking our callback, so we re-read the cache once
-        // the shared refresh settles.
-        let applied = false;
-
-        void startMentionSearchRefresh(mentionSearchCacheKey, async () => {
-          const result = await fetchMentionSections({ refresh: true });
-
-          // An answer that a newer request on its lane replaced, or that was aborted, must not
-          // overwrite the cached entry.
-          if (isCurrentResult(result)) cacheMentionSections(result);
-          if (!isCurrentRequest()) return;
-
-          applied = true;
-          setMentionSections(result.sections);
-          setMentionSearchFailed(false);
-        })
-          .then(() => {
-            if (applied || !isCurrentRequest()) return;
-
-            const refreshedSections = getCachedMentionSections(mentionSearchCacheKey);
-
-            if (refreshedSections) {
-              setMentionSections(refreshedSections);
-              setMentionSearchFailed(false);
-            }
-          })
-          .catch((error) => {
-            if (isMentionSearchCancelled(error)) return;
-
-            if (isMentionSearchRetryLater(error)) {
-              markMentionSearchRetryLater(mentionSearchCacheKey, error);
-              return;
-            }
-
-            console.error(error);
-          });
-      }
-
-      return stopSearch;
-    }
-
-    setMentionSections([]);
-    setMentionSearchFailed(false);
-    setMentionSearchDeferred(false);
 
     function isCurrentRequest() {
       return !cancelled && mentionSearchRequestIdRef.current === requestId;
@@ -600,9 +677,10 @@ export function MentionPanel({
       return result.tickets.every((ticket) => lanes.isCurrent(ticket));
     }
 
-    function cacheMentionSections(result: MentionSectionsFetchResult) {
-      if (shouldCacheMentionSearchSections(mentionSearchRequests, result.databaseRowResponse, hasMentionSearchQuery)) {
-        setCachedMentionSections(mentionSearchCacheKey, result.sections);
+    // Only a complete answer is cached: every request answered, no section failed, none superseded.
+    function cacheCompleteAnswer(result: MentionSectionsFetchResult, stamp: MentionSearchCacheStamp) {
+      if (result.state === 'complete' && isCurrentResult(result)) {
+        setCachedMentionSections(cacheKey, result.sections, stamp);
       }
     }
 
@@ -616,71 +694,128 @@ export function MentionPanel({
       return fetchMentionSearchSections({
         searchMentions: searchMentionsFn,
         requests: mentionSearchRequests,
-        cacheKey: mentionSearchCacheKey,
-        hasQuery: hasMentionSearchQuery,
+        cacheKey,
         isCurrent: isCurrentRequest,
         issueTicket: (request) => lanes.issue(mentionRequestLane(request, refresh)),
         onSections,
       });
     }
 
-    function scheduleSearch(delayMs: number) {
+    function settle(status: Exclude<MentionSearchStatus, 'busy'>) {
+      setSearchStatus(status);
+      setBusyUntil(undefined);
+      setRetrying(false);
+    }
+
+    // The server asked to wait: count down, then send again. The countdown's clock starts with
+    // the deadline, so its first paint never shows a second more than is left.
+    function sendAfterCooldown(delayMs: number, send: () => void) {
+      const now = Date.now();
+
+      setSearchStatus('busy');
+      setBusyClock(now);
+      setBusyUntil(now + delayMs);
+      setRetrying(false);
       window.clearTimeout(timer);
-      timer = window.setTimeout(runSearch, delayMs);
+      timer = window.setTimeout(send, delayMs);
     }
 
     function runSearch() {
+      const stamp = mentionSearchCacheStamp();
+
       void fetchMentionSections({ refresh: false, onSections: setMentionSections })
         .then((result) => {
           // A bare answer is not aborted by typing, so it is still cached after the query changed.
-          if (isCurrentResult(result)) cacheMentionSections(result);
+          cacheCompleteAnswer(result, stamp);
           if (!isCurrentRequest()) return;
 
-          setMentionSections(result.sections);
-          setMentionSearchFailed(false);
-          setMentionSearchDeferred(false);
-        })
-        .catch((error) => {
-          if (!isCurrentRequest() || isMentionSearchCancelled(error)) return;
-
-          if (isMentionSearchRetryLater(error)) {
-            markMentionSearchRetryLater(mentionSearchCacheKey, error);
-            const fallbackSections = getCachedMentionSections(mentionSearchCacheKey);
-
-            if (fallbackSections) {
-              setMentionSections(fallbackSections);
-              setMentionSearchFailed(false);
-              setMentionSearchDeferred(false);
-              return;
-            }
-
-            setMentionSearchDeferred(true);
-            setMentionSearchFailed(false);
-            scheduleSearch(mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey));
+          if (result.state === 'complete') {
+            setMentionSections(result.sections);
+            settle('ok');
             return;
           }
 
-          console.error(error);
-          setMentionSections([]);
-          setMentionSearchFailed(true);
-          setMentionSearchDeferred(false);
+          // Keep what the requests that answered found. Without any, keep what is on screen (the
+          // previous attempt of a retry), or a cached answer.
+          const fallback = hasMentionItems(result.sections) ? result.sections : getCachedMentionSections(cacheKey);
+
+          if (fallback) setMentionSections(fallback);
+          if (result.state === 'busy') sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), runSearch);
+          else settle(result.state);
         })
-        .finally(() => {
+        .catch((error) => {
           if (!isCurrentRequest()) return;
 
-          setMentionSearchLoading(false);
+          console.error(error);
+          settle('unavailable');
         });
     }
 
-    const retryLaterMs = mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey);
+    // Revalidates the cached answer on screen, which stays there unless the server answers
+    // completely.
+    function refreshCachedAnswer() {
+      const stamp = mentionSearchCacheStamp();
+      const shownCachedAt = getCachedMentionSearch(cacheKey)?.cachedAt;
+      // Whether our own refresh callback ran. When a refresh for this key is already in flight,
+      // startMentionSearchRefresh joins it without invoking our callback, so we re-read the cache
+      // once the shared refresh settles.
+      let applied = false;
+
+      void startMentionSearchRefresh(cacheKey, async () => {
+        const result = await fetchMentionSections({ refresh: true });
+
+        cacheCompleteAnswer(result, stamp);
+        if (!isCurrentRequest()) return;
+
+        applied = true;
+        if (result.state === 'complete') {
+          setMentionSections(result.sections);
+          settle('ok');
+        } else if (result.state === 'busy') {
+          sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), refreshCachedAnswer);
+        } else {
+          settle(result.state);
+        }
+      })
+        .then(() => {
+          if (applied || !isCurrentRequest()) return;
+
+          const refreshed = getCachedMentionSearch(cacheKey);
+
+          if (refreshed && refreshed.cachedAt !== shownCachedAt) {
+            setMentionSections(refreshed.sections);
+            settle('ok');
+          } else {
+            setRetrying(false);
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+          if (isCurrentRequest()) settle('unavailable');
+        });
+    }
+
+    if (cached) {
+      setMentionSections(cached.sections);
+      if (!isRetry) settle('ok');
+
+      // A fresh answer needs no request, unless the user asked to retry.
+      if (cached.fresh && !isRetry) return stopSearch;
+
+      if (retryLaterMs > 0) sendAfterCooldown(retryLaterMs, refreshCachedAnswer);
+      else refreshCachedAnswer();
+
+      return stopSearch;
+    }
+
+    if (!isRetry) setMentionSections([]);
 
     if (retryLaterMs > 0) {
-      setMentionSearchDeferred(true);
-      setMentionSearchLoading(false);
-      scheduleSearch(retryLaterMs);
+      sendAfterCooldown(retryLaterMs, runSearch);
     } else {
-      setMentionSearchLoading(true);
-      scheduleSearch(hasMentionSearchQuery ? 120 : 0);
+      // A retry keeps its failure row, which says "Retrying…", until the answer arrives.
+      if (!isRetry) settle('loading');
+      timer = window.setTimeout(runSearch, isRetry || !hasMentionSearchQuery ? 0 : 120);
     }
 
     return stopSearch;
@@ -688,12 +823,43 @@ export function MentionPanel({
     hasMentionSearchQuery,
     mentionRequestLanes,
     mentionSearchCacheKey,
+    mentionSearchCacheScope,
     mentionSearchRequests,
     open,
+    retryNonce,
     searchMentions,
     setSelection,
     useLocalMentionFallback,
   ]);
+
+  // Counts the busy row down to the end of the cooldown, once per second.
+  useEffect(() => {
+    if (searchStatus !== 'busy' || busyUntil === undefined) return;
+
+    let timer: number | undefined;
+    const tick = () => {
+      const now = Date.now();
+      const remainingMs = busyUntil - now;
+
+      setBusyClock(now);
+      if (remainingMs > 0) timer = window.setTimeout(tick, remainingMs % 1000 || 1000);
+    };
+
+    tick();
+    return () => window.clearTimeout(timer);
+  }, [busyUntil, searchStatus]);
+
+  // Offline, the search is sent again as soon as the browser is back online.
+  useEffect(() => {
+    if (!open || searchStatus !== 'offline') return;
+
+    const handleOnline = () => retrySearch();
+
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [open, retrySearch, searchStatus]);
 
   useEffect(() => {
     if (!useLocalMentionFallback || !loadViews) return;
@@ -701,34 +867,28 @@ export function MentionPanel({
     let cancelled = false;
 
     setSelection(null);
-    setMentionSearchFailed(false);
-    setMentionSearchDeferred(false);
-    setMentionSearchLoading(true);
+    setSearchStatus('loading');
+    setRetrying(false);
 
     void loadViews()
       .then((views) => {
         if (cancelled) return;
 
         setLocalFallbackViews(views ?? []);
-        setMentionSearchFailed(false);
+        setSearchStatus('ok');
       })
       .catch((error) => {
         if (cancelled) return;
 
         console.error(error);
         setLocalFallbackViews([]);
-        setMentionSearchFailed(true);
-      })
-      .finally(() => {
-        if (cancelled) return;
-
-        setMentionSearchLoading(false);
+        setSearchStatus('unavailable');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [loadViews, setSelection, useLocalMentionFallback]);
+  }, [loadViews, retryNonce, setSelection, useLocalMentionFallback]);
 
   useEffect(() => {
     if (useLocalMentionFallback) return;
@@ -749,8 +909,11 @@ export function MentionPanel({
       ),
     [hasMentionSearchQuery, pickerMentionSections]
   );
-  const canCreatePageInLocalFallback = useLocalMentionFallback && !mentionSearchLoading && Boolean(addPage && viewId);
-  const { mentionResultSections, mentionPanelOptions, createPageOptions } = useMemo(() => {
+  const canCreatePageInLocalFallback =
+    useLocalMentionFallback && searchStatus !== 'loading' && Boolean(addPage && viewId);
+  // Offline is a reason for missing suggestions too, so it offers the same Retry row.
+  const showRetryOption = searchStatus === 'unavailable' || searchStatus === 'offline';
+  const { mentionResultSections, mentionPanelOptions, retryOption, createPageOptions } = useMemo(() => {
     const resultsBySection = new Map<number, MentionPanelSearchResult[]>();
 
     rawMentionSearchResults.forEach((result) => {
@@ -798,6 +961,10 @@ export function MentionPanel({
         };
       })
       .filter((section): section is MentionPanelResultSection => Boolean(section));
+    // After the results and before the create options, so the keyboard reaches it last among them.
+    const statusOption: MentionPanelRetryOption | undefined = showRetryOption
+      ? { kind: 'retry', key: MENTION_RETRY_OPTION_KEY }
+      : undefined;
     const createOptions: MentionPanelCreatePageOption[] = canCreatePageInLocalFallback
       ? [
           {
@@ -813,14 +980,16 @@ export function MentionPanel({
         ]
       : [];
 
+    if (statusOption) options.push(statusOption);
     options.push(...createOptions);
 
     return {
       mentionResultSections: sections,
       mentionPanelOptions: options,
+      retryOption: statusOption,
       createPageOptions: createOptions,
     };
-  }, [canCreatePageInLocalFallback, pickerMentionSections, rawMentionSearchResults, showMorePages]);
+  }, [canCreatePageInLocalFallback, pickerMentionSections, rawMentionSearchResults, showMorePages, showRetryOption]);
   const { mentionOptionByKey, mentionOptionIndexByKey } = useMemo(
     () => ({
       mentionOptionByKey: new Map(mentionPanelOptions.map((option) => [option.key, option])),
@@ -831,16 +1000,23 @@ export function MentionPanel({
 
   // Typed rows or a cache refresh can merge in after the user started navigating. Before paint,
   // keep the highlight on the same option, else on the same object in another section, else on
-  // the first option, so it never lands on whatever moved into its old position.
+  // the first option, so it never lands on whatever moved into its old position. A Retry row that
+  // succeeded leaves no highlight: the user chose Retry, not one of the results it brought.
   useLayoutEffect(() => {
     const current = selectionRef.current;
-    const next = reconcileMentionOptionSelection(current, mentionPanelOptions);
+    const next =
+      current?.key === MENTION_RETRY_OPTION_KEY && !mentionOptionByKey.has(current.key)
+        ? null
+        : reconcileMentionOptionSelection(current, mentionPanelOptions);
 
     if (next !== current) setSelection(next);
-  }, [mentionPanelOptions, setSelection]);
+  }, [mentionOptionByKey, mentionPanelOptions, setSelection]);
 
+  // The skeleton stands in for results only while the first answer is pending. A failure, busy or
+  // offline row never shows it, and neither does a retry, whose row says "Retrying…".
   const showMentionSearchLoadingState =
-    hasMentionPanelSource && (mentionSearchLoading || mentionSearchDeferred) && rawMentionSearchResults.length === 0;
+    hasMentionPanelSource && searchStatus === 'loading' && rawMentionSearchResults.length === 0;
+  const busySeconds = busyUntil === undefined ? 0 : Math.max(0, Math.ceil((busyUntil - busyClock) / 1000));
   const selectedOptionKey = selection?.key;
   const selectedOptionIndex =
     selectedOptionKey === undefined ? undefined : mentionOptionIndexByKey.get(selectedOptionKey);
@@ -975,6 +1151,9 @@ export function MentionPanel({
             handleSelectedSearchResult(option.result);
           } else if (option?.kind === 'morePages') {
             expandMorePages(option);
+          } else if (option?.kind === 'retry') {
+            // A pending retry ignores Enter, so pressing it twice never sends twice.
+            if (!retrying) retrySearch();
           } else if (option?.kind === 'createPage') {
             void handleAddPage(option.createType);
           }
@@ -1022,6 +1201,8 @@ export function MentionPanel({
       mentionOptionByKey,
       mentionOptionIndexByKey,
       mentionPanelOptions,
+      retrySearch,
+      retrying,
       setSelection,
     ]
   );
@@ -1152,18 +1333,39 @@ export function MentionPanel({
                 </div>
               ))
             )}
-            {!mentionSearchLoading &&
-              !mentionSearchDeferred &&
+            {(retryOption || searchStatus === 'busy') && (
+              <div className={'flex flex-col px-2 py-1'}>
+                {mentionResultSections.length > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
+                {retryOption ? (
+                  <MentionRetryButton
+                    offline={searchStatus === 'offline'}
+                    retrying={retrying}
+                    optionKey={retryOption.key}
+                    index={mentionOptionIndexByKey.get(retryOption.key) ?? 0}
+                    selected={selectedOptionKey === retryOption.key}
+                    onClick={() => {
+                      if (!retrying) retrySearch();
+                    }}
+                  />
+                ) : (
+                  <MentionBusyRow seconds={busySeconds} />
+                )}
+              </div>
+            )}
+            {/* Only an answer that came back complete can say that nothing matched. */}
+            {searchStatus === 'ok' &&
               rawMentionSearchResults.length === 0 &&
               createPageOptions.length === 0 &&
-              (searchText || mentionSearchFailed || useLocalMentionFallback) && (
+              (searchText || useLocalMentionFallback) && (
                 <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
                   {t('findAndReplace.noResult')}
                 </div>
               )}
             {createPageOptions.length > 0 && (
               <div className={'flex flex-col px-2 py-1'}>
-                {mentionResultSections.length > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
+                {(mentionResultSections.length > 0 || retryOption || searchStatus === 'busy') && (
+                  <Divider className={'-mx-2 mb-1 border-border-primary'} />
+                )}
                 {createPageOptions.map((option) => {
                   const index = mentionOptionIndexByKey.get(option.key) ?? 0;
 

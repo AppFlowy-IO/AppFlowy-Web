@@ -1,9 +1,11 @@
+import { EventEmitter } from 'events';
+
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
-import { ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import {
   MentionSearchOptions,
   MentionSearchRequest,
@@ -18,7 +20,11 @@ import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 
 import { MentionPanel } from '../MentionPanel';
 import { MENTION_BARE_DEADLINE_MS, MENTION_TYPED_DEADLINE_MS } from '../mentionRequestLanes';
-import { clearMentionSearchCacheForTests, getCachedMentionSections } from '../mentionSearchCache';
+import {
+  clearMentionSearchCacheForTests,
+  getCachedMentionSections,
+  MENTION_SEARCH_CACHE_FRESH_MS,
+} from '../mentionSearchCache';
 import { buildMentionSearchRequestsCacheKey, mergeMentionSearchResponses } from '../mentionUtils';
 
 const mockAddMark = jest.fn();
@@ -50,7 +56,9 @@ jest.mock('@/components/_shared/popover', () => ({
 }));
 
 type Lane = 'primary' | 'rows';
-type Outcome = 'complete' | 'partial' | 'reject';
+// `partial`: every item, with `partial` set because breadcrumb paths were load-shed.
+// `failed`: a degraded keyword search, which fails the requested section and sets `partial`.
+type Outcome = 'complete' | 'partial' | 'failed' | 'reject';
 
 interface Step {
   delayMs: number;
@@ -62,6 +70,7 @@ type SearchPlan = Record<Lane, Step[]>;
 const STEP_MS = 10;
 const complete = (delayMs: number): Step => ({ delayMs, outcome: 'complete' });
 const partial = (delayMs: number): Step => ({ delayMs, outcome: 'partial' });
+const failed = (delayMs: number): Step => ({ delayMs, outcome: 'failed' });
 const reject = (delayMs: number): Step => ({ delayMs, outcome: 'reject' });
 
 function pageItem(title: string): MentionSearchResultItem {
@@ -116,6 +125,10 @@ function personItem(id: string, name: string): MentionSearchResultItem {
 }
 
 function respond(lane: Lane, query: string, outcome: Outcome): MentionSearchResponse {
+  if (outcome === 'failed') {
+    return { sections: [failedSection(MentionSearchSectionKind.Pages)], partial: true };
+  }
+
   // Search returns typed database rows inside the Pages section, each keeping its row kind.
   const item = lane === 'primary' ? pageItem(`Page for ${query}`) : rowItem(`${outcome} row for ${query}`);
 
@@ -127,6 +140,10 @@ function respond(lane: Lane, query: string, outcome: Outcome): MentionSearchResp
 
 function section(kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection {
   return { kind, title: kind, items, has_more: false, status: 'ready' };
+}
+
+function failedSection(kind: MentionSearchSectionKind): MentionSearchSection {
+  return { kind, title: kind, items: [], has_more: false, status: 'failed', message: 'keyword results are incomplete' };
 }
 
 function isRowRequest(request: MentionSearchRequest) {
@@ -279,6 +296,20 @@ function moreResultsButton() {
   return screen.getByText('document.mention.moreResults').closest('button');
 }
 
+// The "Suggestions unavailable · Retry" (or "You're offline · Retry") option.
+function retryRow() {
+  return document.querySelector<HTMLElement>('[data-testid="mention-panel-retry"]');
+}
+
+// The "Busy, retrying in N s" row.
+function busyRow() {
+  return document.querySelector<HTMLElement>('[data-testid="mention-panel-busy"]');
+}
+
+function showsNoResult() {
+  return shows('findAndReplace.noResult');
+}
+
 async function placeCaretAtEnd(editor: Editor) {
   await act(async () => {
     Transforms.select(editor, Editor.end(editor, []));
@@ -313,6 +344,7 @@ describe('MentionPanel typed search delivery', () => {
     localStorage.clear();
     mockPanelContext.searchText = 'road';
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+    mockEditorContext.eventEmitter = undefined;
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -327,14 +359,8 @@ describe('MentionPanel typed search delivery', () => {
     { name: 'S1 primary 80 / rows 80', plan: { primary: [complete(80)], rows: [complete(80)] }, first: 200, done: 200 },
     { name: 'S2 primary 80 / rows 400', plan: { primary: [complete(80)], rows: [complete(400)] }, first: 200, done: 520 },
     {
-      name: 'S3 rows partial, retry complete',
-      plan: { primary: [complete(80)], rows: [partial(80), complete(80)] },
-      first: 200,
-      done: 780,
-    },
-    {
-      name: 'S4 rows reject, retry complete',
-      plan: { primary: [complete(80)], rows: [reject(80), complete(80)] },
+      name: 'S3 rows failed, retry complete',
+      plan: { primary: [complete(80)], rows: [failed(80), complete(80)] },
       first: 200,
       done: 780,
     },
@@ -351,6 +377,22 @@ describe('MentionPanel typed search delivery', () => {
     expect(search).toHaveBeenCalledTimes(plan.primary.length + plan.rows.length);
   });
 
+  it('S4 rows reject: shows the primary results with the unavailable row, and never retries the rows', async () => {
+    const search = createSearch({ road: { primary: [complete(80)], rows: [reject(80)] } });
+
+    mockEditorContext.searchMentions = search;
+    renderPanel();
+    await advance(200);
+
+    expect(shows('Page for road')).toBe(true);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    expect(showsNoResult()).toBe(false);
+
+    await advance(2_000);
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeUndefined();
+  });
+
   it.each([
     {
       name: 'its primary response arrives after the query changed',
@@ -359,7 +401,7 @@ describe('MentionPanel typed search delivery', () => {
     },
     {
       name: 'its rows retry finishes after the query changed',
-      oldPlan: { primary: [complete(80)], rows: [partial(80), complete(300)] },
+      oldPlan: { primary: [complete(80)], rows: [failed(80), complete(300)] },
       changeAtMs: 720,
     },
   ])('never lets a stale search overwrite newer results when $name', async ({ oldPlan, changeAtMs }) => {
@@ -389,21 +431,28 @@ describe('MentionPanel typed search delivery', () => {
       name: 'rows arrive after the primary results',
       plan: { primary: [complete(80)], rows: [complete(400)] },
       doneAt: 520,
-      finalRows: 'complete',
+      cachedRows: 'complete' as const,
     },
     {
-      name: 'rows stay partial until the retry',
-      plan: { primary: [complete(80)], rows: [partial(80), complete(80)] },
-      doneAt: 780,
-      finalRows: 'complete',
+      // Path load-shedding sets `partial` alone: two requests, no retry, and the answer is cached.
+      name: 'rows are partial only because their paths were shed',
+      plan: { primary: [complete(80)], rows: [partial(80)] },
+      doneAt: 200,
+      cachedRows: 'partial' as const,
     },
     {
-      name: 'the rows retry is still partial',
-      plan: { primary: [complete(80)], rows: [partial(80), partial(80)] },
+      name: 'rows fail until the retry',
+      plan: { primary: [complete(80)], rows: [failed(80), complete(80)] },
       doneAt: 780,
-      finalRows: 'partial',
+      cachedRows: 'complete' as const,
     },
-  ])('caches only the final cacheable sections when $name', async ({ plan, doneAt, finalRows }) => {
+    {
+      name: 'the rows retry fails again',
+      plan: { primary: [complete(80)], rows: [failed(80), failed(80)] },
+      doneAt: 780,
+      cachedRows: undefined,
+    },
+  ])('caches only a complete answer when $name', async ({ plan, doneAt, cachedRows }) => {
     const search = createSearch({ road: plan });
 
     mockEditorContext.searchMentions = search;
@@ -415,19 +464,26 @@ describe('MentionPanel typed search delivery', () => {
       { workspaceId: 'workspace' }
     );
 
-    expect(shows('Page for road')).toBe(true);
     expect(getCachedMentionSections(cacheKey)).toBeUndefined();
 
     await advance(STEP_MS);
 
-    expect(search).toHaveBeenCalledTimes(plan.primary.length + plan.rows.length);
-    expect(shows(`${finalRows} row for road`)).toBe(true);
+    expect(shows('Page for road')).toBe(true);
     expect(getCachedMentionSections(cacheKey)).toEqual(
-      finalRows === 'complete'
-        ? mergeMentionSearchResponses([respond('primary', 'road', 'complete'), respond('rows', 'road', 'complete')])
+      cachedRows
+        ? mergeMentionSearchResponses([respond('primary', 'road', 'complete'), respond('rows', 'road', cachedRows)])
             .sections
         : undefined
     );
+    if (cachedRows) {
+      expect(shows(`${cachedRows} row for road`)).toBe(true);
+      expect(retryRow()).toBeNull();
+    } else {
+      expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    }
+
+    await advance(2_000);
+    expect(search).toHaveBeenCalledTimes(plan.primary.length + plan.rows.length);
   });
 
   it('drops the loading skeleton once primary results render', async () => {
@@ -693,6 +749,8 @@ describe('MentionPanel typed search delivery', () => {
       renderPanel();
       await advance(60);
       cleanup();
+      // Past the freshness window, so reopening refreshes the cached answer.
+      await advance(MENTION_SEARCH_CACHE_FRESH_MS);
 
       // Reopening shows the cached bare-@ answer at once and refreshes it in the background.
       const { editor } = renderPanel();
@@ -876,7 +934,7 @@ describe('MentionPanel typed search delivery', () => {
       };
       const rowsRetryFailed = { error: new Error('rows retry failed') };
 
-      it('settles a deferred search on its answer instead of loading forever', async () => {
+      it('counts down a busy search, sends it again, and settles on its answer instead of loading forever', async () => {
         const search = createAnswerSearch({
           primary: [
             [80, retryLater],
@@ -892,18 +950,32 @@ describe('MentionPanel typed search delivery', () => {
         mockEditorContext.searchMentions = search;
         renderPanel();
 
-        // Deferred at 200 ms, sent again at 1200 ms, rows retried at 1780 ms, failed at 1860 ms.
-        await advance(1_850);
+        // Busy at 200 ms for the 1 s Retry-After, sent again at 1200 ms; the superseded rows are
+        // retried at 1780 ms and fail at 1860 ms.
+        await advance(200);
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('1');
+        expect(isBusy()).toBe(false);
+        expect(showsNoResult()).toBe(false);
+
+        await advance(1_000);
+        expect(search).toHaveBeenCalledTimes(4);
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('0');
+        expect(shows('document.mention.retrying')).toBe(true);
+
+        await advance(650);
         expect(search).toHaveBeenCalledTimes(5);
-        expect(isBusy()).toBe(true);
+        expect(busyRow()).not.toBeNull();
 
         await advance(STEP_MS);
+        expect(busyRow()).toBeNull();
+        expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
         expect(isBusy()).toBe(false);
-        expect(shows('findAndReplace.noResult')).toBe(true);
+        expect(showsNoResult()).toBe(false);
         expect(console.error).toHaveBeenCalledWith(rowsRetryFailed.error);
       });
 
-      it('shows the refreshed answer of a cached query and keeps the cached entry', async () => {
+      it('keeps the cached answer on screen when its refresh fails, and Retry refreshes it', async () => {
+        Element.prototype.scrollIntoView = jest.fn();
         const freshPage: MentionSearchResponse = {
           sections: [section(MentionSearchSectionKind.Pages, [pageItem('Fresh road')])],
         };
@@ -911,11 +983,13 @@ describe('MentionPanel typed search delivery', () => {
           primary: [
             [80, respond('primary', 'road', 'complete')],
             [80, freshPage],
+            [80, freshPage],
           ],
           rows: [
             [80, respond('rows', 'road', 'complete')],
-            [80, respond('rows', 'road', 'partial')],
+            [80, respond('rows', 'road', 'failed')],
             [80, rowsRetryFailed],
+            [80, respond('rows', 'road', 'complete')],
           ],
         });
 
@@ -923,24 +997,46 @@ describe('MentionPanel typed search delivery', () => {
         renderPanel();
         await advance(200);
         cleanup();
+        await advance(MENTION_SEARCH_CACHE_FRESH_MS);
 
         const roadKey = sentCacheKey(search, 'road');
         const cachedRoad = getCachedMentionSections(roadKey);
 
         expect(cachedRoad).toBeDefined();
 
-        // Reopening paints the cached answer and refreshes it: the rows come back partial, and
-        // their retry 500 ms later fails.
-        renderPanel();
+        // Reopening paints the cached answer and refreshes it: the rows fail, and so does their
+        // retry 500 ms later.
+        const { editor } = renderPanel();
+
         expect(shows('complete row for road')).toBe(true);
         await advance(650);
         expect(search).toHaveBeenCalledTimes(5);
-        expect(shows('Fresh road')).toBe(false);
+        expect(retryRow()).toBeNull();
 
         await advance(STEP_MS);
-        expect(shows('Fresh road')).toBe(true);
-        expect(shows('partial row for road')).toBe(true);
+        expect(shows('Page for road')).toBe(true);
+        expect(shows('complete row for road')).toBe(true);
+        expect(shows('Fresh road')).toBe(false);
+        expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
         expect(getCachedMentionSections(roadKey)).toEqual(cachedRoad);
+
+        // ArrowUp from no highlight wraps to the last option, the Retry row.
+        await placeCaretAtEnd(editor);
+        await pressKey('ArrowUp');
+        expect(retryRow()?.getAttribute('data-selected')).toBe('true');
+        await pressKey('Enter');
+        expect(shows('document.mention.retrying')).toBe(true);
+        await advance(80);
+
+        expect(search).toHaveBeenCalledTimes(7);
+        expect(shows('Fresh road')).toBe(true);
+        expect(shows('complete row for road')).toBe(true);
+        expect(retryRow()).toBeNull();
+        // The user chose Retry, not one of the results it brought, so nothing is highlighted.
+        expect(highlightedCount()).toBe(0);
+        expect(getCachedMentionSections(roadKey)).toEqual(
+          mergeMentionSearchResponses([freshPage, respond('rows', 'road', 'complete')]).sections
+        );
       });
     });
 
@@ -1008,6 +1104,8 @@ describe('MentionPanel typed search delivery', () => {
       rerender();
       await advance(200);
       cleanup();
+      // Past the freshness window, so both cached answers are refreshed when shown again.
+      await advance(MENTION_SEARCH_CACHE_FRESH_MS);
 
       const roadKey = sentCacheKey(search, 'road');
       const roadmapKey = sentCacheKey(search, 'roadmap');
@@ -1133,7 +1231,7 @@ describe('MentionPanel typed search delivery', () => {
       { name: 'a typed request', searchText: 'road', sentAtMs: 120, deadlineMs: MENTION_TYPED_DEADLINE_MS },
       { name: 'a bare request', searchText: '', sentAtMs: 0, deadlineMs: MENTION_BARE_DEADLINE_MS },
     ])(
-      'aborts $name that outlives its deadline and shows the failure state',
+      'aborts $name that outlives its deadline and shows the unavailable row, never "No result"',
       async ({ searchText, sentAtMs, deadlineMs }) => {
         mockPanelContext.searchText = searchText;
         const search = jest.fn((request: MentionSearchRequest, options?: MentionSearchOptions) =>
@@ -1148,15 +1246,359 @@ describe('MentionPanel typed search delivery', () => {
           searchText ? [false, false] : [false]
         );
         expect(isBusy()).toBe(true);
+        expect(retryRow()).toBeNull();
 
         await advance(1);
         expect(search.mock.calls.map(([, options]) => options?.signal?.aborted)).toEqual(
           searchText ? [true, true] : [true]
         );
         expect(isBusy()).toBe(false);
-        expect(shows('findAndReplace.noResult')).toBe(true);
+        expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+        expect(showsNoResult()).toBe(false);
         expect(console.error).toHaveBeenCalledWith(expect.objectContaining({ transportFailure: 'timeout' }));
       }
     );
+  });
+
+  describe('failure and cache states', () => {
+    const recentPage: MentionSearchResponse = {
+      sections: [section(MentionSearchSectionKind.Pages, [pageItem('Recent page')])],
+    };
+    const serverError = (code: number, message: string) => ({
+      error: { code, message, sourceDomain: 'http', httpStatus: code },
+    });
+
+    beforeEach(() => {
+      Element.prototype.scrollIntoView = jest.fn();
+    });
+
+    // Answers the empty query with `recentPage` after `bareMs`, and typed queries after 80 ms.
+    function createBareSearch(bareMs: number) {
+      return jest.fn((request: MentionSearchRequest, options?: MentionSearchOptions) => {
+        const query = request.query ?? '';
+
+        return answerAfter(query ? 80 : bareMs, options?.signal, () =>
+          query ? respond(laneOf(request), query, 'complete') : recentPage
+        );
+      });
+    }
+
+    it('shows the unavailable row instead of "No result" after a 500, and Retry from the keyboard sends it again', async () => {
+      const search = createAnswerSearch({
+        primary: [
+          [80, serverError(500, 'Internal Server Error')],
+          [80, respond('primary', 'road', 'complete')],
+        ],
+        rows: [
+          [80, serverError(500, 'Internal Server Error')],
+          [80, respond('rows', 'road', 'complete')],
+        ],
+      });
+
+      mockEditorContext.searchMentions = search;
+      const { editor } = renderPanel();
+
+      await advance(200);
+      expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+      expect(shows('document.mention.suggestionsUnavailable')).toBe(true);
+      expect(shows('document.mention.retry')).toBe(true);
+      expect(showsNoResult()).toBe(false);
+      expect(isBusy()).toBe(false);
+
+      await placeCaretAtEnd(editor);
+      await pressKey('ArrowDown');
+      expect(retryRow()?.getAttribute('data-selected')).toBe('true');
+
+      // Sent again without the typing debounce. The row says so and keeps the highlight, and a
+      // second Enter while it is pending sends nothing.
+      await pressKey('Enter');
+      await advance(1);
+      expect(search).toHaveBeenCalledTimes(4);
+      expect(shows('document.mention.retrying')).toBe(true);
+      expect(retryRow()?.getAttribute('data-selected')).toBe('true');
+      await pressKey('Enter');
+      await advance(1);
+      expect(search).toHaveBeenCalledTimes(4);
+
+      await advance(80);
+      expect(shows('Page for road')).toBe(true);
+      expect(shows('complete row for road')).toBe(true);
+      expect(retryRow()).toBeNull();
+      expect(highlightedCount()).toBe(0);
+      expect(showsNoResult()).toBe(false);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeDefined();
+    });
+
+    it('renders the rows and the unavailable row when the primary request fails with a 503, and a click retries', async () => {
+      const search = createAnswerSearch({
+        primary: [
+          [80, serverError(503, 'Service Unavailable')],
+          [80, respond('primary', 'road', 'complete')],
+        ],
+        rows: [
+          [80, respond('rows', 'road', 'complete')],
+          [80, respond('rows', 'road', 'complete')],
+        ],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+
+      expect(shows('complete row for road')).toBe(true);
+      expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+      expect(showsNoResult()).toBe(false);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeUndefined();
+
+      // The rows stay on screen while the retry is pending.
+      await act(async () => {
+        fireEvent.click(retryRow() as HTMLElement);
+      });
+      await advance(1);
+      expect(search).toHaveBeenCalledTimes(4);
+      expect(shows('complete row for road')).toBe(true);
+
+      await advance(80);
+      expect(shows('Page for road')).toBe(true);
+      expect(retryRow()).toBeNull();
+    });
+
+    it('keeps the sections that answered and offers Retry when the server fails a section', async () => {
+      const search = createAnswerSearch({
+        primary: [
+          [
+            80,
+            {
+              sections: [
+                section(MentionSearchSectionKind.People, [personItem('ada', 'Ada')]),
+                failedSection(MentionSearchSectionKind.Pages),
+              ],
+              partial: true,
+            },
+          ],
+        ],
+        rows: [[80, respond('rows', 'road', 'complete')]],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(2_000);
+
+      expect(shows('Ada')).toBe(true);
+      expect(shows('complete row for road')).toBe(true);
+      expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+      // Only the rows request is retried automatically.
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeUndefined();
+    });
+
+    it('shows a busy countdown when the server asks to retry later, and sends the search again when it ends', async () => {
+      const retryLater = { error: { code: ERROR_CODE.RETRY_LATER, message: 'retry later' } };
+      const search = createAnswerSearch({
+        primary: [
+          [80, retryLater],
+          [80, respond('primary', 'road', 'complete')],
+        ],
+        rows: [
+          [80, respond('rows', 'road', 'complete')],
+          [80, respond('rows', 'road', 'complete')],
+        ],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+
+      // Mention RetryLater carries no Retry-After, so the countdown starts at the 3 s default.
+      expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('3');
+      expect(shows('complete row for road')).toBe(true);
+      expect(retryRow()).toBeNull();
+      expect(isBusy()).toBe(false);
+      expect(showsNoResult()).toBe(false);
+
+      await advance(1_000);
+      expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('2');
+      await advance(1_000);
+      expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('1');
+      expect(search).toHaveBeenCalledTimes(2);
+
+      await advance(1_000);
+      expect(search).toHaveBeenCalledTimes(4);
+      expect(shows('document.mention.retrying')).toBe(true);
+
+      await advance(80);
+      expect(busyRow()).toBeNull();
+      expect(shows('Page for road')).toBe(true);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeDefined();
+    });
+
+    it('shows offline when the requests fail while the browser is offline, and searches again once back online', async () => {
+      const onLine = jest.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+      const networkError = {
+        error: { code: -1, message: 'Network Error', sourceDomain: 'transport', transportFailure: 'network' },
+      };
+      const search = createAnswerSearch({
+        primary: [
+          [10, networkError],
+          [80, respond('primary', 'road', 'complete')],
+        ],
+        rows: [
+          [10, networkError],
+          [80, respond('rows', 'road', 'complete')],
+        ],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(130);
+
+      expect(retryRow()?.getAttribute('data-status')).toBe('offline');
+      expect(shows('document.mention.offline')).toBe(true);
+      expect(showsNoResult()).toBe(false);
+
+      onLine.mockReturnValue(true);
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await advance(1);
+      expect(search).toHaveBeenCalledTimes(4);
+
+      await advance(80);
+      expect(shows('Page for road')).toBe(true);
+      expect(retryRow()).toBeNull();
+    });
+
+    it('paints a cached answer without a request for 10 s, then revalidates it once', async () => {
+      const search = createSearch({
+        road: { primary: [complete(80), complete(80)], rows: [complete(80), complete(80)] },
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+      cleanup();
+
+      // Reopened 5 s after the answer: painted from the cache, with no request.
+      await advance(5_000);
+      renderPanel();
+      expect(shows('Page for road')).toBe(true);
+      expect(shows('complete row for road')).toBe(true);
+      await advance(1_000);
+      expect(search).toHaveBeenCalledTimes(2);
+      cleanup();
+
+      // Reopened 10 s after it: painted at once, then refreshed once.
+      await advance(MENTION_SEARCH_CACHE_FRESH_MS - 6_000);
+      renderPanel();
+      expect(shows('Page for road')).toBe(true);
+      expect(search).toHaveBeenCalledTimes(4);
+      await advance(1_000);
+      expect(search).toHaveBeenCalledTimes(4);
+      expect(shows('complete row for road')).toBe(true);
+    });
+
+    it('paints the cached answer after FOLDER_VIEW_CHANGED on the editor emitter, then refreshes it once', async () => {
+      const eventEmitter = new EventEmitter();
+      const search = createBareSearch(50);
+
+      mockPanelContext.searchText = '';
+      mockEditorContext.eventEmitter = eventEmitter;
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(50);
+      cleanup();
+
+      // Well inside the freshness window, but the outline changed since.
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, { viewId: 'another-page' });
+      renderPanel();
+
+      expect(shows('Recent page')).toBe(true);
+      expect(search).toHaveBeenCalledTimes(2);
+      await advance(1_000);
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(shows('Recent page')).toBe(true);
+    });
+
+    it('drops the cached answers of a workspace when a panel opens on another one', async () => {
+      const search = createSearch({
+        road: { primary: [complete(80), complete(80)], rows: [complete(80), complete(80)] },
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+      cleanup();
+
+      const roadKey = sentCacheKey(search, 'road');
+
+      expect(getCachedMentionSections(roadKey)).toBeDefined();
+
+      mockEditorContext.workspaceId = 'another-workspace';
+      try {
+        renderPanel();
+        expect(getCachedMentionSections(roadKey)).toBeUndefined();
+        await advance(200);
+        expect(search).toHaveBeenCalledTimes(4);
+        expect(shows('Page for road')).toBe(true);
+      } finally {
+        mockEditorContext.workspaceId = 'workspace';
+      }
+    });
+
+    it('caches a bare answer that arrives after typing, and the next @ paints it without a request', async () => {
+      const search = createBareSearch(300);
+
+      mockPanelContext.searchText = '';
+      mockEditorContext.searchMentions = search;
+      const { rerender } = renderPanel();
+
+      await advance(100);
+      mockPanelContext.searchText = 'r';
+      rerender();
+      await advance(300);
+      cleanup();
+
+      mockPanelContext.searchText = '';
+      renderPanel();
+      expect(shows('Recent page')).toBe(true);
+      await advance(1_000);
+      expect(search.mock.calls.filter(([request]) => !request.query)).toHaveLength(1);
+    });
+
+    it('treats an answer without section status, from an older server, as complete', async () => {
+      const legacy = (response: MentionSearchResponse): MentionSearchResponse => ({
+        ...response,
+        sections: response.sections.map(
+          ({ kind, title, items, has_more }) => ({ kind, title, items, has_more } as MentionSearchSection)
+        ),
+      });
+      const search = createAnswerSearch({
+        primary: [[80, legacy(respond('primary', 'road', 'complete'))]],
+        rows: [[80, legacy(respond('rows', 'road', 'partial'))]],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(2_000);
+
+      expect(shows('Page for road')).toBe(true);
+      expect(shows('partial row for road')).toBe(true);
+      expect(retryRow()).toBeNull();
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeDefined();
+    });
+
+    it('still says "No result" when the server answered completely and nothing matched', async () => {
+      mockEditorContext.searchMentions = createAnswerSearch({
+        primary: [[80, { sections: [] }]],
+        rows: [[80, { sections: [] }]],
+      });
+      renderPanel();
+      await advance(200);
+
+      expect(showsNoResult()).toBe(true);
+      expect(retryRow()).toBeNull();
+      expect(busyRow()).toBeNull();
+    });
   });
 });

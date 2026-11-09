@@ -191,6 +191,34 @@ describe('MentionPanel composition', () => {
     }
   });
 
+  it('offers Retry instead of "No result" when the local pages cannot load, and loads them again', async () => {
+    const loadError = new Error('views unavailable');
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockLoadViews.mockRejectedValueOnce(loadError);
+    const editor = withReact(createEditor());
+
+    render(
+      <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@Target' }] }]}>
+        <Editable />
+        <MentionPanel notifyOnInsert={false} />
+      </Slate>
+    );
+    const retry = await screen.findByTestId('mention-panel-retry');
+
+    expect(retry.getAttribute('data-status')).toBe('unavailable');
+    expect(screen.queryByText('findAndReplace.noResult')).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(loadError);
+
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    expect(screen.queryByTestId('mention-panel-retry')).toBeNull();
+    expect(mockLoadViews).toHaveBeenCalledTimes(2);
+    errorSpy.mockRestore();
+  });
+
   it('highlights the create-page options by key and runs the highlighted one on Enter', async () => {
     const addPage = jest.fn(async () => ({ view_id: 'new-page' }));
 

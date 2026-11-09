@@ -456,6 +456,14 @@ interface MentionSearchCacheScope {
   userId?: string | null;
 }
 
+/** The workspace and user a cache entry belongs to, as the first line of its cache key. */
+export function buildMentionSearchCacheScopeKey(scope: MentionSearchCacheScope = {}) {
+  return JSON.stringify({
+    workspace_id: normalizeOptionalString(scope.workspaceId),
+    user_id: normalizeOptionalString(scope.userId),
+  });
+}
+
 /** Whether the request asks for database rows only, as the typed rows request does. */
 export function isDatabaseRowOnlyMentionRequest(request: MentionSearchRequest) {
   const include = request.include ?? [];
@@ -499,33 +507,66 @@ export function buildMentionSearchRequestsCacheKey(
   requests: MentionSearchRequest[],
   scope: MentionSearchCacheScope = {}
 ) {
-  const scopeKey = JSON.stringify({
-    workspace_id: normalizeOptionalString(scope.workspaceId),
-    user_id: normalizeOptionalString(scope.userId),
-  });
-
-  return [scopeKey, ...requests.map(buildMentionSearchCacheKey)].join('\n');
+  return [buildMentionSearchCacheScopeKey(scope), ...requests.map(buildMentionSearchCacheKey)].join('\n');
 }
 
-function requestIncludesDatabaseRows(request: MentionSearchRequest): boolean {
+/** The section status a server sends when the section's source failed. Such a section has no items. */
+export const MENTION_SECTION_STATUS_FAILED = 'failed';
+
+/** Whether the server reports that one of the response's sections failed. */
+export function hasFailedMentionSection(response: MentionSearchResponse) {
+  return response.sections.some((section) => section.status === MENTION_SECTION_STATUS_FAILED);
+}
+
+function requestIncludes(request: MentionSearchRequest, kind: MentionTargetKind) {
   const include = request.include ?? [];
 
-  return include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
+  return include.length === 0 || include.includes(kind);
 }
 
-export function shouldCacheMentionSearchSections(
-  requests: MentionSearchRequest[],
-  databaseRowResponse: MentionSearchResponse | undefined,
-  hasQuery: boolean
-) {
-  if (!hasQuery || !requests.some(requestIncludesDatabaseRows)) {
-    return true;
+/**
+ * Whether `response` has the shape of an answer to a request that Search superseded: partial, and
+ * without any section of an object kind the request asked for. Search answers a superseded request
+ * with no sections, and Cloud adds only its own People, Dates and Links sections. A real answer
+ * always has such a section when it is partial: a degraded or failed object search adds a failed
+ * one, and load-shed paths come with items. The one exception, a partial People annotation over an
+ * object search that matched nothing, is treated the same way, which only costs a refetch.
+ */
+export function isSupersededMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  if (response.partial !== true) return false;
+
+  const objectKinds = new Set<MentionSearchSectionKind>();
+
+  // Search returns database rows inside the Pages section; Cloud fails them as a rows section.
+  if (requestIncludes(request, MentionTargetKind.Page) || requestIncludes(request, MentionTargetKind.DatabaseRow)) {
+    objectKinds.add(MentionSearchSectionKind.Pages);
+    objectKinds.add(MentionSearchSectionKind.DatabaseRows);
   }
 
-  // A fulfilled, non-partial row response is authoritative even when it has
-  // no items. Missing or partial responses must not overwrite a previously
-  // complete cache entry.
-  return databaseRowResponse !== undefined && databaseRowResponse.partial !== true;
+  if (requestIncludes(request, MentionTargetKind.Database)) {
+    objectKinds.add(MentionSearchSectionKind.Databases);
+  }
+
+  return objectKinds.size > 0 && !response.sections.some((section) => objectKinds.has(section.kind));
+}
+
+/**
+ * Whether a response is the server's complete answer: no section failed, and the request was not
+ * superseded. `partial` alone, as when breadcrumb paths were load-shed, still counts as complete.
+ */
+export function isCompleteMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  return !hasFailedMentionSection(response) && !isSupersededMentionResponse(request, response);
+}
+
+/**
+ * Whether the rows-only request deserves its one retry: the server reported a failure it expects a
+ * retry to fix (a failed section with `partial`), or superseded the request. A failed section
+ * without `partial` is permanent, as when the keyword index is disabled, and is never retried.
+ */
+export function shouldRetryMentionRowsResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  return (
+    (hasFailedMentionSection(response) && response.partial === true) || isSupersededMentionResponse(request, response)
+  );
 }
 
 export function mergeMentionSearchResponses(responses: MentionSearchResponse[]): MentionSearchResponse {
