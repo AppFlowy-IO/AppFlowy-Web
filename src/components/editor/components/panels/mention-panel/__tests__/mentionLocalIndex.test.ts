@@ -143,6 +143,39 @@ function refreshOutline(outline = fixtureOutline(), sources: { recent?: View[]; 
   setMentionIndexSources(WS, { outline, ...sources });
 }
 
+/** The fixture outline once `roadmap` and its subtree left it (moved to the trash). */
+function outlineWithoutRoadmap(): View[] {
+  const outline = fixtureOutline();
+
+  outline[0].children = outline[0].children.filter((item) => item.view_id !== 'roadmap');
+  return outline;
+}
+
+/** The fixture outline with `detail` below `notes`, two levels below `roadmap`. */
+function outlineWithDetail(): View[] {
+  const outline = fixtureOutline();
+
+  outline[0].children[0].children[0].children = [view('detail', { name: 'Detail', parent_view_id: 'notes' })];
+  return outline;
+}
+
+/** Those of `viewIds` the snapshot lists, in the given order. */
+function listedOf(viewIds: string[]) {
+  return viewIds.filter((viewId) => local(viewId) !== undefined);
+}
+
+/** A test runs once reading a snapshot after every step, once reading only at the end. */
+const READS: [string, boolean][] = [
+  ['reading between steps', true],
+  ['reading only at the end', false],
+];
+
+function stepper(readBetween: boolean) {
+  return () => {
+    if (readBetween) getMentionLocalSnapshot(WS);
+  };
+}
+
 beforeEach(() => {
   clearMentionLocalIndex();
 });
@@ -363,6 +396,68 @@ describe('mentionLocalIndex session events', () => {
     expect(local('zebra')).toBeUndefined();
   });
 
+  it.each(READS)('stops listing a creation the outline listed and the trash list shows, %s', (_label, readBetween) => {
+    const step = stepper(readBetween);
+    const listing = fixtureOutline();
+
+    listing[0].children.push(view('zebra', { name: 'Zebra plan', parent_view_id: 'space' }));
+    refreshOutline();
+    recordMentionViewCreated(WS, {
+      viewId: 'zebra',
+      name: 'Zebra plan',
+      layout: ViewLayout.Document,
+      parentViewId: 'space',
+    });
+    step();
+    refreshOutline(listing);
+    step();
+    // Moved to the trash in another tab.
+    refreshOutline(fixtureOutline(), { trash: [...TRASH, view('zebra')] });
+
+    expect(local('zebra')).toBeUndefined();
+  });
+
+  it('stops listing a creation the trash list shows before the outline lists it, for good', () => {
+    refreshOutline();
+    recordMentionViewCreated(WS, {
+      viewId: 'zebra',
+      name: 'Zebra plan',
+      layout: ViewLayout.Document,
+      parentViewId: 'space',
+    });
+    refreshOutline(fixtureOutline(), { trash: [...TRASH, view('zebra')] });
+    expect(local('zebra')).toBeUndefined();
+
+    // Deleted for good: neither list shows it again.
+    refreshOutline();
+    expect(local('zebra')).toBeUndefined();
+  });
+
+  it.each(READS)(
+    'leaves a creation the outline listed before it was recorded to the outline, %s',
+    (_label, readBetween) => {
+      const listing = fixtureOutline();
+
+      // A default creation resolves once the outline shows the page.
+      listing[0].children.push(view('zebra', { name: 'Untitled', parent_view_id: 'space' }));
+      refreshOutline(listing);
+      recordMentionViewCreated(
+        WS,
+        { viewId: 'zebra', name: '', layout: ViewLayout.Document, parentViewId: 'space' },
+        1000
+      );
+      if (readBetween) {
+        expect(local('zebra')).toEqual(
+          expect.objectContaining({ name: 'Untitled', source: 'outline', sessionCreatedAt: 1000 })
+        );
+      }
+
+      // Deleted elsewhere: the outline decides.
+      refreshOutline();
+      expect(local('zebra')).toBeUndefined();
+    }
+  );
+
   it('keeps the latest open', () => {
     refreshOutline();
     recordMentionViewOpened(WS, 'roadmap', 5000);
@@ -454,7 +549,7 @@ describe('mentionLocalIndex session events', () => {
     expect(local('roadmap')?.name).toBe('Roadmap 2027');
   });
 
-  it('lets an outline that moved past a pending rename win', () => {
+  it.each(READS)('lets an outline that moved past a pending rename win, %s', (_label, readBetween) => {
     refreshOutline();
     recordMentionViewRenamed(WS, 'roadmap', 'Mine');
 
@@ -462,7 +557,7 @@ describe('mentionLocalIndex session events', () => {
 
     renamedElsewhere[0].children[0].name = 'Theirs';
     refreshOutline(renamedElsewhere);
-    expect(local('roadmap')?.name).toBe('Theirs');
+    if (readBetween) expect(local('roadmap')?.name).toBe('Theirs');
 
     // An outline that shows the old name again does not bring the dropped rename back.
     refreshOutline();
@@ -554,6 +649,145 @@ describe('mentionLocalIndex session events', () => {
     // Restored in another tab: the trash list and the outline say so.
     refreshOutline(fixtureOutline(), { trash: TRASH });
     expect(local('roadmap')).toBeDefined();
+  });
+
+  it.each(READS)(
+    'shows a page this tab deleted again when restored elsewhere, after the outline dropped it first, %s',
+    (_label, readBetween) => {
+      const step = stepper(readBetween);
+
+      refreshOutline();
+      step();
+      recordMentionViewDeleted(WS, 'roadmap');
+      step();
+      // The usual order: the outline drops the page before the trash list shows it.
+      refreshOutline(outlineWithoutRoadmap());
+      step();
+      refreshOutline(outlineWithoutRoadmap(), { trash: [...TRASH, view('roadmap')] });
+      step();
+      // Restored in another tab: the outline lists it again, the trash list no longer does.
+      refreshOutline();
+
+      expect(listedOf(['roadmap', 'notes'])).toEqual(['roadmap', 'notes']);
+    }
+  );
+
+  it('lets a restore elsewhere show a page the trash list showed before this tab recorded its deletion', () => {
+    // The outline and trash refreshes both came in before the move to the trash resolved.
+    refreshOutline(outlineWithoutRoadmap(), { trash: [...TRASH, view('roadmap')] });
+    recordMentionViewDeleted(WS, 'roadmap');
+    refreshOutline();
+
+    expect(listedOf(['roadmap', 'notes'])).toEqual(['roadmap', 'notes']);
+  });
+
+  it('hides what lies below a page this tab deleted in every lane, until a restore elsewhere', () => {
+    const recent = [
+      // In the outline, two levels below the page.
+      view('detail', { parent_view_id: 'notes', last_viewed_at: '2026-11-09T10:00:00Z' }),
+      // Beyond the outline's depth, below the page too.
+      view('deep', { parent_view_id: 'detail', last_viewed_at: '2026-11-09T11:00:00Z' }),
+    ];
+    const below = ['notes', 'detail', 'deep', 'new-note'];
+
+    refreshOutline(outlineWithDetail(), { trash: TRASH, recent });
+    recordMentionViewCreated(WS, {
+      viewId: 'new-note',
+      name: 'New',
+      layout: ViewLayout.Document,
+      parentViewId: 'notes',
+    });
+    expect(listedOf(below)).toEqual(below);
+
+    recordMentionViewDeleted(WS, 'roadmap');
+    expect(listedOf(['roadmap', ...below])).toEqual([]);
+
+    // The outline drops the subtree, then the trash list shows the page; the recent views are stale.
+    refreshOutline(outlineWithoutRoadmap(), { trash: TRASH, recent });
+    expect(listedOf(['roadmap', ...below])).toEqual([]);
+    refreshOutline(outlineWithoutRoadmap(), { trash: [...TRASH, view('roadmap')], recent });
+    expect(listedOf(['roadmap', ...below])).toEqual([]);
+
+    // Restored in another tab: the outline places the subtree again.
+    refreshOutline(outlineWithDetail(), { trash: TRASH, recent });
+    expect(listedOf(['roadmap', ...below])).toEqual(['roadmap', ...below]);
+  });
+
+  it('keeps what lay below a page this tab deleted hidden once it is deleted for good', () => {
+    const recent = [view('detail', { parent_view_id: 'notes', last_viewed_at: '2026-11-09T10:00:00Z' })];
+
+    refreshOutline(outlineWithDetail(), { trash: TRASH, recent });
+    recordMentionViewDeleted(WS, 'roadmap');
+    refreshOutline(outlineWithoutRoadmap(), { trash: [...TRASH, view('roadmap')], recent });
+    // Deleted for good in another tab: neither list shows the page, and the recent views are stale.
+    refreshOutline(outlineWithoutRoadmap(), { trash: TRASH, recent });
+    expect(listedOf(['roadmap', 'notes', 'detail'])).toEqual([]);
+
+    // This tab restores it.
+    recordMentionViewRestored(WS, 'roadmap');
+    expect(listedOf(['detail'])).toEqual(['detail']);
+  });
+
+  it('hides a recent view below a page trashed elsewhere when the recent views lead to it', () => {
+    refreshOutline(outlineWithoutRoadmap(), {
+      trash: [...TRASH, view('roadmap')],
+      recent: [
+        view('notes', { parent_view_id: 'roadmap' }),
+        view('detail', { parent_view_id: 'notes' }),
+        view('deep', { name: 'Deep page', parent_view_id: 'beyond-depth' }),
+      ],
+    });
+    recordMentionViewCreated(WS, {
+      viewId: 'new-detail',
+      name: 'New',
+      layout: ViewLayout.Document,
+      parentViewId: 'detail',
+    });
+
+    expect(listedOf(['notes', 'detail', 'new-detail', 'deep'])).toEqual(['deep']);
+  });
+
+  it('builds the same candidates whether or not snapshots are read between writes', () => {
+    const renamed = (name: string, extraPages: View[] = [], removed: string[] = []) => {
+      const outline = fixtureOutline();
+
+      outline[0].children[0].name = name;
+      outline[0].children.push(...extraPages);
+      outline[0].children = outline[0].children.filter((item) => !removed.includes(item.view_id));
+      return outline;
+    };
+    const zebra = view('zebra', { name: 'Zebra plan', parent_view_id: 'space' });
+    const steps = [
+      () => refreshOutline(),
+      () =>
+        recordMentionViewCreated(
+          WS,
+          { viewId: 'zebra', name: 'Zebra plan', layout: ViewLayout.Document, parentViewId: 'space' },
+          1000
+        ),
+      () => recordMentionViewRenamed(WS, 'roadmap', 'Mine', 2000),
+      () => recordMentionViewDeleted(WS, 'spec'),
+      () => recordMentionViewOpened(WS, 'overview', 3000),
+      () => refreshOutline(renamed('Theirs', [zebra])),
+      () => refreshOutline(renamed('Roadmap', [zebra], ['spec'])),
+      () => refreshOutline(renamed('Roadmap', [zebra], ['spec']), { trash: [...TRASH, view('spec')] }),
+      () => refreshOutline(renamed('Roadmap'), { trash: [...TRASH, view('zebra')] }),
+      () => refreshOutline(renamed('Roadmap')),
+    ];
+    const run = (readBetween: boolean) => {
+      clearMentionLocalIndex();
+      steps.forEach((step) => {
+        step();
+        if (readBetween) getMentionLocalSnapshot(WS);
+      });
+      return getMentionLocalSnapshot(WS).views;
+    };
+    const unread = run(false);
+
+    expect(run(true)).toEqual(unread);
+    expect(unread.find((item) => item.viewId === 'roadmap')?.name).toBe('Roadmap');
+    expect(unread.map((item) => item.viewId)).toEqual(expect.arrayContaining(['spec', 'overview']));
+    expect(unread.map((item) => item.viewId)).not.toContain('zebra');
   });
 
   it('drops the least recently touched session entries beyond the limit', () => {
@@ -801,5 +1035,27 @@ describe('mentionLocalIndex performance', () => {
     expect(getMentionLocalSnapshot(WS)).toBe(built);
     expect(performance.now() - startedAt).toBeLessThan(20);
     expect(built.views).toHaveLength(countCandidates(outlines[outlines.length - 1]));
+  });
+
+  it('settles a waiting rename against a new 5,000-view outline in a few milliseconds', () => {
+    const outlines = Array.from({ length: 10 }, (_, serial) => largeOutline(serial));
+
+    setMentionIndexSources(WS, { outline: outlines[0] });
+    // No later outline lists the view, so every change walks all of it.
+    recordMentionViewRenamed(WS, 'v-0-2', 'Renamed', 1);
+
+    const durations = outlines.slice(1).map((outline) => {
+      const startedAt = performance.now();
+
+      setMentionIndexSources(WS, { outline });
+      return performance.now() - startedAt;
+    });
+    const median = [...durations].sort((left, right) => left - right)[Math.floor(durations.length / 2)];
+
+    if (process.env.MENTION_INDEX_PERF_LOG) {
+      console.info(`mention index settle: median ${median.toFixed(2)} ms of ${durations.map((ms) => ms.toFixed(2))}`);
+    }
+
+    expect(median).toBeLessThan(20);
   });
 });
