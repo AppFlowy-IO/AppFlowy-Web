@@ -25,6 +25,12 @@ import {
 import { isDatabaseLayout } from '@/application/view-utils';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { assertGenericDeepDuplicateIsSafe } from '@/components/app/view-actions/formDuplicateSafety';
+import {
+  recordMentionViewCreated,
+  recordMentionViewDeleted,
+  recordMentionViewRenamed,
+  recordMentionViewRestored,
+} from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
 import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
@@ -156,6 +162,14 @@ export function usePageOperations({
 
         activation.assertCurrent?.();
 
+        // Mentionable at once, before the outline lists it.
+        recordMentionViewCreated(currentWorkspaceId, {
+          viewId: response.view_id,
+          name: payload.name ?? '',
+          layout: payload.layout,
+          parentViewId,
+          databaseId: response.database_id,
+        });
         ViewService.invalidateCache(currentWorkspaceId, parentViewId);
         if (isDatabaseLayout(payload.layout)) {
           refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
@@ -190,6 +204,7 @@ export function usePageOperations({
         const deletedView = findView(outlineRef.current || [], id);
 
         await PageService.moveToTrash(currentWorkspaceId, id);
+        recordMentionViewDeleted(currentWorkspaceId, id);
         if (isDatabaseCatalogView(deletedView)) {
           refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         }
@@ -235,6 +250,8 @@ export function usePageOperations({
 
       try {
         await PageService.update(currentWorkspaceId, viewId, payload);
+        // Icon and cover changes send the current name, which records nothing.
+        if (typeof payload.name === 'string') recordMentionViewRenamed(currentWorkspaceId, viewId, payload.name);
         // Drop the cached view metadata (memory + disk) so a stale name/icon
         // can't be re-served if the WebSocket notification is dropped.
         ViewService.invalidateCache(currentWorkspaceId, viewId);
@@ -275,6 +292,7 @@ export function usePageOperations({
 
       try {
         await PageService.updateName(currentWorkspaceId, viewId, name);
+        recordMentionViewRenamed(currentWorkspaceId, viewId, name);
         ViewService.invalidateCache(currentWorkspaceId, viewId);
         refreshSharedPageMetadata(viewId);
 
@@ -418,6 +436,7 @@ export function usePageOperations({
 
       try {
         await PageService.restore(currentWorkspaceId, viewId);
+        recordMentionViewRestored(currentWorkspaceId, viewId);
         refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         if (viewId) ViewService.invalidateCache(currentWorkspaceId, viewId);
         void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {

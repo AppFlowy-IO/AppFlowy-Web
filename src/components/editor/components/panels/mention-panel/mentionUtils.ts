@@ -322,6 +322,19 @@ function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
   return values.find((value) => Boolean(value));
 }
 
+/** A page's navKey, as {@link mentionItemNavKey} gives it to the page's item. */
+export function mentionPageNavKey(pageId: string): string {
+  return `page:${pageId}`;
+}
+
+/**
+ * A database view's navKey, as {@link mentionItemNavKey} gives it to the database's item. `-` stands
+ * for an id that is not known.
+ */
+export function mentionDatabaseNavKey(databaseId: string | undefined, databaseViewId: string | undefined): string {
+  return `database:${databaseId || '-'}:${databaseViewId || '-'}`;
+}
+
 /**
  * The section-free identity of a mention result. The same object gets the same key in every
  * section, response and merge, so the picker can keep its highlight on it, and lanes that merge
@@ -339,13 +352,12 @@ export function mentionItemNavKey(item: MentionSearchResultItem): string {
     case MentionTargetKind.Person:
       return `person:${firstNonEmpty(payload('person_id'), item.object_id) ?? item.title}`;
     case MentionTargetKind.Page:
-      return `page:${firstNonEmpty(payload('page_id'), item.object_id) ?? item.title}`;
-    case MentionTargetKind.Database: {
-      const databaseId = firstNonEmpty(payload('database_id'), item.database_id, item.object_id) ?? '-';
-      const viewId = firstNonEmpty(payload('database_view_id'), item.database_view_id) ?? '-';
-
-      return `database:${databaseId}:${viewId}`;
-    }
+      return mentionPageNavKey(firstNonEmpty(payload('page_id'), item.object_id) ?? item.title);
+    case MentionTargetKind.Database:
+      return mentionDatabaseNavKey(
+        firstNonEmpty(payload('database_id'), item.database_id, item.object_id),
+        firstNonEmpty(payload('database_view_id'), item.database_view_id)
+      );
 
     case MentionTargetKind.DatabaseRow: {
       const databaseId = firstNonEmpty(payload('database_id'), item.database_id) ?? '-';
