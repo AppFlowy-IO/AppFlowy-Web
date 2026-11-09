@@ -993,48 +993,113 @@ describe('useSync version-gated message handling', () => {
     nextDoc.destroy();
   });
 
-  it('resets when local version is known but incoming version is missing', async () => {
-    const ws = createWs();
+  it.each([
+    ['WebSocket', 'Update'],
+    ['WebSocket', 'Manifest'],
+    ['sibling tab', 'Update'],
+    ['sibling tab', 'Manifest'],
+  ])('preserves the branch and unsent edits after a versionless %s %s', async (transport, kind) => {
+    const protocol = jest.requireActual<typeof import('@/application/services/js-services/sync-protocol')>(
+      '@/application/services/js-services/sync-protocol'
+    );
+
+    mockedHandleMessage.mockImplementation(protocol.handleMessage);
+    const ws = { ...createWs(), readyState: WebSocket.OPEN } as AppflowyWebSocketType;
     const bc = createBroadcastChannel();
     const objectId = '44444444-4444-4444-8444-444444444445';
     const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b110';
-    const doc = createDoc(objectId) as Y.Doc & { version?: string };
-    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
-    doc.version = version;
-    mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
+    const doc = createDoc(objectId) as YDoc;
+    const server = createDoc(objectId);
+    const peer = createDoc(objectId);
+    const destroyed = jest.fn();
 
+    doc.on('destroy', destroyed);
+    doc.version = version;
+    doc.getText('body').insert(0, 'synced');
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(doc));
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    server.getMap('remote').set('accepted', true);
+    peer.getMap('remote').set('unaccepted-peer-edit', true);
+    const incoming = transport === 'WebSocket' ? server : peer;
+    const send = ws.sendMessage as jest.Mock;
+    const outbox = jest.requireMock('@/application/sync-outbox');
+    let canDrain = false;
+
+    outbox.__reset();
+    outbox.deleteOutboxByObjectId.mockClear();
+    outbox.configureDrain({ send, isReady: () => canDrain });
     const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
-    act(() => {
-      result.current.registerSyncContext({ doc, collabType: Types.Document });
-    });
+    try {
+      act(() => {
+        result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getText('body').insert(doc.getText('body').length, ' unsent before');
+      });
+      const message = {
+        objectId,
+        collabType: Types.Document,
+        ...(kind === 'Update'
+          ? { update: { flags: 0, payload: Y.encodeStateAsUpdate(incoming) } }
+          : { syncRequest: { stateVector: Y.encodeStateVector(incoming) } }),
+      };
 
-    const message = {
-      objectId,
-      collabType: Types.Document,
-      update: {},
-    };
+      act(() => {
+        if (transport === 'WebSocket') {
+          ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+        } else {
+          bc.lastBroadcastMessage = { collabMessage: message } as BroadcastChannelType['lastBroadcastMessage'];
+        }
 
-    act(() => {
-      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
-      rerender();
-    });
+        rerender();
+      });
 
-    await waitFor(() => {
-      expect(mockedOpenCollabDB).toHaveBeenCalledTimes(1);
-    });
-    expect(mockedOpenCollabDB).toHaveBeenCalledWith(objectId, {
-      currentUser: undefined,
-      forceReset: true,
-    });
-    await waitFor(() => {
-      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
-    });
-    expect((nextDoc as Y.Doc & { version?: string }).version).toBeUndefined();
+      // A subsequent authoritative frame is a queue barrier: it must be handled after the
+      // versionless frame, even if that frame came from an unaccepted sibling-tab branch.
+      const authoritative = {
+        objectId, collabType: Types.Document,
+        update: { flags: 0, version, payload: Y.encodeStateAsUpdate(server) },
+      };
 
-    unmount();
-    doc.destroy();
-    nextDoc.destroy();
+      act(() => {
+        ws.lastMessage = { collabMessage: authoritative } as AppflowyWebSocketType['lastMessage'];
+        rerender();
+      });
+      await waitFor(() => expect(mockedHandleMessage).toHaveBeenCalledWith(expect.anything(), authoritative));
+
+      expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+      expect(outbox.deleteOutboxByObjectId).not.toHaveBeenCalled();
+      expect(destroyed).not.toHaveBeenCalled();
+      expect(doc.version).toBe(version);
+      expect(doc.getText('body').toString()).toBe('synced unsent before');
+      expect(doc.getMap('remote').get('accepted')).toBe(true);
+      expect(doc.getMap('remote').has('unaccepted-peer-edit')).toBe(false);
+      if (transport === 'WebSocket') {
+        expect(mockedHandleMessage).toHaveBeenCalledWith(expect.anything(), message);
+      } else {
+        expect(mockedHandleMessage).not.toHaveBeenCalledWith(expect.anything(), message, false);
+      }
+
+      send.mockClear();
+      act(() => { doc.getText('body').insert(doc.getText('body').length, ' and after'); });
+      canDrain = true;
+      await act(async () => { await result.current.flushAllSync(); });
+      const uploads = send.mock.calls.filter(([sent]) => sent.collabMessage?.update);
+
+      expect(uploads.length).toBeGreaterThanOrEqual(2);
+      for (const [sent] of uploads) {
+        expect(sent.collabMessage.update.version).toBe(version);
+        Y.applyUpdate(server, sent.collabMessage.update.payload);
+      }
+
+      expect(server.getText('body').toString()).toBe('synced unsent before and after');
+      expect(server.store.pendingStructs).toBeNull();
+    } finally {
+      unmount();
+      outbox.clearDrainConfig();
+      doc.destroy();
+      server.destroy();
+      peer.destroy();
+    }
   });
 
   it('resets unknown local version on sync request with known remote version', async () => {
