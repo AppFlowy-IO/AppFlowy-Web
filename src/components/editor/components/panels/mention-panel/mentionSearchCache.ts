@@ -34,7 +34,8 @@ interface MentionSearchCacheEntry {
   /** An event may have changed the answer since it was cached, so its next use revalidates it. */
   stale?: boolean;
   retryLaterUntil?: number;
-  refreshPromise?: Promise<void>;
+  /** The refresh of this key in flight, which resolves with what the refresh answered. */
+  refreshPromise?: Promise<unknown>;
 }
 
 /** A cached answer, with whether it is fresh enough to show without asking the server again. */
@@ -290,10 +291,15 @@ export function mentionSearchRetryLaterRemainingMs(key: string): number {
   return 0;
 }
 
-export function startMentionSearchRefresh(key: string, refresh: () => Promise<void>) {
+/**
+ * Runs `refresh` for `key`, unless a refresh of the key is still in flight: that one is joined
+ * instead, and its result is returned to this caller too. Every refresh of a key resolves with the
+ * same type, so a panel that joins one started by an earlier opening learns what it answered.
+ */
+export function startMentionSearchRefresh<T>(key: string, refresh: () => Promise<T>): Promise<T> {
   const existing = mentionSearchCache.get(key)?.refreshPromise;
 
-  if (existing) return existing;
+  if (existing) return existing as Promise<T>;
 
   const refreshPromise = refresh().finally(() => {
     const current = mentionSearchCache.get(key);

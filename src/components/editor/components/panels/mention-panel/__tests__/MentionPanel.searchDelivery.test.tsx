@@ -227,6 +227,17 @@ function createAnswerSearch(answers: Record<Lane, Array<[delayMs: number, answer
   });
 }
 
+// Answers each query's requests from its own lanes, as createAnswerSearch does for one query.
+function createAnswerSearchByQuery(answers: Record<string, Record<Lane, Array<[delayMs: number, answer: Answer]>>>) {
+  const searches = new Map(Object.entries(answers).map(([query, lanes]) => [query, createAnswerSearch(lanes)]));
+
+  return jest.fn((request: MentionSearchRequest, options?: MentionSearchOptions) => {
+    const search = searches.get(request.query ?? '');
+
+    return search ? search(request, options) : Promise.reject(new Error(`unplanned search for "${request.query}"`));
+  });
+}
+
 // The cache key of the first request group sent for `query`.
 function sentCacheKey(search: SearchMock, query: string) {
   const requests = search.mock.calls.map(([request]) => request).filter((request) => request.query === query);
@@ -1768,6 +1779,250 @@ describe('MentionPanel typed search delivery', () => {
       expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toEqual([
         section(MentionSearchSectionKind.Pages, [pageItem('Kept page')]),
       ]);
+    });
+
+    describe('cooldowns and the refresh of a cached answer', () => {
+      // Mention RetryLater carries no Retry-After, so each cooldown lasts the 3 s default.
+      const retryLater: Answer = { error: { code: ERROR_CODE.RETRY_LATER, message: 'retry later' } };
+      const freshPage: MentionSearchResponse = {
+        sections: [section(MentionSearchSectionKind.Pages, [pageItem('Fresh road')])],
+      };
+      const roadRows = respond('rows', 'road', 'complete');
+      const roadmAnswers: Record<Lane, Array<[number, Answer]>> = {
+        primary: [[80, respond('primary', 'roadm', 'complete')]],
+        rows: [[80, respond('rows', 'roadm', 'complete')]],
+      };
+
+      // Caches the answer for 'road' and lets it turn stale, so the next opening refreshes it.
+      async function cacheStaleRoad(search: SearchMock) {
+        mockEditorContext.searchMentions = search;
+        renderPanel();
+        await advance(200);
+        cleanup();
+        await advance(MENTION_SEARCH_CACHE_FRESH_MS);
+      }
+
+      it('shows the busy row under a cached answer whose refresh is asked to wait, then refreshes it once', async () => {
+        const search = createAnswerSearch({
+          primary: [
+            [80, respond('primary', 'road', 'complete')],
+            [80, retryLater],
+            [80, freshPage],
+          ],
+          rows: [
+            [80, roadRows],
+            [80, roadRows],
+            [80, roadRows],
+          ],
+        });
+
+        await cacheStaleRoad(search);
+        // Painted from the cache and refreshed at once. The refresh is asked to wait.
+        renderPanel();
+        await advance(80);
+        expect(search).toHaveBeenCalledTimes(4);
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('3');
+        expect(shows('Page for road')).toBe(true);
+        expect(shows('complete row for road')).toBe(true);
+        expect(retryRow()).toBeNull();
+        expect(isBusy()).toBe(false);
+
+        // Refreshed once when the cooldown ends, while the cached answer stays on screen.
+        await advance(2_999);
+        expect(search).toHaveBeenCalledTimes(4);
+        await advance(1);
+        expect(search).toHaveBeenCalledTimes(6);
+        expect(shows('Page for road')).toBe(true);
+
+        await advance(80);
+        expect(shows('Fresh road')).toBe(true);
+        expect(shows('Page for road')).toBe(false);
+        expect(busyRow()).toBeNull();
+        expect(retryRow()).toBeNull();
+        await advance(5_000);
+        expect(search).toHaveBeenCalledTimes(6);
+      });
+
+      it('shows the rest of a cooldown under a cached answer the user comes back to, and refreshes it after', async () => {
+        const search = createAnswerSearchByQuery({
+          road: {
+            primary: [
+              [80, respond('primary', 'road', 'complete')],
+              [80, retryLater],
+              [80, freshPage],
+            ],
+            rows: [
+              [80, roadRows],
+              [80, roadRows],
+              [80, roadRows],
+            ],
+          },
+          roadm: roadmAnswers,
+        });
+
+        await cacheStaleRoad(search);
+        const { rerender } = renderPanel();
+
+        await advance(80);
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('3');
+
+        // The user types on, and comes back 1 s later, with 2 s of the cooldown left.
+        mockPanelContext.searchText = 'roadm';
+        rerender();
+        await advance(1_000);
+        expect(shows('Page for roadm')).toBe(true);
+        mockPanelContext.searchText = 'road';
+        rerender();
+
+        expect(shows('Page for road')).toBe(true);
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('2');
+        expect(retryRow()).toBeNull();
+        await advance(1_999);
+        expect(search).toHaveBeenCalledTimes(6);
+
+        await advance(1);
+        expect(search).toHaveBeenCalledTimes(8);
+        await advance(80);
+        expect(shows('Fresh road')).toBe(true);
+        expect(busyRow()).toBeNull();
+      });
+
+      it('shows the rest of a cooldown when the user comes back to a query asked to wait, and searches after', async () => {
+        const search = createAnswerSearchByQuery({
+          road: {
+            primary: [
+              [80, retryLater],
+              [80, respond('primary', 'road', 'complete')],
+            ],
+            rows: [
+              [80, roadRows],
+              [80, roadRows],
+            ],
+          },
+          roadm: roadmAnswers,
+        });
+
+        mockEditorContext.searchMentions = search;
+        const { rerender } = renderPanel();
+
+        // Asked to wait at 200 ms, until 3200 ms.
+        await advance(200);
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('3');
+        mockPanelContext.searchText = 'roadm';
+        rerender();
+        await advance(1_000);
+        expect(shows('Page for roadm')).toBe(true);
+
+        // Back at 1200 ms: nothing is sent before the cooldown ends, and neither the skeleton nor
+        // "No result" shows meanwhile.
+        mockPanelContext.searchText = 'road';
+        rerender();
+        expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('2');
+        expect(isBusy()).toBe(false);
+        expect(showsNoResult()).toBe(false);
+        await advance(1_999);
+        expect(search).toHaveBeenCalledTimes(4);
+
+        await advance(1);
+        expect(search).toHaveBeenCalledTimes(6);
+        await advance(80);
+        expect(shows('Page for road')).toBe(true);
+        expect(busyRow()).toBeNull();
+        expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeDefined();
+      });
+
+      describe('when a reopened panel joins the refresh an earlier opening sent', () => {
+        // Caches 'road' and lets it turn stale. A panel opens, which refreshes it at once, and
+        // closes 100 ms later. The next opening joins that refresh, which answers 400 ms after it
+        // was sent, and sends nothing of its own.
+        async function reopenDuringRefresh(search: SearchMock) {
+          await cacheStaleRoad(search);
+          renderPanel();
+          await advance(100);
+          cleanup();
+          renderPanel();
+          expect(shows('Page for road')).toBe(true);
+          await advance(300);
+          expect(search).toHaveBeenCalledTimes(4);
+        }
+
+        it('shows its answer', async () => {
+          const search = createAnswerSearch({
+            primary: [
+              [80, respond('primary', 'road', 'complete')],
+              [400, freshPage],
+            ],
+            rows: [
+              [80, roadRows],
+              [400, roadRows],
+            ],
+          });
+
+          await reopenDuringRefresh(search);
+          expect(shows('Fresh road')).toBe(true);
+          expect(shows('Page for road')).toBe(false);
+          expect(retryRow()).toBeNull();
+          expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toEqual(
+            mergeMentionSearchResponses([freshPage, roadRows]).sections
+          );
+        });
+
+        it('offers Retry under the cached answer when it fails, and Retry refreshes it', async () => {
+          const search = createAnswerSearch({
+            primary: [
+              [80, respond('primary', 'road', 'complete')],
+              [400, serverError(500, 'Internal Server Error')],
+              [80, freshPage],
+            ],
+            rows: [
+              [80, roadRows],
+              [400, roadRows],
+              [80, roadRows],
+            ],
+          });
+
+          await reopenDuringRefresh(search);
+          expect(shows('Page for road')).toBe(true);
+          expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+          expect(showsNoResult()).toBe(false);
+
+          await act(async () => {
+            fireEvent.click(retryRow() as HTMLElement);
+          });
+          await advance(80);
+          expect(search).toHaveBeenCalledTimes(6);
+          expect(shows('Fresh road')).toBe(true);
+          expect(retryRow()).toBeNull();
+        });
+
+        it('counts down under the cached answer when it is asked to wait, then refreshes it', async () => {
+          const search = createAnswerSearch({
+            primary: [
+              [80, respond('primary', 'road', 'complete')],
+              [400, retryLater],
+              [80, freshPage],
+            ],
+            rows: [
+              [80, roadRows],
+              [400, roadRows],
+              [80, roadRows],
+            ],
+          });
+
+          await reopenDuringRefresh(search);
+          expect(shows('Page for road')).toBe(true);
+          expect(busyRow()?.getAttribute('data-retry-in-seconds')).toBe('3');
+          expect(retryRow()).toBeNull();
+
+          await advance(2_999);
+          expect(search).toHaveBeenCalledTimes(4);
+          await advance(1);
+          expect(search).toHaveBeenCalledTimes(6);
+          await advance(80);
+          expect(shows('Fresh road')).toBe(true);
+          expect(busyRow()).toBeNull();
+        });
+      });
     });
   });
 });

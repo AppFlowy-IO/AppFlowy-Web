@@ -73,19 +73,22 @@ describe('mentionSearchCache', () => {
     expect(getCachedMentionSections('page-query')).toBe(sections);
   });
 
-  it('deduplicates in-flight refreshes for the same cache key', async () => {
+  it('deduplicates in-flight refreshes for the same cache key, and gives every caller its result', async () => {
     let requestCount = 0;
     const refresh = () => {
       requestCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(`answer ${requestCount}`);
     };
 
     const first = startMentionSearchRefresh('page-query', refresh);
     const second = startMentionSearchRefresh('page-query', refresh);
 
     expect(second).toBe(first);
-    await first;
+    await expect(second).resolves.toBe('answer 1');
     expect(requestCount).toBe(1);
+
+    // A settled refresh is not joined: the next one runs.
+    await expect(startMentionSearchRefresh('page-query', refresh)).resolves.toBe('answer 2');
   });
 
   describe('freshness', () => {

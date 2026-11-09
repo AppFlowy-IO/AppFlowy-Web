@@ -785,41 +785,27 @@ export function MentionPanel({
     }
 
     // Revalidates the cached answer on screen, which stays there unless the server answers
-    // completely.
+    // completely. A refresh of the key still in flight, such as one an earlier opening of the
+    // panel sent, is joined instead of sent again, and its answer counts as this panel's own: its
+    // results, Retry row, busy countdown or offline row show here.
     function refreshCachedAnswer() {
-      const stamp = mentionSearchCacheStamp();
-      const shownCachedAt = getCachedMentionSearch(cacheKey)?.cachedAt;
-      // Whether our own refresh callback ran. When a refresh for this key is already in flight,
-      // startMentionSearchRefresh joins it without invoking our callback, so we re-read the cache
-      // once the shared refresh settles.
-      let applied = false;
-
       void startMentionSearchRefresh(cacheKey, async () => {
+        const stamp = mentionSearchCacheStamp();
         const result = await fetchMentionSections({ refresh: true, stamp });
 
         cacheCompleteAnswer(result, stamp);
-        if (!isCurrentRequest()) return;
-
-        applied = true;
-        if (result.state === 'complete') {
-          setMentionSections(result.sections);
-          settle('ok');
-        } else if (result.state === 'busy') {
-          sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), refreshCachedAnswer);
-        } else {
-          settle(result.state);
-        }
+        return result;
       })
-        .then(() => {
-          if (applied || !isCurrentRequest()) return;
+        .then((result) => {
+          if (!isCurrentRequest()) return;
 
-          const refreshed = getCachedMentionSearch(cacheKey);
-
-          if (refreshed && refreshed.cachedAt !== shownCachedAt) {
-            setMentionSections(refreshed.sections);
+          if (result.state === 'complete') {
+            setMentionSections(result.sections);
             settle('ok');
+          } else if (result.state === 'busy') {
+            sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), refreshCachedAnswer);
           } else {
-            setRetrying(false);
+            settle(result.state);
           }
         })
         .catch((error) => {
