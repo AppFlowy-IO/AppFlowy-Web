@@ -9,6 +9,7 @@ import {
 } from './mentionRequestLanes';
 import { isMentionSearchRetryLater, markMentionSearchRetryLater } from './mentionSearchCache';
 import {
+  isCacheableMentionResponse,
   isCompleteMentionResponse,
   isDatabaseRowOnlyMentionRequest,
   mergeMentionSearchResponses,
@@ -40,10 +41,10 @@ export interface MentionLaneOutcome {
 
 /**
  * How a search's answer may be used:
- * - `complete`: every request answered, without a failed section or a superseded answer. Only a
- *   complete answer is cached.
+ * - `complete`: every request answered, without a failed section, and the rows answer was not
+ *   superseded. Only a complete answer is cached, and only when it is `cacheable` too.
  * - `unavailable`: some suggestions are missing: a request failed or timed out, a section failed,
- *   or an answer was superseded.
+ *   or the rows answer was superseded.
  * - `busy`: the server asked to send the primary (or empty-query) request again later.
  * - `offline`: a request could not reach the server because the browser is offline.
  */
@@ -60,6 +61,12 @@ export interface MentionSectionsFetchResult {
    */
   tickets: MentionRequestTicket[];
   state: MentionAnswerState;
+  /**
+   * Whether the answer may be cached: it is complete, and no request's answer has the superseded
+   * shape, which a primary or bare answer can have without being superseded. Cache it only while
+   * every ticket is current.
+   */
+  cacheable: boolean;
 }
 
 export interface FetchMentionSectionsOptions {
@@ -108,6 +115,10 @@ function answeredResponses(outcomes: MentionLaneOutcome[]) {
 
 function isCompleteOutcome({ status, request, response }: MentionLaneOutcome) {
   return status === 'ok' && response !== undefined && isCompleteMentionResponse(request, response);
+}
+
+function isCacheableOutcome({ status, request, response }: MentionLaneOutcome) {
+  return status === 'ok' && response !== undefined && isCacheableMentionResponse(request, response);
 }
 
 /** How the panel shows an answer made of `outcomes`; see {@link MentionAnswerState}. */
@@ -199,6 +210,7 @@ function mentionFetchResult(outcomes: MentionLaneOutcome[]): MentionSectionsFetc
     outcomes,
     tickets: outcomes.flatMap(({ status, ticket }) => (status === 'ok' && ticket ? [ticket] : [])),
     state: mentionAnswerState(outcomes),
+    cacheable: outcomes.every(isCacheableOutcome),
   };
 }
 
@@ -206,7 +218,8 @@ function mentionFetchResult(outcomes: MentionLaneOutcome[]): MentionSectionsFetc
  * Sends the requests of one search concurrently and merges what they answer. A request that fails
  * leaves the others' sections in the answer, and the answer's `state` says what is missing. The
  * rows-only request is sent once more, 500 ms later, only when its answer reports a retryable
- * failed section or was superseded; an error, a timeout or a path-shed `partial` never retries it.
+ * failed section or was superseded, and every other request answered completely; an error, a
+ * timeout or a path-shed `partial` never retries it.
  */
 export async function fetchMentionSearchSections(
   options: FetchMentionSectionsOptions
@@ -224,8 +237,16 @@ export async function fetchMentionSearchSections(
 
   const rowIndex = requests.findIndex(isDatabaseRowOnlyMentionRequest);
   const rowOutcome = rowIndex === -1 ? undefined : outcomes[rowIndex];
+  // The retry can only complete the answer when every other request answered completely. Otherwise
+  // the answer stays incomplete whatever the retry brings, so it settles now, and the panel's Retry
+  // row, busy countdown or online event sends every request again.
+  const othersComplete = outcomes.every((outcome, index) => index === rowIndex || isCompleteOutcome(outcome));
 
-  if (!rowOutcome?.response || !shouldRetryMentionRowsResponse(rowOutcome.request, rowOutcome.response)) {
+  if (
+    !rowOutcome?.response ||
+    !othersComplete ||
+    !shouldRetryMentionRowsResponse(rowOutcome.request, rowOutcome.response)
+  ) {
     return mentionFetchResult(outcomes);
   }
 

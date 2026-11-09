@@ -7,6 +7,9 @@ import type { EventEmitter } from 'events';
 
 const MENTION_SEARCH_CACHE_LIMIT = 50;
 const DEFAULT_MENTION_SEARCH_RETRY_LATER_MS = 3000;
+// How many revoked views are remembered to filter late answers. A request settles within seconds,
+// and far fewer views are revoked in that time.
+const MENTION_SEARCH_REVOKED_VIEW_LIMIT = 100;
 
 /**
  * A cached answer younger than this is shown without asking the server again, unless an event
@@ -26,6 +29,8 @@ const MENTION_SEARCH_STALE_EVENTS = [
 interface MentionSearchCacheEntry {
   sections: MentionSearchSection[];
   cachedAt?: number;
+  /** The send sequence of the request that `sections` answer. An older request's answer is ignored. */
+  sequence?: number;
   /** An event may have changed the answer since it was cached, so its next use revalidates it. */
   stale?: boolean;
   retryLaterUntil?: number;
@@ -41,11 +46,14 @@ export interface CachedMentionSearch {
 
 /**
  * When a request was sent, as far as the cache is concerned. An answer to a request sent before the
- * cache was cleared is dropped, and one sent before entries were marked stale is stored stale.
+ * cache was cleared is dropped, and so is one sent before the answer already stored under its key.
+ * One sent before entries were marked stale is stored stale, without the views revoked since.
  */
 export interface MentionSearchCacheStamp {
   readonly epoch: number;
   readonly generation: number;
+  /** Counts stamps, so a request sent later has a larger sequence. */
+  readonly sequence: number;
 }
 
 const mentionSearchCache = new Map<string, MentionSearchCacheEntry>();
@@ -53,6 +61,11 @@ const mentionSearchCache = new Map<string, MentionSearchCacheEntry>();
 let cacheEpoch = 0;
 // Counts stale marks. An answer sent before the latest one is stored, but stale.
 let cacheGeneration = 0;
+// Counts stamps and writes, in the order requests were sent.
+let cacheSequence = 0;
+// Each view the user lost access to, with the generation its revoke started. Answers to requests
+// sent before may still list it.
+const revokedViewGenerations = new Map<string, number>();
 // The workspace and user of the entries, from the last panel that opened.
 let cacheScope: string | undefined;
 const invalidationEmitters = new WeakSet<EventEmitter>();
@@ -72,9 +85,14 @@ function setMentionSearchCacheEntry(key: string, entry: MentionSearchCacheEntry)
   mentionSearchCache.set(key, entry);
 }
 
+function nextCacheSequence() {
+  cacheSequence += 1;
+  return cacheSequence;
+}
+
 /** Captures the cache's state when a request is sent; pass it to {@link setCachedMentionSections}. */
 export function mentionSearchCacheStamp(): MentionSearchCacheStamp {
-  return { epoch: cacheEpoch, generation: cacheGeneration };
+  return { epoch: cacheEpoch, generation: cacheGeneration, sequence: nextCacheSequence() };
 }
 
 export function getCachedMentionSearch(key: string, now = Date.now()): CachedMentionSearch | undefined {
@@ -95,7 +113,10 @@ export function getCachedMentionSections(key: string): MentionSearchSection[] | 
 
 /**
  * Stores a complete, current answer. With the `stamp` of its request, an answer sent before the
- * cache was cleared is dropped, and one sent before entries were marked stale is stored stale.
+ * cache was cleared is dropped, and so is one sent before the answer stored under `key`, which
+ * arrived first: a bare request outlives its panel, so two of them can answer out of order. One
+ * sent before entries were marked stale is stored stale, without the views revoked since. Without
+ * a stamp, the answer counts as sent now.
  */
 export function setCachedMentionSections(
   key: string,
@@ -105,11 +126,15 @@ export function setCachedMentionSections(
   if (stamp && stamp.epoch !== cacheEpoch) return;
 
   const previous = mentionSearchCache.get(key);
+  const sequence = stamp?.sequence ?? nextCacheSequence();
+
+  if (previous?.sequence !== undefined && sequence < previous.sequence) return;
 
   setMentionSearchCacheEntry(key, {
     ...previous,
-    sections,
+    sections: stamp ? withoutRevokedMentionViews(sections, stamp) : sections,
     cachedAt: Date.now(),
+    sequence,
     stale: stamp !== undefined && stamp.generation !== cacheGeneration,
   });
 }
@@ -137,20 +162,50 @@ function itemTargetsView(item: MentionSearchResultItem, viewId: string) {
 }
 
 /**
- * The user lost access to `viewId`: drops it from every cached answer, so its title is never shown
- * from the cache, and marks every answer stale.
+ * `sections` without the items that show `viewId`: the page, the database view or a row shown
+ * through it, never a person. The same array when no item shows it.
+ */
+export function withoutMentionView(sections: MentionSearchSection[], viewId: string) {
+  if (!sections.some((section) => section.items.some((item) => itemTargetsView(item, viewId)))) return sections;
+
+  return sections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !itemTargetsView(item, viewId)),
+  }));
+}
+
+/**
+ * `sections`, the answer to a request stamped `stamp`, without the views revoked after it was
+ * sent. The same array when there are none.
+ */
+export function withoutRevokedMentionViews(sections: MentionSearchSection[], stamp: MentionSearchCacheStamp) {
+  let visible = sections;
+
+  revokedViewGenerations.forEach((generation, viewId) => {
+    if (generation > stamp.generation) visible = withoutMentionView(visible, viewId);
+  });
+  return visible;
+}
+
+/**
+ * The user lost access to `viewId`: drops it from every cached answer, and from the answers to
+ * requests sent before that are stored later, so its title is never shown from the cache. Marks
+ * every answer stale.
  */
 export function forgetMentionSearchView(viewId: string) {
   mentionSearchCache.forEach((entry, key) => {
-    mentionSearchCache.set(key, {
-      ...entry,
-      sections: entry.sections.map((section) => ({
-        ...section,
-        items: section.items.filter((item) => !itemTargetsView(item, viewId)),
-      })),
-    });
+    mentionSearchCache.set(key, { ...entry, sections: withoutMentionView(entry.sections, viewId) });
   });
   markMentionSearchCacheStale();
+
+  // Re-inserted, so the oldest revoke is the first one dropped.
+  revokedViewGenerations.delete(viewId);
+  revokedViewGenerations.set(viewId, cacheGeneration);
+  if (revokedViewGenerations.size > MENTION_SEARCH_REVOKED_VIEW_LIMIT) {
+    const oldestViewId = revokedViewGenerations.keys().next().value;
+
+    if (oldestViewId !== undefined) revokedViewGenerations.delete(oldestViewId);
+  }
 }
 
 /** Forgets every cached answer and cooldown. Answers to requests sent before are never stored. */
@@ -158,6 +213,7 @@ export function clearMentionSearchCache() {
   cacheEpoch += 1;
   cacheGeneration += 1;
   mentionSearchCache.clear();
+  revokedViewGenerations.clear();
 }
 
 /**

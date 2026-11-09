@@ -17,6 +17,7 @@ import {
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
   hasFailedMentionSection,
+  isCacheableMentionResponse,
   isCompleteMentionResponse,
   isDatabaseRowOnlyMentionRequest,
   isSupersededMentionResponse,
@@ -991,6 +992,28 @@ describe('mention response completeness', () => {
     expect(
       isCompleteMentionResponse(primary, {
         sections: [section(MentionSearchSectionKind.People, 'failed'), pagesWithItem],
+        partial: true,
+      })
+    ).toBe(false);
+  });
+
+  it('shows a primary or bare answer of the superseded shape as complete, but caches only answers without it', () => {
+    // A People annotation that degraded over objects that matched nothing has this shape too.
+    const peopleOnly: MentionSearchResponse = { sections: [people, dates], partial: true };
+
+    expect(isCompleteMentionResponse(primary, peopleOnly)).toBe(true);
+    expect(isCacheableMentionResponse(primary, peopleOnly)).toBe(false);
+    expect(isCompleteMentionResponse(bare, { sections: [people], partial: true })).toBe(true);
+    expect(isCacheableMentionResponse(bare, { sections: [people], partial: true })).toBe(false);
+    // Cloud adds nothing to a rows-only answer, so its superseded shape is unambiguous.
+    expect(isCompleteMentionResponse(rows, { sections: [], partial: true })).toBe(false);
+    expect(isCacheableMentionResponse(rows, { sections: [], partial: true })).toBe(false);
+    // Load-shed paths alone, and an old server's answer, are cacheable.
+    expect(isCacheableMentionResponse(primary, { sections: [people, pagesWithItem], partial: true })).toBe(true);
+    expect(isCacheableMentionResponse(rows, { sections: [] })).toBe(true);
+    expect(
+      isCacheableMentionResponse(primary, {
+        sections: [people, section(MentionSearchSectionKind.Pages, 'failed')],
         partial: true,
       })
     ).toBe(false);

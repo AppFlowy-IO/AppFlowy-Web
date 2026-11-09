@@ -23,6 +23,8 @@ import {
   setCachedMentionSections,
   startMentionSearchRefresh,
   subscribeMentionSearchCacheInvalidation,
+  withoutMentionView,
+  withoutRevokedMentionViews,
 } from '../mentionSearchCache';
 
 function pages(...items: MentionSearchResultItem[]): MentionSearchSection[] {
@@ -212,6 +214,59 @@ describe('mentionSearchCache', () => {
         fresh: false,
       });
       expect(getCachedMentionSearch('other')).toMatchObject({ fresh: false, sections: pages(page('other')) });
+    });
+
+    it('is left out of an answer to a request sent before the revoke that arrives after it', () => {
+      const stamp = mentionSearchCacheStamp();
+
+      forgetMentionSearchView(revoked);
+      setCachedMentionSections('road', pages(page(revoked), page('kept')), stamp);
+
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('kept')) });
+      expect(withoutRevokedMentionViews(pages(page(revoked), page('kept')), stamp)).toEqual(pages(page('kept')));
+
+      // Access may be granted again: an answer to a request sent after the revoke keeps the view.
+      const later = mentionSearchCacheStamp();
+      const answer = pages(page(revoked), page('kept'));
+
+      setCachedMentionSections('road', answer, later);
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: true, sections: answer });
+      expect(withoutRevokedMentionViews(answer, later)).toBe(answer);
+    });
+
+    it('leaves sections without the view as they are', () => {
+      const sections = pages(page('kept'));
+
+      expect(withoutMentionView(sections, revoked)).toBe(sections);
+      expect(withoutMentionView(pages(page(revoked), page('kept')), revoked)).toEqual(sections);
+    });
+  });
+
+  describe('send order', () => {
+    it('never lets an answer replace the stored answer to a request sent after it', () => {
+      const older = mentionSearchCacheStamp();
+      const newer = mentionSearchCacheStamp();
+
+      setCachedMentionSections('', pages(page('New page')), newer);
+      setCachedMentionSections('', pages(page('Old page')), older);
+
+      expect(getCachedMentionSearch('')).toMatchObject({ fresh: true, sections: pages(page('New page')) });
+
+      // The answer to a newer request still replaces it.
+      setCachedMentionSections('', pages(page('Newest page')), mentionSearchCacheStamp());
+      expect(getCachedMentionSections('')).toEqual(pages(page('Newest page')));
+    });
+
+    it('keeps the send order across a cooldown, a refresh and a stale mark', async () => {
+      const older = mentionSearchCacheStamp();
+
+      setCachedMentionSections('road', pages(page('New page')), mentionSearchCacheStamp());
+      markMentionSearchRetryLater('road');
+      await startMentionSearchRefresh('road', () => Promise.resolve());
+      markMentionSearchCacheStale();
+      setCachedMentionSections('road', pages(page('Old page')), older);
+
+      expect(getCachedMentionSections('road')).toEqual(pages(page('New page')));
     });
   });
 

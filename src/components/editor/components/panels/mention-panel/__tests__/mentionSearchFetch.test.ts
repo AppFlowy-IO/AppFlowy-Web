@@ -16,7 +16,7 @@ import {
   MentionRequestLanes,
 } from '../mentionRequestLanes';
 import { clearMentionSearchCacheForTests, mentionSearchRetryLaterRemainingMs } from '../mentionSearchCache';
-import { fetchMentionSearchSections, mentionLaneFailureStatus } from '../mentionSearchFetch';
+import { fetchMentionSearchSections, mentionLaneFailureStatus, MentionSectionsFetchResult } from '../mentionSearchFetch';
 import { buildMentionSearchRequests, mergeMentionSearchResponses } from '../mentionUtils';
 
 const CACHE_KEY = 'mention-search';
@@ -130,6 +130,7 @@ describe('fetchMentionSearchSections', () => {
       await expect(result).resolves.toMatchObject({
         sections: mergeMentionSearchResponses([pages, pathShedRows]).sections,
         state: 'complete',
+        cacheable: true,
       });
       expect(search).toHaveBeenCalledTimes(2);
     });
@@ -158,6 +159,7 @@ describe('fetchMentionSearchSections', () => {
       await expect(result).resolves.toMatchObject({
         sections: mergeMentionSearchResponses([pages, rows]).sections,
         state: 'complete',
+        cacheable: true,
       });
       await jest.advanceTimersByTimeAsync(2_000);
       expect(search).toHaveBeenCalledTimes(3);
@@ -172,8 +174,43 @@ describe('fetchMentionSearchSections', () => {
 
       await jest.advanceTimersByTimeAsync(3_000);
 
-      await expect(result).resolves.toMatchObject({ state: 'unavailable' });
+      await expect(result).resolves.toMatchObject({ state: 'unavailable', cacheable: false });
       expect(search).toHaveBeenCalledTimes(3);
+    });
+
+    // The retry could not complete the answer, so it settles at once. The panel sends every request
+    // again from its Retry row or busy countdown.
+    it.each([
+      {
+        name: 'the primary request failed',
+        primary: () => later(80, { error: { code: 500, message: 'Internal Server Error' } }),
+        state: 'unavailable',
+      },
+      {
+        name: 'the primary request was asked to retry later',
+        primary: () => later(80, { error: { code: ERROR_CODE.RETRY_LATER, message: 'retry later' } }),
+        state: 'busy',
+      },
+      {
+        name: 'the primary answer has a failed section',
+        primary: () => later(80, failedPagesRows),
+        state: 'unavailable',
+      },
+    ])('never retries failed rows when $name, and settles at once', async ({ primary, state }) => {
+      const search = createSearch({
+        primary: [primary],
+        rows: [() => later(80, failedPagesRows), () => later(80, rows)],
+      });
+      let settled: MentionSectionsFetchResult | undefined;
+
+      void fetchTyped(search).then((answer) => {
+        settled = answer;
+      });
+      await jest.advanceTimersByTimeAsync(80);
+
+      expect(settled).toMatchObject({ state, cacheable: false });
+      await jest.advanceTimersByTimeAsync(2_000);
+      expect(search).toHaveBeenCalledTimes(2);
     });
 
     it('never retries a section that failed without partial, as with a disabled keyword index', async () => {
@@ -309,7 +346,9 @@ describe('fetchMentionSearchSections', () => {
   });
 
   describe('completeness', () => {
-    it('treats a superseded primary answer that Cloud wrapped in its own sections as incomplete', async () => {
+    // The panel aborts its own superseded primary requests, so this shape is almost always a People
+    // annotation that degraded (`partial`) over objects that matched nothing.
+    it('shows a primary answer of the superseded shape as complete, but never caches it', async () => {
       const people: MentionSearchSection = { ...failedSection(MentionSearchSectionKind.People), status: 'ok' };
       const dates: MentionSearchSection = { ...failedSection(MentionSearchSectionKind.Dates), status: 'ok' };
       const search = createSearch({
@@ -325,7 +364,7 @@ describe('fetchMentionSearchSections', () => {
 
       await jest.advanceTimersByTimeAsync(2_000);
 
-      await expect(result).resolves.toMatchObject({ state: 'unavailable' });
+      await expect(result).resolves.toMatchObject({ state: 'complete', cacheable: false });
       // Only the rows request is ever retried.
       expect(search).toHaveBeenCalledTimes(2);
     });
@@ -340,7 +379,7 @@ describe('fetchMentionSearchSections', () => {
 
       await jest.advanceTimersByTimeAsync(80);
 
-      await expect(result).resolves.toMatchObject({ state: 'complete' });
+      await expect(result).resolves.toMatchObject({ state: 'complete', cacheable: true });
     });
 
     it('never delivers intermediate sections for an unsplit empty-query search', async () => {

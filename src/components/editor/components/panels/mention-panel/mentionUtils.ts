@@ -527,10 +527,11 @@ function requestIncludes(request: MentionSearchRequest, kind: MentionTargetKind)
 /**
  * Whether `response` has the shape of an answer to a request that Search superseded: partial, and
  * without any section of an object kind the request asked for. Search answers a superseded request
- * with no sections, and Cloud adds only its own People, Dates and Links sections. A real answer
- * always has such a section when it is partial: a degraded or failed object search adds a failed
- * one, and load-shed paths come with items. The one exception, a partial People annotation over an
- * object search that matched nothing, is treated the same way, which only costs a refetch.
+ * with no sections, and Cloud adds only its own People, Dates and Links sections. A partial answer
+ * usually has such a section: a degraded or failed object search adds a failed one, and load-shed
+ * paths come with items. A primary or bare answer can still have the shape without being
+ * superseded: Cloud marks it partial when the People annotation degrades, and Search leaves out an
+ * empty Pages section when no object matched.
  */
 export function isSupersededMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
   if (response.partial !== true) return false;
@@ -551,10 +552,25 @@ export function isSupersededMentionResponse(request: MentionSearchRequest, respo
 }
 
 /**
- * Whether a response is the server's complete answer: no section failed, and the request was not
- * superseded. `partial` alone, as when breadcrumb paths were load-shed, still counts as complete.
+ * Whether a response is the server's complete answer, as far as showing it goes: no section failed,
+ * and a rows-only request was not superseded. `partial` alone, as when breadcrumb paths were
+ * load-shed or the People annotation degraded, still counts as complete. Only the rows-only shape is
+ * unambiguous, since Cloud adds no section of its own to that request. The panel aborts its own
+ * superseded primary and bare requests, so their shape almost always means a degraded People
+ * annotation over objects that matched nothing, which is shown as it is.
  */
 export function isCompleteMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  if (hasFailedMentionSection(response)) return false;
+
+  return !isDatabaseRowOnlyMentionRequest(request) || !isSupersededMentionResponse(request, response);
+}
+
+/**
+ * Whether a response may be cached: no section failed, and it does not have the superseded shape,
+ * whatever the request. A primary or bare answer of that shape is shown, but sent again next time,
+ * so that an answer that may lack its objects is never kept.
+ */
+export function isCacheableMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
   return !hasFailedMentionSection(response) && !isSupersededMentionResponse(request, response);
 }
 

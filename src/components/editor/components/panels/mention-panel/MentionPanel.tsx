@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -51,6 +52,8 @@ import {
   setCachedMentionSections,
   startMentionSearchRefresh,
   subscribeMentionSearchCacheInvalidation,
+  withoutMentionView,
+  withoutRevokedMentionViews,
 } from './mentionSearchCache';
 import { fetchMentionSearchSections, MentionSectionsFetchResult } from './mentionSearchFetch';
 import {
@@ -618,6 +621,23 @@ export function MentionPanel({
     subscribeMentionSearchCacheInvalidation(eventEmitter);
   }, [eventEmitter]);
 
+  // A view the user loses access to leaves the open panel at once, as it leaves the cache. Answers
+  // to requests sent before the revoke leave it out too (see fetchMentionSections).
+  useEffect(() => {
+    if (!open || !eventEmitter) return;
+
+    const dropRevokedView = (payload?: { viewId?: string }) => {
+      const revokedViewId = payload?.viewId;
+
+      if (revokedViewId) setMentionSections((sections) => withoutMentionView(sections, revokedViewId));
+    };
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, dropRevokedView);
+    return () => {
+      eventEmitter.off(APP_EVENTS.VIEW_ACCESS_REVOKED, dropRevokedView);
+    };
+  }, [eventEmitter, open]);
+
   // Sends the panel's search again: from the Retry row, or when the browser is back online.
   const retrySearch = useCallback(() => {
     setRetrying(true);
@@ -677,28 +697,41 @@ export function MentionPanel({
       return result.tickets.every((ticket) => lanes.isCurrent(ticket));
     }
 
-    // Only a complete answer is cached: every request answered, no section failed, none superseded.
+    // Only a complete answer is cached: every request answered, no section failed, and no answer
+    // has the superseded shape.
     function cacheCompleteAnswer(result: MentionSectionsFetchResult, stamp: MentionSearchCacheStamp) {
-      if (result.state === 'complete' && isCurrentResult(result)) {
+      if (result.cacheable && isCurrentResult(result)) {
         setCachedMentionSections(cacheKey, result.sections, stamp);
       }
     }
 
+    // `stamp` is taken as the requests are sent. A view revoked after it is left out of what they
+    // answer, on screen and in the cache.
     function fetchMentionSections({
       refresh,
+      stamp,
       onSections,
     }: {
       refresh: boolean;
+      stamp: MentionSearchCacheStamp;
       onSections?: (sections: MentionSearchSection[]) => void;
     }) {
+      const visible = (sections: MentionSearchSection[]) => withoutRevokedMentionViews(sections, stamp);
+
       return fetchMentionSearchSections({
         searchMentions: searchMentionsFn,
         requests: mentionSearchRequests,
         cacheKey,
         isCurrent: isCurrentRequest,
         issueTicket: (request) => lanes.issue(mentionRequestLane(request, refresh)),
-        onSections,
-      });
+        onSections: onSections && ((sections) => onSections(visible(sections))),
+      }).then((result) => ({ ...result, sections: visible(result.sections) }));
+    }
+
+    // Sections that arrive while the rest of the answer is pending. Without items they would only
+    // blank what is on screen, such as the previous attempt of a retry, so they are not shown.
+    function showInterimSections(sections: MentionSearchSection[]) {
+      if (hasMentionItems(sections)) setMentionSections(sections);
     }
 
     function settle(status: Exclude<MentionSearchStatus, 'busy'>) {
@@ -723,7 +756,7 @@ export function MentionPanel({
     function runSearch() {
       const stamp = mentionSearchCacheStamp();
 
-      void fetchMentionSections({ refresh: false, onSections: setMentionSections })
+      void fetchMentionSections({ refresh: false, stamp, onSections: showInterimSections })
         .then((result) => {
           // A bare answer is not aborted by typing, so it is still cached after the query changed.
           cacheCompleteAnswer(result, stamp);
@@ -762,7 +795,7 @@ export function MentionPanel({
       let applied = false;
 
       void startMentionSearchRefresh(cacheKey, async () => {
-        const result = await fetchMentionSections({ refresh: true });
+        const result = await fetchMentionSections({ refresh: true, stamp });
 
         cacheCompleteAnswer(result, stamp);
         if (!isCurrentRequest()) return;

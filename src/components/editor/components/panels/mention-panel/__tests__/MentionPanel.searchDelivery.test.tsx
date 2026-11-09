@@ -1258,6 +1258,48 @@ describe('MentionPanel typed search delivery', () => {
         expect(console.error).toHaveBeenCalledWith(expect.objectContaining({ transportFailure: 'timeout' }));
       }
     );
+
+    // The rows retry cannot complete an answer whose primary request failed, so it is skipped and
+    // the unavailable row shows when the primary fails, not one retry later.
+    it.each([
+      {
+        name: 'stalls until its deadline',
+        primary: [60_000, respond('primary', 'road', 'complete')] as [number, Answer],
+        unavailableAtMs: 120 + MENTION_TYPED_DEADLINE_MS,
+      },
+      {
+        name: 'fails with a 500',
+        primary: [80, { error: { code: 500, message: 'Internal Server Error', httpStatus: 500 } }] as [number, Answer],
+        unavailableAtMs: 200,
+      },
+    ])(
+      'shows the unavailable row as soon as the primary request $name, without retrying failed rows',
+      async ({ primary, unavailableAtMs }) => {
+        const search = createAnswerSearch({
+          primary: [primary],
+          rows: [
+            [80, respond('rows', 'road', 'failed')],
+            [80, respond('rows', 'road', 'complete')],
+          ],
+        });
+
+        mockEditorContext.searchMentions = search;
+        renderPanel();
+
+        await advance(unavailableAtMs - 1);
+        expect(retryRow()).toBeNull();
+        expect(isBusy()).toBe(true);
+
+        await advance(1);
+        expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+        expect(isBusy()).toBe(false);
+        expect(showsNoResult()).toBe(false);
+
+        await advance(5_000);
+        expect(search).toHaveBeenCalledTimes(2);
+        expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+      }
+    );
   });
 
   describe('failure and cache states', () => {
@@ -1599,6 +1641,133 @@ describe('MentionPanel typed search delivery', () => {
       expect(showsNoResult()).toBe(true);
       expect(retryRow()).toBeNull();
       expect(busyRow()).toBeNull();
+    });
+
+    it.each([
+      {
+        name: 'its primary answers nothing before its rows request fails',
+        retryRows: [[400, serverError(500, 'Internal Server Error')]] as Array<[number, Answer]>,
+      },
+      {
+        name: 'its rows fail twice behind a primary that answers nothing',
+        retryRows: [
+          [80, respond('rows', 'road', 'failed')],
+          [80, respond('rows', 'road', 'failed')],
+        ] as Array<[number, Answer]>,
+      },
+    ])('keeps the rows of the previous attempt on screen when a retry finds nothing: $name', async ({ retryRows }) => {
+      const search = createAnswerSearch({
+        primary: [
+          [80, serverError(503, 'Service Unavailable')],
+          [80, { sections: [] }],
+        ],
+        rows: [[80, respond('rows', 'road', 'complete')], ...retryRows],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+      expect(shows('complete row for road')).toBe(true);
+
+      await act(async () => {
+        fireEvent.click(retryRow() as HTMLElement);
+      });
+
+      for (let now = 0; now < 1_500; now += STEP_MS) {
+        await advance(STEP_MS);
+        expect(shows('complete row for road')).toBe(true);
+      }
+
+      expect(search).toHaveBeenCalledTimes(3 + retryRows.length);
+      expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+      expect(shows('document.mention.retrying')).toBe(false);
+    });
+
+    it('shows People without the unavailable row when only their annotation degraded, but never caches them', async () => {
+      // Cloud sets `partial` when the People annotation degrades, and Search leaves out an empty
+      // Pages section, so a typed name that matches no object looks like a superseded answer.
+      const search = createAnswerSearch({
+        primary: [
+          [80, { sections: [section(MentionSearchSectionKind.People, [personItem('ada', 'Ada')])], partial: true }],
+        ],
+        rows: [[80, { sections: [] }]],
+      });
+
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(2_000);
+
+      expect(shows('Ada')).toBe(true);
+      expect(retryRow()).toBeNull();
+      expect(showsNoResult()).toBe(false);
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toBeUndefined();
+    });
+
+    it('never lets a late bare answer from an earlier opening replace a newer cached one', async () => {
+      const bareAnswers = [
+        { delayMs: 3_000, title: 'Old page' },
+        { delayMs: 100, title: 'New page' },
+      ];
+      const search = jest.fn((request: MentionSearchRequest, options?: MentionSearchOptions) => {
+        const next = bareAnswers.shift();
+
+        if (request.query || !next) return Promise.reject(new Error('unplanned search'));
+        return answerAfter(next.delayMs, options?.signal, () => ({
+          sections: [section(MentionSearchSectionKind.Pages, [pageItem(next.title)])],
+        }));
+      });
+
+      mockPanelContext.searchText = '';
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+      cleanup();
+
+      // Reopened while the first bare request runs on: a newer one answers first and is cached.
+      renderPanel();
+      await advance(100);
+      expect(shows('New page')).toBe(true);
+      cleanup();
+
+      // The first answer arrives at 3000 ms; the panel reopens at 3200 ms, inside the freshness window.
+      await advance(2_900);
+      renderPanel();
+      expect(shows('New page')).toBe(true);
+      expect(shows('Old page')).toBe(false);
+      await advance(1_000);
+      expect(search).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops a view the user loses access to from the open panel and from answers sent before', async () => {
+      const eventEmitter = new EventEmitter();
+      const pages = [pageItem('Secret page'), pageItem('Kept page')];
+      const search = createAnswerSearch({
+        primary: [[80, { sections: [section(MentionSearchSectionKind.Pages, pages)] }]],
+        // Sent before the revoke, answered after it. Its row belongs to the database view `grid`.
+        rows: [[400, { sections: [section(MentionSearchSectionKind.Pages, [rowItem('Grid row')])] }]],
+      });
+
+      mockEditorContext.eventEmitter = eventEmitter;
+      mockEditorContext.searchMentions = search;
+      renderPanel();
+      await advance(200);
+      expect(shows('Secret page')).toBe(true);
+
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'Secret page' });
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'grid' });
+      });
+      expect(shows('Secret page')).toBe(false);
+      expect(shows('Kept page')).toBe(true);
+
+      await advance(320);
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(shows('Grid row')).toBe(false);
+      expect(shows('Kept page')).toBe(true);
+      expect(getCachedMentionSections(sentCacheKey(search, 'road'))).toEqual([
+        section(MentionSearchSectionKind.Pages, [pageItem('Kept page')]),
+      ]);
     });
   });
 });
