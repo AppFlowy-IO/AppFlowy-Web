@@ -3248,7 +3248,8 @@
       "retrying": "Retrying…",
       "busyRetryingIn": "Busy, retrying in {{seconds}} s",
       "peopleSection": "People",
-      "pagesSection": "Pages"
+      "pagesSection": "Pages",
+      "updatingSuggestions": "Updating suggestions…"
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"

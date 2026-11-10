@@ -33,6 +33,7 @@ import { MentionPanel } from '../MentionPanel';
 import { MENTION_PICK_MEMORY_OVERRIDE_KEY, MENTION_PICK_MEMORY_STORAGE_PREFIX } from '../mentionPickMemory';
 import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
 import { MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
+import { MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
 
 const mockAddMark = jest.fn();
 const mockPost = jest.fn();
@@ -669,6 +670,52 @@ describe('MentionPanel pick memory', () => {
       expect(shownTitles()).toEqual(['Roadmap', 'Roadmap 2026', 'Roadmap Q4']);
       await pickWithEnter('Roadmap Q4');
       expect(insertedPageIds()).toEqual([uuid(2), uuid(3)]);
+    });
+
+    describe('with the picker v2 on (MEN-WEB-08)', () => {
+      beforeEach(() => localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true'));
+
+      it('joins a picked page the answer lacks, and keeps it out of the next keystroke until an answer', async () => {
+        setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+        const editor = renderEditor();
+
+        await openAndTypeRo(editor);
+        await pickWithEnter('Roadmap 2026');
+
+        // The index has not caught up: the server's answer leaves the page out.
+        typedPages = [ROADMAP, ROADMAP_Q4];
+        clearMentionSearchCacheForTests();
+        await openAndTypeRo(editor);
+        expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+
+        // The next keystroke narrows the list at once, without the page only the pick brought: picked
+        // targets join an answer to what is typed, and no pick of `ro` scores `roa`.
+        await type(editor, 'a');
+        expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+        expect(showsLoadingState()).toBe(false);
+      });
+
+      it('narrows the bare answer at once, and joins a picked page only to the answer to what is typed', async () => {
+        setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+        const editor = renderEditor();
+
+        await openAndTypeRo(editor);
+        await pickWithEnter('Roadmap 2026');
+
+        typedPages = [ROADMAP, ROADMAP_Q4];
+        clearMentionSearchCacheForTests();
+        await type(editor, ' @');
+        await advance(ANSWER_MS);
+        await type(editor, 'r');
+
+        // The pick of `ro` scores `r`, but the provisional list narrows only what answers held.
+        expect(shownTitles()).toEqual(['Recent page']);
+        expect(showsLoadingState()).toBe(false);
+
+        // Nothing answers `r`: the picked page joins that answer.
+        await advance(TYPING_DEBOUNCE_MS + ANSWER_MS);
+        expect(shownTitles()).toEqual(['Roadmap 2026']);
+      });
     });
   });
 

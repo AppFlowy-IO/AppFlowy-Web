@@ -1,0 +1,700 @@
+import { EventEmitter } from 'events';
+
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { Profiler, ReactNode } from 'react';
+import { createEditor, Editor, Transforms } from 'slate';
+import { Editable, Slate, withReact } from 'slate-react';
+
+import { APP_EVENTS } from '@/application/constants';
+import type { MentionPickerSession } from '@/application/services/js-services/http/mention-presentation-metrics';
+import {
+  MentionSearchOptions,
+  MentionSearchRequest,
+  MentionSearchResponse,
+  MentionSearchResultItem,
+  MentionSearchSection,
+  MentionSearchSectionKind,
+  MentionTargetKind,
+  MentionType,
+} from '@/application/types';
+import { PanelType } from '@/components/editor/components/panels/PanelsContext';
+
+import { MentionPanel } from '../MentionPanel';
+import { MENTION_TYPED_DEADLINE_MS } from '../mentionRequestLanes';
+import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
+import { MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
+import { MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY, MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
+
+const mockAddMark = jest.fn();
+const mockReport = jest.fn();
+
+const mockPanelContext: Record<string, unknown> = {
+  activePanel: PanelType.Mention,
+  activeTrigger: '@',
+  isPanelOpen: (panel: PanelType) => panel === PanelType.Mention,
+  panelPosition: { top: 0, left: 0 },
+  searchText: '',
+  closePanel: jest.fn(),
+  removeContent: jest.fn(),
+};
+const mockEditorContext: Record<string, unknown> = { workspaceId: 'workspace' };
+
+// A stable `t`, as react-i18next gives one per language: memos that depend on it keep their value.
+const mockT = (key: string) => key;
+
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockT }) }));
+jest.mock('@/application/services/domains', () => ({ WorkspaceService: {} }));
+jest.mock('@/application/services/js-services/http/mention-presentation-metrics', () => ({
+  ...jest.requireActual('@/application/services/js-services/http/mention-presentation-metrics'),
+  reportMentionPickerSession: (...args: unknown[]) => mockReport(...args),
+}));
+jest.mock('../useNotifyPersonMention', () => ({ useNotifyPersonMention: () => jest.fn() }));
+jest.mock('@/application/slate-yjs/command', () => ({
+  CustomEditor: { addMark: (...args: unknown[]) => mockAddMark(...args) },
+}));
+jest.mock('@/components/editor/components/panels/Panels.hooks', () => ({
+  usePanelContext: () => mockPanelContext,
+}));
+jest.mock('@/components/editor/EditorContext', () => ({ useEditorContext: () => mockEditorContext }));
+jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => undefined }));
+jest.mock('@/components/_shared/popover', () => ({
+  Popover: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
+  calculateOptimalOrigins: () => ({ transformOrigin: { vertical: 'top', horizontal: 'left' } }),
+}));
+
+type Lane = 'bare' | 'primary' | 'rows';
+
+/** How the mocked server answers one request: after `delayMs`, with `response` or by failing. */
+interface Reply {
+  delayMs: number;
+  response?: MentionSearchResponse;
+  error?: unknown;
+}
+
+/** A request that answers only once its signal aborts it, at its deadline. */
+const NEVER: Reply = { delayMs: 1e9 };
+const EMPTY: MentionSearchResponse = { sections: [] };
+
+function page(title: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Page,
+    object_id: title,
+    title,
+    mention: { type: MentionTargetKind.Page, page_id: title },
+  };
+}
+
+function row(title: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.DatabaseRow,
+    object_id: title,
+    title,
+    mention: { type: MentionTargetKind.DatabaseRow, database_id: 'database', database_view_id: 'grid', row_id: title },
+  };
+}
+
+function person(id: string, name: string, email: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Person,
+    object_id: id,
+    title: name,
+    subtitle: email,
+    mention: { type: MentionTargetKind.Person, person_id: id, person_name: name, page_id: 'page' },
+  };
+}
+
+function section(kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection {
+  return { kind, title: kind, items, has_more: false, status: 'ok' };
+}
+
+function pages(...items: MentionSearchResultItem[]): MentionSearchResponse {
+  return { sections: [section(MentionSearchSectionKind.Pages, items)] };
+}
+
+const ROADMAP = page('Roadmap');
+const BUDGET = page('Budget');
+const ROAD_TRIP = page('Road trip');
+
+function laneOf(request: MentionSearchRequest): Lane {
+  if (!request.query?.trim()) return 'bare';
+  return request.include?.length === 1 && request.include[0] === MentionTargetKind.DatabaseRow ? 'rows' : 'primary';
+}
+
+// What the HTTP layer rejects with once a request's signal aborts.
+function cancelledError() {
+  return { code: -1, message: 'canceled', sourceDomain: 'transport', transportFailure: 'cancelled' };
+}
+
+function createSearch(reply: (lane: Lane, query: string) => Reply) {
+  return jest.fn((request: MentionSearchRequest, options?: MentionSearchOptions) => {
+    const { delayMs, response, error } = reply(laneOf(request), request.query ?? '');
+
+    return new Promise<MentionSearchResponse>((resolve, rejectSearch) => {
+      if (options?.signal?.aborted) {
+        rejectSearch(cancelledError());
+        return;
+      }
+
+      const timer = setTimeout(() => (error ? rejectSearch(error) : resolve(response ?? EMPTY)), delayMs);
+
+      options?.signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          rejectSearch(cancelledError());
+        },
+        { once: true }
+      );
+    });
+  });
+}
+
+type SearchMock = ReturnType<typeof createSearch>;
+
+/** What each commit of the panel shows, read when React commits it. */
+interface Commit {
+  options: number;
+  noResult: boolean;
+}
+
+let commits: Commit[] = [];
+
+function resultOptions() {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-option-kind]'));
+}
+
+function recordCommit() {
+  commits.push({ options: resultOptions().length, noResult: screen.queryByText('findAndReplace.noResult') !== null });
+}
+
+function renderPanel() {
+  const editor = Object.assign(withReact(createEditor()), { flushLocalChanges: jest.fn() });
+  const tree = () => (
+    <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@road' }] }]}>
+      <Editable data-testid='editor' />
+      <Profiler id='mention-panel' onRender={recordCommit}>
+        <MentionPanel notifyOnInsert={false} />
+      </Profiler>
+    </Slate>
+  );
+  const view = render(tree());
+
+  return { editor, rerender: () => view.rerender(tree()) };
+}
+
+/** Opens the panel on the bare `@` with `search`, and waits `waitMs`. */
+async function openPanel(search: SearchMock, waitMs = 100) {
+  mockPanelContext.searchText = '';
+  mockEditorContext.searchMentions = search;
+
+  const view = renderPanel();
+
+  await advance(waitMs);
+  return view;
+}
+
+function type(view: { rerender: () => void }, query: string) {
+  mockPanelContext.searchText = query;
+  view.rerender();
+}
+
+async function advance(ms: number) {
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(ms);
+  });
+}
+
+function shows(text: string) {
+  return screen.queryByText(text) !== null;
+}
+
+// Page and row options show their title alone.
+function titles() {
+  return resultOptions().map((option) => option.textContent);
+}
+
+function optionKeys() {
+  return resultOptions().map((option) => option.getAttribute('data-option-key'));
+}
+
+function isBusy() {
+  return document.querySelector('[aria-busy="true"]') !== null;
+}
+
+function showsProgress() {
+  return document.querySelector('[data-testid="mention-progress"]') !== null;
+}
+
+function highlighted() {
+  return Array.from(document.querySelectorAll('[data-option-index][data-selected="true"]')).map(
+    (option) => option.textContent
+  );
+}
+
+function retryRow() {
+  return document.querySelector<HTMLElement>('[data-testid="mention-panel-retry"]');
+}
+
+async function pressKey(key: string) {
+  await act(async () => {
+    fireEvent.keyDown(screen.getByTestId('editor'), { key });
+  });
+}
+
+async function placeCaretAtEnd(editor: Editor) {
+  await act(async () => {
+    Transforms.select(editor, Editor.end(editor, []));
+  });
+}
+
+function typedQueries(search: SearchMock) {
+  return search.mock.calls.map(([request]) => request.query ?? '').filter(Boolean);
+}
+
+describe('MentionPanel keep-and-narrow first paint (MEN-WEB-08)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    clearMentionSearchCacheForTests();
+    localStorage.clear();
+    localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true');
+    commits = [];
+    mockPanelContext.searchText = '';
+    mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+    mockEditorContext.eventEmitter = undefined;
+    Element.prototype.scrollIntoView = jest.fn();
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it("shows Roadmap but not Budget for 'r' whose answer never comes, and is not busy", async () => {
+    const search = createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER));
+    const view = await openPanel(search);
+
+    expect(titles()).toEqual(['Roadmap', 'Budget']);
+
+    // In the same act as the keystroke.
+    type(view, 'r');
+    expect(titles()).toEqual(['Roadmap']);
+    expect(isBusy()).toBe(false);
+    expect(showsProgress()).toBe(true);
+    expect(shows('findAndReplace.noResult')).toBe(false);
+
+    await advance(1_000);
+    expect(typedQueries(search)).toEqual(['r', 'r']);
+    expect(titles()).toEqual(['Roadmap']);
+    expect(isBusy()).toBe(false);
+    expect(showsProgress()).toBe(true);
+
+    // At the typed deadline the narrowed list stays, with the unavailable row instead of the bar.
+    await advance(MENTION_TYPED_DEADLINE_MS);
+    expect(titles()).toEqual(['Roadmap']);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    expect(showsProgress()).toBe(false);
+    expect(shows('findAndReplace.noResult')).toBe(false);
+  });
+
+  it('never commits an empty list between keystrokes while the server is slow', async () => {
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, ROAD_TRIP, BUDGET) };
+      if (lane === 'rows') return { delayMs: 300, response: EMPTY };
+      return { delayMs: 300, response: pages(query === 'roa' ? ROAD_TRIP : ROADMAP, ROADMAP) };
+    });
+    const view = await openPanel(search);
+
+    expect(titles()).toEqual(['Roadmap', 'Road trip', 'Budget']);
+    commits = [];
+
+    for (const query of ['r', 'ro', 'roa']) {
+      type(view, query);
+      expect(titles()).toEqual(['Roadmap', 'Road trip']);
+      await advance(100);
+    }
+
+    await advance(1_000);
+    expect(titles()).toEqual(['Road trip', 'Roadmap']);
+    expect(commits.length).toBeGreaterThan(3);
+    expect(commits.filter(({ options }) => options === 0)).toEqual([]);
+    expect(showsProgress()).toBe(false);
+  });
+
+  it('keeps the narrowed list on every keystroke under the contract scheduler too', async () => {
+    localStorage.setItem(MENTION_SCHEDULER_MODE_OVERRIDE_KEY, 'contract');
+
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, ROAD_TRIP, BUDGET) };
+      if (lane === 'rows') return { delayMs: 150, response: EMPTY };
+      return { delayMs: 150, response: pages(query === 'road' ? ROAD_TRIP : ROADMAP) };
+    });
+    const view = await openPanel(search);
+
+    commits = [];
+    // `r` comes 100 ms after the `@`, so it is sent at once; the others wait for typing to pause.
+    for (const query of ['r', 'ro', 'roa', 'road']) {
+      type(view, query);
+      expect(titles()).toEqual(['Roadmap', 'Road trip']);
+      await advance(40);
+    }
+
+    await advance(1_000);
+    expect(typedQueries(search)).toEqual(['r', 'r', 'road', 'road']);
+    expect(titles()).toEqual(['Road trip']);
+    expect(commits.filter(({ options }) => options === 0)).toEqual([]);
+  });
+
+  it("re-tiers an older server's answer, so 'Roadmap 2026' renders above a body-only 'Weekly notes'", async () => {
+    const search = createSearch((lane) => {
+      if (lane === 'primary') return { delayMs: 80, response: pages(page('Weekly notes'), page('Roadmap 2026')) };
+      return { delayMs: 80, response: EMPTY };
+    });
+
+    mockPanelContext.searchText = 'roadmap';
+    mockEditorContext.searchMentions = search;
+    renderPanel();
+    await advance(300);
+
+    expect(titles()).toEqual(['Roadmap 2026', 'Weekly notes']);
+  });
+
+  it('re-tiers people by class, so a shared domain alone sorts after a name match', async () => {
+    const people: MentionSearchResponse = {
+      sections: [
+        section(MentionSearchSectionKind.People, [
+          person('brian', 'Brian Chen', 'brian@appflowy.io'),
+          person('appleton', 'Appleton', 'appleton@example.com'),
+        ]),
+      ],
+    };
+
+    mockPanelContext.searchText = 'app';
+    mockEditorContext.searchMentions = createSearch((lane) => ({
+      delayMs: 80,
+      response: lane === 'primary' ? people : EMPTY,
+    }));
+    renderPanel();
+    await advance(300);
+
+    expect(optionKeys()).toEqual(['people|person:appleton', 'people|person:brian']);
+  });
+
+  it('feeds a bare answer that arrives after typing into the keystroke at once', async () => {
+    const search = createSearch((lane) =>
+      lane === 'bare' ? { delayMs: 400, response: pages(ROADMAP, BUDGET) } : NEVER
+    );
+    const view = await openPanel(search);
+
+    type(view, 'r');
+    expect(isBusy()).toBe(true);
+
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap']);
+    expect(isBusy()).toBe(false);
+    expect(showsProgress()).toBe(true);
+  });
+
+  it('narrows the cached answer of the longest typed prefix when the list on screen lacks a match', async () => {
+    const search = createSearch((lane, query) => {
+      if (lane !== 'primary') return { delayMs: 50, response: EMPTY };
+      if (query === 'ro') return { delayMs: 50, response: pages(ROADMAP, page('Robot')) };
+      if (query === 'rob') return { delayMs: 50, response: pages(page('Robot')) };
+      return NEVER;
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(300);
+    type(view, 'rob');
+    await advance(300);
+    expect(titles()).toEqual(['Robot']);
+
+    // The list shows Robot only; `ro`'s cached answer still holds Roadmap.
+    type(view, 'roa');
+    expect(titles()).toEqual(['Roadmap']);
+  });
+
+  it('narrows the list on screen when no cached answer holds it, as after an answer with a failed lane', async () => {
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') return { delayMs: 50, response: pages(BUDGET) };
+      if (query !== 'ro') return NEVER;
+      if (lane === 'primary') return { delayMs: 80, response: pages(ROADMAP, page('Robot')) };
+      return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(300);
+    // The rows request failed, so the answer is shown with the unavailable row, and never cached.
+    expect(titles()).toEqual(['Roadmap', 'Robot']);
+    expect(retryRow()).not.toBeNull();
+
+    type(view, 'roa');
+    expect(titles()).toEqual(['Roadmap']);
+  });
+
+  it('paints a cached answer in the first commit of the keystroke that comes back to it', async () => {
+    const search = createSearch((lane, query) => {
+      if (lane !== 'primary') return { delayMs: 50, response: EMPTY };
+      // Weekly notes matched `ro` in its body, which no provisional list keeps.
+      if (query === 'ro') return { delayMs: 50, response: pages(ROADMAP, page('Weekly notes')) };
+      return { delayMs: 50, response: pages(page('Robot')) };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap', 'Weekly notes']);
+    type(view, 'rob');
+    await advance(300);
+    expect(titles()).toEqual(['Robot']);
+
+    commits = [];
+    type(view, 'ro');
+    expect(titles()).toEqual(['Roadmap', 'Weekly notes']);
+    expect(commits.length).toBeGreaterThan(0);
+    expect(commits.map(({ options }) => options)).toEqual(commits.map(() => 2));
+    await advance(1_000);
+    // A fresh cached answer needs no request.
+    expect(typedQueries(search).filter((query) => query === 'ro')).toHaveLength(2);
+  });
+
+  it('keeps the provisional rows while the rows request is pending, until the rows answer replaces them', async () => {
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') return { delayMs: 50, response: EMPTY };
+      if (lane === 'primary') return { delayMs: 80, response: pages(ROADMAP) };
+      if (query === 'ro') return { delayMs: 80, response: pages(row('Roadmap row')) };
+      return { delayMs: 400, response: pages(row('Roadmap row'), row('Roadmap row 2')) };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap', 'Roadmap row']);
+
+    // `roa` is sent 120 ms after the keystroke; its primary answers 80 ms later, its rows 400 ms later.
+    type(view, 'roa');
+    await advance(220);
+    expect(titles()).toEqual(['Roadmap', 'Roadmap row']);
+    expect(showsProgress()).toBe(true);
+
+    await advance(320);
+    expect(titles()).toEqual(['Roadmap', 'Roadmap row', 'Roadmap row 2']);
+    expect(showsProgress()).toBe(false);
+  });
+
+  it('keeps the narrowed list next to the unavailable row when the typed search fails', async () => {
+    const search = createSearch((lane) => {
+      if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, BUDGET) };
+      if (lane === 'primary') return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+      return { delayMs: 80, response: EMPTY };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'r');
+    await advance(300);
+
+    expect(titles()).toEqual(['Roadmap']);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    expect(shows('findAndReplace.noResult')).toBe(false);
+  });
+
+  it('says "No result" only once the server answered that nothing matches', async () => {
+    const search = createSearch((lane) =>
+      lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP) } : { delayMs: 80, response: EMPTY }
+    );
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    expect(titles()).toEqual(['Roadmap']);
+    await advance(300);
+    expect(titles()).toEqual([]);
+    expect(shows('findAndReplace.noResult')).toBe(true);
+
+    // Nothing on screen matches `zz`: the skeleton waits for its answer, never a "No result" first.
+    commits = [];
+    type(view, 'zz');
+    expect(isBusy()).toBe(true);
+    expect(commits.some(({ noResult }) => noResult)).toBe(false);
+    await advance(300);
+    expect(shows('findAndReplace.noResult')).toBe(true);
+  });
+
+  it('drops a view the user loses access to from the provisional list at once', async () => {
+    const eventEmitter = new EventEmitter();
+    const search = createSearch((lane) =>
+      lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, ROAD_TRIP) } : NEVER
+    );
+
+    mockEditorContext.eventEmitter = eventEmitter;
+
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    expect(titles()).toEqual(['Roadmap', 'Road trip']);
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'Roadmap' });
+    });
+    expect(titles()).toEqual(['Road trip']);
+
+    type(view, 'roa');
+    expect(titles()).toEqual(['Road trip']);
+  });
+
+  it('reports a pick from the provisional list as a cached one, and the first paint with it', async () => {
+    const search = createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER));
+    const view = await openPanel(search);
+
+    type(view, 'r');
+    await placeCaretAtEnd(view.editor);
+    await pressKey('ArrowDown');
+    expect(highlighted()).toEqual(['Roadmap']);
+    await pressKey('Enter');
+    expect(mockAddMark).toHaveBeenCalledWith(
+      view.editor,
+      expect.objectContaining({ value: expect.objectContaining({ type: MentionType.PageRef, page_id: 'Roadmap' }) })
+    );
+
+    cleanup();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const session = mockReport.mock.calls[0]?.[1] as MentionPickerSession | undefined;
+
+    expect(session).toMatchObject({ outcome: 'selected', selected_rank: 1, selected_section: 'pages' });
+    expect(session?.selected_source).toBe('cache');
+    expect(session?.time_to_first_paint_ms).toEqual(expect.any(Number));
+  });
+
+  describe('the highlight', () => {
+    it('stays on its item through a merge that re-tiers the list, without the default highlight', async () => {
+      const search = createSearch((lane, query) => {
+        if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, ROAD_TRIP) };
+        if (lane === 'rows') return { delayMs: 400, response: pages(row(query)) };
+        return { delayMs: 80, response: pages(ROADMAP, ROAD_TRIP) };
+      });
+      const view = await openPanel(search);
+
+      type(view, 'roa');
+      expect(highlighted()).toEqual([]);
+      await advance(300);
+      await placeCaretAtEnd(view.editor);
+      await pressKey('ArrowDown');
+      await pressKey('ArrowDown');
+      expect(highlighted()).toEqual(['Road trip']);
+
+      // The exact-title row merges in above both pages.
+      await advance(400);
+      expect(titles()).toEqual(['roa', 'Roadmap', 'Road trip']);
+      expect(highlighted()).toEqual(['Road trip']);
+
+      await pressKey('Enter');
+      expect(mockAddMark).toHaveBeenCalledWith(
+        view.editor,
+        expect.objectContaining({ value: expect.objectContaining({ page_id: 'Road trip' }) })
+      );
+
+      // A keystroke ends the navigation, as before.
+      type(view, 'road');
+      expect(highlighted()).toEqual([]);
+    });
+
+    describe('with the default highlight on', () => {
+      beforeEach(() => {
+        localStorage.setItem(MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY, 'true');
+      });
+
+      it('highlights the first option, and follows the top of the list until an arrow key holds it', async () => {
+        const search = createSearch((lane, query) => {
+          if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, ROAD_TRIP, BUDGET) };
+          if (lane === 'rows') return { delayMs: 400, response: pages(row(query)) };
+          // The server puts Road trip first inside the tier both titles share.
+          return { delayMs: 80, response: pages(ROAD_TRIP, ROADMAP) };
+        });
+        const view = await openPanel(search);
+
+        expect(highlighted()).toEqual(['Roadmap']);
+
+        type(view, 'ro');
+        expect(highlighted()).toEqual(['Roadmap']);
+        await advance(220);
+        expect(titles()).toEqual(['Road trip', 'Roadmap']);
+        expect(highlighted()).toEqual(['Road trip']);
+
+        // Held on Roadmap, it stays there when the exact-title row merges in at the top.
+        await placeCaretAtEnd(view.editor);
+        await pressKey('ArrowDown');
+        expect(highlighted()).toEqual(['Roadmap']);
+        await advance(400);
+        expect(titles()).toEqual(['ro', 'Road trip', 'Roadmap']);
+        expect(highlighted()).toEqual(['Roadmap']);
+
+        await pressKey('Enter');
+        expect(mockAddMark).toHaveBeenCalledWith(
+          view.editor,
+          expect.objectContaining({ value: expect.objectContaining({ page_id: 'Roadmap' }) })
+        );
+
+        // The next keystroke releases it to the top of the narrowed list.
+        type(view, 'roa');
+        expect(titles()[0]).toBe('Road trip');
+        expect(highlighted()).toEqual(['Road trip']);
+      });
+
+      it('lets Enter insert the highlighted first option without an arrow key', async () => {
+        const search = createSearch((lane) =>
+          lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER
+        );
+        const view = await openPanel(search);
+
+        type(view, 'bu');
+        await placeCaretAtEnd(view.editor);
+        expect(highlighted()).toEqual(['Budget']);
+        await pressKey('Enter');
+        expect(mockAddMark).toHaveBeenCalledWith(
+          view.editor,
+          expect.objectContaining({ value: expect.objectContaining({ page_id: 'Budget' }) })
+        );
+      });
+    });
+  });
+
+  describe('with the switch off', () => {
+    beforeEach(() => {
+      localStorage.removeItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY);
+      localStorage.setItem(MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY, 'true');
+    });
+
+    it('blanks the list behind the skeleton on a keystroke, as before', async () => {
+      const search = createSearch((lane) =>
+        lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER
+      );
+      const view = await openPanel(search);
+
+      expect(highlighted()).toEqual([]);
+      commits = [];
+      type(view, 'r');
+      expect(titles()).toEqual([]);
+      expect(isBusy()).toBe(true);
+      expect(showsProgress()).toBe(false);
+      expect(commits.map(({ options }) => options)).toContain(0);
+    });
+
+    it("keeps an older server's order", async () => {
+      mockPanelContext.searchText = 'roadmap';
+      mockEditorContext.searchMentions = createSearch((lane) => ({
+        delayMs: 80,
+        response: lane === 'primary' ? pages(page('Weekly notes'), page('Roadmap 2026')) : EMPTY,
+      }));
+      renderPanel();
+      await advance(300);
+
+      expect(titles()).toEqual(['Weekly notes', 'Roadmap 2026']);
+    });
+  });
+});

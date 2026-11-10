@@ -95,7 +95,20 @@ type MentionFixtureState = {
   rowId?: string;
   rowKeyword?: string;
   rowSearchRequestBody?: unknown;
+  /** The pages a stubbed bare `@` answer lists, the first one the page the user types (MEN-WEB-08). */
+  recentPages?: { id: string; title: string }[];
+  /** Typed mention searches that got their answer after being held. */
+  heldTypedSearchesAnswered?: number;
 };
+
+/** When the first keystroke after the probe was installed came, and when the list narrowed. */
+type MentionNarrowProbe = {
+  keyAt?: number;
+  narrowedAt?: number;
+};
+
+// The switch MentionPanel reads when it opens (src/.../mention-panel/mentionTypeaheadFlag.ts).
+const MENTION_TYPEAHEAD_V2_OVERRIDE_KEY = '__mention_typeahead_v2';
 
 const stateByPage = new WeakMap<Page, MentionFixtureState>();
 
@@ -201,6 +214,75 @@ Given('database-row mention search retries later for {string}', async ({ page },
   });
 });
 
+Given('mention search answers the empty query with two recent fixture pages', async ({ page }) => {
+  const state = getState(page);
+  const recentPages = [`Keep narrow ${state.runId}`, `Budget ${state.runId}`].map((title) => ({ id: uuidv4(), title }));
+
+  state.recentPages = recentPages;
+  await page.route('**/mentions/search{,?**}', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+
+    if (body?.query?.trim()) {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        message: 'success',
+        data: {
+          sections: [
+            {
+              kind: 'pages',
+              title: 'Pages',
+              has_more: false,
+              status: 'ok',
+              items: recentPages.map(({ id, title }) => ({
+                kind: 'page',
+                object_id: id,
+                title,
+                mention: { type: 'page', page_id: id },
+              })),
+            },
+          ],
+          partial: false,
+        },
+      }),
+    });
+  });
+});
+
+Given('typed mention searches are held for {int} ms', async ({ page }, holdMs: number) => {
+  const state = getState(page);
+
+  state.heldTypedSearchesAnswered = 0;
+  await page.route('**/mentions/search{,?**}', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+
+    if (!body?.query?.trim()) {
+      await route.fallback();
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, holdMs));
+    // The picker aborts a typed search it no longer needs; that one is never answered.
+    await route.continue().then(
+      () => {
+        state.heldTypedSearchesAnswered = (state.heldTypedSearchesAnswered ?? 0) + 1;
+      },
+      () => undefined
+    );
+  });
+});
+
+Given('the mention typeahead v2 is switched on', async ({ page }) => {
+  // The picker reads the switch each time it opens, so no reload is needed.
+  await page.evaluate((key) => localStorage.setItem(key, 'true'), MENTION_TYPEAHEAD_V2_OVERRIDE_KEY);
+});
+
 Given('a mention search document contains an indexed fixture database row', async ({ page, request }) => {
   const state = getState(page);
   const rowKeyword = `Mention Row ${state.runId}`;
@@ -243,6 +325,43 @@ Given('a mention search document contains an indexed fixture database row', asyn
 
 When('I open the mention panel with an empty query', async ({ page }) => {
   await openMentionPanel(page);
+});
+
+When('I type the first letters of the first recent fixture page', async ({ page }) => {
+  const [first, second] = requireRecentPages(getState(page));
+
+  // Stamps the first keystroke, and the first commit after it that shows the first page without
+  // the second: the narrowed list, which no typed answer has reached yet.
+  await page.evaluate(
+    ({ shown, hidden }) => {
+      const probe: MentionNarrowProbe = {};
+      const optionTexts = () =>
+        Array.from(document.querySelectorAll('[data-testid="mention-panel"] [data-option-kind]')).map(
+          (option) => option.textContent ?? ''
+        );
+      const check = () => {
+        if (probe.keyAt === undefined || probe.narrowedAt !== undefined) return;
+
+        const texts = optionTexts();
+
+        if (texts.some((text) => text.includes(shown)) && !texts.some((text) => text.includes(hidden))) {
+          probe.narrowedAt = performance.now();
+        }
+      };
+
+      (window as Window & { __mentionNarrowProbe?: MentionNarrowProbe }).__mentionNarrowProbe = probe;
+      document.addEventListener(
+        'keydown',
+        () => {
+          probe.keyAt = performance.now();
+        },
+        { capture: true, once: true }
+      );
+      new MutationObserver(check).observe(document.body, { childList: true, subtree: true, characterData: true });
+    },
+    { shown: first.title, hidden: second.title }
+  );
+  await page.keyboard.type(first.title.slice(0, 2), { delay: 30 });
 });
 
 When('I search mentions for the fixture member', async ({ page }) => {
@@ -303,6 +422,34 @@ Then('the mention panel does not show database rows', async ({ page }) => {
   // buttons via their data-option-kind.
   await expect(mentionPanel(page).getByText('Database rows', { exact: true })).toHaveCount(0);
   await expect(mentionPanel(page).locator('[data-option-kind="database_row"]')).toHaveCount(0);
+});
+
+Then('the mention panel shows both recent fixture pages', async ({ page }) => {
+  const panel = mentionPanel(page);
+
+  for (const { title } of requireRecentPages(getState(page))) {
+    await expect(panel.getByText(title, { exact: true })).toBeVisible({ timeout: 15000 });
+  }
+});
+
+Then('the mention panel shows only the first recent fixture page while typed searches are held', async ({ page }) => {
+  const state = getState(page);
+  const [first, second] = requireRecentPages(state);
+  const panel = mentionPanel(page);
+
+  await expect(panel.getByText(first.title, { exact: true })).toBeVisible({ timeout: 1000 });
+  await expect(panel.getByText(second.title, { exact: true })).toHaveCount(0);
+  // No typed answer arrived: the list was narrowed from the bare answer on screen.
+  expect(state.heldTypedSearchesAnswered).toBe(0);
+
+  const probe = await page.evaluate(
+    () => (window as Window & { __mentionNarrowProbe?: MentionNarrowProbe }).__mentionNarrowProbe
+  );
+
+  expect(probe?.keyAt, 'the first keystroke').toBeDefined();
+  expect(probe?.narrowedAt, 'the narrowed list').toBeDefined();
+  // The plan's budget. React commits before the browser paints, so this is soft on loaded runners.
+  expect.soft((probe?.narrowedAt ?? 0) - (probe?.keyAt ?? 0), 'keystroke to narrowed list, ms').toBeLessThan(100);
 });
 
 Then('the mention panel shows the fixture member', async ({ page }) => {
@@ -916,6 +1063,14 @@ function isDatabaseRowOnlyRecordedRequest(request: RecordedMentionRequest): bool
   const include = request.body?.include;
 
   return Array.isArray(include) && include.length === 1 && include[0] === 'database_row';
+}
+
+function requireRecentPages(state: MentionFixtureState): { id: string; title: string }[] {
+  if (!state.recentPages || state.recentPages.length < 2) {
+    throw new Error('The stubbed recent mention pages are not initialized');
+  }
+
+  return state.recentPages;
 }
 
 function requireRowKeyword(state: MentionFixtureState): string {

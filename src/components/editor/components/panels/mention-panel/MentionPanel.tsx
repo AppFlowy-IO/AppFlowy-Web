@@ -1,4 +1,4 @@
-import { Button, Divider } from '@mui/material';
+import { Button, Divider, LinearProgress } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import dayjs from 'dayjs';
 import {
@@ -53,16 +53,27 @@ import { Switch } from '@/components/ui/switch';
 import { useSendMentionNotification } from './mention-notification-preference';
 import {
   loadMentionPickMemory,
+  MentionPickScore,
   mentionPickMemoryStorageKey,
   readMentionPickMemoryEnabled,
   recordMentionPick,
 } from './mentionPickMemory';
 import { mentionLocalPickItem, mentionLocalPickUnderAnyView, rankMentionSectionsByPicks } from './mentionPickRanking';
+import {
+  buildMentionProvisionalSections,
+  capMentionSections,
+  longestCachedMentionPrefixSections,
+  mentionAnswerMissingKinds,
+  mentionInterimMissingKinds,
+  withoutMentionKeys,
+  withProvisionalItems,
+} from './mentionProvisional';
 import { mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
 import {
   ensureMentionSearchCacheScope,
   getCachedMentionSearch,
   getCachedMentionSections,
+  getMentionSearchCacheView,
   getRevokedMentionViews,
   mentionItemShowsAnyView,
   mentionSearchCacheStamp,
@@ -70,6 +81,7 @@ import {
   mentionSearchRetryLaterRemainingMs,
   setCachedMentionSections,
   startMentionSearchRefresh,
+  subscribeMentionSearchCache,
   subscribeMentionSearchCacheInvalidation,
   subscribeRevokedMentionViews,
   withoutMentionView,
@@ -94,6 +106,7 @@ import {
   normalizeMentionSearchSectionsForPicker,
   reconcileMentionOptionSelection,
 } from './mentionUtils';
+import { MENTION_TYPEAHEAD_LEGACY, readMentionTypeaheadSettings } from './mentionTypeaheadFlag';
 import { useMentionLocalSnapshot } from './useMentionLocalSnapshot';
 import { useMentionPickerSession } from './useMentionPickerSession';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
@@ -124,12 +137,52 @@ type MentionSectionsSource = Extract<MentionSessionSource, 'server' | 'cache'>;
 interface MentionSectionsAnswer {
   key: string;
   source: MentionSectionsSource;
+  /**
+   * The kinds the answer lacks while a request of it is pending, or because one failed. Only the
+   * picker's `mentionTypeaheadV2` reads it: provisional items of those kinds stay on screen.
+   */
+  missingKinds?: ReadonlySet<MentionTargetKind>;
 }
 
 const NO_REVOKED_VIEWS: ReadonlySet<string> = new Set();
 
 function noRevokedViews() {
   return NO_REVOKED_VIEWS;
+}
+
+function noCacheSubscription() {
+  return () => undefined;
+}
+
+const NO_MENTION_SECTIONS: MentionSearchSection[] = [];
+const NO_MISSING_KINDS: ReadonlySet<MentionTargetKind> = new Set();
+const NO_NAV_KEYS: ReadonlySet<string> = new Set();
+const NO_PICK_SCORES: ReadonlyMap<string, MentionPickScore> = new Map();
+
+/**
+ * The sections of a typed answer that the picker's `mentionTypeaheadV2` ranks by the typeahead
+ * contract's client ranking, so a body-only hit never sits above a title match, whatever server
+ * answered (MEN-WEB-08). Databases keep the server's order unless pick memory scores one: Search
+ * also tiers a database by the name of the view that reached it, which the item does not carry,
+ * so the client would put a database found by its view name below every title match.
+ */
+const MENTION_V2_RETIER_KINDS: ReadonlySet<MentionSearchSectionKind> = new Set([
+  MentionSearchSectionKind.People,
+  MentionSearchSectionKind.Pages,
+  MentionSearchSectionKind.DatabaseRows,
+]);
+
+/** What the picker's `mentionTypeaheadV2` shows for the query typed now. */
+interface MentionV2View {
+  sections: MentionSearchSection[];
+  /** Provisional sections, narrowed from earlier answers, while the answer to the query is pending. */
+  provisional: boolean;
+  /** Where the sections came from, as a session report gives it. */
+  source?: MentionSessionSource;
+  /** Navigation keys of the picked targets that joined from the local index (MEN-WEB-10). */
+  localKeys?: ReadonlySet<string>;
+  /** Navigation keys of the provisional items an incomplete answer keeps. */
+  carriedKeys?: ReadonlySet<string>;
 }
 
 /** One search's requests in flight, as the panel hands them to its scheduler. */
@@ -517,6 +570,24 @@ function MentionSectionTitle({ section, trailing }: { section: MentionSearchSect
   );
 }
 
+/**
+ * A thin bar at the top of the list while the answer to what is typed now is pending over results
+ * already shown (MEN-WEB-08), so the list is never replaced by the skeleton.
+ */
+function MentionPanelProgressBar() {
+  const { t } = useTranslation();
+
+  return (
+    <div className={'pointer-events-none sticky top-0 z-10 -mb-0.5 h-0.5 w-full'}>
+      <LinearProgress
+        aria-label={t('document.mention.updatingSuggestions')}
+        data-testid={'mention-progress'}
+        sx={{ height: 2 }}
+      />
+    </div>
+  );
+}
+
 function MentionPanelLoadingState() {
   return (
     <div className={'flex min-h-[136px] flex-col gap-3 px-4 py-3'} aria-hidden={'true'}>
@@ -597,6 +668,15 @@ export function MentionPanel({
     () => (open ? createMentionSearchScheduler<MentionPanelFlight>(readMentionSchedulerSettings()) : null),
     [open]
   );
+  const hasSearchMentions = Boolean(searchMentions);
+  // Keep-and-narrow first paint (MEN-WEB-08), off by default and read once per opening: a keystroke
+  // keeps the list, narrowed at once to what still matches, until the server answers.
+  const typeaheadSettings = useMemo(() => (open ? readMentionTypeaheadSettings() : MENTION_TYPEAHEAD_LEGACY), [open]);
+  const typeaheadV2 = typeaheadSettings.v2 && hasSearchMentions;
+  // The first option is highlighted unless an arrow key holds the highlight (off by default).
+  const defaultHighlight = typeaheadV2 && typeaheadSettings.defaultHighlight;
+  // The query an arrow key took the highlight at: it stays on its item until the next keystroke.
+  const selectionLockRef = useRef<string | undefined>(undefined);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
   const mentionInclude = activePanel === PanelType.PageReference
     ? PAGE_REFERENCE_INCLUDE
@@ -661,7 +741,6 @@ export function MentionPanel({
   // the device once per opening. It orders the answer to a typed search once that answer is on
   // screen (a pending one shows the loading state as before), and brings a picked target the
   // answer lacks from the local index.
-  const hasSearchMentions = Boolean(searchMentions);
   const pickMemoryKey = useMemo(
     () => mentionPickMemoryStorageKey(workspaceId, currentUser?.uid),
     [currentUser?.uid, workspaceId]
@@ -675,16 +754,42 @@ export function MentionPanel({
   );
   const pickLocalSnapshot = useMentionLocalSnapshot(pickMemory ? workspaceId : undefined);
   // The views the user lost access to in this session. The local index lists one, and the pages
-  // below it, until its sources catch up, so a picked one never joins from it.
-  const getPickRevokedViews = pickMemory ? getRevokedMentionViews : noRevokedViews;
-  const pickRevokedViews = useSyncExternalStore(subscribeRevokedMentionViews, getPickRevokedViews, getPickRevokedViews);
+  // below it, until its sources catch up, so a picked one never joins from it, and an earlier
+  // answer may list one, so a provisional list never shows it.
+  const getRevokedViews = pickMemory || typeaheadV2 ? getRevokedMentionViews : noRevokedViews;
+  const revokedViews = useSyncExternalStore(subscribeRevokedMentionViews, getRevokedViews, getRevokedViews);
   const pagesSectionTitle = t('document.mention.pagesSection');
+  // The picker shows databases inside Pages, or as Pages when no page is listed
+  // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.
+  const mentionSectionTitle = useCallback(
+    (kind: MentionSearchSectionKind) => {
+      if (kind === MentionSearchSectionKind.People) return t('document.mention.peopleSection');
+      if (kind === MentionSearchSectionKind.Dates) return t('inlineActions.date');
+      return pagesSectionTitle;
+    },
+    [pagesSectionTitle, t]
+  );
+  // A view the user lost access to never joins, nor does one below it: the app names only the view
+  // whose share changed, and the index lists the pages below it until its sources catch up.
+  const pickLocalItem = useCallback(
+    (key: string) => {
+      const item = mentionLocalPickItem(pickLocalSnapshot, key);
+      const revoked =
+        item !== undefined &&
+        (mentionItemShowsAnyView(item, revokedViews) ||
+          mentionLocalPickUnderAnyView(pickLocalSnapshot, key, revokedViews));
+
+      return revoked ? undefined : item;
+    },
+    [pickLocalSnapshot, revokedViews]
+  );
   // Whether the sections on screen answer the search for what is typed now, not one before it.
   const showsCurrentAnswer = mentionSectionsAnswer?.key === mentionSearchCacheKey;
   const sectionsByPicks = useMemo(() => {
     const sections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
 
-    if (!pickMemory || useLocalMentionFallback || !hasMentionSearchQuery || !showsCurrentAnswer) {
+    // The picker's v2 ranks its answers itself (mentionV2View below).
+    if (!pickMemory || typeaheadV2 || useLocalMentionFallback || !hasMentionSearchQuery || !showsCurrentAnswer) {
       return { sections, localKeys: undefined };
     }
 
@@ -697,21 +802,8 @@ export function MentionPanel({
       scores: pickMemory.scores(query, nowMs),
       request: { include: mentionInclude },
       requesterPersonId: currentUser?.uuid,
-      // A view the user lost access to never joins, nor does one below it: the app names only the
-      // view whose share changed, and the index lists the pages below it until its sources catch up.
-      localItem: (key) => {
-        const item = mentionLocalPickItem(pickLocalSnapshot, key);
-        const revoked =
-          item !== undefined &&
-          (mentionItemShowsAnyView(item, pickRevokedViews) ||
-            mentionLocalPickUnderAnyView(pickLocalSnapshot, key, pickRevokedViews));
-
-        return revoked ? undefined : item;
-      },
-      // The picker shows databases inside Pages, or as Pages when no page is listed
-      // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.
-      sectionTitle: (kind) =>
-        kind === MentionSearchSectionKind.People ? t('document.mention.peopleSection') : pagesSectionTitle,
+      localItem: pickLocalItem,
+      sectionTitle: mentionSectionTitle,
       nowMs,
     });
   }, [
@@ -720,18 +812,138 @@ export function MentionPanel({
     localFallbackMentionSections,
     mentionInclude,
     mentionSections,
-    pagesSectionTitle,
-    pickLocalSnapshot,
+    mentionSectionTitle,
+    pickLocalItem,
     pickMemory,
-    pickRevokedViews,
     searchText,
     showsCurrentAnswer,
-    t,
+    typeaheadV2,
     useLocalMentionFallback,
   ]);
-  const sourceMentionSections = sectionsByPicks.sections;
+  // MEN-WEB-08 below, all of it only with the picker's v2 on. The cached answers as this render
+  // reads them: a late answer, such as a bare one that arrives after typing, feeds the list at once.
+  const mentionCacheView = useSyncExternalStore(
+    typeaheadV2 ? subscribeMentionSearchCache : noCacheSubscription,
+    getMentionSearchCacheView,
+    getMentionSearchCacheView
+  );
+  // What the list showed at the last commit, the first source of a keystroke's provisional sections.
+  const shownSectionsRef = useRef<MentionSearchSection[]>(NO_MENTION_SECTIONS);
+  const v2PickScores = useMemo(
+    () =>
+      typeaheadV2 && pickMemory && hasMentionSearchQuery
+        ? pickMemory.scores(searchText ?? '', Date.now())
+        : NO_PICK_SCORES,
+    [hasMentionSearchQuery, pickMemory, searchText, typeaheadV2]
+  );
+  // Ranks a typed answer, or provisional sections, as the picker's v2 shows them: People, Pages and
+  // rows by the contract's client ranking, with pick memory's signals when it is on.
+  const rankV2Sections = useCallback(
+    (sections: MentionSearchSection[], localItem?: (key: string) => MentionSearchResultItem | undefined) =>
+      rankMentionSectionsByPicks({
+        query: searchText ?? '',
+        sections,
+        scores: v2PickScores,
+        request: { include: mentionInclude },
+        requesterPersonId: currentUser?.uuid,
+        localItem,
+        sectionTitle: mentionSectionTitle,
+        nowMs: Date.now(),
+        retierKinds: MENTION_V2_RETIER_KINDS,
+      }),
+    [currentUser?.uuid, mentionInclude, mentionSectionTitle, searchText, v2PickScores]
+  );
+  const bareMentionSearchCacheKey = useMemo(
+    () =>
+      buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: '' }), {
+        workspaceId,
+        userId: currentUser?.uuid,
+      }),
+    [currentUser?.uuid, mentionSearchRequest, workspaceId]
+  );
+  // A typed query's provisional sections: what still matches it in the list on screen, the cached
+  // answer of its longest typed prefix and the cached bare answer, ranked as an answer is.
+  const provisionalMentionSections = useMemo(() => {
+    if (!typeaheadV2 || !hasMentionSearchQuery) return NO_MENTION_SECTIONS;
+
+    const query = searchText ?? '';
+    const prefixKey = (prefix: string) =>
+      prefix.trim()
+        ? buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: prefix }), {
+            workspaceId,
+            userId: currentUser?.uuid,
+          })
+        : undefined;
+    const narrowed = buildMentionProvisionalSections({
+      query,
+      sources: [
+        shownSectionsRef.current,
+        longestCachedMentionPrefixSections(query, prefixKey, mentionCacheView.sections),
+        mentionCacheView.sections(bareMentionSearchCacheKey),
+      ],
+      include: mentionInclude,
+      hides: (item) => mentionItemShowsAnyView(item, revokedViews),
+      sectionTitle: mentionSectionTitle,
+    });
+
+    return capMentionSections(rankV2Sections(narrowed).sections, MENTION_SEARCH_LIMIT);
+  }, [
+    bareMentionSearchCacheKey,
+    currentUser?.uuid,
+    hasMentionSearchQuery,
+    mentionCacheView,
+    mentionInclude,
+    mentionSearchRequest,
+    mentionSectionTitle,
+    rankV2Sections,
+    revokedViews,
+    searchText,
+    typeaheadV2,
+    workspaceId,
+  ]);
+  const mentionV2View = useMemo((): MentionV2View | undefined => {
+    if (!typeaheadV2) return undefined;
+
+    // The answer to what is typed now: on screen, or cached, which the search shows this commit.
+    const cachedNow = showsCurrentAnswer ? undefined : mentionCacheView.sections(mentionSearchCacheKey);
+    const answer = showsCurrentAnswer ? mentionSections : cachedNow;
+    const source = showsCurrentAnswer ? mentionSectionsSource : cachedNow && 'cache';
+
+    // A bare `@` narrows nothing: it shows its answer, or the skeleton while that is pending.
+    if (!hasMentionSearchQuery) return { sections: answer ?? NO_MENTION_SECTIONS, provisional: false, source };
+    if (!answer) return { sections: provisionalMentionSections, provisional: true, source: 'cache' };
+
+    // Provisional items of the kinds a pending or failed request did not answer stay.
+    const missingKinds = (showsCurrentAnswer && mentionSectionsAnswer?.missingKinds) || NO_MISSING_KINDS;
+    const { sections, carriedKeys } = withProvisionalItems(answer, provisionalMentionSections, missingKinds);
+    const ranked = rankV2Sections(sections, pickMemory ? pickLocalItem : undefined);
+
+    return { sections: ranked.sections, provisional: false, source, localKeys: ranked.localKeys, carriedKeys };
+  }, [
+    hasMentionSearchQuery,
+    mentionCacheView,
+    mentionSearchCacheKey,
+    mentionSections,
+    mentionSectionsAnswer?.missingKinds,
+    mentionSectionsSource,
+    pickLocalItem,
+    pickMemory,
+    provisionalMentionSections,
+    rankV2Sections,
+    showsCurrentAnswer,
+    typeaheadV2,
+  ]);
+  const sourceMentionSections = mentionV2View ? mentionV2View.sections : sectionsByPicks.sections;
   // The picked targets the local index added, which a session report counts as the local lane's.
-  const pickLocalKeys = sectionsByPicks.localKeys;
+  const pickLocalKeys = mentionV2View ? mentionV2View.localKeys : sectionsByPicks.localKeys;
+
+  // After each commit, remember what the list shows for the next keystroke, without the picked
+  // targets the local index added: those join only an answer to what is typed (MEN-WEB-10).
+  useLayoutEffect(() => {
+    shownSectionsRef.current = mentionV2View
+      ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
+      : NO_MENTION_SECTIONS;
+  }, [mentionV2View]);
   const pickerMentionSections = useMemo(
     () =>
       normalizeMentionSearchSectionsForPicker(
@@ -750,6 +962,7 @@ export function MentionPanel({
     if (!open) {
       setSelection(null);
       setShowMorePages(false);
+      selectionLockRef.current = undefined;
     }
   }, [open, setSelection]);
 
@@ -810,7 +1023,9 @@ export function MentionPanel({
     const isRetry = previousSearch?.key === mentionSearchCacheKey && previousSearch.nonce !== retryNonce;
 
     lastSearchRef.current = { key: mentionSearchCacheKey, nonce: retryNonce };
-    if (!isRetry) setSelection(null);
+    // A keystroke ends the navigation, as before. With the default highlight on, the highlight
+    // moves to the first option instead (the selection reconciler below).
+    if (!isRetry && !defaultHighlight) setSelection(null);
 
     const searchMentionsFn = searchMentions;
     const lanes = mentionRequestLanes;
@@ -869,18 +1084,27 @@ export function MentionPanel({
     }
 
     // Shows `sections`, the answer to this search from `source`, or no answer without one.
-    function showSections(sections: MentionSearchSection[], source?: MentionSectionsSource) {
+    // `missingKinds` are the kinds a pending or failed request did not answer (the picker's v2).
+    function showSections(
+      sections: MentionSearchSection[],
+      source?: MentionSectionsSource,
+      missingKinds?: ReadonlySet<MentionTargetKind>
+    ) {
       setMentionSections(sections);
       setMentionSectionsAnswer((shown) => {
         if (!source) return undefined;
-        return shown?.key === cacheKey && shown.source === source ? shown : { key: cacheKey, source };
+        return shown?.key === cacheKey && shown.source === source && shown.missingKinds === missingKinds
+          ? shown
+          : { key: cacheKey, source, missingKinds };
       });
     }
 
     // Sections that arrive while the rest of the answer is pending. Without items they would only
     // blank what is on screen, such as the previous attempt of a retry, so they are not shown.
     function showInterimSections(sections: MentionSearchSection[]) {
-      if (hasMentionItems(sections)) showSections(sections, 'server');
+      if (hasMentionItems(sections)) {
+        showSections(sections, 'server', typeaheadV2 ? mentionInterimMissingKinds(sections) : undefined);
+      }
     }
 
     function settle(status: Exclude<MentionSearchStatus, 'busy'>) {
@@ -913,9 +1137,9 @@ export function MentionPanel({
       }
 
       // Keep what the requests that answered found. Without any, keep what is on screen (the
-      // previous attempt of a retry), or a cached answer.
+      // previous attempt of a retry, or the picker's v2 provisional list), or a cached answer.
       if (hasMentionItems(result.sections)) {
-        showSections(result.sections, 'server');
+        showSections(result.sections, 'server', typeaheadV2 ? mentionAnswerMissingKinds(result.outcomes) : undefined);
       } else {
         const cachedSections = getCachedMentionSections(cacheKey);
 
@@ -1071,7 +1295,8 @@ export function MentionPanel({
       return stopSearch;
     }
 
-    if (!isRetry) showSections([]);
+    // The picker's v2 keeps the list on screen: it shows provisional sections until the answer.
+    if (!isRetry && !typeaheadV2) showSections([]);
 
     if (retryLaterMs > 0) {
       submitAfterCooldown();
@@ -1083,6 +1308,7 @@ export function MentionPanel({
 
     return stopSearch;
   }, [
+    defaultHighlight,
     hasMentionSearchQuery,
     mentionRequestLanes,
     mentionSearchCacheKey,
@@ -1094,6 +1320,7 @@ export function MentionPanel({
     searchMentions,
     searchText,
     setSelection,
+    typeaheadV2,
     useLocalMentionFallback,
   ]);
 
@@ -1276,19 +1503,48 @@ export function MentionPanel({
   // keep the highlight on the same option, else on the same object in another section, else on
   // the first option, so it never lands on whatever moved into its old position. A Retry row that
   // succeeded leaves no highlight: the user chose Retry, not one of the results it brought.
+  //
+  // With the default highlight on (MEN-WEB-08), the highlight is the first result and follows the
+  // top of the list as it is narrowed and answered, until ArrowUp or ArrowDown holds it on its item;
+  // the next keystroke releases it.
   useLayoutEffect(() => {
     const current = selectionRef.current;
-    const next =
-      current?.key === MENTION_RETRY_OPTION_KEY && !mentionOptionByKey.has(current.key)
-        ? null
-        : reconcileMentionOptionSelection(current, mentionPanelOptions);
+
+    if (selectionLockRef.current !== undefined && selectionLockRef.current !== (searchText ?? '')) {
+      selectionLockRef.current = undefined;
+    }
+
+    let next: MentionOptionSelection | null;
+
+    if (current?.key === MENTION_RETRY_OPTION_KEY && !mentionOptionByKey.has(current.key)) {
+      next = null;
+    } else if (defaultHighlight && selectionLockRef.current === undefined) {
+      const first = mentionPanelOptions.find((option) => option.kind === 'result');
+
+      next = first && first.key === current?.key ? current : first ? mentionOptionSelection(first) : null;
+    } else {
+      next = reconcileMentionOptionSelection(current, mentionPanelOptions);
+    }
 
     if (next !== current) setSelection(next);
-  }, [mentionOptionByKey, mentionPanelOptions, setSelection]);
+  }, [defaultHighlight, mentionOptionByKey, mentionPanelOptions, searchText, setSelection]);
 
   // One report per opening of the panel ('@', '+' or '[['), sent when it inserts an item or closes,
-  // to servers that advertise session_metrics_v1.
-  const shownSource: MentionSessionSource | undefined = useLocalMentionFallback ? 'local' : mentionSectionsSource;
+  // to servers that advertise session_metrics_v1. Provisional sections come from stored answers.
+  const shownSource: MentionSessionSource | undefined = useLocalMentionFallback
+    ? 'local'
+    : mentionV2View
+    ? mentionV2View.source
+    : mentionSectionsSource;
+  // A provisional list awaits the answer to what is typed, so it never says that nothing matched,
+  // unless the query stays local and no answer comes (MEN-WEB-05's one-letter rule).
+  const awaitsTypedAnswer = Boolean(mentionV2View?.provisional) && !mentionSearchScheduler?.keepsLocal(searchText ?? '');
+  // Only an answer that came back complete can say that nothing matched.
+  const showNoResult =
+    searchStatus === 'ok' &&
+    rawMentionSearchResults.length === 0 &&
+    !awaitsTypedAnswer &&
+    (Boolean(searchText) || useLocalMentionFallback);
   const { beginSelection } = useMentionPickerSession({
     lanes: mentionRequestLanes,
     trigger: activeTrigger,
@@ -1299,15 +1555,17 @@ export function MentionPanel({
       results: resultRanks.size,
       source: shownSource,
       // What "No result" stands for, also where the local fallback offers "Create" options instead.
-      empty: searchStatus === 'ok' && resultRanks.size === 0 && (Boolean(searchText) || useLocalMentionFallback),
+      empty: showNoResult,
       failed: searchStatus === 'unavailable' || searchStatus === 'offline' || searchStatus === 'busy',
     },
   });
 
   // The skeleton stands in for results only while the first answer is pending. A failure, busy or
-  // offline row never shows it, and neither does a retry, whose row says "Retrying…".
+  // offline row never shows it, and neither does a retry, whose row says "Retrying…". With the
+  // picker's v2, results on screen stay while the answer is pending, under a thin progress bar.
   const showMentionSearchLoadingState =
     hasMentionPanelSource && searchStatus === 'loading' && rawMentionSearchResults.length === 0;
+  const showMentionSearchProgress = typeaheadV2 && searchStatus === 'loading' && rawMentionSearchResults.length > 0;
   const busySeconds = busyUntil === undefined ? 0 : Math.max(0, Math.ceil((busyUntil - busyClock) / 1000));
   const selectedOptionKey = selection?.key;
   const selectedOptionIndex =
@@ -1407,7 +1665,11 @@ export function MentionPanel({
       recordSelection({
         rank: resultRanks.get(result.key),
         section: result.sectionKind,
-        source: pickLocalKeys?.has(result.navKey) ? 'local' : shownSource,
+        source: pickLocalKeys?.has(result.navKey)
+          ? 'local'
+          : mentionV2View?.carriedKeys?.has(result.navKey)
+          ? 'cache'
+          : shownSource,
       });
       // Only an insertion reinforces pick memory, never what the picker shows or highlights.
       if (pickMemory && pickMemoryKey) recordMentionPick(pickMemoryKey, searchText ?? '', result.navKey);
@@ -1422,6 +1684,7 @@ export function MentionPanel({
       handleAddMention,
       mentionContext?.row_id,
       mentionContext?.view_id,
+      mentionV2View?.carriedKeys,
       notifyOnInsert,
       notifyPersonMention,
       onPersonPicked,
@@ -1498,6 +1761,8 @@ export function MentionPanel({
               key === 'ArrowDown' ? (currentIndex + 1) % optionCount : (currentIndex - 1 + optionCount) % optionCount;
           }
 
+          // The highlight stays on the item the user moved to until the next keystroke (MEN-WEB-08).
+          selectionLockRef.current = searchText ?? '';
           setSelection(mentionOptionSelection(mentionPanelOptions[nextIndex]));
           break;
         }
@@ -1516,6 +1781,7 @@ export function MentionPanel({
       mentionPanelOptions,
       retrySearch,
       retrying,
+      searchText,
       setSelection,
     ]
   );
@@ -1584,6 +1850,7 @@ export function MentionPanel({
         }
         aria-busy={showMentionSearchLoadingState}
       >
+        {showMentionSearchProgress && <MentionPanelProgressBar />}
         {hasMentionPanelSource && (
           <div data-option-category={MentionTag.Result} className={'flex flex-col'}>
             {showMentionSearchLoadingState ? (
@@ -1665,15 +1932,11 @@ export function MentionPanel({
                 )}
               </div>
             )}
-            {/* Only an answer that came back complete can say that nothing matched. */}
-            {searchStatus === 'ok' &&
-              rawMentionSearchResults.length === 0 &&
-              createPageOptions.length === 0 &&
-              (searchText || useLocalMentionFallback) && (
-                <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
-                  {t('findAndReplace.noResult')}
-                </div>
-              )}
+            {showNoResult && createPageOptions.length === 0 && (
+              <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
+                {t('findAndReplace.noResult')}
+              </div>
+            )}
             {createPageOptions.length > 0 && (
               <div className={'flex flex-col px-2 py-1'}>
                 {(mentionResultSections.length > 0 || retryOption || searchStatus === 'busy') && (

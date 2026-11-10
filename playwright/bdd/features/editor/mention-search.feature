@@ -45,3 +45,14 @@ Feature: Mention panel search
     When I search mentions for the fixture database row
     Then the browser sent a database-row mention search request
     And the mention panel shows the fixture database row
+
+  # MEN-WEB-08, behind the picker's mentionTypeaheadV2 switch (localStorage, off by default).
+  Scenario: Typing narrows the recent pages at once while typed mention searches are slow
+    Given a blank mention search document page is open
+    And mention search answers the empty query with two recent fixture pages
+    And typed mention searches are held for 1500 ms
+    And the mention typeahead v2 is switched on
+    When I open the mention panel with an empty query
+    Then the mention panel shows both recent fixture pages
+    When I type the first letters of the first recent fixture page
+    Then the mention panel shows only the first recent fixture page while typed searches are held

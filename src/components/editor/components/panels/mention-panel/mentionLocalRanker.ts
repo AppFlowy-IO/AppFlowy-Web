@@ -21,9 +21,11 @@
  * candidates are split into sections ({@link PreparedCache}). Nothing here depends on React, the
  * DOM or the network. The editor's picker keeps the server's order, except that with pick memory
  * on (`mentionPickMemory.ts`, off by default) it re-tiers a typed answer's sections where a pick
- * scores (`mentionPickRanking.ts`); MEN-WEB-08 and MEN-WEB-09 re-tier and merge every typed answer
- * behind their flag. The comment @ pickers match people with {@link personTier} when their own
- * `ranked` order is on (`@/application/comment-mention-ranking`).
+ * scores (`mentionPickRanking.ts`), and with its `mentionTypeaheadV2` switch on (MEN-WEB-08, off by
+ * default) it re-tiers every typed answer's People, Pages and Database rows and narrows the list it
+ * keeps while typing with {@link objectTier} and {@link personTier} (`mentionProvisional.ts`);
+ * MEN-WEB-09 merges the local lane. The comment @ pickers match people with {@link personTier} when
+ * their own `ranked` order is on (`@/application/comment-mention-ranking`).
  */
 import {
   MentionSearchResultItem,

@@ -275,3 +275,51 @@ sends (the kind, title, subtitle and mention payload ids).
 With pick memory on or off, the picker shows databases and rows inside Pages, and titles the Pages
 section it makes from an answer that lists databases or rows but no pages with the translated
 `document.mention.pagesSection` ("Pages" in English) rather than the untranslated "Pages".
+
+## Mention keep-and-narrow first paint
+
+The editor's @ picker can keep its list while the user types, instead of blanking it on every
+keystroke whose answer is not cached (`mentionProvisional.ts`, wired in `MentionPanel.tsx`). It is
+off by default until its rollout. A browser opts in with
+`localStorage.__mention_typeahead_v2 = 'true'`, read when a picker opens; while it is off the picker
+behaves as before.
+
+- On a keystroke whose answer is not cached, the picker builds provisional sections in the same
+  render from what it already holds: the list on screen, the cached answer of the longest typed
+  prefix of the query, and the cached bare `@` answer of the same picker. A cached answer is read
+  fresh or stale, and one that arrives later, such as a bare answer that comes after the user typed,
+  narrows into the list at once. An item listed by several of them is listed once, with the first
+  one's title, so a page renamed on screen is not brought back by an older answer.
+- Only items that still match the new query by the typeahead contract's matcher stay: pages,
+  databases and rows whose title matches at T3 or better, people whose name or address local part
+  matches at C3 or better (the domain alone never matches), and date and reminder quick picks that
+  match at T2 or better, as Cloud offers them. A body-only hit cannot be checked on the client, so
+  it waits for the server; links, which derive from the query, never stay. A view the user lost
+  access to in this session never shows, and neither does a picked target that pick memory joined
+  from the local index: those join only an answer to what is typed (see "Mention pick memory").
+- The skeleton shows only while that list is empty and a request is pending. Over results, a 2 px
+  progress bar shows instead (`role="progressbar"`, "Updating suggestions…"), and the list is not
+  `aria-busy`.
+- The answer to what is typed replaces the provisional list. People, Pages and Database rows are
+  ranked by the contract's client ranking (people classes and title tiers, then pick memory when it
+  is on, then the server's order), so a body-only hit never sits above a title match, also from an
+  older self-hosted server whose answers come in keyword order. Dates, Links and Databases keep the
+  server's order; Databases because Search also matches a database by the name of the view that
+  reached it, which the item does not carry. While a request of the answer is pending, or after it
+  failed, the provisional items of its kinds stay: the rows a slower rows request has not answered
+  yet, or the pages next to the "Suggestions unavailable · Retry" row.
+- "No result" shows only for an answer to what is typed, never for a provisional list that is
+  empty. A query that stays local under the contract scheduler's one-letter rule shows its
+  provisional list as its answer.
+- The highlight behaves as before: nothing is highlighted until ArrowUp or ArrowDown, it stays on
+  its item through merges, and a keystroke clears it. With
+  `localStorage.__mention_default_highlight = 'true'` as well, the first result is highlighted and
+  follows the top of the list as it is narrowed and answered, Enter inserts it, and ArrowUp or
+  ArrowDown holds the highlight on the item it moves to until the next keystroke.
+- The session report gives `selected_source: cache` for a pick from a provisional list, or for a
+  provisional item that an incomplete answer kept, and `time_to_first_paint_ms` counts a
+  provisional list as the first list with a result.
+
+The picker sends the same requests with the same headers to every server, with the switch on or
+off, and reads only item fields every released server sends (the kind, title, subtitle and mention
+payload ids).
