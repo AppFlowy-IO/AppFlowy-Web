@@ -148,6 +148,24 @@ function resolvePersonId(index: CommentPeopleIndex, id: string | null | undefine
   return uid ? index.byUid.get(uid)?.person_id : undefined;
 }
 
+/**
+ * The person ids that `ids` name in `roster`, as the ranked order resolves them: person ids in any
+ * letter case, or numeric uids through the roster's `uid`. An id that names no one is left out. The
+ * editor's @ picker reads who is on the page this way too (MEN-WEB-09).
+ */
+export function resolveMentionablePersonIds(roster: readonly MentionablePerson[], ids: Iterable<string>): Set<string> {
+  const index = indexPeople(roster);
+  const resolved = new Set<string>();
+
+  for (const id of ids) {
+    const personId = resolvePersonId(index, id);
+
+    if (personId) resolved.add(personId);
+  }
+
+  return resolved;
+}
+
 /** Cloud's display name: the address stands in for a name that is blank. */
 function sortName(person: MentionablePerson): string {
   const name = person.name ?? '';

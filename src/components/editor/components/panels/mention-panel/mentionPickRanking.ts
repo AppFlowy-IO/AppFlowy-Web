@@ -134,7 +134,11 @@ function keysOf(snapshot: MentionLocalSnapshot): LocalIndexKeys {
   return keys;
 }
 
-function localViewItem(view: MentionLocalView): MentionSearchResultItem | undefined {
+/**
+ * A local index view as the server would list it: a page, or a database by its database and the
+ * view Search answers for it. `undefined` for a database whose database id the index does not know.
+ */
+export function mentionLocalViewItem(view: MentionLocalView): MentionSearchResultItem | undefined {
   if (view.navKey.startsWith('database:')) {
     if (!view.databaseId) return undefined;
 
@@ -161,7 +165,7 @@ function localViewItem(view: MentionLocalView): MentionSearchResultItem | undefi
  * name is blank (decision D21, Cloud's `person_mention_item`), with the address as the subtitle. The
  * picker fills the page on insertion.
  */
-function localPersonItem(person: MentionablePerson): MentionSearchResultItem {
+export function mentionLocalPersonItem(person: MentionablePerson): MentionSearchResultItem {
   const name = person.name ?? '';
   const title = isMentionBlankText(name) && person.email ? person.email : name;
 
@@ -183,14 +187,14 @@ export function mentionLocalPickItem(snapshot: MentionLocalSnapshot, key: string
   if (key.startsWith('person:')) {
     const person = keysOf(snapshot).people.get(key.slice('person:'.length));
 
-    return person ? localPersonItem(person) : undefined;
+    return person ? mentionLocalPersonItem(person) : undefined;
   }
 
   if (!key.startsWith('page:') && !key.startsWith('database:')) return undefined;
 
   const view = keysOf(snapshot).views.get(key);
 
-  return view ? localViewItem(view) : undefined;
+  return view ? mentionLocalViewItem(view) : undefined;
 }
 
 /**

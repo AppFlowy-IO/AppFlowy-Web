@@ -84,6 +84,11 @@ export interface CachedMentionAnswer {
    * answers, the one with the larger sequence was asked for later.
    */
   sequence: number;
+  /**
+   * When it was stored, in epoch milliseconds. The picker's bare `@` patch lifts this tab's activity
+   * since shortly before (MEN-WEB-09).
+   */
+  cachedAt: number;
 }
 
 /**
@@ -103,7 +108,9 @@ function cachedMentionAnswer(key: string): CachedMentionAnswer | undefined {
   const entry = mentionSearchCache.get(key);
 
   // Every stored answer has a sequence; an entry without `cachedAt` only holds bookkeeping.
-  return entry?.cachedAt ? { sections: entry.sections, sequence: entry.sequence ?? 0 } : undefined;
+  return entry?.cachedAt
+    ? { sections: entry.sections, sequence: entry.sequence ?? 0, cachedAt: entry.cachedAt }
+    : undefined;
 }
 
 function createMentionSearchCacheView(version: number): MentionSearchCacheView {

@@ -444,7 +444,13 @@ function normalizeStringList(values?: string[]) {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean))).sort();
 }
 
+/**
+ * The cache key of one request. The opt-ins it sends are part of it, so an answer a server shaped
+ * for them never answers a request without them; a request that sends none keys as before.
+ */
 export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
+  const clientFeatures = normalizeStringList(request.client_features);
+
   return JSON.stringify({
     query: request.query?.trim().toLowerCase() ?? '',
     limit: request.limit && request.limit > 0 ? request.limit : null,
@@ -461,6 +467,7 @@ export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
       database_view_ids: normalizeStringList(request.filter?.database_view_ids),
       database_row_ids: normalizeStringList(request.filter?.database_row_ids),
     },
+    ...(clientFeatures.length > 0 ? { client_features: clientFeatures } : {}),
   });
 }
 
@@ -525,6 +532,8 @@ export function buildMentionSearchRequestsCacheKey(
 
 /** The section status a server sends when the section's source failed. Such a section has no items. */
 export const MENTION_SECTION_STATUS_FAILED = 'failed';
+/** The section status of an incomplete keyword result, or of People whose access lookup degraded. */
+export const MENTION_SECTION_STATUS_PARTIAL = 'partial';
 
 /** Whether the server reports that one of the response's sections failed. */
 export function hasFailedMentionSection(response: MentionSearchResponse) {
@@ -581,10 +590,17 @@ export function isCompleteMentionResponse(request: MentionSearchRequest, respons
 /**
  * Whether a response may be cached: no section failed, and it does not have the superseded shape,
  * whatever the request. A primary or bare answer of that shape is shown, but sent again next time,
- * so that an answer that may lack its objects is never kept.
+ * so that an answer that may lack its objects is never kept. A request that sent `client_features`
+ * opted in to degraded answers, which Cloud marks `partial`, so neither a `partial` answer nor one
+ * with a `partial` section is kept for it (Cloud's client opt-ins, MEN-CLOUD-12).
  */
 export function isCacheableMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
-  return !hasFailedMentionSection(response) && !isSupersededMentionResponse(request, response);
+  if (hasFailedMentionSection(response) || isSupersededMentionResponse(request, response)) return false;
+  if (!request.client_features?.length) return true;
+
+  return (
+    response.partial !== true && !response.sections.some((section) => section.status === MENTION_SECTION_STATUS_PARTIAL)
+  );
 }
 
 /**

@@ -420,6 +420,12 @@ export interface MentionSearchRequest {
   include?: MentionTargetKind[];
   context?: MentionSearchContext;
   filter?: MentionSearchFilter;
+  /**
+   * Opt-ins the server advertises in `ServerInfo.mention_features` and the client handles, such as
+   * `section_degradation_v1` (Cloud MEN-CLOUD-12). Omitted when there are none, so the request is the
+   * one released clients send; servers ignore values they do not know, and older ones the field.
+   */
+  client_features?: string[];
 }
 
 export interface MentionPayloadPerson {
