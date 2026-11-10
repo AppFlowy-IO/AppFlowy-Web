@@ -815,6 +815,51 @@ describe('MentionPanel keep-and-narrow first paint (MEN-WEB-08)', () => {
     expect(titles()).toEqual(['Road trip']);
   });
 
+  // PERMISSION_CHANGED names no view the user lost (a space's access or members, a role, a group),
+  // so no answer cached before it can be cleaned of one.
+  it('narrows no answer asked for before an access change that names no view', async () => {
+    const eventEmitter = new EventEmitter();
+    let lostRoadmap = false;
+    // Once the user lost Roadmap, the bare answer leaves it out, and comes slowly.
+    const bareReply = (): Reply =>
+      lostRoadmap ? { delayMs: 400, response: pages(BUDGET) } : { delayMs: 50, response: pages(ROADMAP, BUDGET) };
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') return bareReply();
+      if (lane === 'rows') return { delayMs: 50, response: EMPTY };
+      if (query === 'ro') return { delayMs: 50, response: pages(ROADMAP, ROAD_TRIP) };
+      return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+    });
+
+    mockEditorContext.eventEmitter = eventEmitter;
+
+    const first = await openPanel(search);
+
+    type(first, 'ro');
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap', 'Road trip']);
+    cleanup();
+
+    lostRoadmap = true;
+    eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+
+    const view = await openPanel(search, 0);
+
+    // The stale bare answer shows while it is asked for again, as before.
+    expect(titles()).toEqual(['Roadmap', 'Budget']);
+
+    // Neither it nor the cached answer to `ro` feeds the keystroke, nor stays when the search fails.
+    type(view, 'roa');
+    expect(titles()).toEqual([]);
+    await advance(300);
+    expect(retryRow()).not.toBeNull();
+    expect(titles()).toEqual([]);
+
+    // The bare answer asked for since does.
+    await advance(200);
+    type(view, 'bu');
+    expect(titles()).toEqual(['Budget']);
+  });
+
   it('reports a pick from the provisional list as a cached one, and the first paint with it', async () => {
     const search = createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER));
     const view = await openPanel(search);

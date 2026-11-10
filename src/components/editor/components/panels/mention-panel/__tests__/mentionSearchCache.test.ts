@@ -378,6 +378,32 @@ describe('mentionSearchCache', () => {
       expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('Roadmap')) });
     });
 
+    // PERMISSION_CHANGED names no view the user lost, so none can be dropped: the picker's v2 keeps
+    // such answers out of its provisional lists (MEN-WEB-08).
+    it('tells the answers to requests sent before PERMISSION_CHANGED apart, cached then or later', () => {
+      const eventEmitter = new EventEmitter();
+      const beforeAccessChange = () =>
+        ['road', 'ro', 'r'].map((key) => getMentionSearchCacheView().answer(key)?.beforeAccessChange);
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      setCachedMentionSections('road', pages(page('Roadmap')));
+
+      const sentBefore = mentionSearchCacheStamp();
+
+      expect(beforeAccessChange()).toEqual([false, undefined, undefined]);
+
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+      setCachedMentionSections('ro', pages(page('Roadmap')), sentBefore);
+      setCachedMentionSections('r', pages(page('Roadmap')), mentionSearchCacheStamp());
+
+      expect(beforeAccessChange()).toEqual([true, true, false]);
+      expect(getCachedMentionSearch('ro')).toMatchObject({ fresh: false });
+
+      // Other workspace events only make answers stale.
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {});
+      expect(beforeAccessChange()).toEqual([true, true, false]);
+    });
+
     it('drops a revoked view on VIEW_ACCESS_REVOKED', () => {
       const eventEmitter = new EventEmitter();
 

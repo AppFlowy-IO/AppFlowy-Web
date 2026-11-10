@@ -6,7 +6,8 @@
  *
  * Writers:
  * - `useMentionLocalIndexSources` (in `AppBusinessLayer`): the outline, the recent views and the
- *   trash, kept as references. Nothing is copied until a snapshot is read.
+ *   trash, kept as references. Nothing is copied until a snapshot is read. And the access changes
+ *   that name no view (`PERMISSION_CHANGED`).
  * - `usePageOperations`: creations (`addPage`), renames (`updatePageName`, and `updatePage` when the
  *   name changes), moves to trash and restores.
  * - `useViewOperations`: opens (`loadView` with awareness, where it also adds the view to the
@@ -19,6 +20,11 @@
  * dashboard-owned views, no row documents or row templates, and nothing in the trash, subtree
  * included: below a trashed view in the outline, below one through the parents of recent views
  * and creations, and in the subtree the outline showed when this tab moved a view to the trash.
+ *
+ * After an access change that names no view (a space's access or members, a member's role, a
+ * group), the outline reloads what it shows and decides for the views it lists, while the recent
+ * views loaded before may still list a page the user can no longer read: until they reload, a view
+ * only they list is no candidate.
  *
  * This tab's events show at once and give way to the sources once they catch up: a creation is
  * listed until the outline, the recent views or the trash list it; a rename shows until they show
@@ -185,6 +191,11 @@ interface WorkspaceIndex {
   goneFromTrash: Set<string>;
   /** Views this tab restored while the trash list showed them: its dropping them is no deletion. */
   restoring: Set<string>;
+  /**
+   * The recent views as they were when the user's access last changed in a way that names no view:
+   * until they reload, they list no candidate of their own.
+   */
+  untrustedRecent?: readonly View[];
   /** Changes with the sources and the session. */
   viewsVersion: number;
   /** Changes with everything, the roster included. */
@@ -578,6 +589,22 @@ export function recordMentionViewOpened(workspaceId: string, viewId: string, at 
   markChanged(index, true);
 }
 
+/**
+ * The user's access changed in a way that names no view they lost (`PERMISSION_CHANGED`: a space's
+ * access or members, a member's role, a group). The outline reloads with it and decides for the
+ * views it lists; the recent views loaded before may still list a page the user can no longer
+ * read, so until they reload, a view only they list is no candidate.
+ */
+export function recordMentionAccessChanged(workspaceId: string) {
+  const index = indexes.get(workspaceId);
+  const recent = index?.sources.recent;
+
+  if (!index || !recent || index.untrustedRecent === recent) return;
+
+  index.untrustedRecent = recent;
+  markChanged(index, true);
+}
+
 /** The roster the app loaded for a workspace. Kept for workspaces the app has not given the index yet. */
 export function recordMentionRoster(workspaceId: string, people: readonly MentionablePerson[]) {
   if (rosters.get(workspaceId) === people) return;
@@ -912,12 +939,16 @@ function buildViews(index: WorkspaceIndex): Omit<BuiltViews, 'version'> {
     return removed;
   };
 
+  // Recent views loaded before an access change that named no view still place views and give
+  // parents, but list none of their own until they reload.
+  const recentListsViews = recent !== index.untrustedRecent;
+
   recent?.forEach((view) => {
     const viewId = view.view_id;
 
     if (outlineViews.has(viewId) || recentOnly.has(viewId)) return;
     recentOnly.set(viewId, view);
-    if (isRemovedId(viewId)) return;
+    if (!recentListsViews || isRemovedId(viewId)) return;
 
     const entry = session.get(viewId);
     const parentViewId = view.parent_view_id;

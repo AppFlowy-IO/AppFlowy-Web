@@ -18,13 +18,15 @@ const MENTION_SEARCH_REVOKED_VIEW_LIMIT = 100;
  */
 export const MENTION_SEARCH_CACHE_FRESH_MS = 10_000;
 
-/** Workspace events after which a cached answer may be outdated, so its next use revalidates it. */
+/**
+ * Workspace events after which a cached answer may be outdated, so its next use revalidates it.
+ * `PERMISSION_CHANGED` does too, and more (see {@link markMentionSearchAccessChanged}).
+ */
 const MENTION_SEARCH_STALE_EVENTS = [
   APP_EVENTS.SECTION_CHANGED,
   APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED,
   APP_EVENTS.FOLDER_OUTLINE_CHANGED,
   APP_EVENTS.FOLDER_VIEW_CHANGED,
-  APP_EVENTS.PERMISSION_CHANGED,
 ];
 
 interface MentionSearchCacheEntry {
@@ -32,6 +34,8 @@ interface MentionSearchCacheEntry {
   cachedAt?: number;
   /** The send sequence of the request that `sections` answer. An older request's answer is ignored. */
   sequence?: number;
+  /** The cache generation that request was sent in ({@link MentionSearchCacheStamp}). */
+  generation?: number;
   /** An event may have changed the answer since it was cached, so its next use revalidates it. */
   stale?: boolean;
   retryLaterUntil?: number;
@@ -65,6 +69,9 @@ let cacheEpoch = 0;
 let cacheGeneration = 0;
 // Counts stamps and writes, in the order requests were sent.
 let cacheSequence = 0;
+// The generation of the latest access change that names no view (PERMISSION_CHANGED). An answer to a
+// request sent in an earlier generation may list a page the user can no longer read.
+let accessChangeGeneration = 0;
 // Each view the user lost access to and has not regained, with the generation its revoke started.
 // Answers to requests sent before may still list it, and so may the local index until its sources
 // catch up.
@@ -89,6 +96,11 @@ export interface CachedMentionAnswer {
    * since shortly before (MEN-WEB-09).
    */
   cachedAt: number;
+  /**
+   * Its request was sent before the user's access last changed in a way that names no view
+   * ({@link markMentionSearchAccessChanged}), so it may list a page the user can no longer read.
+   */
+  beforeAccessChange: boolean;
 }
 
 /**
@@ -107,9 +119,15 @@ export interface MentionSearchCacheView {
 function cachedMentionAnswer(key: string): CachedMentionAnswer | undefined {
   const entry = mentionSearchCache.get(key);
 
-  // Every stored answer has a sequence; an entry without `cachedAt` only holds bookkeeping.
+  // Every stored answer has a sequence and a generation; an entry without `cachedAt` only holds
+  // bookkeeping.
   return entry?.cachedAt
-    ? { sections: entry.sections, sequence: entry.sequence ?? 0, cachedAt: entry.cachedAt }
+    ? {
+        sections: entry.sections,
+        sequence: entry.sequence ?? 0,
+        cachedAt: entry.cachedAt,
+        beforeAccessChange: (entry.generation ?? 0) < accessChangeGeneration,
+      }
     : undefined;
 }
 
@@ -207,6 +225,7 @@ export function setCachedMentionSections(
     sections: stamp ? withoutRevokedMentionViews(sections, stamp) : sections,
     cachedAt: Date.now(),
     sequence,
+    generation: stamp?.generation ?? cacheGeneration,
     stale: stamp !== undefined && stamp.generation !== cacheGeneration,
   });
   cachedAnswersChanged();
@@ -219,6 +238,18 @@ export function markMentionSearchCacheStale() {
     mentionSearchCache.set(key, { ...entry, stale: true });
   });
   cachedAnswersChanged();
+}
+
+/**
+ * The user's access changed in a way that names no view they lost (`PERMISSION_CHANGED`: a space's
+ * access or members, a member's role, a group). Marks every answer stale, as other workspace events
+ * do, and the answers to requests sent before, cached now or later, as asked for before the change
+ * ({@link CachedMentionAnswer.beforeAccessChange}): they may list a page the user can no longer
+ * read, and no view can be dropped from them.
+ */
+export function markMentionSearchAccessChanged() {
+  markMentionSearchCacheStale();
+  accessChangeGeneration = cacheGeneration;
 }
 
 /** The ids an item shows a view by: the page, the database view, or the view a row is shown through. */
@@ -359,6 +390,7 @@ export function subscribeMentionSearchCacheInvalidation(eventEmitter: EventEmitt
   MENTION_SEARCH_STALE_EVENTS.forEach((event) => {
     eventEmitter.on(event, () => markMentionSearchCacheStale());
   });
+  eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, () => markMentionSearchAccessChanged());
   eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, (payload?: { viewId?: string }) => {
     if (payload?.viewId) forgetMentionSearchView(payload.viewId);
     else markMentionSearchCacheStale();

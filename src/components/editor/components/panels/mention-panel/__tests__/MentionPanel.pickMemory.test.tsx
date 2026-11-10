@@ -28,7 +28,12 @@ import { PanelProvider } from '@/components/editor/components/panels/PanelsConte
 import { getConfigValue } from '@/utils/runtime-config';
 import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
-import { clearMentionLocalIndex, recordMentionRoster, setMentionIndexSources } from '../mentionLocalIndex';
+import {
+  clearMentionLocalIndex,
+  recordMentionAccessChanged,
+  recordMentionRoster,
+  setMentionIndexSources,
+} from '../mentionLocalIndex';
 import { MentionPanel } from '../MentionPanel';
 import { MENTION_PICK_MEMORY_OVERRIDE_KEY, MENTION_PICK_MEMORY_STORAGE_PREFIX } from '../mentionPickMemory';
 import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
@@ -561,6 +566,42 @@ describe('MentionPanel pick memory', () => {
         eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: uuid(revokedN) });
       });
       expect(shownTitles()).toEqual(['Roadmap']);
+    });
+
+    // Cloud signals a space, member or group change to every user (ObjectAccessChanged), which the
+    // app turns into PERMISSION_CHANGED naming no view the user lost. The outline reloads without
+    // the space's pages, and the app's sources hook tells the index (`recordMentionAccessChanged`).
+    it('keeps a picked page only the recent views loaded before list out after an access change', async () => {
+      const eventEmitter = new EventEmitter();
+      const picked: View = { ...outlineView(2, 'Roadmap 2026'), parent_view_id: uuid(10) };
+      const space: View = { ...outlineView(10, 'Team space'), extra: { is_space: true }, children: [picked] };
+      const recent = [picked];
+
+      mockEditorContext.eventEmitter = eventEmitter;
+      eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, () => recordMentionAccessChanged(WORKSPACE));
+      setMentionIndexSources(WORKSPACE, { outline: [space], recent });
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+
+      // The user loses the space: the server leaves the page out and the outline drops it, while the
+      // recent views, which reload only on demand, still list it.
+      typedPages = [ROADMAP, ROADMAP_Q4];
+      clearMentionSearchCacheForTests();
+      setMentionIndexSources(WORKSPACE, { outline: [], recent });
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: uuid(10), reason: 0 });
+      });
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+
+      // Recent views loaded since list it again: the user can read it, and the picked page joins.
+      await act(async () => {
+        setMentionIndexSources(WORKSPACE, { outline: [], recent: [picked] });
+      });
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+      expect(insertedPageIds()).toEqual([uuid(2)]);
     });
 
     it('titles a databases-only answer, and a picked database that joins an empty one, as Pages', async () => {

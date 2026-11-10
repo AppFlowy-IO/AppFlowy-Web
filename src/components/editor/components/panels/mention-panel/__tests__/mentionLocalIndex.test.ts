@@ -17,6 +17,7 @@ import {
   getMentionLocalSnapshot,
   MENTION_LOCAL_SESSION_LIMIT,
   MentionLocalSnapshot,
+  recordMentionAccessChanged,
   recordMentionRoster,
   recordMentionViewCreated,
   recordMentionViewDeleted,
@@ -338,6 +339,82 @@ describe('mentionLocalIndex candidates', () => {
     refreshOutline(outline);
 
     expect(ids().filter((viewId) => viewId === 'roadmap')).toHaveLength(1);
+  });
+});
+
+// A space's access or members, a member's role or a group changed (PERMISSION_CHANGED): the app
+// names no view the user lost, the outline reloads, and the recent views loaded before stay.
+describe('mentionLocalIndex access changes', () => {
+  const recentViews = () => [
+    view('roadmap', { name: 'Roadmap', parent_view_id: 'space', last_viewed_at: '2026-11-09T10:00:00Z' }),
+    view('deep', { name: 'Deep page', parent_view_id: 'beyond-depth' }),
+  ];
+
+  it('lists no view that only the recent views loaded before list, until they reload', () => {
+    const recent = recentViews();
+
+    refreshOutline(fixtureOutline(), { trash: TRASH, recent });
+    expect(listedOf(['roadmap', 'notes', 'deep'])).toEqual(['roadmap', 'notes', 'deep']);
+
+    const before = getMentionLocalSnapshot(WS);
+
+    recordMentionAccessChanged(WS);
+
+    // The outline decides for the views it lists, and the recent views still time them.
+    expect(getMentionLocalSnapshot(WS)).not.toBe(before);
+    expect(listedOf(['roadmap', 'notes', 'deep'])).toEqual(['roadmap', 'notes']);
+    expect(local('roadmap')?.lastViewedAt).toBe(Date.parse('2026-11-09T10:00:00Z'));
+
+    // The reloaded outline drops the page the user lost; the recent views still list it.
+    refreshOutline(outlineWithoutRoadmap(), { trash: TRASH, recent });
+    expect(listedOf(['roadmap', 'notes', 'deep'])).toEqual([]);
+
+    // Recent views loaded since reflect the user's access.
+    refreshOutline(outlineWithoutRoadmap(), { trash: TRASH, recent: recentViews().slice(1) });
+    expect(listedOf(['roadmap', 'notes', 'deep'])).toEqual(['deep']);
+  });
+
+  it('keeps out a creation that only those recent views list', () => {
+    const recent = [...recentViews(), view('fresh', { name: 'Fresh', parent_view_id: 'space' })];
+
+    refreshOutline(fixtureOutline(), { trash: TRASH });
+    recordMentionViewCreated(WS, { viewId: 'fresh', name: 'Fresh', layout: ViewLayout.Document, parentViewId: 'space' });
+    refreshOutline(fixtureOutline(), { trash: TRASH, recent });
+    expect(listedOf(['fresh'])).toEqual(['fresh']);
+
+    recordMentionAccessChanged(WS);
+    expect(listedOf(['fresh'])).toEqual([]);
+
+    // Once the outline lists it, the user can read it.
+    const outline = fixtureOutline();
+
+    outline[0].children.push(view('fresh', { name: 'Fresh', parent_view_id: 'space' }));
+    refreshOutline(outline, { trash: TRASH, recent });
+    expect(local('fresh')).toEqual(expect.objectContaining({ source: 'outline', sessionCreatedAt: expect.any(Number) }));
+  });
+
+  it('changes nothing without recent views, for another workspace, or twice for the same ones', () => {
+    recordMentionAccessChanged(WS);
+    expect(getMentionLocalSnapshot(WS)).toBe(EMPTY_MENTION_LOCAL_SNAPSHOT);
+
+    refreshOutline(fixtureOutline(), { trash: TRASH });
+
+    const withoutRecent = getMentionLocalSnapshot(WS);
+
+    recordMentionAccessChanged(WS);
+    recordMentionAccessChanged(OTHER_WS);
+    expect(getMentionLocalSnapshot(WS)).toBe(withoutRecent);
+
+    // Recent views loaded after the change are trusted.
+    refreshOutline(fixtureOutline(), { trash: TRASH, recent: recentViews() });
+    expect(listedOf(['deep'])).toEqual(['deep']);
+
+    recordMentionAccessChanged(WS);
+
+    const changed = getMentionLocalSnapshot(WS);
+
+    recordMentionAccessChanged(WS);
+    expect(getMentionLocalSnapshot(WS)).toBe(changed);
   });
 });
 

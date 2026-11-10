@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { View } from '@/application/types';
 import {
   clearMentionLocalIndex,
   MentionIndexSources,
+  recordMentionAccessChanged,
   setMentionIndexSources,
 } from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
+
+import type { EventEmitter } from 'events';
 
 interface GivenSources {
   workspaceId?: string;
@@ -24,6 +28,10 @@ interface GivenSources {
  * After a switch, `useWorkspaceData` resets the outline and the trash in an effect, so for a commit
  * they are still the previous workspace's. The new workspace gets none of the references the
  * previous one left until they change.
+ *
+ * It also tells the index of the access changes that name no view (`PERMISSION_CHANGED` on
+ * `eventEmitter`), after which the recent views loaded before list no candidate of their own until
+ * they reload (`recordMentionAccessChanged`).
  */
 export function useMentionLocalIndexSources({
   workspaceId,
@@ -31,12 +39,14 @@ export function useMentionLocalIndexSources({
   outline,
   recentViews,
   trashList,
+  eventEmitter,
 }: {
   workspaceId?: string;
   requesterId?: string;
   outline?: View[];
   recentViews?: View[];
   trashList?: View[];
+  eventEmitter?: EventEmitter;
 }) {
   const givenRef = useRef<GivenSources>({ latest: {}, carried: {} });
 
@@ -74,4 +84,15 @@ export function useMentionLocalIndexSources({
       trash: trashList === carried.trash ? undefined : trashList,
     });
   }, [workspaceId, requesterId, outline, recentViews, trashList]);
+
+  useEffect(() => {
+    if (!workspaceId || !eventEmitter) return;
+
+    const accessChanged = () => recordMentionAccessChanged(workspaceId);
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, accessChanged);
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, accessChanged);
+    };
+  }, [eventEmitter, workspaceId]);
 }

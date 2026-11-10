@@ -1125,6 +1125,8 @@ export function MentionPanel({
   // answer of its longest typed prefix and the cached bare answer. Date and reminder quick picks come
   // from the newer of the two cached answers, never from the screen. With the local lane, a view
   // below a view the user lost access to is left out too, as far as the local index knows parents.
+  // A cached answer asked for before an access change that names no view (`PERMISSION_CHANGED`)
+  // may list a page the user can no longer read, so neither it nor the list it shows feeds them.
   const provisionalNarrowed = useMemo(() => {
     if (!typeaheadV2 || !hasMentionSearchQuery) return NO_MENTION_SECTIONS;
 
@@ -1136,8 +1138,14 @@ export function MentionPanel({
             { workspaceId, userId: currentUser?.uuid }
           )
         : undefined;
-    const prefix = longestCachedMentionPrefix(query, prefixKey, mentionCacheView.answer);
-    const bare = mentionCacheView.answer(bareMentionSearchCacheKey);
+    const answerSinceAccessChange = (key: string) => {
+      const answer = mentionCacheView.answer(key);
+
+      return answer?.beforeAccessChange ? undefined : answer;
+    };
+
+    const prefix = longestCachedMentionPrefix(query, prefixKey, answerSinceAccessChange);
+    const bare = answerSinceAccessChange(bareMentionSearchCacheKey);
     const belowRevoked = (item: MentionSearchResultItem) =>
       localLane &&
       revokedViews.size > 0 &&
@@ -1279,15 +1287,22 @@ export function MentionPanel({
   const sourceMentionSections = mentionV2View ? mentionV2View.sections : sectionsByPicks.sections;
   // The items the local index added, which a session report counts as the local lane's.
   const pickLocalKeys = mentionV2View ? mentionV2View.localKeys : sectionsByPicks.localKeys;
+  // The list shows a cached answer asked for before an access change that names no view, as the
+  // picker shows a stale answer while it asks again: it feeds no provisional list.
+  const showsAnswerBeforeAccessChange =
+    typeaheadV2 &&
+    (!showsCurrentAnswer || mentionSectionsSource === 'cache') &&
+    mentionCacheView.answer(mentionSearchCacheKey)?.beforeAccessChange === true;
 
   // After each commit, remember what the list shows for the next keystroke, without the items the
   // local index added: picked targets join only an answer to what is typed (MEN-WEB-10), and the
   // local lane adds its own items to every keystroke again (MEN-WEB-09).
   useLayoutEffect(() => {
-    shownSectionsRef.current = mentionV2View
-      ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
-      : NO_MENTION_SECTIONS;
-  }, [mentionV2View]);
+    shownSectionsRef.current =
+      mentionV2View && !showsAnswerBeforeAccessChange
+        ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
+        : NO_MENTION_SECTIONS;
+  }, [mentionV2View, showsAnswerBeforeAccessChange]);
   // The sections as the picker lays them out (MentionSectionLayout). A server's are titled by kind,
   // in the user's language, never with the English titles servers send (MEN-WEB-12), and Dates by
   // the items it shows: "Date & Reminder" while it lists a reminder, as servers title it. The local

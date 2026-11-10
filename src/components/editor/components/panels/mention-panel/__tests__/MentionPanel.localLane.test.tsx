@@ -29,6 +29,7 @@ import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 import { MentionPanel } from '../MentionPanel';
 import {
   clearMentionLocalIndex,
+  recordMentionAccessChanged,
   recordMentionRoster,
   recordMentionViewCreated,
   recordMentionViewOpened,
@@ -1061,6 +1062,46 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
 
     type(panel, 'road');
     expect(titles()).toEqual(['Roadmap']);
+  });
+
+  // Cloud signals a space, member or group change to every user (ObjectAccessChanged), which the app
+  // turns into PERMISSION_CHANGED naming no view the user lost. The outline reloads without the
+  // space's pages, and the app's sources hook tells the index (`recordMentionAccessChanged`).
+  it('keeps a page only the recent views loaded before list out of the lane after an access change', async () => {
+    const emitter = new EventEmitter();
+    const secret = view('secret', 'Roadmap secret', { parent_view_id: 'space' });
+    const recent = [secret];
+
+    mockEditorContext.eventEmitter = emitter;
+    emitter.on(APP_EVENTS.PERMISSION_CHANGED, () => recordMentionAccessChanged(WORKSPACE));
+    setMentionIndexSources(WORKSPACE, {
+      outline: [view('space', 'Team space', { children: [secret], extra: { is_space: true } as View['extra'] })],
+      recent,
+    });
+    setMentionIndexSources(WORKSPACE, { outline: [], recent });
+    act(() => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+    });
+
+    // The server answers for a user who can no longer read the page.
+    const panel = await openPanel(
+      createSearch((lane) =>
+        lane === 'bare'
+          ? { delayMs: 50, response: pages(ALPHA) }
+          : { delayMs: 200, response: pages(page('a', 'Road A')) }
+      )
+    );
+
+    type(panel, 'road');
+    expect(titles()).toEqual([]);
+    await advance(1_000);
+    expect(titles()).toEqual(['Road A']);
+
+    // Recent views loaded since list it again: the user can read it.
+    act(() => {
+      setMentionIndexSources(WORKSPACE, { outline: [], recent: [secret] });
+    });
+    expect(titles()).toEqual(['Road A', 'Roadmap secret']);
   });
 
   describe('client_features', () => {

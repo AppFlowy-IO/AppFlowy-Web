@@ -1,5 +1,7 @@
 import { renderHook } from '@testing-library/react';
+import { EventEmitter } from 'events';
 
+import { APP_EVENTS } from '@/application/constants';
 import { View, ViewLayout } from '@/application/types';
 import {
   clearMentionLocalIndex,
@@ -115,5 +117,24 @@ describe('useMentionLocalIndexSources', () => {
 
     renderSources({ outline: [page('a-page')] });
     expect(getMentionLocalSnapshot('A')).toBe(EMPTY_MENTION_LOCAL_SNAPSHOT);
+  });
+
+  // PERMISSION_CHANGED names no view the user lost: the recent views loaded before may list one.
+  it('lists no view only the recent views list after an access change, until they reload', () => {
+    const eventEmitter = new EventEmitter();
+    const outline = [page('a-page')];
+    const props = { workspaceId: 'A', requesterId: 'user-1', outline, eventEmitter };
+    const { rerender, unmount } = renderSources({ ...props, recentViews: [page('a-page'), page('a-recent')] });
+
+    expect(ids('A')).toEqual(['a-page', 'a-recent']);
+
+    eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+    expect(ids('A')).toEqual(['a-page']);
+
+    rerender({ ...props, recentViews: [page('a-page'), page('a-recent')] });
+    expect(ids('A')).toEqual(['a-page', 'a-recent']);
+
+    unmount();
+    expect(eventEmitter.listenerCount(APP_EVENTS.PERMISSION_CHANGED)).toBe(0);
   });
 });

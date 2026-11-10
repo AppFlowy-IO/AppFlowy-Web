@@ -263,6 +263,9 @@ while it is off the picker neither records nor reads picks.
   recent views' parents and this tab's creations). The one exception: a page two or more levels
   below, which the recent views still list, can join while a page in between is listed by no
   source, until the recent views reload.
+- Access can also change without the app naming a page: a space's access or members, a member's
+  role or a group (`PERMISSION_CHANGED`). The outline reloads with it and decides for the pages it
+  lists, so from then until the recent views reload, a picked page only they list never joins.
 - The memory stays on the device, under `af.mention.pick-memory.v1:<workspace_id>:<uid>`: normalized
   inputs of at most 32 code points, navigation keys, counts and times, no title, name or address.
   An explicit sign-out removes the user's memories in every workspace; a session that expires keeps
@@ -303,6 +306,9 @@ behaves as before.
   it waits for the server; links, which derive from the query, never stay. A view the user lost
   access to in this session never shows, and neither does a picked target that pick memory joined
   from the local index: those join only an answer to what is typed (see "Mention pick memory").
+  After an access change that names no page (`PERMISSION_CHANGED`: a space's access or members, a
+  member's role, a group), an answer asked for before it narrows into no provisional list, and
+  neither does the list it shows while the picker asks again: it may list a page the user lost.
 - The skeleton shows only while that list is empty and a request is pending. Over results, a 2 px
   progress bar shows instead (`role="progressbar"`, "Updating suggestions…"), and the list is not
   `aria-busy`.
@@ -380,7 +386,9 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   the page being edited excepted.
 - A page or database the user lost access to in the session never comes from the tab, nor does one
   below it, as far as the local index knows the pages above it; a provisional list leaves out a
-  server item below it too.
+  server item below it too. After an access change that names no page (`PERMISSION_CHANGED`), the
+  outline reloads and decides for the pages it lists, and until the recent views reload, no page
+  comes from them alone, as they may list one the user lost.
 
 The picker loads nothing for the local lane: it reads the outline, recent views and roster the app
 already loaded. Requests carry `client_features` with the opt-ins the server lists in
