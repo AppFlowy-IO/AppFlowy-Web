@@ -5,6 +5,8 @@ import { useContext } from 'react';
 import { UserService } from '@/application/services/domains';
 import { clearHttpResponseCaches } from '@/application/services/js-services/http/core';
 import { emit, EventType } from '@/application/session';
+import { signOutCurrentUser } from '@/application/session/sign-out';
+import { mentionPickMemoryStorageKey } from '@/components/editor/components/panels/mention-panel/mentionPickMemory';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
 import { useServerErrorCatalog } from '@/components/main/hooks/useServerErrorCatalog';
@@ -51,6 +53,7 @@ jest.mock('@/application/services/js-services/http/core', () => ({
 // Mirrors the real module: a stored token only parses when it resolves to a
 // stable user id, so "no user identity" and "no token" are the same outcome.
 jest.mock('@/application/session/token', () => ({
+  invalidToken: jest.fn(),
   getTokenParsed: jest.fn(() =>
     mockTokenValid && mockUserId
       ? {
@@ -266,5 +269,27 @@ describe('AppConfig authentication startup', () => {
     expect(screen.getByTestId('authentication-state').textContent).toBe('false');
     expect(screen.getByTestId('authenticated-user-id').textContent).toBe('none');
     expect(mockClearHttpResponseCaches).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the @-mention pick memory of the user who signs out, and nobody else's", () => {
+    const mine = mentionPickMemoryStorageKey('workspace-1', '7') ?? '';
+    const theirs = mentionPickMemoryStorageKey('workspace-1', '8') ?? '';
+    const store = () => [mine, theirs].forEach((key) => localStorage.setItem(key, '{"v":1,"e":[]}'));
+    const { unmount } = render(
+      <AppConfig>
+        <AuthenticationState />
+      </AppConfig>
+    );
+
+    store();
+    signOutCurrentUser('7');
+    expect(localStorage.getItem(mine)).toBeNull();
+    expect(localStorage.getItem(theirs)).not.toBeNull();
+
+    // The app root registered the cleanup, so it goes with the root.
+    unmount();
+    store();
+    signOutCurrentUser('7');
+    expect(localStorage.getItem(mine)).not.toBeNull();
   });
 });

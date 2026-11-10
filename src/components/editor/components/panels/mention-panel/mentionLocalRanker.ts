@@ -39,10 +39,13 @@ import {
   normalizeMentionText,
 } from '@/utils/normalize-text';
 
+import { MENTION_PICK_SCALE } from './mentionPickMemory';
 import { mentionItemNavKey } from './mentionUtils';
 
 /** The navigation key of a server item (MEN-WEB-02), which ranking ties break on and merges key by. */
 export { mentionItemNavKey };
+/** `adaptive` is in millionths: 1,000,000 is pick memory's full score. */
+export { MENTION_PICK_SCALE };
 
 /** Query tokens word-start matching assigns; a longer query matches only as a whole. */
 export const MENTION_MAX_MATCH_TOKENS = 12;
@@ -50,8 +53,6 @@ export const MENTION_MAX_MATCH_TOKENS = 12;
 export const MENTION_MAX_MATCH_WORDS = 64;
 /** The tier of a server item whose title or name does not match: T4, or after C3 for people. */
 export const MENTION_UNMATCHED_SERVER_TIER = 4;
-/** `adaptive` is in millionths: 1,000,000 is pick memory's full score. */
-export const MENTION_PICK_SCALE = 1_000_000;
 
 /** T0 exact, T1 prefix, T2 word start (or CJK contains), T3 substring; C0 to C3 for people. */
 export type MentionTier = 0 | 1 | 2 | 3;
