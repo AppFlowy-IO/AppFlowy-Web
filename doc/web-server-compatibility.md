@@ -360,13 +360,17 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   follow them. The page being edited (the request's `context.view_id`; for a Text cell, the
   database view it is edited in) gets no recency: opening it made it the tab's latest open, but it
   is rarely its own mention target, and Search gives it no personal score either.
-- A bare `@` keeps the server's order and lists no other item, except that the pages and databases
-  this tab opened or created since a minute before the answer arrived come first, the newest first:
-  another Cloud replica can answer from a bare answer up to a minute old, and Cloud lists no page
-  that was created but never opened. The page being edited is never lifted; it stays where the
-  server puts it. People follow the same rule: the people this tab picked in the session come
-  first, then up to three people on the page, then the server's order, with the requester last as
-  the server puts them.
+- A bare `@` keeps the server's order and lists no other item, except that this tab's recent
+  activity comes first, the newest first: the pages and databases it opened since a minute before
+  the answer arrived, since another Cloud replica can answer from a bare answer up to a minute old,
+  and those it created in the last 15 minutes and has not opened, such as a sub-page the slash menu
+  added, however new the answer is: Cloud's bare answer lists only the user's opens and the page
+  being edited, so it lists such a page only once the user opens it. The cached paint and every
+  answer lift the same creations. A lifted database leads the databases, which the picker lists
+  after the pages, as it lists the server's. The page being edited is never lifted; it stays where
+  the server puts it. People follow the same rule: the people this tab picked in the session come
+  first, then up to three people on the page whom the answer or the roster lists, then the
+  server's order, with the requester last as the server puts them.
 - When a search fails or times out, the "Suggestions unavailable · Retry" row shows under the
   tab's matches, never "No result". A bare `@` that fails lists this tab's opens and creations,
   the page being edited excepted.

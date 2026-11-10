@@ -18,6 +18,7 @@ import {
   buildMentionLocalLane,
   clearMentionSessionPersonPicks,
   getMentionSessionPersonPicks,
+  MENTION_BARE_CREATION_LIFT_MS,
   MENTION_BARE_PRESENT_LIFT,
   MENTION_SESSION_PICK_LIMIT,
   MentionLaneItem,
@@ -130,16 +131,19 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
         presentPersonIds: new Set([uuid(2)]),
         personPicks: new Map([[uuid(1), NOW - MINUTE]]),
       });
-      const summary = lane.map(({ key, title, email, icon, changedMs, lastUsedMs, tabUsedMs, present }) => ({
-        key,
-        title,
-        email,
-        icon,
-        changedMs,
-        lastUsedMs,
-        tabUsedMs,
-        present,
-      }));
+      const summary = lane.map(
+        ({ key, title, email, icon, changedMs, lastUsedMs, tabOpenedMs, tabCreatedMs, present }) => ({
+          key,
+          title,
+          email,
+          icon,
+          changedMs,
+          lastUsedMs,
+          tabOpenedMs,
+          tabCreatedMs,
+          present,
+        })
+      );
 
       expect(summary).toEqual([
         {
@@ -150,7 +154,8 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
           changedMs: undefined,
           // This tab's open is newer than the server's view time.
           lastUsedMs: NOW - 2 * MINUTE,
-          tabUsedMs: NOW - 2 * MINUTE,
+          tabOpenedMs: NOW - 2 * MINUTE,
+          tabCreatedMs: undefined,
           present: undefined,
         },
         {
@@ -160,7 +165,8 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
           icon: null,
           changedMs: NOW - 4 * MINUTE,
           lastUsedMs: undefined,
-          tabUsedMs: undefined,
+          tabOpenedMs: undefined,
+          tabCreatedMs: undefined,
           present: undefined,
         },
         {
@@ -170,7 +176,9 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
           icon: null,
           changedMs: NOW - MINUTE,
           lastUsedMs: NOW - MINUTE,
-          tabUsedMs: NOW - MINUTE,
+          // Created and never opened: Cloud's bare answer does not list it.
+          tabOpenedMs: undefined,
+          tabCreatedMs: NOW - MINUTE,
           present: undefined,
         },
         {
@@ -181,7 +189,8 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
           changedMs: undefined,
           // The tab's pick is newer than the server's last mention.
           lastUsedMs: NOW - MINUTE,
-          tabUsedMs: undefined,
+          tabOpenedMs: undefined,
+          tabCreatedMs: undefined,
           present: false,
         },
         {
@@ -191,7 +200,8 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
           icon: null,
           changedMs: undefined,
           lastUsedMs: undefined,
-          tabUsedMs: undefined,
+          tabOpenedMs: undefined,
+          tabCreatedMs: undefined,
           present: true,
         },
       ]);
@@ -270,29 +280,54 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
       recordMentionViewRenamed(WORKSPACE, 'current', 'Road trip 2027', NOW - MINUTE);
       // Opening the page being edited made it this tab's latest open.
       recordMentionViewOpened(WORKSPACE, 'current', NOW - 1_000);
+      // A page this tab created, which the editor may show next.
+      recordMentionViewCreated(
+        WORKSPACE,
+        { viewId: 'draft', name: 'Road draft', layout: ViewLayout.Document },
+        NOW - 30_000
+      );
 
       const signals = (contextViewId?: string) =>
         buildMentionLocalLane({ snapshot: getMentionLocalSnapshot(WORKSPACE), contextViewId }).map(
-          ({ key, title, changedMs, lastUsedMs, tabUsedMs }) => [key, title, changedMs, lastUsedMs, tabUsedMs]
+          ({ key, title, changedMs, lastUsedMs, tabOpenedMs, tabCreatedMs }) => [
+            key,
+            title,
+            changedMs,
+            lastUsedMs,
+            tabOpenedMs,
+            tabCreatedMs,
+          ]
         );
-      const atlas = ['page:atlas', 'Road atlas', undefined, NOW - 3 * MINUTE, NOW - 3 * MINUTE];
-      const tasks = ['database:db:tasks-grid', 'Tasks', undefined, NOW - 2 * MINUTE, NOW - 2 * MINUTE];
+      const atlas = ['page:atlas', 'Road atlas', undefined, NOW - 3 * MINUTE, NOW - 3 * MINUTE, undefined];
+      const tasks = ['database:db:tasks-grid', 'Tasks', undefined, NOW - 2 * MINUTE, NOW - 2 * MINUTE, undefined];
+      const draft = ['page:draft', 'Road draft', NOW - 30_000, NOW - 30_000, undefined, NOW - 30_000];
 
       expect(signals()).toEqual([
-        ['page:current', 'Road trip 2027', NOW - MINUTE, NOW - 1_000, NOW - 1_000],
+        ['page:current', 'Road trip 2027', NOW - MINUTE, NOW - 1_000, NOW - 1_000, undefined],
         atlas,
         tasks,
+        draft,
       ]);
       // As the context it keeps its title and when it changed, but neither this tab's open nor the
       // server's view time.
       expect(signals('current')).toEqual([
-        ['page:current', 'Road trip 2027', NOW - MINUTE, undefined, undefined],
+        ['page:current', 'Road trip 2027', NOW - MINUTE, undefined, undefined, undefined],
         atlas,
         tasks,
+        draft,
       ]);
+      // Nor this tab's creation.
+      expect(signals('draft')[3]).toEqual(['page:draft', 'Road draft', NOW - 30_000, undefined, undefined, undefined]);
       // A Text cell's editor shows the database view Search answers for, or the container lists it.
       ['tasks-grid', 'tasks'].forEach((contextViewId) =>
-        expect(signals(contextViewId)[2]).toEqual(['database:db:tasks-grid', 'Tasks', undefined, undefined, undefined])
+        expect(signals(contextViewId)[2]).toEqual([
+          'database:db:tasks-grid',
+          'Tasks',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ])
       );
     });
 
@@ -388,24 +423,40 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
       nowMs: NOW,
     };
 
-    it("lifts this tab's opens and creations since the cutoff, newest first, the server's own items moved", () => {
+    it("lifts this tab's opens since the cutoff and its unopened creations, newest first, server items moved", () => {
       const sections = [section(MentionSearchSectionKind.Pages, [page('a', 'Alpha'), page('b', 'Beta')])];
+      const created = (at: number) => ({ tabCreatedMs: at, changedMs: at });
       const lane = [
         laneEntry('page:a', 'Alpha'),
-        laneEntry('page:b', 'Beta', { tabUsedMs: NOW - 2_000 }),
-        laneEntry('page:c', 'Gamma', { tabUsedMs: NOW - 1_000, changedMs: NOW - 1_000 }),
-        laneEntry('page:d', 'Delta', { tabUsedMs: NOW - 5 * MINUTE }),
+        laneEntry('page:b', 'Beta', { tabOpenedMs: NOW - 2_000 }),
+        laneEntry('page:c', 'Gamma', created(NOW - 1_000)),
+        // An open before the cutoff: the answer reflects it.
+        laneEntry('page:d', 'Delta', { tabOpenedMs: NOW - 5 * MINUTE }),
+        // A creation before the cutoff that the tab never opened: no answer lists it.
+        laneEntry('page:e', 'Epsilon', created(NOW - 4 * MINUTE)),
+        // One older than the creations' window.
+        laneEntry('page:f', 'Phi', created(NOW - MENTION_BARE_CREATION_LIFT_MS - 1)),
+        // A creation the tab opened before the cutoff: the answer reflects the open.
+        laneEntry('page:g', 'Gamma 2', { ...created(NOW - 10 * MINUTE), tabOpenedMs: NOW - 9 * MINUTE }),
       ];
       const patched = patchMentionBareSections({ ...base, sections, lane, liftAfterMs: NOW - MINUTE });
 
-      expect(keysOf(patched.sections)).toEqual([['pages', ['page:c', 'page:b', 'page:a']]]);
-      expect([...patched.localKeys]).toEqual(['page:c']);
-      expect([...patched.freshKeys]).toEqual(['page:c']);
+      expect(keysOf(patched.sections)).toEqual([['pages', ['page:c', 'page:b', 'page:e', 'page:a']]]);
+      expect([...patched.localKeys]).toEqual(['page:c', 'page:e']);
+      expect([...patched.freshKeys]).toEqual(['page:c', 'page:e']);
+      // An answer cached 4 minutes ago lifts the opens since a minute before it, and the same
+      // creations: their window does not depend on the answer's age.
+      expect(
+        keysOf(patchMentionBareSections({ ...base, sections, lane, liftAfterMs: NOW - 5 * MINUTE }).sections)
+      ).toEqual([['pages', ['page:c', 'page:b', 'page:e', 'page:d', 'page:a']]]);
+      expect(MENTION_BARE_CREATION_LIFT_MS).toBe(15 * MINUTE);
 
       // Without an answer, as after a failure, every open and creation of this tab counts.
       const fallback = patchMentionBareSections({ ...base, sections: [], lane });
 
-      expect(keysOf(fallback.sections)).toEqual([['pages', ['page:c', 'page:b', 'page:d']]]);
+      expect(keysOf(fallback.sections)).toEqual([
+        ['pages', ['page:c', 'page:b', 'page:e', 'page:d', 'page:g', 'page:f']],
+      ]);
       expect(fallback.sections[0].title).toBe('title:pages');
     });
 
@@ -434,7 +485,10 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
       const patched = patchMentionBareSections({
         ...base,
         sections,
-        lane: [laneEntry('page:a', 'Alpha', { tabUsedMs: NOW - 5 * MINUTE })],
+        lane: [
+          laneEntry('page:a', 'Alpha', { tabOpenedMs: NOW - 5 * MINUTE }),
+          laneEntry('page:z', 'Zed', { tabCreatedMs: NOW - 20 * MINUTE }),
+        ],
         liftAfterMs: NOW - MINUTE,
       });
 
@@ -475,9 +529,34 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
       expect(MENTION_BARE_PRESENT_LIFT).toBe(3);
     });
 
+    it('lifts only people on the page whom the answer or the roster lists, those only the roster lists by name', () => {
+      const [anna, bob, wang, zoe] = [person(1, 'Anna'), person(2, 'Bob'), person(3, '王小明'), person(4, 'zoe')];
+
+      setMentionIndexSources(WORKSPACE, { outline: [] });
+      recordMentionRoster(WORKSPACE, [anna, bob, wang, zoe]);
+
+      const snapshot = getMentionLocalSnapshot(WORKSPACE);
+      // Three collaborators who joined after the roster loaded, whom neither it nor the answer lists,
+      // and three roster members, one of whom the answer lists.
+      const presentPersonIds = mentionPresentPersonIds(
+        snapshot.people,
+        new Set([uuid(50), uuid(51), uuid(52), wang.person_id, zoe.person_id, bob.person_id])
+      );
+      const lane = buildMentionLocalLane({ snapshot, presentPersonIds });
+      const sections = [section(MentionSearchSectionKind.People, [personItem(anna), personItem(bob)])];
+      const patched = patchMentionBareSections({ ...base, sections, lane, liftAfterMs: NOW - MINUTE, presentPersonIds });
+
+      expect(presentPersonIds.size).toBe(6);
+      // Bob, whom the answer lists, then the roster's people by name; no slot goes to someone unknown.
+      expect(keysOf(patched.sections)).toEqual([
+        ['people', [bob, zoe, wang, anna].map((entry) => `person:${entry.person_id}`)],
+      ]);
+      expect([...patched.localKeys]).toEqual([`person:${zoe.person_id}`, `person:${wang.person_id}`]);
+    });
+
     it('lifts only the kinds the picker asks for, into sections in their canonical place', () => {
       const lane = [
-        laneEntry('page:c', 'Gamma', { tabUsedMs: NOW }),
+        laneEntry('page:c', 'Gamma', { tabOpenedMs: NOW }),
         { key: `person:${uuid(1)}`, title: 'Anna', item: personItem(person(1, 'Anna')) },
       ];
       const dates = section(MentionSearchSectionKind.Dates, []);
@@ -508,7 +587,7 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
 
     it('never shows fewer items than the server listed, and at most the limit otherwise', () => {
       const listed = Array.from({ length: 22 }, (_, n) => page(`s${n}`, `Server ${n}`));
-      const lane = Array.from({ length: 5 }, (_, n) => laneEntry(`page:l${n}`, `Local ${n}`, { tabUsedMs: NOW - n }));
+      const lane = Array.from({ length: 5 }, (_, n) => laneEntry(`page:l${n}`, `Local ${n}`, { tabOpenedMs: NOW - n }));
       const patched = patchMentionBareSections({
         ...base,
         sections: [section(MentionSearchSectionKind.Pages, listed)],

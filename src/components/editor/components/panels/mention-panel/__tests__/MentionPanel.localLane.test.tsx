@@ -35,7 +35,7 @@ import {
   recordMentionViewRenamed,
   setMentionIndexSources,
 } from '../mentionLocalIndex';
-import { clearMentionSessionPersonPicks } from '../mentionLocalLane';
+import { clearMentionSessionPersonPicks, MENTION_BARE_CREATION_LIFT_MS } from '../mentionLocalLane';
 import { MENTION_TYPED_DEADLINE_MS } from '../mentionRequestLanes';
 import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
 import { MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
@@ -519,6 +519,114 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
       await advance(100);
       expect(mock.mock.calls.filter(([request]) => !request.query)).toHaveLength(2);
       expect(titles()).toEqual(['Gamma', 'Alpha', 'Beta']);
+    });
+
+    // Cloud's bare answer lists only the requester's opens and the page being edited, so it never
+    // lists a page this tab created and nobody opened, however new the answer is.
+    describe('a sub-page this tab created and never opened', () => {
+      beforeEach(() => {
+        mockEditorContext.viewId = 'doc';
+        mockEditorContext.mentionContext = { view_id: 'doc' };
+        setMentionIndexSources(WORKSPACE, {
+          outline: [view('doc', 'Doc'), view('alpha', 'Alpha'), view('beta', 'Beta')],
+        });
+      });
+
+      const bareSearch = (delayMs: number) =>
+        createSearch((lane) =>
+          lane === 'bare' ? { delayMs, response: pages(page('doc', 'Doc'), ALPHA, BETA) } : NEVER
+        );
+      // What `addPage` records for the slash menu's sub-page (`createSubpage`), which opens nothing.
+      const createSubpage = (at = Date.now()) =>
+        recordMentionViewCreated(
+          WORKSPACE,
+          { viewId: 'sub', name: 'Sub page', layout: ViewLayout.Document, parentViewId: 'doc' },
+          at
+        );
+
+      it('is listed first when created before the answer cutoff, for 15 minutes', async () => {
+        createSubpage(Date.now() - 90_000);
+
+        const panel = await openPanel(bareSearch(50));
+
+        expect(titles()).toEqual(['Sub page', 'Doc', 'Alpha', 'Beta']);
+        expect(freshTitles()).toEqual(['Sub page']);
+
+        // Fifteen minutes after its creation it leaves the bare `@`; a typed query still finds it.
+        await advance(MENTION_BARE_CREATION_LIFT_MS - 90_000 + 1_000);
+        await reopen(panel, 100);
+        expect(titles()).toEqual(['Doc', 'Alpha', 'Beta']);
+
+        type(panel, 'sub');
+        expect(titles()).toEqual(['Sub page']);
+      });
+
+      it('stays listed and highlighted from the cached paint through the refresh, and Enter inserts it', async () => {
+        const mock = bareSearch(300);
+        const panel = await openPanel(mock, 400);
+
+        expect(titles()).toEqual(['Doc', 'Alpha', 'Beta']);
+
+        // A minute later the user adds the sub-page, and a minute after that types `@` again: the
+        // cached answer predates the creation, and the refreshed one arrives over a minute after it.
+        await advance(60_000);
+        createSubpage();
+        await advance(60_000);
+        await reopen(panel);
+        expect(titles()).toEqual(['Sub page', 'Doc', 'Alpha', 'Beta']);
+
+        await highlight(panel, 'Sub page');
+        expect(highlighted()?.textContent).toBe('Sub page');
+
+        await advance(400);
+        expect(mock.mock.calls.filter(([request]) => !request.query)).toHaveLength(2);
+        expect(titles()).toEqual(['Sub page', 'Doc', 'Alpha', 'Beta']);
+        expect(highlighted()?.textContent).toBe('Sub page');
+
+        await pressKey('Enter');
+        expect(mockAddMark).toHaveBeenCalledTimes(1);
+        expect(mockAddMark.mock.calls[0][1].value).toEqual(
+          expect.objectContaining({ type: MentionType.PageRef, page_id: 'sub' })
+        );
+      });
+    });
+
+    // The picker lists databases after the pages, as it lists the server's (normalizeMentionSearchSectionsForPicker).
+    it('lifts a database this tab opened to the top of the databases, which follow the pages', async () => {
+      setMentionIndexSources(WORKSPACE, {
+        outline: [
+          view('alpha', 'Alpha'),
+          view('beta', 'Beta'),
+          view('grid', 'Tasks', { layout: ViewLayout.Grid, extra: { is_space: false, database_id: 'db' } }),
+          view('budget-grid', 'Budget', { layout: ViewLayout.Grid, extra: { is_space: false, database_id: 'budget' } }),
+        ],
+      });
+      recordMentionViewOpened(WORKSPACE, 'grid', Date.now() - 2_000);
+
+      const budget: MentionSearchResultItem = {
+        kind: MentionTargetKind.Database,
+        object_id: 'budget',
+        title: 'Budget',
+        database_id: 'budget',
+        database_view_id: 'budget-grid',
+        mention: { type: MentionTargetKind.Database, database_id: 'budget', database_view_id: 'budget-grid' },
+      };
+      // Another replica's answer, which has not seen the open of Tasks.
+      const answer: MentionSearchResponse = {
+        sections: [
+          section(MentionSearchSectionKind.Pages, [ALPHA, BETA]),
+          section(MentionSearchSectionKind.Databases, [budget]),
+        ],
+      };
+
+      await openPanel(createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: answer } : NEVER)));
+      expect(optionKeys()).toEqual([
+        'pages|page:alpha',
+        'pages|page:beta',
+        'pages|database:db:grid',
+        'pages|database:budget:budget-grid',
+      ]);
+      expect(titles()).toEqual(['Alpha', 'Beta', 'Tasks', 'Budget']);
     });
 
     it('keeps the server order with the local lane off', async () => {

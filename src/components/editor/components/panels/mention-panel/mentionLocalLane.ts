@@ -12,12 +12,16 @@
  *   so Search gives it no personal score either (`is_context_view`). A view the user lost access to
  *   in this session is left out, and so is every view below it as far as the index knows their
  *   parents.
- * - {@link patchMentionBareSections}: the bare `@` patch. Another Cloud replica can serve a bare
- *   answer that is up to a minute old, and Cloud never lists a page that was created but not opened,
- *   so the pages and databases this tab opened or created since the answer's cutoff come first,
- *   newest first, the view the editor shows excepted (it stays where the server puts it); then the
- *   people this tab picked, the most recent first, then up to three people on the page, then the
- *   server's order. The requester stays where the server puts them, last.
+ * - {@link patchMentionBareSections}: the bare `@` patch. This tab's recent activity comes first,
+ *   newest first: the pages and databases it opened since a minute before the answer arrived, as
+ *   another Cloud replica can serve a bare answer up to a minute old, and those it created in the
+ *   last 15 minutes and has not opened, however new the answer is: Cloud's bare answer lists only
+ *   the requester's opens and the page being edited, so it lists a creation only once the user
+ *   opens it. The view the editor shows is never lifted (it stays where the server puts it), and a
+ *   lifted database leads the databases, which the picker lists after the pages. Then come the
+ *   people this tab picked, the most recent first, then up to three people on the page whom the
+ *   answer or the roster lists, then the server's order. The requester stays where the server puts
+ *   them, last.
  * - This tab's person picks ({@link recordMentionSessionPersonPick}), kept in memory per workspace
  *   until the session ends.
  *
@@ -50,9 +54,15 @@ import type { MentionLocalSnapshot } from './mentionLocalIndex';
 /**
  * How old a bare answer can be when it arrives: Cloud keeps a bare answer for 30 s per process, built
  * from a working set it keeps for 30 s, and another replica learns of an open only through them.
- * This tab's opens and creations from that long before an answer arrived come first in it.
+ * This tab's opens from that long before an answer arrived come first in it.
  */
 export const MENTION_BARE_REPLICA_STALE_MS = 60_000;
+/**
+ * How long a page or database this tab created, and has not opened, comes first in a bare answer,
+ * whatever the answer's age: Cloud's bare answer lists only the requester's opens and the page being
+ * edited, so it lists a creation only once the user opens it. As long as it counts as fresh.
+ */
+export const MENTION_BARE_CREATION_LIFT_MS = MENTION_FRESH_MS;
 /** At most this many people on the page come first in a bare answer, after this tab's picks. */
 export const MENTION_BARE_PRESENT_LIFT = 3;
 /** This tab's person picks kept per workspace, the oldest dropped first. */
@@ -61,8 +71,10 @@ export const MENTION_SESSION_PICK_LIMIT = 20;
 /** A local lane candidate: the contract's local item with what the picker inserts for it. */
 export interface MentionLaneItem extends MentionLocalItem<ViewIcon> {
   readonly item: MentionSearchResultItem;
-  /** When this tab last opened or created the view, for the bare `@` patch. */
-  readonly tabUsedMs?: number;
+  /** When this tab last opened the view, for the bare `@` patch: Cloud learns of an open. */
+  readonly tabOpenedMs?: number;
+  /** When this tab created the view, for the bare `@` patch: Cloud's bare answer lists no creation. */
+  readonly tabCreatedMs?: number;
 }
 
 export interface MentionLocalLaneInput {
@@ -135,7 +147,7 @@ function parseTime(value: string | null | undefined): number | undefined {
  * The local lane for one snapshot (see the module header): the views first, in the index's order,
  * then the roster, each navigation key once. A database whose database id the index does not know,
  * and a person without a person id, are left out. The context view keeps its title, icon and
- * `changedMs`, but no `lastUsedMs` or `tabUsedMs`.
+ * `changedMs`, but no `lastUsedMs`, `tabOpenedMs` or `tabCreatedMs`.
  */
 export function buildMentionLocalLane({
   snapshot,
@@ -162,7 +174,8 @@ export function buildMentionLocalLane({
 
     const isContext =
       contextViewId !== undefined && (view.viewId === contextViewId || view.databaseViewId === contextViewId);
-    const tabUsedMs = isContext ? undefined : latest(view.sessionOpenedAt, view.sessionCreatedAt);
+    const tabOpenedMs = isContext ? undefined : latest(view.sessionOpenedAt);
+    const tabCreatedMs = isContext ? undefined : latest(view.sessionCreatedAt);
 
     keys.add(view.navKey);
     lane.push({
@@ -170,8 +183,9 @@ export function buildMentionLocalLane({
       title: view.name,
       icon: view.icon,
       changedMs: latest(view.sessionCreatedAt, view.sessionRenamedAt),
-      lastUsedMs: isContext ? undefined : latest(tabUsedMs, view.lastViewedAt),
-      tabUsedMs,
+      lastUsedMs: isContext ? undefined : latest(tabOpenedMs, tabCreatedMs, view.lastViewedAt),
+      tabOpenedMs,
+      tabCreatedMs,
       item,
     });
   });
@@ -233,9 +247,11 @@ export interface MentionBarePatchInput {
   sections: MentionSearchSection[];
   lane: readonly MentionLaneItem[];
   /**
-   * This tab's opens and creations at or after this time come first: the answer's arrival less
-   * {@link MENTION_BARE_REPLICA_STALE_MS}. Unset when there is no answer, as after a failure: then
-   * every open and creation of this tab counts.
+   * This tab's opens at or after this time come first: the answer's arrival less
+   * {@link MENTION_BARE_REPLICA_STALE_MS}. A creation this tab has not opened comes first for
+   * {@link MENTION_BARE_CREATION_LIFT_MS} after it instead, whatever this time, so the cached paint
+   * and every answer lift the same creations. Unset when there is no answer, as after a failure:
+   * then every open and creation of this tab counts.
    */
   liftAfterMs?: number;
   /** This tab's person picks: person id to when. */
@@ -250,7 +266,7 @@ export interface MentionBarePatchInput {
   limit: number;
   /** The title of a section the server did not list. */
   sectionTitle: (kind: MentionSearchSectionKind) => string;
-  /** The clock, in epoch milliseconds, for the fresh flag. */
+  /** The clock, in epoch milliseconds, for the fresh flag and the creations' window. */
   nowMs: number;
 }
 
@@ -262,7 +278,12 @@ export interface MentionBarePatch {
   freshKeys: ReadonlySet<string>;
 }
 
-/** The order people on the page come in: as the server lists them, then by name. */
+/**
+ * The keys of the people on the page who have an item to show, in the order they come in: as the
+ * server lists them, then the ones only the lane holds, by name. Someone neither lists, such as a
+ * collaborator who joined after the roster loaded, has no item and is left out, so they never take
+ * the place of someone who has one.
+ */
 function presentOrder(
   sections: MentionSearchSection[],
   lane: ReadonlyMap<string, MentionLaneItem>,
@@ -274,8 +295,11 @@ function presentOrder(
     .find((section) => section.kind === MentionSearchSectionKind.People)
     ?.items.forEach((item, index) => listed.set(mentionItemNavKey(item), index));
 
+  const title = (key: string) => lane.get(key)?.item.title ?? '';
+
   return [...ids]
     .map((id) => `person:${id}`)
+    .filter((key) => listed.has(key) || lane.has(key))
     .sort((left, right) => {
       const leftAt = listed.get(left);
       const rightAt = listed.get(right);
@@ -284,8 +308,27 @@ function presentOrder(
         return (leftAt ?? Number.MAX_SAFE_INTEGER) - (rightAt ?? Number.MAX_SAFE_INTEGER);
       }
 
-      return compareCodePoints(lane.get(left)?.item.title ?? left, lane.get(right)?.item.title ?? right);
+      return compareCodePoints(title(left), title(right)) || compareCodePoints(left, right);
     });
+}
+
+/**
+ * When a lane entry comes first in a bare answer, or nothing when it does not (see
+ * {@link MentionBarePatchInput.liftAfterMs}): an open since the cutoff, or a creation the tab has not
+ * opened within its own window, as an answer lists it only once the user opens it. People are lifted
+ * by picks and presence.
+ */
+function bareLiftedAt(entry: MentionLaneItem, liftAfterMs: number | undefined, nowMs: number) {
+  if (entry.key.startsWith('person:')) return undefined;
+  if (liftAfterMs === undefined) return latest(entry.tabOpenedMs, entry.tabCreatedMs);
+  if (entry.tabOpenedMs !== undefined) {
+    return entry.tabOpenedMs >= liftAfterMs ? latest(entry.tabOpenedMs, entry.tabCreatedMs) : undefined;
+  }
+
+  // A future creation time counts as now, as for the fresh flag.
+  return entry.tabCreatedMs !== undefined && nowMs - entry.tabCreatedMs <= MENTION_BARE_CREATION_LIFT_MS
+    ? entry.tabCreatedMs
+    : undefined;
 }
 
 /**
@@ -321,18 +364,19 @@ export function patchMentionBareSections({
     lifted.set(kind, keys);
   };
 
-  // Pages and databases this tab opened or created, the most recent first.
+  // Pages and databases: this tab's opens since the cutoff and its creations it has not opened,
+  // the most recent first.
   lane
-    .filter(
-      (entry) =>
-        entry.tabUsedMs !== undefined &&
-        (liftAfterMs === undefined || entry.tabUsedMs >= liftAfterMs) &&
-        !entry.key.startsWith('person:')
-    )
-    .sort((left, right) => (right.tabUsedMs ?? 0) - (left.tabUsedMs ?? 0) || compareCodePoints(left.key, right.key))
+    .flatMap((entry) => {
+      const at = bareLiftedAt(entry, liftAfterMs, nowMs);
+
+      return at === undefined ? [] : [{ key: entry.key, at }];
+    })
+    .sort((left, right) => right.at - left.at || compareCodePoints(left.key, right.key))
     .forEach((entry) => lift(entry.key));
 
-  // People: this tab's picks, the most recent first, then up to three people on the page.
+  // People: this tab's picks, the most recent first, then up to three people on the page who have
+  // an item to show.
   [...personPicks.entries()]
     .sort(([leftId, leftAt], [rightId, rightAt]) => rightAt - leftAt || compareCodePoints(leftId, rightId))
     .forEach(([personId]) => lift(`person:${personId}`));
