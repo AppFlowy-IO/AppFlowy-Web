@@ -422,7 +422,7 @@ through its Dart ranker.
   hit@1 drops from 652 to 646 of 834 cases (78.18% to 77.46%, -0.72 pp) and MRR@8 from 0.841 to
   0.830, while it raises the other buckets' hit@1 by 4.9 to 11.0 pp. Of the 16 `7+` cases it loses
   (it wins 10), each is a sibling the user picked earlier, after typing something that starts with
-  the query, staying ahead of the page they opened more recently (11 are an older
+  the query, staying ahead of the page they opened more recently (10 are an older
   `Weekly sync 2026-10-30` ahead of `Weekly sync 2026-11-02`), because pick memory's score comes
   before recency inside a tier. Both switches stay off by default until product sign-off and the
   rollout stages; pick memory also needs that decision or a ranker change.
