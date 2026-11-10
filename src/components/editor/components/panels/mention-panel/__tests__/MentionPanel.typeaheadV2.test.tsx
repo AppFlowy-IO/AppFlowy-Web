@@ -27,7 +27,11 @@ import {
   setCachedMentionSections,
 } from '../mentionSearchCache';
 import { MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
-import { MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY, MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
+import {
+  MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY,
+  MENTION_LOCAL_LANE_OVERRIDE_KEY,
+  MENTION_TYPEAHEAD_V2_OVERRIDE_KEY,
+} from '../mentionTypeaheadFlag';
 import { buildMentionSearchRequestsCacheKey } from '../mentionUtils';
 
 const mockAddMark = jest.fn();
@@ -270,13 +274,20 @@ function typedQueries(search: SearchMock) {
   return search.mock.calls.map(([request]) => request.query ?? '').filter(Boolean);
 }
 
-describe('MentionPanel keep-and-narrow first paint (MEN-WEB-08)', () => {
+// The v2 turns the local lane (MEN-WEB-09) on with it, which merges the lists below with what the
+// tab holds, here nothing. Every case also runs with the lane off, as `__mention_local_lane =
+// 'false'` keeps MEN-WEB-08's own lists, a separate path in the panel.
+describe.each([
+  { localLane: true, name: 'on' },
+  { localLane: false, name: 'off' },
+])('MentionPanel keep-and-narrow first paint (MEN-WEB-08), local lane $name', ({ localLane }) => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     clearMentionSearchCacheForTests();
     localStorage.clear();
     localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true');
+    if (!localLane) localStorage.setItem(MENTION_LOCAL_LANE_OVERRIDE_KEY, 'false');
     commits = [];
     mockPanelContext.searchText = '';
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;

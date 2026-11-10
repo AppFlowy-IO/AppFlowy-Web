@@ -32,7 +32,7 @@ import {
   MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY,
   MENTION_SCHEDULER_MODE_OVERRIDE_KEY,
 } from '../mentionSearchScheduler';
-import { MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
+import { MENTION_LOCAL_LANE_OVERRIDE_KEY, MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
 import { buildMentionSearchRequestsCacheKey, mergeMentionSearchResponses } from '../mentionUtils';
 
 const mockAddMark = jest.fn();
@@ -355,17 +355,20 @@ async function measureDelivery(isComplete: () => boolean, limitMs = 2000) {
   return { firstResultsMs, completeResultsMs };
 }
 
-// Every delivery flow runs with the picker's keep-and-narrow switch (MEN-WEB-08) off and on.
+// Every delivery flow runs with the picker's keep-and-narrow switch (MEN-WEB-08) off and on, and on
+// with its local lane (MEN-WEB-09) off, which keeps MEN-WEB-08's own lists on a path of their own.
 describe.each([
-  { typeaheadV2: false, name: 'off' },
-  { typeaheadV2: true, name: 'on' },
-])('MentionPanel typed search delivery, typeahead v2 $name', ({ typeaheadV2 }) => {
+  { typeaheadV2: false, localLane: false, name: 'off' },
+  { typeaheadV2: true, localLane: true, name: 'on' },
+  { typeaheadV2: true, localLane: false, name: 'on, its local lane off' },
+])('MentionPanel typed search delivery, typeahead v2 $name', ({ typeaheadV2, localLane }) => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     clearMentionSearchCacheForTests();
     localStorage.clear();
     if (typeaheadV2) localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true');
+    if (typeaheadV2 && !localLane) localStorage.setItem(MENTION_LOCAL_LANE_OVERRIDE_KEY, 'false');
     mockPanelContext.searchText = 'road';
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
     mockEditorContext.eventEmitter = undefined;
