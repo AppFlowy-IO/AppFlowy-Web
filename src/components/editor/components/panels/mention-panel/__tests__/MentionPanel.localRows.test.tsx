@@ -30,6 +30,7 @@ import {
 } from '../mentionLocalRows';
 import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
 import {
+  MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY,
   MENTION_LOCAL_LANE_OVERRIDE_KEY,
   MENTION_LOCAL_ROWS_OVERRIDE_KEY,
   MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY,
@@ -48,6 +49,9 @@ const DATABASE = uuid(0xdb);
 const GRID = uuid(0xa1);
 const ZEBRA = uuid(1);
 const BUDGET = uuid(2);
+// The row whose Text cell or page the picker is in: a snapshot lists it only where a test says so,
+// since the lane never matches it.
+const EDITED = uuid(4);
 const mockCurrentUser = {
   uid: '7',
   uuid: uuid(99),
@@ -260,7 +264,7 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
     Object.keys(mockEditorContext).forEach((key) => delete mockEditorContext[key]);
     mockEditorContext.workspaceId = WORKSPACE;
     mockEditorContext.viewId = GRID;
-    mockEditorContext.mentionContext = { view_id: GRID, database_view_id: GRID, row_id: BUDGET };
+    mockEditorContext.mentionContext = { view_id: GRID, database_view_id: GRID, row_id: EDITED };
     Element.prototype.scrollIntoView = jest.fn();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -427,6 +431,98 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       expect(titles()).toEqual(['Budget review']);
       type(view, 'roadmap');
       expect(titles()).toEqual([]);
+    });
+  });
+
+  describe('the row the editor is in', () => {
+    // A row page's title saves as it is typed (`RichTextCellEditor`'s title variant), and the rows
+    // source observes the row's live document, so the query typed to open the picker reaches the
+    // row's own title, republished on every keystroke.
+    const edited = (title: string): MentionLocalRow => ({
+      rowId: EDITED,
+      title,
+      createdAtMs: NOW - MINUTE,
+      synced: true,
+    });
+    const tomorrow: MentionSearchResultItem = {
+      kind: MentionTargetKind.Date,
+      title: 'Tomorrow',
+      mention: { type: MentionTargetKind.Date, start: '2026-11-12T00:00:00Z' },
+    };
+
+    it('is never listed while its title, saved as it is typed, holds the query', async () => {
+      localStorage.setItem(MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY, 'true');
+      // The row page of a row created a minute ago.
+      mockEditorContext.mentionContext = {
+        view_id: uuid(0xd2),
+        database_id: DATABASE,
+        database_view_id: GRID,
+        row_id: EDITED,
+      };
+
+      const source = rowsSource(snapshot([edited('Call client')], false));
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const view = await openPanel(
+        createSearch((lane) => {
+          if (lane === 'bare') return BARE_BUDGET(lane);
+          return {
+            delayMs: 300,
+            response: lane === 'primary' ? { sections: [section(MentionSearchSectionKind.Dates, [tomorrow])] } : EMPTY,
+          };
+        })
+      );
+
+      for (const query of ['to', 'tomo', 'tomorrow']) {
+        type(view, query);
+        source.set(snapshot([edited(`Call client @${query}`)], false));
+        expect(titles()).toEqual([]);
+      }
+
+      await advance(1_000);
+      expect(titles()).toEqual(['Tomorrow']);
+
+      // The highlighted first option is the date, so Enter inserts it.
+      await act(async () => {
+        Transforms.select(view.editor, Editor.end(view.editor, []));
+      });
+      expect(highlighted()).toBe('Tomorrow');
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('editor'), { key: 'Enter' });
+      });
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+      expect(mockAddMark).toHaveBeenCalledWith(
+        view.editor,
+        expect.objectContaining({
+          value: expect.objectContaining({ type: MentionType.Date, date: '2026-11-12T00:00:00Z' }),
+        })
+      );
+    });
+
+    it("leaves the database's other rows in, and shows Search's item for the row itself", async () => {
+      // A Text cell of the row; Search lists the row by the title it indexed.
+      const serverRow = mentionLocalRowItem(DATABASE, GRID, { rowId: EDITED, title: 'Budget review' });
+
+      mockEditorContext.mentionLocalRows = rowsSource(
+        snapshot(
+          [edited('Budget review'), { rowId: BUDGET, title: 'Budget plan', createdAtMs: NOW - MINUTE, synced: true }],
+          false
+        )
+      ).access;
+
+      const view = await openPanel(
+        createSearch((lane) => (lane === 'rows' ? { delayMs: 300, response: pages(serverRow) } : BARE_BUDGET(lane)))
+      );
+
+      type(view, 'budget');
+      expect(titles()).toContain('Budget plan');
+      expect(titles()).not.toContain('Budget review');
+
+      await advance(1_000);
+      expect([...titles()].sort()).toEqual(['Budget plan', 'Budget review']);
+      // Only the lane's row is fresh: the row itself is Search's item.
+      expect(freshTitles()).toEqual(['Budget plan']);
     });
   });
 

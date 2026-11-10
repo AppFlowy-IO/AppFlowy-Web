@@ -429,6 +429,46 @@ describe('database mention rows source (MEN-WEB-15)', () => {
     expect(syncedOf()).toEqual({ 'Road trip': true, 'Budget review': true, 'Hiring plan': false });
   });
 
+  it('follows the document the row cache holds now when it replaces the synced one it read', async () => {
+    // Every live document reads as synced: the sync binding is keyed by the row id, which the old
+    // and the new document share.
+    const test = harness(databaseDoc(ids), { isRowDocSynced: () => true });
+    const old = test.open(ids[0], 'Budget review');
+
+    test.open(ids[1], 'Road trip');
+    test.open(ids[2], 'Hiring plan');
+    test.subscribe();
+    expect(test.titles()).toEqual(['Budget review', 'Road trip', 'Hiring plan']);
+
+    // A version reset or a restore caches another document under the row's id (a reset also
+    // destroys the old one), and the view's row map takes it, so the editor tells the source.
+    const replacement = test.open(ids[0], 'Budget review Q3');
+
+    test.source.refresh();
+    await microtasks();
+    expect(test.titles()).toEqual(['Budget review Q3', 'Road trip', 'Hiring plan']);
+    expect(test.source.getSnapshot().rows[0].synced).toBe(true);
+    expect(test.onChange).toHaveBeenCalledTimes(1);
+
+    // The new document is observed, and the old one no longer is.
+    setTitle(old, 'Budget review (old copy)');
+    await microtasks();
+    expect(test.titles()).toEqual(['Budget review Q3', 'Road trip', 'Hiring plan']);
+    expect(test.onChange).toHaveBeenCalledTimes(1);
+    setTitle(replacement, 'Budget review Q4');
+    await microtasks();
+    expect(test.titles()).toEqual(['Budget review Q4', 'Road trip', 'Hiring plan']);
+    expect(test.onChange).toHaveBeenCalledTimes(2);
+
+    // A refresh with the same documents cached keeps the snapshot.
+    const before = test.source.getSnapshot();
+
+    test.source.refresh();
+    await microtasks();
+    expect(test.source.getSnapshot()).toBe(before);
+    expect(test.onChange).toHaveBeenCalledTimes(2);
+  });
+
   it('reads every title again when another field becomes the primary one', async () => {
     const doc = databaseDoc(ids);
     const test = harness(doc);

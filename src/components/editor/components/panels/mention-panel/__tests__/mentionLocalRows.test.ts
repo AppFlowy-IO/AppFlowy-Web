@@ -168,6 +168,21 @@ describe('mentionLocalRows (MEN-WEB-15)', () => {
       expect(rank('road', snapshot([after]))).toEqual([]);
       expect(titles(rank('sea', snapshot([after])))).toEqual(['Sea voyage']);
     });
+
+    it('never lists the row the editor is in, whose title holds the query while it is typed', () => {
+      // A new row's title, typed `@tomorrow`: the title editor saved the query as the title, which
+      // outranks the other row (both start a word with it, and it is shorter).
+      const [own, other] = rows('@tomorrow', 'Plan for tomorrow');
+      const source = snapshot([own, other]);
+
+      expect(titles(rank('tomorrow', source))).toEqual(['@tomorrow', 'Plan for tomorrow']);
+      expect(titles(rank('tomorrow', source, { contextRowId: own.rowId }))).toEqual(['Plan for tomorrow']);
+      // Left out before the cut, so it takes none of the places the limit keeps.
+      expect(titles(rank('tomorrow', source, { contextRowId: own.rowId, limit: 1 }))).toEqual(['Plan for tomorrow']);
+      expect(rank('tomorrow', snapshot([own]), { contextRowId: own.rowId })).toEqual([]);
+      // Another row id leaves every row in.
+      expect(titles(rank('tomorrow', source, { contextRowId: rowId(99) }))).toEqual(['@tomorrow', 'Plan for tomorrow']);
+    });
   });
 
   describe('the word filter', () => {

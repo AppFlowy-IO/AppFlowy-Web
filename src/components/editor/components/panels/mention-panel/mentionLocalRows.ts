@@ -15,7 +15,9 @@
  * the tab syncs ({@link MentionLocalRow.synced}), so a rename typed or received here shows at once.
  * A title read from a copy that may lag behind Search's (the row walk's seed, a cached document no
  * longer synced) gives way to the server's: {@link mentionLocalRowsForSections} leaves that row to
- * the server's item.
+ * the server's item. The row the editor is in is never matched
+ * ({@link RankMentionLocalRowsInput.contextRowId}): a row page's title is saved as it is typed, so
+ * it holds the very query the picker matches. Search's item for that row still shows.
  *
  * Search matches a row by any text the row holds (its other cells, its page), the lane only by its
  * title, so the picker keeps sending the server's rows request. It leaves that request out only when
@@ -244,6 +246,13 @@ export interface RankMentionLocalRowsInput {
   nowMs: number;
   /** The most rows returned, the best first; {@link MENTION_LOCAL_ROWS_LIMIT} by default. */
   limit?: number;
+  /**
+   * The row the editor is in, as the request's `context.row_id` names it: never returned. A row
+   * page's title is saved on every keystroke, so while the picker is open there, the row's title
+   * holds the query being typed and would match it (and Search gives the open row no personal
+   * signal either: it is rarely its own mention target).
+   */
+  contextRowId?: string;
 }
 
 /**
@@ -251,8 +260,8 @@ export interface RankMentionLocalRowsInput {
  * local-only items (tier, pick memory, length, then the navigation key) and cut to `limit`, as lane
  * items the merge takes: keyed and inserted as Search's rows, with the creation time as when the row
  * changed, so one created at most 15 minutes ago is flagged fresh, and where the title came from.
- * Rows carry no recency: the contract's recency is the client's own open, creation or mention,
- * which a row does not record.
+ * The row the editor is in is left out before ranking. Rows carry no recency: the contract's
+ * recency is the client's own open, creation or mention, which a row does not record.
  */
 export function rankMentionLocalRows({
   query,
@@ -261,11 +270,13 @@ export function rankMentionLocalRows({
   picks,
   nowMs,
   limit = MENTION_LOCAL_ROWS_LIMIT,
+  contextRowId,
 }: RankMentionLocalRowsInput): MentionLocalRowLaneItem[] {
   if (snapshot.rows.length === 0 || limit <= 0) return [];
 
   const prepared = prepareMentionQuery(query);
-  const candidates = mentionLocalRowCandidates(prepared, snapshot.rows).map((row) => {
+  const matched = mentionLocalRowCandidates(prepared, snapshot.rows);
+  const candidates = (contextRowId ? matched.filter((row) => row.rowId !== contextRowId) : matched).map((row) => {
     const key = mentionLocalRowNavKey(snapshot.databaseId, row.rowId);
     const pick = picks?.get(key);
 

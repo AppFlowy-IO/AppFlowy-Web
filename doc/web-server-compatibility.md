@@ -400,17 +400,20 @@ subscribes and lets everything go once the last one closes:
 
 - Rows the tab has open (those the view rendered, a row page, a row this tab just created) are read
   from their live documents, which are observed while the picker is open, so a title typed into a
-  row shows at once. Any other row is read from the seed the row walk downloaded, decoded off the
-  keystroke path in slices of about 8 ms; only titles and creation times are kept, and a seed is
-  decoded once.
+  row shows at once; a document the row cache replaces (after a version reset or a restore) is
+  followed from the next refresh. Any other row is read from the seed the row walk downloaded,
+  decoded off the keystroke path in slices of about 8 ms; only titles and creation times are kept,
+  and a seed is decoded once.
 - A typed query adds the rows whose primary-field text matches at T3 or better to Pages, where
   Search returns rows, ranked by the typeahead contract's rules with the other Pages items. A row
   created at most 15 minutes ago (its `created_at`) carries `data-fresh="true"`, as a page this tab
   created does. A row the server lists too keeps the server's payload and shows once: with its own
   title when the tab read it from the row's live document while syncing it (a rename typed or
   received here shows at once), with the server's when it came from the seed or a cached document
-  the tab no longer syncs, either of which may be older than Search's. A bare `@` lists no row, as
-  before.
+  the tab no longer syncs, either of which may be older than Search's. The lane never lists the row
+  the editor is in (the request's `context.row_id`): a row page's title is saved as it is typed, so
+  its title holds the query that opened the picker. Search's item for that row still shows. A bare
+  `@` lists no row, as before.
 - An inserted row is the mention a server row item gives: a page reference to the view the editor
   is in, with the database, the row and the view, so every client opens it. A row of a view the
   user lost access to in the session is not listed.
@@ -422,7 +425,8 @@ database (`holdsDatabaseSourceRows`). That is rare: only a cold or full walk mak
 resident, a grid revisited after a reload walks only the rows that changed, and the row walk's seed
 lookup holds 10,000 rows across all databases. Each typed query is decided once, when it is typed:
 the database completing, or losing a row's title, while a query shows changes only the next
-keystroke's requests, so the query on screen is never sent again. The switch is off by default,
+keystroke's requests, so the query on screen is never sent again. A typed query decided that way
+lists no row the lane leaves out, such as the row the editor is in. The switch is off by default,
 and the primary request still asks for no rows, so the request a server receives is the primary
 request it already knew. `doc/MENTION_LOCAL_ROWS_SPIKE.md` gives the measurements behind these
 rules.

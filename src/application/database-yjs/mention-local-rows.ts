@@ -8,10 +8,12 @@
  *   again when row orders, views or fields change.
  * - Text: a row the tab has open (the rows a view renders, a row page, a row just created) is read
  *   from its live document, which is observed while the picker is open, so a title typed into it
- *   shows at once. Any other row is read from its committed seed, the copy the row walk downloaded,
- *   decoded into a throwaway document in short slices off the keystroke path: the index keeps
- *   titles, never documents (10,000 decoded rows would hold about 200 MB, their titles under 1 MB).
- *   A decoded seed's title is kept with the seed, so the next picker reads it without decoding.
+ *   shows at once; a refresh follows the document the row cache holds now, when a version reset or
+ *   a restore replaced it. Any other row is read from its committed seed, the copy the row walk
+ *   downloaded, decoded into a throwaway document in short slices off the keystroke path: the index
+ *   keeps titles, never documents (10,000 decoded rows would hold about 200 MB, their titles under
+ *   1 MB). A decoded seed's title is kept with the seed, so the next picker reads it without
+ *   decoding.
  * - A row says where its title came from (`synced`): a live document the tab keeps in sync, or a
  *   copy that may lag behind Search (a seed, a cached document no longer synced), whose title the
  *   picker gives up for the server's when the server lists the row.
@@ -346,14 +348,17 @@ export function createDatabaseMentionRowsSource({
 
   /**
    * Gives the row its title from its live document, which is then observed; else queues it for a
-   * slice, which reads its seed. A row without either keeps what it had, and so does one whose
-   * title and source did not change.
+   * slice, which reads its seed. The live document is the one the row cache holds now: a version
+   * reset or a restore caches another document under the row's id, and the one observed before
+   * hears none of the row's later edits. A row without either keeps what it had, and so does one
+   * whose title and source did not change.
    */
   function resolve(rowId: string, entry: RowEntry) {
-    if (!entry.live) {
-      const doc = getLiveRowDoc(rowKeyOf(rowId));
+    const doc = getLiveRowDoc(rowKeyOf(rowId));
 
-      if (doc) attachLive(rowId, entry, doc);
+    if (doc && doc !== entry.live?.doc) {
+      entry.live?.stop();
+      attachLive(rowId, entry, doc);
     }
 
     const live = entry.live ? readLiveRow(entry.live.doc, rowId) : null;
@@ -500,15 +505,16 @@ export function createDatabaseMentionRowsSource({
     queueMicrotask(publish);
   }
 
-  // Rows the tab opened since, and seeds a walk committed since: a row without a live document is
-  // resolved again, and so is one whose live document was not synced (a synced one is kept current
-  // by its observer).
+  // Rows the tab opened since, seeds a walk committed since, and documents the row cache replaced
+  // since: every row is resolved again but one whose synced live document the cache still holds,
+  // which its observer keeps current.
   function runRefresh() {
     refreshQueued = false;
     if (!active) return;
 
     entries.forEach((entry, rowId) => {
-      if (!entry.live || !entry.row?.synced) resolve(rowId, entry);
+      if (entry.live && entry.row?.synced && getLiveRowDoc(rowKeyOf(rowId)) === entry.live.doc) return;
+      resolve(rowId, entry);
     });
     scheduleSlice();
     publish();

@@ -1,9 +1,9 @@
 # Mention local rows lane: spike report (MEN-WEB-15)
 
 Status: measured 2026-11-11 on branch `wip/mention-web-w3`, and measured again after the review
-fixes; the numbers below are the second measurement. Decision: ship the lane behind the @ picker's
-v2 switch; keep the server's rows request (leaving it out stays behind a switch of its own, off by
-default).
+fixes; the numbers below are the second measurement, plus one keystroke figure for the second
+review's fixes (see "Keystroke cost"). Decision: ship the lane behind the @ picker's v2 switch; keep
+the server's rows request (leaving it out stays behind a switch of its own, off by default).
 
 ## Question
 
@@ -18,8 +18,10 @@ request out?
 - `src/application/database-yjs/mention-local-rows.ts`: a source per database document. Nothing is
   read until a picker subscribes. Rows are the database's membership (every view's live row
   orders). A row the tab has open (rendered, opened, just created) is read from its live document,
-  which is observed; any other row from its committed seed (`peekDatabaseRowDocSeed`), decoded into
-  a throwaway document in slices of about 8 ms. Only titles and creation times are kept, and a
+  which is observed; when the row cache replaces that document (a version reset or a restore caches
+  another under the row's id), the next refresh follows the new one. Any other row is read from its
+  committed seed (`peekDatabaseRowDocSeed`), decoded into a throwaway document in slices of about
+  8 ms. Only titles and creation times are kept, and a
   seed's title is kept with the seed object, so the next picker does not decode it again. Each row
   says whether its title came from a live document the tab syncs (`synced`, from
   `hasRowDocSyncBinding`) or from a copy that may lag behind Search (a seed, a cached document no
@@ -32,7 +34,9 @@ request out?
   typeahead contract's tiers and in-tier keys, at most 60 rows, as lane items the contract's merge
   adds to Pages. A row created at most 15 minutes ago is flagged fresh. A row the server lists too
   keeps the server's payload, and its own title only when it is `synced`; any other is left to the
-  server's item (`mentionLocalRowsForSections`), whose title is likely the newer one.
+  server's item (`mentionLocalRowsForSections`), whose title is likely the newer one. The row the
+  editor is in (the request's `context.row_id`) is never matched: a row page's title is saved as it
+  is typed, so it holds the query being typed. Search's item for it still shows.
 - The panel, the Text cell context and the row page wire them. Whether a typed query leaves the
   rows request out is decided once, when the query is typed; see "Mention local rows lane" in
   `doc/web-server-compatibility.md`.
@@ -121,6 +125,12 @@ Twenty queries (one letter to three words, CJK, digits, no match), warm caches:
 | The picker's merge with 5,000 views, without rows  | 1.25-1.52 ms | 3.45-4.61 ms | 0.82-0.88 ms | 1.81-1.87 ms |
 | The same with the rows lane (its ranking included) | 2.81-3.00 ms | 5.66-5.92 ms | 1.69-1.84 ms | 2.74-3.46 ms |
 
+The picker leaves out the row the editor is in, one more pass over the titles that pass the word
+filter, which the figures above do not include. Measured after the second review, in five plain-Node
+runs over the same titles and queries, each query timed with and without it alternately: median
+0.79-0.84 ms and p95 1.96-2.11 ms with it, 0.74-0.80 ms and 1.78-1.96 ms without. The merge's
+figures were not measured again; the pass adds the same amount there.
+
 The merge takes the rows as the picker passes them (`mentionLocalRowsForSections`). Normalizing the
 10,000 titles once, when the picker opens: 5.8-6.1 ms (Jest), 4.4-4.8 ms (Node). The synthetic
 titles share a twelve-word vocabulary, so a query like `road` keeps a sixth of them past the word
@@ -155,7 +165,7 @@ other cells, nor by Search's typo tolerance (which the client ranks at T4 anyway
   suggested ship criterion it can be measured against holds: the index takes under 1 s of idle time
   after `seedsReady` (158-174 ms of slices in Node; Jest's 698-742 ms is a slow upper bound), keeps
   under 5 MB (2.4-4.0 MB), and a keystroke's match has a p95 under 4 ms (1.81-1.97 ms in Node,
-  3.45-3.67 ms in Jest).
+  3.45-3.67 ms in Jest; 1.96-2.11 ms in Node with the editor's row left out).
 - The server's rows request stays by default. Leaving it out
   (`localStorage.__mention_local_rows_skip_server = 'true'`) applies only while the database is
   complete, which is rare (above), is decided once per typed query, and would drop the non-title

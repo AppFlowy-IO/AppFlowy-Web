@@ -1019,7 +1019,10 @@ export function MentionPanel({
     [currentUser?.uuid, mentionInclude, mentionSectionTitle, searchText, v2PickScores]
   );
   // The database's rows that match what is typed, ranked among themselves (MEN-WEB-15). None when the
-  // user lost access to the view the editor is in, whose rows a mention would open.
+  // user lost access to the view the editor is in, whose rows a mention would open. The row the
+  // editor is in is left out: a row page's title saves as it is typed, so its title holds this very
+  // query (Search's item for the row still shows).
+  const contextRowId = mentionContext?.row_id;
   const rowLaneItems = useMemo(
     () =>
       localRows && hasMentionSearchQuery && !revokedViews.has(localRows.databaseViewId)
@@ -1029,9 +1032,10 @@ export function MentionPanel({
             databaseViewId: localRows.databaseViewId,
             picks: v2PickScores,
             nowMs: Date.now(),
+            contextRowId,
           })
         : NO_ROW_LANE_ITEMS,
-    [hasMentionSearchQuery, localRows, localRowsSnapshot, revokedViews, searchText, v2PickScores]
+    [contextRowId, hasMentionSearchQuery, localRows, localRowsSnapshot, revokedViews, searchText, v2PickScores]
   );
   // Merges sections with the local lane by the typeahead contract's rules (`mentionLocalMerge.ts`):
   // the local title wins, local-only matches join a typed query, and People, Pages and rows are
