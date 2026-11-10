@@ -1,0 +1,64 @@
+name: Mention ranker replay
+
+# The @-mention client ranker replay and parity gate (MEN-X-07): replays the seeded sessions
+# through the production ranker and pick memory, fails when the committed rankings or verdict in
+# src/components/editor/components/panels/mention-panel/__fixtures__/mention-eval/ are stale, and
+# fails on a failing gate while mentionTypeaheadV2 or pick memory defaults on. Desktop replays the
+# same files through its Dart ranker.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - "main"
+      - "develop"
+      - "release/*"
+    paths:
+      - "scripts/mention-eval/**"
+      - "src/components/editor/components/panels/mention-panel/**"
+      - "src/utils/normalize-text.ts"
+      - "src/application/types.ts"
+      - "tsconfig.json"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/mention_eval.yaml"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20.19.0"
+  PNPM_VERSION: "10.9.0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mention-eval:
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: install frontend dependencies
+        run: pnpm install
+
+      - name: Replay the mention sessions and check the committed rankings and verdict
+        run: pnpm mention:eval --report mention-eval-report.json
+
+      - name: Upload the replay report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mention-eval-report
+          path: mention-eval-report.json
+          if-no-files-found: ignore
+          retention-days: 14

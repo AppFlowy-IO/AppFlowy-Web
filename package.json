@@ -61,6 +61,7 @@
     "build-storybook": "storybook build",
     "error-catalog:sync": "node scripts/sync-error-catalog.mjs",
     "error-catalog:check": "node scripts/sync-error-catalog.mjs --check",
+    "mention:eval": "node scripts/mention-eval/run-eval.mjs --check",
     "test:e2e:code-block": "playwright test -c playwright.code-block.config.ts",
     "test:e2e:pdf": "playwright test -c playwright.pdf.config.ts",
     "test:e2e:image": "playwright test -c playwright.image.config.ts",

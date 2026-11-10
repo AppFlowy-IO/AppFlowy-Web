@@ -234,8 +234,9 @@ stored comment format (`@[name](person_id)`).
 
 The editor's @ picker can remember which item the user inserted after typing what, and list that
 item first in its tier the next time they type it (`mentionPickMemory.ts`, applied by
-`mentionPickRanking.ts`). It is off by default until it passes the replay gate and product signs
-off. A browser opts in with `localStorage.__mention_pick_memory = 'true'`, read when a picker opens;
+`mentionPickRanking.ts`). It is off by default until product signs off; the replay gate it needed
+passes (see "Mention ranker replay gate"). A browser opts in with
+`localStorage.__mention_pick_memory = 'true'`, read when a picker opens;
 while it is off the picker neither records nor reads picks.
 
 - Only inserting a person, page, database or row records a pick. Showing, highlighting or hovering
@@ -389,3 +390,28 @@ documents read the same in every client. The one exception is a database whose v
 not know yet (one it just created, or a container whose children the outline has not loaded): it
 is inserted as a page reference to the view the tab lists it by, which every client opens, where
 the server's item would name the database's first view. A database id there would open nothing.
+
+## Mention ranker replay gate
+
+`pnpm mention:eval` (`scripts/mention-eval/run-eval.mjs`, MEN-X-07) replays 30 days of one user's
+opens, creations and @-mention picks in a synthetic workspace through the picker's production client
+ranking with pick memory, each prefix of each query as it was typed, and grades it against MRU
+(recently used items whose title matches at a word start or better, the newest first) and today's
+substring filter. Its files are in `mention-panel/__fixtures__/mention-eval/`, whose README gives
+the sessions, the replay rules and the gates. Desktop keeps a byte-identical copy and replays it
+through its Dart ranker.
+
+- `mentionTypeaheadV2` and pick memory may default on only when the gates pass: MRR@8 at least
+  MRU's in every prefix bucket, a unique exact title always first, no T0 or T1 title below a T3 or
+  T4 title, and the same rankings in Dart and TypeScript.
+- The replay ranks the local lane alone, as the picker does before an answer arrives, offline, or for
+  a one-letter query that stays local: no server answer, presence or page being edited. It is a
+  regression guard on synthetic data, not a measure of quality, which online session reports decide.
+- CI (`.github/workflows/mention_eval.yaml`) fails when the committed rankings or verdict are stale,
+  and on a failing gate while `MENTION_TYPEAHEAD_V2_DEFAULT` or `MENTION_PICK_MEMORY_DEFAULT` is on,
+  as `mention-eval-fixtures.test.ts` does. A change to the ranker, pick memory or normalizer reruns
+  `node scripts/mention-eval/run-eval.mjs --write` and copies the folder to Desktop.
+- On the committed sessions every gate the replay decides passes (`verdict.json`). Both switches
+  stay off by default until product sign-off and the rollout stages.
+
+The replay is test tooling: it sends nothing, and the picker and its requests do not change.
