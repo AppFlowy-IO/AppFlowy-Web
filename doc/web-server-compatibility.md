@@ -207,8 +207,9 @@ composer mounts:
 
 - People match by the typeahead contract's people classes (C0 a name word, the address's local
   part or one of its words starts with the query; C1 the name contains it; C2 the local part
-  does; C3 a query with `@` or `.` that the full address contains), so a shared domain matches no
-  one.
+  does; C3 a query with `@` or `.` that the full address contains). So a domain word alone
+  (`appflowy`) matches no one, while `appflowy.io` or `@appflowy` lists everyone at that domain
+  (C3).
 - Inside a class: the commenter last; then the discussion's participants, the most recent first
   (a reply's thread, then, on a row, the row's other commenters; a new row or Feed comment ranks
   everyone who commented on the row); then people on the page, for document comments, from the
@@ -300,15 +301,16 @@ behaves as before.
   newer of the two cached answers that lists it (the one whose request was sent later), never from
   the list on screen, which can still show an older answer's after the bare answer's refresh landed.
 - Only items that still match the new query by the typeahead contract's matcher stay: pages,
-  databases and rows whose title matches at T3 or better, people whose name or address local part
-  matches at C3 or better (the domain alone never matches), and date and reminder quick picks that
-  match at T2 or better, as Cloud offers them. A body-only hit cannot be checked on the client, so
-  it waits for the server; links, which derive from the query, never stay. A view the user lost
-  access to in this session never shows, and neither does a picked target that pick memory joined
-  from the local index: those join only an answer to what is typed (see "Mention pick memory").
-  After an access change that names no page (`PERMISSION_CHANGED`: a space's access or members, a
-  member's role, a group), an answer asked for before it narrows into no provisional list, and
-  neither does the list it shows while the picker asks again: it may list a page the user lost.
+  databases and rows whose title matches at T3 or better, people at C3 or better (by name or the
+  address's local part, or by the whole address for a query with `@` or `.`; a domain word alone
+  never matches), and date and reminder quick picks that match at T2 or better, as Cloud offers
+  them. A body-only hit cannot be checked on the client, so it waits for the server; links, which
+  derive from the query, never stay. A view the user lost access to in this session never shows,
+  and neither does a picked target that pick memory joined from the local index: those join only
+  an answer to what is typed (see "Mention pick memory"). After an access change that names no
+  page (`PERMISSION_CHANGED`: a space's access or members, a member's role, a group), an answer
+  asked for before it narrows into no provisional list, and neither does the list it shows while
+  the picker asks again: it may list a page the user lost.
 - The skeleton shows only while that list is empty and a request is pending. Over results, a 2 px
   progress bar shows instead (`role="progressbar"`, "Updating suggestions…"), and the list is not
   `aria-busy`.
@@ -352,8 +354,9 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   `doc/context/workspace/mention_typeahead_contract.md`, section Merge, pinned by its `merge.json`
   vectors). An item the server lists and the tab holds keeps the server's payload and shows the
   tab's title, so a page renamed in this tab shows its new name and ranks by it. People, pages and
-  databases the tab holds that match the query (people by name or the address's local part, never
-  its domain; pages and databases at T3 or better) join in the keystroke's own render, also before
+  databases the tab holds that match the query (people by name or the address's local part, or by
+  the whole address for a query with `@` or `.`, never by a domain word alone; pages and databases
+  at T3 or better) join in the keystroke's own render, also before
   any answer, and stay once the server answers. They join only pickers that ask for their kind and
   pass the request's filter, so a page-reference picker never lists people. One that this tab
   created or renamed in the last 15 minutes carries `data-fresh="true"` on its option; the picker
@@ -376,11 +379,12 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   opens in the page modal, and an AI chat opens in the main view, which counts as an open although
   the tab never loads a chat as a document. What stays unopened is a sub-page added in a row page
   or a Feed card's preview, whose editors offer no page modal, and a creation whose modal closed
-  before the page loaded. The cached paint and every answer lift the same creations. A lifted database leads the databases, which the picker lists
-  after the pages, as it lists the server's. The page being edited is never lifted; it stays where
-  the server puts it. People follow the same rule: the people this tab picked in the session come
-  first, then up to three people on the page whom the answer or the roster lists, then the
-  server's order, with the requester last as the server puts them.
+  before the page loaded. The cached paint and every answer lift the same creations. A lifted
+  database leads the databases, which the picker lists after the pages, as it lists the server's.
+  The page being edited is never lifted; it stays where the server puts it. People follow the
+  same rule: the people this tab picked in the session come first, then up to three people on the
+  page whom the answer or the roster lists, then the server's order, with the requester last as
+  the server puts them.
 - When a search fails or times out, the "Suggestions unavailable · Retry" row shows under the
   tab's matches, never "No result". A bare `@` that fails lists this tab's opens and creations,
   the page being edited excepted.

@@ -3,7 +3,7 @@
  * costs. Skipped unless `MENTION_ROWS_BENCH=1`. Run alone, with the garbage collector exposed for the
  * memory numbers:
  *
- *   MENTION_ROWS_BENCH=1 node --expose-gc node_modules/.bin/jest \
+ *   MENTION_ROWS_BENCH=1 node --expose-gc node_modules/jest/bin/jest.js \
  *     src/components/editor/components/panels/mention-panel/__tests__/mentionLocalRows.bench.test.ts \
  *     --no-coverage --maxWorkers=1
  *
