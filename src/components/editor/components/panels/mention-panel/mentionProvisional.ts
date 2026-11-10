@@ -15,7 +15,11 @@
  * - no link: links derive from the query that answered them.
  *
  * An item listed by several sources is listed once, by its navigation key, with the first source's
- * body. Items keep their sources' order, so the picker can rank them as it ranks an answer.
+ * body. Items keep their sources' order, so the picker can rank them as it ranks an answer. A quick
+ * pick is the exception: Cloud computes its time when it answers (Today is that day, "Reminder 1
+ * week" a week from then) under a key without the time, so each comes from the newest cached
+ * answer that lists it, never from the list on screen, which can still show an older answer's
+ * after a newer one was cached.
  *
  * Once the server answers, its answer replaces them. While a request of the answer is still
  * pending, or failed, its kinds are missing from the answer, and the provisional items of those
@@ -88,17 +92,23 @@ function includesKind(include: readonly MentionTargetKind[], kind: MentionTarget
   return include.length === 0 || include.includes(kind);
 }
 
+/** Date and reminder quick picks, whose time Cloud computes when it answers. */
+function isQuickPick(kind: MentionTargetKind) {
+  return kind === MentionTargetKind.Date || kind === MentionTargetKind.Reminder;
+}
+
 /**
  * The cached answer of the longest typed prefix of `query`, shorter by one code point at a time,
  * down to one code point, at most {@link MENTION_PROVISIONAL_PREFIX_STEPS} prefixes. `keyOf` gives
- * a prefix's cache key, or `undefined` for a bare one; `read` the cached sections of a key.
+ * a prefix's cache key, or `undefined` for a bare one; `read` the cached answer of a key, such as
+ * its sections.
  */
-export function longestCachedMentionPrefixSections(
+export function longestCachedMentionPrefix<T>(
   query: string,
   keyOf: (prefix: string) => string | undefined,
-  read: (key: string) => MentionSearchSection[] | undefined,
+  read: (key: string) => T | undefined,
   maxSteps = MENTION_PROVISIONAL_PREFIX_STEPS
-): MentionSearchSection[] | undefined {
+): T | undefined {
   const codePoints = Array.from(query);
   let previousKey: string | undefined;
 
@@ -109,9 +119,9 @@ export function longestCachedMentionPrefixSections(
     if (key === undefined || key === previousKey) continue;
     previousKey = key;
 
-    const sections = read(key);
+    const answer = read(key);
 
-    if (sections) return sections;
+    if (answer !== undefined) return answer;
   }
 
   return undefined;
@@ -147,14 +157,27 @@ export function mentionProvisionalItemMatches(query: MentionQuery | string, item
   }
 }
 
+/** A cached answer, with when its request was sent: the larger `sequence` was asked for later. */
+export interface MentionProvisionalAnswer {
+  sections: readonly MentionSearchSection[];
+  sequence: number;
+}
+
 export interface MentionProvisionalInput {
   /** The typed query. A query that normalizes to nothing (a bare `@`) narrows nothing. */
   query: string;
   /**
    * The sections to narrow, best source first: the sections on screen, the longest cached prefix's
-   * answer, the cached bare `@` answer. An absent source is skipped.
+   * answer, the cached bare `@` answer. An absent source is skipped. They give every kind but the
+   * date and reminder quick picks, which come from {@link quickPickSources}.
    */
   sources: readonly (readonly MentionSearchSection[] | undefined)[];
+  /**
+   * The cached answers that give the date and reminder quick picks, in any order: the longest
+   * cached prefix's and the bare one. Each quick pick comes from the newest of them that lists it,
+   * since its time is the one Cloud computed for that answer. An absent answer is skipped.
+   */
+  quickPickSources: readonly (MentionProvisionalAnswer | undefined)[];
   /** The picker's kinds; empty means every kind. */
   include: readonly MentionTargetKind[];
   /** Leaves out an item no source may show any more, such as a view the user lost access to. */
@@ -166,12 +189,14 @@ export interface MentionProvisionalInput {
 /**
  * The provisional sections for `query` (see the module header): People, Pages (with rows),
  * Databases and Dates, in the canonical section order, each with the items that still match, in
- * their sources' order, the first listing of a navigation key only. Sections with no item are
- * left out. They have status `ok`; the picker ranks and caps them as it does an answer.
+ * their sources' order, the first listing of a navigation key only; quick picks from the newest
+ * cached answer that lists them. Sections with no item are left out. They have status `ok`; the
+ * picker ranks and caps them as it does an answer.
  */
 export function buildMentionProvisionalSections({
   query,
   sources,
+  quickPickSources,
   include,
   hides,
   sectionTitle,
@@ -184,24 +209,33 @@ export function buildMentionProvisionalSections({
   const items = new Map<MentionSearchSectionKind, MentionSearchResultItem[]>();
   const titles = new Map<MentionSearchSectionKind, string>();
 
-  sources.forEach((sections) =>
-    sections?.forEach((section) => {
-      section.items.forEach((item) => {
-        const kind = mentionProvisionalSectionKind(item.kind);
+  // Lists the quick picks of `from` when `quickPicks` is set, else its items of every other kind.
+  const collect = (from: MentionProvisionalInput['sources'], quickPicks: boolean) =>
+    from.forEach((sections) =>
+      sections?.forEach((section) => {
+        section.items.forEach((item) => {
+          const kind = mentionProvisionalSectionKind(item.kind);
 
-        if (!kind || !includesKind(include, item.kind)) return;
+          if (!kind || isQuickPick(item.kind) !== quickPicks || !includesKind(include, item.kind)) return;
 
-        const navKey = mentionItemNavKey(item);
+          const navKey = mentionItemNavKey(item);
 
-        if (seen.has(navKey)) return;
-        seen.add(navKey);
-        if (hides?.(item) || !mentionProvisionalItemMatches(prepared, item)) return;
+          if (seen.has(navKey)) return;
+          seen.add(navKey);
+          if (hides?.(item) || !mentionProvisionalItemMatches(prepared, item)) return;
 
-        items.set(kind, [...(items.get(kind) ?? []), item]);
-        if (section.kind === kind && !titles.has(kind)) titles.set(kind, section.title);
-      });
-    })
-  );
+          items.set(kind, [...(items.get(kind) ?? []), item]);
+          if (section.kind === kind && !titles.has(kind)) titles.set(kind, section.title);
+        });
+      })
+    );
+  const newestFirst = quickPickSources
+    .filter((answer): answer is MentionProvisionalAnswer => answer !== undefined)
+    .sort((left, right) => right.sequence - left.sequence)
+    .map((answer) => answer.sections);
+
+  collect(sources, false);
+  collect(newestFirst, true);
 
   return Array.from(items.entries())
     .sort(([left], [right]) => mentionSectionOrder(left) - mentionSectionOrder(right))

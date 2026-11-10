@@ -32,6 +32,7 @@ import {
   MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY,
   MENTION_SCHEDULER_MODE_OVERRIDE_KEY,
 } from '../mentionSearchScheduler';
+import { MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
 import { buildMentionSearchRequestsCacheKey, mergeMentionSearchResponses } from '../mentionUtils';
 
 const mockAddMark = jest.fn();
@@ -354,12 +355,17 @@ async function measureDelivery(isComplete: () => boolean, limitMs = 2000) {
   return { firstResultsMs, completeResultsMs };
 }
 
-describe('MentionPanel typed search delivery', () => {
+// Every delivery flow runs with the picker's keep-and-narrow switch (MEN-WEB-08) off and on.
+describe.each([
+  { typeaheadV2: false, name: 'off' },
+  { typeaheadV2: true, name: 'on' },
+])('MentionPanel typed search delivery, typeahead v2 $name', ({ typeaheadV2 }) => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     clearMentionSearchCacheForTests();
     localStorage.clear();
+    if (typeaheadV2) localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true');
     mockPanelContext.searchText = 'road';
     mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
     mockEditorContext.eventEmitter = undefined;
@@ -2263,14 +2269,20 @@ describe('MentionPanel typed search delivery', () => {
     it('serves a query from the answer that arrived while it waited, without sending it again', async () => {
       const { search, sent } = createTimedSearch(() => 150);
 
-      // `ro` answers at 450 ms; the user is back on it at 400, and that query is ready at 500.
+      // `ro` answers at 450 ms; the user is back on it at 400, and that query is ready at 500. The
+      // picker's v2 paints the answer from the cache as soon as it is stored.
       await openAndType(search, [
         [300, 'ro'],
         [350, 'roa'],
         [400, 'ro'],
       ]);
-      await advance(99);
+      await advance(49);
       expect(shows('Page for ro')).toBe(false);
+
+      await advance(1);
+      expect(shows('Page for ro')).toBe(typeaheadV2);
+      await advance(49);
+      expect(shows('Page for ro')).toBe(typeaheadV2);
 
       await advance(1);
       expect(shows('Page for ro')).toBe(true);

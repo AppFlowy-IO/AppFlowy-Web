@@ -76,6 +76,16 @@ const revokedViewListeners = new Set<() => void>();
 let cacheScope: string | undefined;
 const invalidationEmitters = new WeakSet<EventEmitter>();
 
+/** A cached answer as {@link MentionSearchCacheView} reads it, with when its request was sent. */
+export interface CachedMentionAnswer {
+  sections: MentionSearchSection[];
+  /**
+   * The send sequence of the request it answers ({@link MentionSearchCacheStamp}): of two cached
+   * answers, the one with the larger sequence was asked for later.
+   */
+  sequence: number;
+}
+
 /**
  * The cached answers as a render reads them (MEN-WEB-08's provisional sections), replaced after
  * every change, so a memo that depends on it reads them again.
@@ -85,10 +95,19 @@ export interface MentionSearchCacheView {
   readonly version: number;
   /** The cached sections of `key`, fresh or stale, as {@link getCachedMentionSections} gives them. */
   sections(key: string): MentionSearchSection[] | undefined;
+  /** The cached answer of `key`, fresh or stale, with when its request was sent. */
+  answer(key: string): CachedMentionAnswer | undefined;
+}
+
+function cachedMentionAnswer(key: string): CachedMentionAnswer | undefined {
+  const entry = mentionSearchCache.get(key);
+
+  // Every stored answer has a sequence; an entry without `cachedAt` only holds bookkeeping.
+  return entry?.cachedAt ? { sections: entry.sections, sequence: entry.sequence ?? 0 } : undefined;
 }
 
 function createMentionSearchCacheView(version: number): MentionSearchCacheView {
-  return { version, sections: (key) => getCachedMentionSections(key) };
+  return { version, sections: (key) => getCachedMentionSections(key), answer: cachedMentionAnswer };
 }
 
 let cacheView = createMentionSearchCacheView(0);

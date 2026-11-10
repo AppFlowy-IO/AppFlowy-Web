@@ -62,7 +62,7 @@ import { mentionLocalPickItem, mentionLocalPickUnderAnyView, rankMentionSections
 import {
   buildMentionProvisionalSections,
   capMentionSections,
-  longestCachedMentionPrefixSections,
+  longestCachedMentionPrefix,
   mentionAnswerMissingKinds,
   mentionInterimMissingKinds,
   withoutMentionKeys,
@@ -649,6 +649,10 @@ export function MentionPanel({
   // the search on screen, and a session report gives where a pick came from.
   const [mentionSectionsAnswer, setMentionSectionsAnswer] = useState<MentionSectionsAnswer | undefined>(undefined);
   const mentionSectionsSource = mentionSectionsAnswer?.source;
+  // The search key of the answer last shown, while that answer lists items. It is set as the answer
+  // is shown, before React renders it: the picker's v2 never replaces an earlier attempt's items for
+  // the same query with an incomplete answer that lists none.
+  const shownItemsKeyRef = useRef<string | undefined>(undefined);
   const [searchStatus, setSearchStatus] = useState<MentionSearchStatus>('idle');
   // An explicit retry (the Retry row, or the browser coming back online) is pending.
   const [retrying, setRetrying] = useState(false);
@@ -862,7 +866,8 @@ export function MentionPanel({
     [currentUser?.uuid, mentionSearchRequest, workspaceId]
   );
   // A typed query's provisional sections: what still matches it in the list on screen, the cached
-  // answer of its longest typed prefix and the cached bare answer, ranked as an answer is.
+  // answer of its longest typed prefix and the cached bare answer, ranked as an answer is. Date and
+  // reminder quick picks come from the newer of the two cached answers, never from the screen.
   const provisionalMentionSections = useMemo(() => {
     if (!typeaheadV2 || !hasMentionSearchQuery) return NO_MENTION_SECTIONS;
 
@@ -874,13 +879,12 @@ export function MentionPanel({
             userId: currentUser?.uuid,
           })
         : undefined;
+    const prefix = longestCachedMentionPrefix(query, prefixKey, mentionCacheView.answer);
+    const bare = mentionCacheView.answer(bareMentionSearchCacheKey);
     const narrowed = buildMentionProvisionalSections({
       query,
-      sources: [
-        shownSectionsRef.current,
-        longestCachedMentionPrefixSections(query, prefixKey, mentionCacheView.sections),
-        mentionCacheView.sections(bareMentionSearchCacheKey),
-      ],
+      sources: [shownSectionsRef.current, prefix?.sections, bare?.sections],
+      quickPickSources: [prefix, bare],
       include: mentionInclude,
       hides: (item) => mentionItemShowsAnyView(item, revokedViews),
       sectionTitle: mentionSectionTitle,
@@ -1007,6 +1011,7 @@ export function MentionPanel({
     if (!open || !searchMentions || !mentionRequestLanes || !mentionSearchScheduler) {
       if (useLocalMentionFallback) return;
 
+      shownItemsKeyRef.current = undefined;
       setMentionSections([]);
       setMentionSectionsAnswer(undefined);
       setSearchStatus('idle');
@@ -1090,6 +1095,7 @@ export function MentionPanel({
       source?: MentionSectionsSource,
       missingKinds?: ReadonlySet<MentionTargetKind>
     ) {
+      shownItemsKeyRef.current = source && hasMentionItems(sections) ? cacheKey : undefined;
       setMentionSections(sections);
       setMentionSectionsAnswer((shown) => {
         if (!source) return undefined;
@@ -1136,14 +1142,25 @@ export function MentionPanel({
         return;
       }
 
-      // Keep what the requests that answered found. Without any, keep what is on screen (the
-      // previous attempt of a retry, or the picker's v2 provisional list), or a cached answer.
+      // Keep what the requests that answered found. Without any, show a cached answer, or keep what
+      // is on screen (the previous attempt of a retry). The picker's v2 shows an answer without
+      // items too when a request of it answered, unless an attempt for this query showed items, so
+      // of its provisional list only the kinds that the answer lacks stay. When none answered, every
+      // kind is missing and the provisional list stays as it is.
       if (hasMentionItems(result.sections)) {
         showSections(result.sections, 'server', typeaheadV2 ? mentionAnswerMissingKinds(result.outcomes) : undefined);
       } else {
         const cachedSections = getCachedMentionSections(cacheKey);
 
-        if (cachedSections) showSections(cachedSections, 'cache');
+        if (cachedSections) {
+          showSections(cachedSections, 'cache');
+        } else if (
+          typeaheadV2 &&
+          shownItemsKeyRef.current !== cacheKey &&
+          result.outcomes.some(({ status }) => status === 'ok')
+        ) {
+          showSections(result.sections, 'server', mentionAnswerMissingKinds(result.outcomes));
+        }
       }
 
       if (result.state === 'busy') sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), resubmit);

@@ -11,7 +11,7 @@ import {
 import {
   buildMentionProvisionalSections,
   capMentionSections,
-  longestCachedMentionPrefixSections,
+  longestCachedMentionPrefix,
   MENTION_PROVISIONAL_PREFIX_STEPS,
   mentionAnswerMissingKinds,
   mentionInterimMissingKinds,
@@ -104,6 +104,7 @@ const BUDGET = page(2, 'Budget');
 const ROAD_TRIP = page(3, 'Road trip');
 const WEEKLY = page(4, 'Weekly notes');
 
+// Unless a test says otherwise, the sources give the quick picks too, the first as the newest answer.
 function provisional(
   query: string,
   sources: MentionProvisionalInput['sources'],
@@ -112,6 +113,7 @@ function provisional(
   return buildMentionProvisionalSections({
     query,
     sources,
+    quickPickSources: sources.map((sections, index) => sections && { sections, sequence: sources.length - index }),
     include: ALL_KINDS,
     sectionTitle: (kind) => `fallback ${kind}`,
     ...extra,
@@ -193,6 +195,36 @@ describe('mentionProvisional', () => {
       expect(titlesOf(provisional('es', sources))).toEqual([]);
     });
 
+    it('takes each quick pick from the newest cached answer that lists it, never from the list on screen', () => {
+      const reminder = (start: string): MentionSearchResultItem => ({
+        kind: MentionTargetKind.Reminder,
+        title: 'Reminder 1 week',
+        subtitle: start,
+        mention: { type: MentionTargetKind.Date, start, include_time: true },
+      });
+      // Cloud computes "Reminder 1 week" from when it answers, under a key without the time.
+      const older = reminder('2026-11-16T10:00:00Z');
+      const newer = reminder('2026-11-17T15:00:00Z');
+      const tomorrow = quickPick(MentionTargetKind.Reminder, 'Reminder tomorrow 9 AM');
+      const screen = [
+        section(MentionSearchSectionKind.Pages, [page(90, 'Release notes')]),
+        section(MentionSearchSectionKind.Dates, [older]),
+      ];
+      const prefix = { sections: [section(MentionSearchSectionKind.Dates, [older, tomorrow])], sequence: 3 };
+      const bare = { sections: [section(MentionSearchSectionKind.Dates, [newer])], sequence: 7 };
+      const build = (quickPickSources: MentionProvisionalInput['quickPickSources']) =>
+        provisional('re', [screen, prefix.sections, bare.sections], { quickPickSources });
+
+      // The bare request was sent after the prefix's, so its time wins, whatever the order given.
+      expect(build([prefix, bare])).toEqual([
+        section(MentionSearchSectionKind.Pages, [page(90, 'Release notes')]),
+        section(MentionSearchSectionKind.Dates, [newer, tomorrow]),
+      ]);
+      expect(build([bare, undefined, prefix])).toEqual(build([prefix, bare]));
+      // The list on screen gives no quick pick, only the cached answers do.
+      expect(titlesOf(build([]))).toEqual([[MentionSearchSectionKind.Pages, ['Release notes']]]);
+    });
+
     it('lists an item once, with the first source body, and keeps the sources order', () => {
       const renamed = { ...ROADMAP, title: 'Budget plan' };
       const screen = [section(MentionSearchSectionKind.Pages, [ROAD_TRIP, renamed])];
@@ -269,7 +301,7 @@ describe('mentionProvisional', () => {
     });
   });
 
-  describe('longestCachedMentionPrefixSections', () => {
+  describe('longestCachedMentionPrefix', () => {
     const request = { limit: 20, include: [MentionTargetKind.Page] };
     const keyOf = (prefix: string) =>
       prefix.trim() ? buildMentionSearchCacheKey({ ...request, query: prefix }) : undefined;
@@ -286,16 +318,16 @@ describe('mentionProvisional', () => {
       const r = [section(MentionSearchSectionKind.Pages, [ROAD_TRIP])];
       const { read } = cacheOf({ ro, r });
 
-      expect(longestCachedMentionPrefixSections('road', keyOf, read)).toBe(ro);
+      expect(longestCachedMentionPrefix('road', keyOf, read)).toBe(ro);
       expect(read).toHaveBeenCalledTimes(2);
-      expect(longestCachedMentionPrefixSections('rx', keyOf, read)).toBe(r);
+      expect(longestCachedMentionPrefix('rx', keyOf, read)).toBe(r);
     });
 
     it('stops at one code point and never reads the query itself or a bare prefix', () => {
       const { read } = cacheOf({ road: [section(MentionSearchSectionKind.Pages, [ROADMAP])] });
 
-      expect(longestCachedMentionPrefixSections('road', keyOf, read)).toBeUndefined();
-      expect(longestCachedMentionPrefixSections(' r', keyOf, read)).toBeUndefined();
+      expect(longestCachedMentionPrefix('road', keyOf, read)).toBeUndefined();
+      expect(longestCachedMentionPrefix(' r', keyOf, read)).toBeUndefined();
       expect(read.mock.calls.map(([key]) => JSON.parse(key).query)).toEqual(['roa', 'ro', 'r']);
     });
 
@@ -303,12 +335,12 @@ describe('mentionProvisional', () => {
       const emoji = [section(MentionSearchSectionKind.Pages, [page(60, '😀 notes')])];
       const { read } = cacheOf({ '😀': emoji });
 
-      expect(longestCachedMentionPrefixSections('😀😀', keyOf, read)).toBe(emoji);
-      expect(longestCachedMentionPrefixSections('Ro  x', keyOf, cacheOf({}).read)).toBeUndefined();
+      expect(longestCachedMentionPrefix('😀😀', keyOf, read)).toBe(emoji);
+      expect(longestCachedMentionPrefix('Ro  x', keyOf, cacheOf({}).read)).toBeUndefined();
 
       const once = cacheOf({});
 
-      longestCachedMentionPrefixSections('ro   x', keyOf, once.read);
+      longestCachedMentionPrefix('ro   x', keyOf, once.read);
       // `ro   ` and `ro  ` and `ro ` all key as `ro`.
       expect(once.read.mock.calls.map(([key]) => JSON.parse(key).query)).toEqual(['ro', 'r']);
     });
@@ -317,13 +349,11 @@ describe('mentionProvisional', () => {
       const { read } = cacheOf({ a: [section(MentionSearchSectionKind.Pages, [page(61, 'a')])] });
       const long = `a${'b'.repeat(MENTION_PROVISIONAL_PREFIX_STEPS + 1)}`;
 
-      expect(longestCachedMentionPrefixSections(long, keyOf, read)).toBeUndefined();
+      expect(longestCachedMentionPrefix(long, keyOf, read)).toBeUndefined();
       expect(read).toHaveBeenCalledTimes(MENTION_PROVISIONAL_PREFIX_STEPS);
-      expect(longestCachedMentionPrefixSections(long.slice(0, -1), keyOf, read)).toBeDefined();
+      expect(longestCachedMentionPrefix(long.slice(0, -1), keyOf, read)).toBeDefined();
       // 64 emoji are 128 UTF-16 units, and 64 prefixes still reach `a`.
-      expect(
-        longestCachedMentionPrefixSections(`a${'😀'.repeat(MENTION_PROVISIONAL_PREFIX_STEPS)}`, keyOf, read)
-      ).toBeDefined();
+      expect(longestCachedMentionPrefix(`a${'😀'.repeat(MENTION_PROVISIONAL_PREFIX_STEPS)}`, keyOf, read)).toBeDefined();
     });
   });
 

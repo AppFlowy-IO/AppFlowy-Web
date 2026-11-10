@@ -5,7 +5,7 @@ import { Profiler, ReactNode } from 'react';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import type { MentionPickerSession } from '@/application/services/js-services/http/mention-presentation-metrics';
 import {
   MentionSearchOptions,
@@ -21,9 +21,14 @@ import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 
 import { MentionPanel } from '../MentionPanel';
 import { MENTION_TYPED_DEADLINE_MS } from '../mentionRequestLanes';
-import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
-import { MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
+import {
+  clearMentionSearchCacheForTests,
+  MENTION_SEARCH_CACHE_FRESH_MS,
+  setCachedMentionSections,
+} from '../mentionSearchCache';
+import { MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
 import { MENTION_DEFAULT_HIGHLIGHT_OVERRIDE_KEY, MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
+import { buildMentionSearchRequestsCacheKey } from '../mentionUtils';
 
 const mockAddMark = jest.fn();
 const mockReport = jest.fn();
@@ -100,6 +105,16 @@ function person(id: string, name: string, email: string): MentionSearchResultIte
     title: name,
     subtitle: email,
     mention: { type: MentionTargetKind.Person, person_id: id, person_name: name, page_id: 'page' },
+  };
+}
+
+// Cloud computes a reminder quick pick's time when it answers, and keys it by kind and title only.
+function reminder(title: string, start: string, shown: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Reminder,
+    title,
+    subtitle: shown,
+    mention: { type: MentionTargetKind.Date, start, include_time: true },
   };
 }
 
@@ -233,6 +248,10 @@ function highlighted() {
 
 function retryRow() {
   return document.querySelector<HTMLElement>('[data-testid="mention-panel-retry"]');
+}
+
+function busyRow() {
+  return document.querySelector<HTMLElement>('[data-testid="mention-panel-busy"]');
 }
 
 async function pressKey(key: string) {
@@ -500,6 +519,257 @@ describe('MentionPanel keep-and-narrow first paint (MEN-WEB-08)', () => {
     expect(titles()).toEqual(['Roadmap']);
     expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
     expect(shows('findAndReplace.noResult')).toBe(false);
+  });
+
+  it('keeps only the kinds a failed request lacks when the answer lists no item', async () => {
+    const search = createSearch((lane) => {
+      if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, BUDGET) };
+      // The primary answers that no page matches; only the rows request fails.
+      if (lane === 'primary') return { delayMs: 80, response: EMPTY };
+      return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    expect(titles()).toEqual(['Roadmap']);
+    await advance(300);
+
+    expect(titles()).toEqual([]);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    expect(isBusy()).toBe(false);
+    expect(shows('findAndReplace.noResult')).toBe(false);
+  });
+
+  it('keeps the provisional pages of a busy primary request, not the rows its rows request ruled out', async () => {
+    const attempts = { primary: 0, rows: 0 };
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') return { delayMs: 50, response: EMPTY };
+      if (query === 'ro') {
+        return { delayMs: 80, response: lane === 'primary' ? pages(ROADMAP) : pages(row('Roadmap row')) };
+      }
+
+      attempts[lane] += 1;
+      // `roa`: first the primary is asked to wait and no row matches, then no page matches and the
+      // rows request fails.
+      if (lane === 'primary') {
+        return attempts.primary === 1
+          ? { delayMs: 80, error: { code: ERROR_CODE.RETRY_LATER, message: 'retry later' } }
+          : { delayMs: 80, response: EMPTY };
+      }
+
+      return attempts.rows === 1
+        ? { delayMs: 80, response: EMPTY }
+        : { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap', 'Roadmap row']);
+
+    type(view, 'roa');
+    expect(titles()).toEqual(['Roadmap', 'Roadmap row']);
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap']);
+    expect(busyRow()).not.toBeNull();
+    expect(shows('findAndReplace.noResult')).toBe(false);
+
+    // Sent again after the 3 s cooldown, it replaces the first attempt, which listed no item either.
+    await advance(3_000);
+    expect(attempts).toEqual({ primary: 2, rows: 2 });
+    expect(titles()).toEqual(['Roadmap row']);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+  });
+
+  it("keeps the previous attempt's answer when a retry lists no item, body-only hits too", async () => {
+    const attempts = { primary: 0, rows: 0 };
+    const failure: Reply = { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+    const search = createSearch((lane) => {
+      if (lane === 'bare') return { delayMs: 50, response: EMPTY };
+      attempts[lane] += 1;
+      // First the rows request fails; on the retry the primary does, and no row matches.
+      // Weekly notes matched `ro` in its body, which no provisional list keeps.
+      if (lane === 'primary') {
+        return attempts.primary === 1 ? { delayMs: 80, response: pages(ROADMAP, page('Weekly notes')) } : failure;
+      }
+
+      return attempts.rows === 1 ? failure : { delayMs: 80, response: EMPTY };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap', 'Weekly notes']);
+
+    await act(async () => {
+      fireEvent.click(retryRow() as HTMLElement);
+    });
+    await advance(300);
+    expect(attempts).toEqual({ primary: 2, rows: 2 });
+    expect(titles()).toEqual(['Roadmap', 'Weekly notes']);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+  });
+
+  it('takes a quick pick from the newest cached answer, so a refresh that lands after the keystroke gives its time', async () => {
+    const before = reminder('Reminder 1 week', '2026-11-16T10:00:00Z', 'Nov 16, 10:00');
+    const refreshed = reminder('Reminder 1 week', '2026-11-17T15:00:00Z', 'Nov 17, 15:00');
+    let bareAnswers = 0;
+    const search = createSearch((lane) => {
+      if (lane === 'bare') {
+        bareAnswers += 1;
+        return bareAnswers === 1
+          ? { delayMs: 50, response: { sections: [section(MentionSearchSectionKind.Dates, [before])] } }
+          : { delayMs: 200, response: { sections: [section(MentionSearchSectionKind.Dates, [refreshed])] } };
+      }
+
+      if (lane === 'primary') return { delayMs: 30, error: { code: 500, message: 'Internal Server Error' } };
+      return { delayMs: 30, response: EMPTY };
+    });
+
+    await openPanel(search);
+    cleanup();
+    await advance(MENTION_SEARCH_CACHE_FRESH_MS);
+
+    // The next opening shows the stale bare answer while it refreshes it, and `re` is typed at once.
+    const view = await openPanel(search, 0);
+
+    expect(shows('Nov 16, 10:00')).toBe(true);
+    type(view, 're');
+    expect(shows('Nov 16, 10:00')).toBe(true);
+
+    // The typed search fails at 150 ms, and the refresh lands at 200 ms.
+    await advance(300);
+    expect(bareAnswers).toBe(2);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    expect(shows('Nov 16, 10:00')).toBe(false);
+    expect(shows('Nov 17, 15:00')).toBe(true);
+
+    await placeCaretAtEnd(view.editor);
+    await pressKey('ArrowDown');
+    await pressKey('Enter');
+    expect(mockAddMark).toHaveBeenCalledWith(
+      view.editor,
+      expect.objectContaining({
+        value: expect.objectContaining({ type: MentionType.Date, date: '2026-11-17T15:00:00Z' }),
+      })
+    );
+  });
+
+  it('takes a quick pick from a typed answer asked for after the cached bare one', async () => {
+    const stale = reminder('Reminder 1 week', '2026-11-16T10:00:00Z', 'Nov 16, 10:00');
+    const typed = reminder('Reminder 1 week', '2026-11-17T15:00:00Z', 'Nov 17, 15:00');
+    let bareAnswers = 0;
+    const search = createSearch((lane, query) => {
+      if (lane === 'bare') {
+        bareAnswers += 1;
+        // The refresh of the next opening never answers.
+        return bareAnswers === 1
+          ? { delayMs: 50, response: { sections: [section(MentionSearchSectionKind.Dates, [stale])] } }
+          : NEVER;
+      }
+
+      if (lane === 'rows') return { delayMs: 30, response: EMPTY };
+      return query === 'r'
+        ? { delayMs: 30, response: { sections: [section(MentionSearchSectionKind.Dates, [typed])] } }
+        : NEVER;
+    });
+
+    await openPanel(search);
+    cleanup();
+    await advance(MENTION_SEARCH_CACHE_FRESH_MS);
+
+    const view = await openPanel(search, 0);
+
+    type(view, 'r');
+    await advance(300);
+    expect(shows('Nov 17, 15:00')).toBe(true);
+
+    // `re` waits for its answer; its reminder is the one `r`'s answer gave, not the bare one.
+    type(view, 're');
+    expect(shows('Nov 16, 10:00')).toBe(false);
+    expect(shows('Nov 17, 15:00')).toBe(true);
+  });
+
+  it('shows no server answer when none of the typed requests answered, so the report counts none', async () => {
+    const search = createSearch((lane) =>
+      lane === 'bare'
+        ? { delayMs: 50, response: pages(ROADMAP, BUDGET) }
+        : { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } }
+    );
+
+    await openPanel(search);
+    cleanup();
+    // Reopened at once, the fresh bare answer is painted from the cache, with no request.
+    const view = await openPanel(search, 0);
+
+    type(view, 'r');
+    await advance(300);
+    expect(titles()).toEqual(['Roadmap']);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+
+    cleanup();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sessions = mockReport.mock.calls.map(([, session]) => session as MentionPickerSession);
+
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0].server_ms).toEqual(expect.any(Number));
+    expect(sessions[1].server_ms).toBeUndefined();
+    expect(sessions[1].time_to_first_paint_ms).toEqual(expect.any(Number));
+  });
+
+  it('shows a cached answer for the query rather than an answer of its own that lists no item', async () => {
+    const search = createSearch((lane) => {
+      if (lane === 'bare') return { delayMs: 50, response: EMPTY };
+      // The primary request fails, and no row matches.
+      if (lane === 'primary') return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+      return { delayMs: 80, response: EMPTY };
+    });
+    const view = await openPanel(search);
+
+    type(view, 'ro');
+    await advance(130);
+
+    // Another flight stores the answer to `ro` while this one is pending, body-only hit included.
+    const requests = search.mock.calls.map(([request]) => request).filter((request) => request.query === 'ro');
+
+    expect(requests).toHaveLength(2);
+    await act(async () => {
+      setCachedMentionSections(
+        buildMentionSearchRequestsCacheKey(requests, { workspaceId: 'workspace' }),
+        pages(ROADMAP, page('Weekly notes')).sections
+      );
+    });
+    await advance(200);
+    expect(titles()).toEqual(['Roadmap', 'Weekly notes']);
+    expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+  });
+
+  it('keeps a one-letter query local under the contract scheduler: narrowed at once, or "No result"', async () => {
+    localStorage.setItem(MENTION_SCHEDULER_MODE_OVERRIDE_KEY, 'contract');
+    localStorage.setItem(MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, 'true');
+
+    const search = createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER));
+    const view = await openPanel(search);
+
+    type(view, 'r');
+    expect(titles()).toEqual(['Roadmap']);
+    await advance(1_000);
+    expect(titles()).toEqual(['Roadmap']);
+    expect(showsProgress()).toBe(false);
+    expect(shows('findAndReplace.noResult')).toBe(false);
+
+    // A letter nothing matches waits for no answer, so it says so at once.
+    commits = [];
+    type(view, 'x');
+    expect(titles()).toEqual([]);
+    expect(isBusy()).toBe(false);
+    expect(shows('findAndReplace.noResult')).toBe(true);
+    expect(commits.every(({ noResult }) => noResult)).toBe(true);
+    await advance(1_000);
+    expect(typedQueries(search)).toEqual([]);
   });
 
   it('says "No result" only once the server answered that nothing matches', async () => {

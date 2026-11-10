@@ -289,7 +289,11 @@ behaves as before.
   prefix of the query, and the cached bare `@` answer of the same picker. A cached answer is read
   fresh or stale, and one that arrives later, such as a bare answer that comes after the user typed,
   narrows into the list at once. An item listed by several of them is listed once, with the first
-  one's title, so a page renamed on screen is not brought back by an older answer.
+  one's title, so a page renamed on screen is not brought back by an older answer. Date and reminder
+  quick picks are the exception: Cloud computes their time when it answers (Today is that day,
+  "Reminder 1 week" a week from then) and keys them by kind and title only, so each comes from the
+  newer of the two cached answers that lists it (the one whose request was sent later), never from
+  the list on screen, which can still show an older answer's after the bare answer's refresh landed.
 - Only items that still match the new query by the typeahead contract's matcher stay: pages,
   databases and rows whose title matches at T3 or better, people whose name or address local part
   matches at C3 or better (the domain alone never matches), and date and reminder quick picks that
@@ -307,7 +311,11 @@ behaves as before.
   server's order; Databases because Search also matches a database by the name of the view that
   reached it, which the item does not carry. While a request of the answer is pending, or after it
   failed, the provisional items of its kinds stay: the rows a slower rows request has not answered
-  yet, or the pages next to the "Suggestions unavailable · Retry" row.
+  yet, or the pages next to the "Suggestions unavailable · Retry" row. An incomplete answer that
+  lists no item replaces the provisional list too when one of its requests answered, so only the
+  kinds it lacks stay; when none answered, the whole list stays. When a retry, or the search sent
+  again after a busy cooldown, lists no item, the items an earlier attempt for the same query showed
+  stay.
 - "No result" shows only for an answer to what is typed, never for a provisional list that is
   empty. A query that stays local under the contract scheduler's one-letter rule shows its
   provisional list as its answer.

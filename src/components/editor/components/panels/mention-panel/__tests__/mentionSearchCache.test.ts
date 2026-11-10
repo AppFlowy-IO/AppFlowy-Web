@@ -485,5 +485,30 @@ describe('mentionSearchCache', () => {
       expect(listener).not.toHaveBeenCalled();
       unsubscribe();
     });
+
+    // The provisional list takes each date and reminder quick pick from the newest cached answer.
+    it('gives each cached answer with when its request was sent, never a cooldown alone', () => {
+      const sentFirst = mentionSearchCacheStamp();
+      const sentLater = mentionSearchCacheStamp();
+
+      // The later request answered first.
+      setCachedMentionSections('roa', pages(page('Road trip')), sentLater);
+      setCachedMentionSections('ro', pages(page('Roadmap')), sentFirst);
+      markMentionSearchRetryLater('busy', { code: ERROR_CODE.RETRY_LATER, message: 'retry later' });
+
+      const view = getMentionSearchCacheView();
+      const ro = view.answer('ro');
+      const roa = view.answer('roa');
+
+      expect(ro?.sections).toEqual(pages(page('Roadmap')));
+      expect(roa?.sections).toEqual(pages(page('Road trip')));
+      expect(ro && roa && roa.sequence > ro.sequence).toBe(true);
+      expect(view.answer('busy')).toBeUndefined();
+      expect(view.answer('missing')).toBeUndefined();
+
+      // An answer stored without a stamp counts as asked for when it is stored.
+      setCachedMentionSections('r', pages());
+      expect((getMentionSearchCacheView().answer('r')?.sequence ?? 0) > (roa?.sequence ?? 0)).toBe(true);
+    });
   });
 });
