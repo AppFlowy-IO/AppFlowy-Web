@@ -27,6 +27,12 @@
  * A browser opts in with `localStorage.__mention_typeahead_v2 = 'true'` and
  * `localStorage.__mention_default_highlight = 'true'`. Storage that cannot be read gives the
  * defaults. Nothing here depends on React.
+ *
+ * The picker's sections switch (MEN-WEB-12) is independent of v2 and off by default until product
+ * and design sign off on the structure: on, every kind is a section of its own in the canonical
+ * order (Databases no longer fold into Pages), each people and object section shows four results
+ * and "N more", and a typed query offers to create a page, as the local fallback does
+ * (`localStorage.__mention_sections_v2 = 'true'`; see `mentionUtils.ts`, `MentionSectionLayout`).
  */
 
 /** Whether a picker that opens now keeps and narrows its list (MEN-WEB-08), unless the browser overrides it. */
@@ -52,6 +58,10 @@ export const MENTION_LOCAL_ROWS_OVERRIDE_KEY = '__mention_local_rows';
 export const MENTION_LOCAL_ROWS_SKIP_SERVER_DEFAULT = false;
 /** `localStorage` key that lets the local rows lane replace the server's rows request (`true`). */
 export const MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY = '__mention_local_rows_skip_server';
+/** Whether a picker that opens now shows MEN-WEB-12's sections, unless the browser overrides it. */
+export const MENTION_SECTIONS_V2_DEFAULT = false;
+/** `localStorage` key that turns MEN-WEB-12's sections on (`true`) or off (`false`). */
+export const MENTION_SECTIONS_V2_OVERRIDE_KEY = '__mention_sections_v2';
 
 /** How a picker that opens now behaves while the user types. */
 export interface MentionTypeaheadSettings {
@@ -113,4 +123,13 @@ export function readMentionTypeaheadSettings(): MentionTypeaheadSettings {
     skipServerRows:
       localRows && readSwitch(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, MENTION_LOCAL_ROWS_SKIP_SERVER_DEFAULT),
   };
+}
+
+/**
+ * Whether a picker that opens now lays its sections out separately, collapses each people and object
+ * section and offers to create a page for a typed query (MEN-WEB-12):
+ * {@link MENTION_SECTIONS_V2_DEFAULT} unless the browser overrides it, with or without v2.
+ */
+export function readMentionSectionsV2(): boolean {
+  return readSwitch(MENTION_SECTIONS_V2_OVERRIDE_KEY, MENTION_SECTIONS_V2_DEFAULT);
 }

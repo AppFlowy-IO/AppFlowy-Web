@@ -126,13 +126,17 @@ import {
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
+  layoutMentionSectionsForPicker,
+  MENTION_SECTION_COLLAPSE_LIMIT,
   mentionItemNavKey,
   MentionOptionSelection,
   MentionPanelSearchResult,
-  normalizeMentionSearchSectionsForPicker,
+  mentionSectionCollapses,
+  MentionSectionLayout,
+  mentionSectionTitle,
   reconcileMentionOptionSelection,
 } from './mentionUtils';
-import { MENTION_TYPEAHEAD_LEGACY, readMentionTypeaheadSettings } from './mentionTypeaheadFlag';
+import { MENTION_TYPEAHEAD_LEGACY, readMentionSectionsV2, readMentionTypeaheadSettings } from './mentionTypeaheadFlag';
 import { useMentionLocalSnapshot } from './useMentionLocalSnapshot';
 import { useMentionPickerSession } from './useMentionPickerSession';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
@@ -142,7 +146,6 @@ enum MentionTag {
 }
 
 const MENTION_SEARCH_LIMIT = 20;
-const PAGE_RESULT_COLLAPSE_LIMIT = 4;
 /** The key of the "Suggestions unavailable · Retry" row, which holds no position either. */
 const MENTION_RETRY_OPTION_KEY = 'status|retry';
 
@@ -249,8 +252,10 @@ type MentionPanelOption =
       result: MentionPanelSearchResult;
     }
   | {
-      kind: 'morePages';
+      kind: 'moreResults';
       key: string;
+      /** The section this row expands. */
+      sectionKind: MentionSearchSectionKind;
       remainingCount: number;
       // The first collapsed result: Enter on this row expands the section and highlights it.
       firstHidden: MentionOptionSelection;
@@ -265,8 +270,8 @@ type MentionPanelOption =
       createType: MentionType.childPage | MentionType.PageRef;
     };
 
-type MentionPanelResultOption = Extract<MentionPanelOption, { kind: 'result' | 'morePages' }>;
-type MentionPanelMorePagesOption = Extract<MentionPanelOption, { kind: 'morePages' }>;
+type MentionPanelResultOption = Extract<MentionPanelOption, { kind: 'result' | 'moreResults' }>;
+type MentionPanelMoreResultsOption = Extract<MentionPanelOption, { kind: 'moreResults' }>;
 type MentionPanelRetryOption = Extract<MentionPanelOption, { kind: 'retry' }>;
 type MentionPanelCreatePageOption = Extract<MentionPanelOption, { kind: 'createPage' }>;
 
@@ -279,9 +284,13 @@ function mentionOptionSelection(option: MentionPanelOption): MentionOptionSelect
 }
 
 interface MentionPanelResultSection {
+  /** The section's React key: its kind, with an occurrence suffix for a second section of a kind. */
+  key: string;
   section: MentionSearchSection;
   options: MentionPanelResultOption[];
 }
+
+const NO_EXPANDED_SECTIONS: ReadonlySet<MentionSearchSectionKind> = new Set();
 
 const DEFAULT_MENTION_INCLUDE = [
   MentionTargetKind.Person,
@@ -402,8 +411,8 @@ function MentionResultIcon({ item, title }: { item: MentionSearchResultItem; tit
       return <MentionPersonAvatar item={item} title={title} />;
     case MentionTargetKind.Database:
     case MentionTargetKind.DatabaseRow:
-      // Desktop parity: database and database-row results render inline in
-      // the Pages section with a grid icon.
+      // In whichever section lists them: Pages, where the folded layout shows databases and where
+      // Search sends typed rows, or their own sections.
       return <GridIcon className={className} />;
     case MentionTargetKind.Date:
       return <DateIcon className={className} />;
@@ -480,10 +489,7 @@ function MentionMoreResultsButton({
   onClick: () => void;
 }) {
   const { t } = useTranslation();
-  const label = t('document.mention.moreResults', {
-    count: remainingCount,
-    defaultValue: '{{count}} more results...',
-  });
+  const label = t('document.mentionMenu.moreResults', { count: remainingCount });
 
   return (
     <Button
@@ -503,6 +509,13 @@ function MentionMoreResultsButton({
   );
 }
 
+/**
+ * Stands in for the typed name while a "Create" label is translated, so the name shows on its own:
+ * truncated by itself with the words around it in view, and never escaped by i18next, which would
+ * show `R&D` as `R&amp;D`. A private-use character, which no translation holds.
+ */
+const CREATE_LABEL_NAME_SLOT = '\uE000';
+
 function MentionCreatePageButton({
   createType,
   searchText,
@@ -520,7 +533,26 @@ function MentionCreatePageButton({
 }) {
   const { t } = useTranslation();
   const isChildPage = createType === MentionType.childPage;
-  const pageName = searchText ? `"${searchText}"` : 'new';
+  const label = searchText
+    ? t(isChildPage ? 'document.mentionMenu.createSubPage' : 'document.mentionMenu.createPageIn', {
+        name: CREATE_LABEL_NAME_SLOT,
+      })
+    : t(isChildPage ? 'document.mentionMenu.createNewSubPage' : 'document.mentionMenu.createNewPageIn');
+  // The words of the label, with the typed name wherever the translation puts it.
+  const labelParts = label.split(CREATE_LABEL_NAME_SLOT).flatMap((part, partIndex) =>
+    partIndex === 0
+      ? [part]
+      : [
+          <span
+            key={partIndex}
+            data-testid={'mention-create-page-name'}
+            className={'inline-block max-w-[160px] truncate align-bottom'}
+          >
+            {searchText}
+          </span>,
+          part,
+        ]
+  );
 
   return (
     <Button
@@ -541,11 +573,7 @@ function MentionCreatePageButton({
       }`}
       onClick={onClick}
     >
-      <span className={'flex min-w-0 items-center'}>
-        <span>{t('button.create')}</span>
-        <span className={'mx-1 max-w-[160px] truncate'}>{pageName}</span>
-        <span className={'truncate'}>{isChildPage ? t('document.slashMenu.subPage.keyword1') : 'page in...'}</span>
-      </span>
+      <span className={'block min-w-0 truncate'}>{labelParts}</span>
     </Button>
   );
 }
@@ -664,7 +692,17 @@ function MentionPanelLoadingState() {
 export function MentionPanel({
   notifyOnInsert = true,
   onPersonPicked,
-}: { notifyOnInsert?: boolean; onPersonPicked?: (personId: string, requireNotification: boolean) => void } = {}) {
+  canCreatePages = true,
+}: {
+  notifyOnInsert?: boolean;
+  onPersonPicked?: (personId: string, requireNotification: boolean) => void;
+  /**
+   * Whether a typed query may offer to create a page from a server's answer, which only the
+   * picker's sections switch does (MEN-WEB-12); a database Text cell turns it off, as Desktop's
+   * does. The local fallback keeps its own rule.
+   */
+  canCreatePages?: boolean;
+} = {}) {
   const {
     isPanelOpen,
     panelPosition,
@@ -721,7 +759,8 @@ export function MentionPanel({
   // Bumped to send the same search again; the search effect depends on it.
   const [retryNonce, setRetryNonce] = useState(0);
   const lastSearchRef = useRef<{ key: string; nonce: number } | undefined>(undefined);
-  const [showMorePages, setShowMorePages] = useState(false);
+  // The collapsed sections whose "N more" row was chosen, until the query changes or the panel closes.
+  const [expandedSections, setExpandedSections] = useState(NO_EXPANDED_SECTIONS);
   const [localFallbackViews, setLocalFallbackViews] = useState<View[]>([]);
   const mentionSearchRequestIdRef = useRef(0);
   // Each opening of the panel is a session with its own request lanes, so it sends on new streams.
@@ -762,6 +801,11 @@ export function MentionPanel({
   );
   // The first option is highlighted unless an arrow key holds the highlight (off by default).
   const defaultHighlight = typeaheadV2 && typeaheadSettings.defaultHighlight;
+  // The picker's sections switch (MEN-WEB-12), off by default and read once per opening: every kind
+  // in a section of its own, each people and object section collapsed to four results, and a
+  // typed query offered to create a page. Off, databases fold into Pages and only Pages collapses.
+  const sectionsV2 = useMemo(() => open && readMentionSectionsV2(), [open]);
+  const sectionLayout: MentionSectionLayout = sectionsV2 ? 'separate' : 'folded';
   // The query an arrow key took the highlight at: it stays on its item until the next keystroke.
   const selectionLockRef = useRef<string | undefined>(undefined);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
@@ -924,17 +968,10 @@ export function MentionPanel({
   useEffect(() => {
     if (localRows) prepareMentionLocalRows(localRowsSnapshot);
   }, [localRows, localRowsSnapshot]);
-  const pagesSectionTitle = t('document.mention.pagesSection');
-  // The picker shows databases inside Pages, or as Pages when no page is listed
-  // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.
-  const mentionSectionTitle = useCallback(
-    (kind: MentionSearchSectionKind) => {
-      if (kind === MentionSearchSectionKind.People) return t('document.mention.peopleSection');
-      if (kind === MentionSearchSectionKind.Dates) return t('inlineActions.date');
-      return pagesSectionTitle;
-    },
-    [pagesSectionTitle, t]
-  );
+  const pagesSectionTitle = mentionSectionTitle(MentionSearchSectionKind.Pages, t);
+  // The title of a section the picker makes, such as one only picked or local items fill. A server's
+  // sections are titled by kind as well, whatever title they came with (pickerMentionSections).
+  const createdSectionTitle = useCallback((kind: MentionSearchSectionKind) => mentionSectionTitle(kind, t), [t]);
   // A view the user lost access to never joins, nor does one below it: the app names only the view
   // whose share changed, and the index lists the pages below it until its sources catch up.
   const pickLocalItem = useCallback(
@@ -968,16 +1005,16 @@ export function MentionPanel({
       request: { include: mentionInclude },
       requesterPersonId: currentUser?.uuid,
       localItem: pickLocalItem,
-      sectionTitle: mentionSectionTitle,
+      sectionTitle: createdSectionTitle,
       nowMs,
     });
   }, [
+    createdSectionTitle,
     currentUser?.uuid,
     hasMentionSearchQuery,
     localFallbackMentionSections,
     mentionInclude,
     mentionSections,
-    mentionSectionTitle,
     pickLocalItem,
     pickMemory,
     searchText,
@@ -1012,11 +1049,11 @@ export function MentionPanel({
         request: { include: mentionInclude },
         requesterPersonId: currentUser?.uuid,
         localItem,
-        sectionTitle: mentionSectionTitle,
+        sectionTitle: createdSectionTitle,
         nowMs: Date.now(),
         retierKinds: MENTION_V2_RETIER_KINDS,
       }),
-    [currentUser?.uuid, mentionInclude, mentionSectionTitle, searchText, v2PickScores]
+    [createdSectionTitle, currentUser?.uuid, mentionInclude, searchText, v2PickScores]
   );
   // The database's rows that match what is typed, ranked among themselves (MEN-WEB-15). None when the
   // user lost access to the view the editor is in, whose rows a mention would open. The row the
@@ -1063,13 +1100,13 @@ export function MentionPanel({
           // A section never shows fewer items than the server listed in it: rows join Pages.
           limit: (_, serverItems) => Math.max(MENTION_SEARCH_LIMIT, serverItems),
         }),
-        mentionSectionTitle
+        createdSectionTitle
       ),
     [
+      createdSectionTitle,
       currentUser?.uuid,
       laneKeyedLike,
       mentionInclude,
-      mentionSectionTitle,
       presentKeys,
       rowLaneItems,
       searchText,
@@ -1112,10 +1149,11 @@ export function MentionPanel({
       quickPickSources: [prefix, bare],
       include: mentionInclude,
       hides: (item) => mentionItemShowsAnyView(item, revokedViews) || belowRevoked(item),
-      sectionTitle: mentionSectionTitle,
+      sectionTitle: createdSectionTitle,
     });
   }, [
     bareMentionSearchCacheKey,
+    createdSectionTitle,
     currentUser?.uuid,
     hasMentionSearchQuery,
     localLane,
@@ -1123,7 +1161,6 @@ export function MentionPanel({
     mentionCacheView,
     mentionInclude,
     mentionSearchRequest,
-    mentionSectionTitle,
     revokedViews,
     searchText,
     skipTypedRows,
@@ -1166,7 +1203,7 @@ export function MentionPanel({
         requesterPersonId: currentUser?.uuid,
         request: { include: mentionInclude },
         limit: MENTION_SEARCH_LIMIT,
-        sectionTitle: mentionSectionTitle,
+        sectionTitle: createdSectionTitle,
         nowMs: Date.now(),
       });
 
@@ -1217,6 +1254,7 @@ export function MentionPanel({
     };
   }, [
     bareSearchFailed,
+    createdSectionTitle,
     currentUser?.uuid,
     hasMentionSearchQuery,
     laneKeyedLike,
@@ -1224,7 +1262,6 @@ export function MentionPanel({
     mentionCacheView,
     mentionInclude,
     mentionSearchCacheKey,
-    mentionSectionTitle,
     mentionSections,
     mentionSectionsAnswer?.at,
     mentionSectionsAnswer?.missingKinds,
@@ -1251,30 +1288,40 @@ export function MentionPanel({
       ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
       : NO_MENTION_SECTIONS;
   }, [mentionV2View]);
-  const pickerMentionSections = useMemo(
-    () =>
-      normalizeMentionSearchSectionsForPicker(
-        enableReminderMentions === false
-          ? sourceMentionSections.map((section) => ({
-              ...section,
-              items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
-            }))
-          : sourceMentionSections,
-        pagesSectionTitle
-      ),
-    [sourceMentionSections, enableReminderMentions, pagesSectionTitle]
-  );
+  // The sections as the picker lays them out (MentionSectionLayout). A server's are titled by kind,
+  // in the user's language, never with the English titles servers send (MEN-WEB-12); the local
+  // fallback titles its own ("Recent pages").
+  const pickerMentionSections = useMemo(() => {
+    const sections = layoutMentionSectionsForPicker(
+      enableReminderMentions === false
+        ? sourceMentionSections.map((section) => ({
+            ...section,
+            items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
+          }))
+        : sourceMentionSections,
+      sectionLayout,
+      pagesSectionTitle
+    );
+
+    if (useLocalMentionFallback) return sections;
+
+    return sections.map((section) => {
+      const title = mentionSectionTitle(section.kind, t, section.title);
+
+      return title === section.title ? section : { ...section, title };
+    });
+  }, [enableReminderMentions, pagesSectionTitle, sectionLayout, sourceMentionSections, t, useLocalMentionFallback]);
 
   useEffect(() => {
     if (!open) {
       setSelection(null);
-      setShowMorePages(false);
+      setExpandedSections(NO_EXPANDED_SECTIONS);
       selectionLockRef.current = undefined;
     }
   }, [open, setSelection]);
 
   useEffect(() => {
-    setShowMorePages(false);
+    setExpandedSections(NO_EXPANDED_SECTIONS);
   }, [mentionSearchCacheKey]);
 
   // One listener set per app emitter marks cached answers stale on workspace events.
@@ -1724,8 +1771,18 @@ export function MentionPanel({
       ),
     [hasMentionSearchQuery, pickerMentionSections]
   );
-  const canCreatePageInLocalFallback =
-    useLocalMentionFallback && searchStatus !== 'loading' && Boolean(addPage && viewId);
+  // The local fallback offers to create a page once its pages loaded, typed or not, as before. With
+  // the sections switch, a typed query offers it from a server's answer too (MEN-WEB-12), unless
+  // the skeleton stands in for the results.
+  const canCreatePage =
+    Boolean(addPage && viewId) &&
+    (useLocalMentionFallback
+      ? searchStatus !== 'loading'
+      : hasSearchMentions &&
+        sectionsV2 &&
+        canCreatePages &&
+        hasMentionSearchQuery &&
+        (searchStatus !== 'loading' || rawMentionSearchResults.length > 0));
   // Offline is a reason for missing suggestions too, so it offers the same Retry row.
   const showRetryOption = searchStatus === 'unavailable' || searchStatus === 'offline';
   const { mentionResultSections, mentionPanelOptions, retryOption, createPageOptions, resultRanks } = useMemo(() => {
@@ -1739,17 +1796,24 @@ export function MentionPanel({
     });
 
     const options: MentionPanelOption[] = [];
+    const sectionOccurrences = new Map<MentionSearchSectionKind, number>();
     const sections = pickerMentionSections
       .map<MentionPanelResultSection | null>((section, sectionIndex) => {
         const results = resultsBySection.get(sectionIndex) ?? [];
 
         if (results.length === 0) return null;
 
+        // Two sections of one kind are not expected; a second one still gets keys of its own.
+        const occurrence = (sectionOccurrences.get(section.kind) ?? 0) + 1;
+        const sectionKey = occurrence === 1 ? section.kind : `${section.kind}#${occurrence}`;
+
+        sectionOccurrences.set(section.kind, occurrence);
+
         const shouldCollapse =
-          section.kind === MentionSearchSectionKind.Pages &&
-          !showMorePages &&
-          results.length > PAGE_RESULT_COLLAPSE_LIMIT;
-        const visibleResults = shouldCollapse ? results.slice(0, PAGE_RESULT_COLLAPSE_LIMIT) : results;
+          mentionSectionCollapses(section.kind, sectionLayout) &&
+          !expandedSections.has(section.kind) &&
+          results.length > MENTION_SECTION_COLLAPSE_LIMIT;
+        const visibleResults = shouldCollapse ? results.slice(0, MENTION_SECTION_COLLAPSE_LIMIT) : results;
         const sectionOptions: MentionPanelResultOption[] = visibleResults.map((result) => ({
           kind: 'result',
           key: result.key,
@@ -1758,12 +1822,13 @@ export function MentionPanel({
         }));
 
         if (shouldCollapse) {
-          const firstHidden = results[PAGE_RESULT_COLLAPSE_LIMIT];
+          const firstHidden = results[MENTION_SECTION_COLLAPSE_LIMIT];
 
           sectionOptions.push({
-            kind: 'morePages',
-            key: `${section.kind}|more`,
-            remainingCount: results.length - PAGE_RESULT_COLLAPSE_LIMIT,
+            kind: 'moreResults',
+            key: `${sectionKey}|more`,
+            sectionKind: section.kind,
+            remainingCount: results.length - MENTION_SECTION_COLLAPSE_LIMIT,
             firstHidden: { key: firstHidden.key, navKey: firstHidden.navKey },
           });
         }
@@ -1771,6 +1836,7 @@ export function MentionPanel({
         options.push(...sectionOptions);
 
         return {
+          key: sectionKey,
           section,
           options: sectionOptions,
         };
@@ -1780,7 +1846,7 @@ export function MentionPanel({
     const statusOption: MentionPanelRetryOption | undefined = showRetryOption
       ? { kind: 'retry', key: MENTION_RETRY_OPTION_KEY }
       : undefined;
-    const createOptions: MentionPanelCreatePageOption[] = canCreatePageInLocalFallback
+    const createOptions: MentionPanelCreatePageOption[] = canCreatePage
       ? [
           {
             kind: 'createPage',
@@ -1813,7 +1879,7 @@ export function MentionPanel({
       createPageOptions: createOptions,
       resultRanks: ranks,
     };
-  }, [canCreatePageInLocalFallback, pickerMentionSections, rawMentionSearchResults, showMorePages, showRetryOption]);
+  }, [canCreatePage, expandedSections, pickerMentionSections, rawMentionSearchResults, sectionLayout, showRetryOption]);
   const { mentionOptionByKey, mentionOptionIndexByKey } = useMemo(
     () => ({
       mentionOptionByKey: new Map(mentionPanelOptions.map((option) => [option.key, option])),
@@ -2026,9 +2092,12 @@ export function MentionPanel({
     ]
   );
 
-  const expandMorePages = useCallback(
-    (option: MentionPanelMorePagesOption) => {
-      setShowMorePages(true);
+  // Expands the row's section alone: the other sections stay collapsed.
+  const expandMoreResults = useCallback(
+    (option: MentionPanelMoreResultsOption) => {
+      setExpandedSections((expanded) =>
+        expanded.has(option.sectionKind) ? expanded : new Set(expanded).add(option.sectionKind)
+      );
       // Expanding from the highlighted row hands the highlight to the first item it reveals.
       if (selectionRef.current?.key === option.key) setSelection(option.firstHidden);
     },
@@ -2052,8 +2121,8 @@ export function MentionPanel({
 
           if (option?.kind === 'result') {
             handleSelectedSearchResult(option.result);
-          } else if (option?.kind === 'morePages') {
-            expandMorePages(option);
+          } else if (option?.kind === 'moreResults') {
+            expandMoreResults(option);
           } else if (option?.kind === 'retry') {
             // A pending retry ignores Enter, so pressing it twice never sends twice.
             if (!retrying) retrySearch();
@@ -2100,7 +2169,7 @@ export function MentionPanel({
     },
     [
       closePanel,
-      expandMorePages,
+      expandMoreResults,
       handleAddPage,
       handleSelectedSearchResult,
       mentionOptionByKey,
@@ -2183,9 +2252,9 @@ export function MentionPanel({
             {showMentionSearchLoadingState ? (
               <MentionPanelLoadingState />
             ) : (
-              mentionResultSections.map(({ section, options }, sectionResultIndex) => (
+              mentionResultSections.map(({ key, section, options }, sectionResultIndex) => (
                 <div
-                  key={`${section.kind}:${section.title}`}
+                  key={key}
                   data-section-kind={section.kind}
                   className={'flex flex-col px-2 py-1'}
                 >
@@ -2197,11 +2266,11 @@ export function MentionPanel({
                         (option) => option.kind === 'result' && option.result.mention.type === MentionType.Person
                       ) ? (
                         <label className='ml-auto flex items-center gap-2 text-xs font-normal'>
-                          {t('document.mentionMenu.sendNotification', 'Send notification')}
+                          {t('document.mentionMenu.sendNotification')}
                           <Switch
                             checked={sendNotification}
                             onCheckedChange={setSendNotification}
-                            aria-label={t('document.mentionMenu.sendNotification', 'Send notification')}
+                            aria-label={t('document.mentionMenu.sendNotification')}
                             tabIndex={-1}
                             onMouseDown={(event) => event.preventDefault()}
                           />
@@ -2213,7 +2282,7 @@ export function MentionPanel({
                     const index = mentionOptionIndexByKey.get(option.key) ?? 0;
                     const selected = selectedOptionKey === option.key;
 
-                    if (option.kind === 'morePages') {
+                    if (option.kind === 'moreResults') {
                       return (
                         <MentionMoreResultsButton
                           key={option.key}
@@ -2221,7 +2290,7 @@ export function MentionPanel({
                           remainingCount={option.remainingCount}
                           index={index}
                           selected={selected}
-                          onClick={() => expandMorePages(option)}
+                          onClick={() => expandMoreResults(option)}
                         />
                       );
                     }

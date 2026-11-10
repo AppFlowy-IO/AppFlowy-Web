@@ -273,9 +273,10 @@ Pick memory sends nothing and changes no request or header, so every server, rel
 self-hosted, receives what it received before. It reads only the item fields every released server
 sends (the kind, title, subtitle and mention payload ids).
 
-With pick memory on or off, the picker shows databases and rows inside Pages, and titles the Pages
-section it makes from an answer that lists databases or rows but no pages with the translated
-`document.mention.pagesSection` ("Pages" in English) rather than the untranslated "Pages".
+With pick memory on or off, the picker lays its sections out as "Mention picker sections" below
+describes, and titles a section it makes, such as one only picked targets fill, with the
+translation of its kind (`document.mentionMenu.pages` for Pages, "Pages" in English), as it titles
+every section.
 
 ## Mention keep-and-narrow first paint
 
@@ -430,3 +431,36 @@ lists no row the lane leaves out, such as the row the editor is in. The switch i
 and the primary request still asks for no rows, so the request a server receives is the primary
 request it already knew. `doc/MENTION_LOCAL_ROWS_SPIKE.md` gives the measurements behind these
 rules.
+
+## Mention picker sections
+
+The @ picker titles each section of a server's answer by its kind, with the translation of
+`document.mentionMenu.suggested`, `people`, `pages`, `databases`, `databaseRows`, `dates` or
+`links`, never with the title the server sent, which is English whatever the user's language
+(`mentionSectionTitle` in `mentionUtils.ts`; MEN-WEB-12). In English they read as servers title
+them. A kind this client does not know keeps the server's title. The local fallback, which lists
+the outline where no mention search is available, keeps its own titles ("Recent pages", "Date").
+The "N more" row, the "Send notification" switch and the options to create a page are translated
+too, and a create option shows the typed name as typed: i18next escapes interpolated values by
+default, so the name is never passed through it.
+
+By default the sections show as before (the `folded` layout): databases and database rows inside
+Pages, after its pages, and only Pages collapses to four results and "N more". The picker's sections
+switch is off until product and design sign off on the structure. A browser opts in with
+`localStorage.__mention_sections_v2 = 'true'`, read when a picker opens, with or without the
+picker's v2. It changes three things:
+
+- Every kind is a section of its own, in the canonical order (Suggested, People, Pages, Databases,
+  Database rows, Dates, Links), as Desktop shows them, so a database viewed a minute ago is listed
+  even when four or more pages are. Rows stay where the server puts them: Search sends typed rows
+  inside Pages, and a server that answers with a Database rows section gets one.
+- Each section of people or objects (Suggested, People, Pages, Databases, Database rows) shows four
+  results and "N more", which expands that section alone until the query changes. Dates and Links
+  list quick picks, which never collapse, as on Desktop.
+- A typed query offers 'Create "name" sub-page' and 'Create "name" page in...' after its results, as
+  the local fallback does, except in a database Text cell, whose picker never offers them (nor does
+  Desktop's).
+
+The switch changes no request or header, so every server, released or older self-hosted, receives
+what it received before. The layout reads only each section's `kind`, which every released server
+sends.

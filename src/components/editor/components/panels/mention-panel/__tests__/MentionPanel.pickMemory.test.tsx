@@ -570,7 +570,7 @@ describe('MentionPanel pick memory', () => {
       const editor = renderEditor();
 
       await openAndTypeRo(editor);
-      expect(sectionHeadings()).toEqual(['document.mention.pagesSection']);
+      expect(sectionHeadings()).toEqual(['document.mentionMenu.pages']);
       await pickWithEnter('Roadmap tracker');
 
       // The index has not caught up: nothing answers `ro`, and the picked database joins.
@@ -578,7 +578,7 @@ describe('MentionPanel pick memory', () => {
       clearMentionSearchCacheForTests();
       await openAndTypeRo(editor);
       expect(shownTitles()).toEqual(['Roadmap tracker']);
-      expect(sectionHeadings()).toEqual(['document.mention.pagesSection']);
+      expect(sectionHeadings()).toEqual(['document.mentionMenu.pages']);
     });
 
     it('adds a picked person the answer lacks only to a picker that lists people', async () => {

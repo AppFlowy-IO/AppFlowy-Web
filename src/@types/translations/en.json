@@ -3247,9 +3247,22 @@
       "retry": "Retry",
       "retrying": "Retrying…",
       "busyRetryingIn": "Busy, retrying in {{seconds}} s",
-      "peopleSection": "People",
-      "pagesSection": "Pages",
       "updatingSuggestions": "Updating suggestions…"
+    },
+    "mentionMenu": {
+      "suggested": "Suggested",
+      "people": "People",
+      "pages": "Pages",
+      "databases": "Databases",
+      "databaseRows": "Database rows",
+      "dates": "Dates",
+      "links": "Links",
+      "moreResults": "{{count}} more results...",
+      "sendNotification": "Send notification",
+      "createSubPage": "Create \"{{name}}\" sub-page",
+      "createPageIn": "Create \"{{name}}\" page in...",
+      "createNewSubPage": "Create new sub-page",
+      "createNewPageIn": "Create new page in..."
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"

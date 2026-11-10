@@ -322,6 +322,40 @@ describe('HTTP API - Mention Search', () => {
         expect(seeded).toEqual([...seeded].sort((left, right) => left - right));
     }, 120000);
 
+    // The picker's separate layout (MEN-WEB-12) shows each section where the server puts it, so a
+    // database viewed a minute ago is listed beside the pages instead of behind them. That needs the
+    // server to answer a matching database in a Databases section of its own, never inside Pages.
+    it('answers a typed query with a matching database in its own Databases section', async () => {
+        const token = `sections${uuidv4().replace(/-/g, '').slice(0, 10)}`;
+        const { outline } = await APIService.getAppOutline(workspaceId);
+        const rootViewId = outline[0]?.view_id || workspaceId;
+        const { view_id: databaseViewId, database_id: databaseId } = await APIService.addAppPage(
+            workspaceId,
+            rootViewId,
+            { layout: ViewLayout.Grid, name: `Tracker ${token}` }
+        );
+
+        expect(databaseId).toBeTruthy();
+        // Viewed a moment ago: the recent views reach the answer before the keyword index does.
+        await APIService.addRecentPages(workspaceId, [databaseViewId]);
+
+        const isTheDatabase = (item: MentionSearchResultItem) =>
+            item.kind === MentionTargetKind.Database && (item.database_id ?? item.object_id) === databaseId;
+        const { response } = await waitForMentionItem(
+            workspaceId,
+            {
+                query: token,
+                limit: 8,
+                include: [MentionTargetKind.Page, MentionTargetKind.Database],
+                context: { view_id: contextPageId },
+            },
+            isTheDatabase
+        );
+
+        expect(section(response, MentionSearchSectionKind.Databases)?.items.some(isTheDatabase)).toBe(true);
+        expect(section(response, MentionSearchSectionKind.Pages)?.items.some(isTheDatabase) ?? false).toBe(false);
+    }, 120000);
+
     describe('picker session reports (MEN-CLOUD-05)', () => {
         const session: MentionPickerSession = {
             trigger: 'at',

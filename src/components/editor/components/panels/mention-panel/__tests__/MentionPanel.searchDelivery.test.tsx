@@ -312,7 +312,7 @@ function highlightedCount() {
 }
 
 function moreResultsButton() {
-  return screen.getByText('document.mention.moreResults').closest('button');
+  return screen.getByText('document.mentionMenu.moreResults').closest('button');
 }
 
 // The "Suggestions unavailable · Retry" (or "You're offline · Retry") option.

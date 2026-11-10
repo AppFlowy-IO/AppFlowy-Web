@@ -591,7 +591,8 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
       });
     });
 
-    // The picker lists databases after the pages, as it lists the server's (normalizeMentionSearchSectionsForPicker).
+    // The picker lists databases after the pages, as it lists the server's (the folded layout,
+    // foldMentionSectionsIntoPages).
     it('lifts a database this tab opened to the top of the databases, which follow the pages', async () => {
       setMentionIndexSources(WORKSPACE, {
         outline: [

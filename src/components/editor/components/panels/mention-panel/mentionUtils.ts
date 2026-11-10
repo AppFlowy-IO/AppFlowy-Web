@@ -74,17 +74,115 @@ export function mentionSectionOrder(kind: MentionSearchSectionKind) {
   return index === -1 ? MENTION_SECTION_ORDER.length : index;
 }
 
-export function normalizeMentionSearchSectionsForPicker(
+/** The translation key of each section kind's title (`document.mentionMenu` in `en.json`). */
+const MENTION_SECTION_TITLE_KEYS: Readonly<Record<MentionSearchSectionKind, string>> = {
+  [MentionSearchSectionKind.Suggested]: 'document.mentionMenu.suggested',
+  [MentionSearchSectionKind.People]: 'document.mentionMenu.people',
+  [MentionSearchSectionKind.Pages]: 'document.mentionMenu.pages',
+  [MentionSearchSectionKind.Databases]: 'document.mentionMenu.databases',
+  [MentionSearchSectionKind.DatabaseRows]: 'document.mentionMenu.databaseRows',
+  [MentionSearchSectionKind.Dates]: 'document.mentionMenu.dates',
+  [MentionSearchSectionKind.Links]: 'document.mentionMenu.links',
+};
+
+/**
+ * The title the picker shows for a section of `kind`: the translation of its `document.mentionMenu`
+ * key, never the title a server sent, which is English whatever the user's language (MEN-WEB-12).
+ * A kind this client does not know keeps `serverTitle`, so such a section still has a heading.
+ */
+export function mentionSectionTitle(
+  kind: MentionSearchSectionKind,
+  t: (key: string) => string,
+  serverTitle = ''
+): string {
+  const key = (MENTION_SECTION_TITLE_KEYS as Partial<Record<string, string>>)[kind];
+
+  return key ? t(key) : serverTitle;
+}
+
+/**
+ * How the picker lays its sections out:
+ * - `folded`, the default: Databases and Database rows show inside Pages, after its pages, or as a
+ *   Pages section in Pages' place when no page is listed; every other section keeps its place. Only
+ *   Pages collapses.
+ * - `separate` (MEN-WEB-12, behind the picker's sections switch, off by default until product signs
+ *   off): every kind is a section of its own, in the canonical order, as Desktop shows them, so a
+ *   database viewed a minute ago is never hidden behind the pages. Rows stay where the server put
+ *   them: Search sends typed rows inside Pages, and a server that sends a Database rows section
+ *   gets one. Every people and object section collapses.
+ */
+export type MentionSectionLayout = 'folded' | 'separate';
+
+/** How many results a collapsed section shows above its "N more" row. */
+export const MENTION_SECTION_COLLAPSE_LIMIT = 4;
+
+/**
+ * The kinds the separate layout collapses: those of people and objects, Suggested among them. Dates
+ * and Links list quick picks, at most five, which neither client collapses.
+ */
+const MENTION_SEPARATE_COLLAPSING_KINDS: ReadonlySet<MentionSearchSectionKind> = new Set([
+  MentionSearchSectionKind.Suggested,
+  MentionSearchSectionKind.People,
+  MentionSearchSectionKind.Pages,
+  MentionSearchSectionKind.Databases,
+  MentionSearchSectionKind.DatabaseRows,
+]);
+
+/**
+ * Whether a section of `kind` shows at most {@link MENTION_SECTION_COLLAPSE_LIMIT} results and a
+ * "N more" row until it is expanded, in `layout`.
+ */
+export function mentionSectionCollapses(kind: MentionSearchSectionKind, layout: MentionSectionLayout): boolean {
+  return layout === 'separate' ? MENTION_SEPARATE_COLLAPSING_KINDS.has(kind) : kind === MentionSearchSectionKind.Pages;
+}
+
+/**
+ * `sections` as the picker shows them in `layout` ({@link MentionSectionLayout}). `pagesTitle`
+ * titles the Pages section the folded layout makes when only databases or rows are listed.
+ */
+export function layoutMentionSectionsForPicker(
   sections: MentionSearchSection[],
-  pagesTitle = 'Pages'
+  layout: MentionSectionLayout,
+  pagesTitle: string
+): MentionSearchSection[] {
+  return layout === 'separate' ? separateMentionSections(sections) : foldMentionSectionsIntoPages(sections, pagesTitle);
+}
+
+/**
+ * The separate layout: `sections` in the canonical order (Suggested, People, Pages, Databases,
+ * Database rows, Dates, Links), each kept as it is, whatever order they came in. Sections of one
+ * kind, and kinds this client does not know (after Links), keep their order. The same array when
+ * it is in order already, as an answer is.
+ */
+export function separateMentionSections(sections: MentionSearchSection[]): MentionSearchSection[] {
+  const inOrder = sections.every(
+    (section, index) => index === 0 || mentionSectionOrder(sections[index - 1].kind) <= mentionSectionOrder(section.kind)
+  );
+
+  if (inOrder) return sections;
+
+  return sections
+    .map((section, index) => ({ section, index, order: mentionSectionOrder(section.kind) }))
+    .sort((left, right) => left.order - right.order || left.index - right.index)
+    .map(({ section }) => section);
+}
+
+/**
+ * The folded layout: the items of every Databases and Database rows section join Pages after its
+ * own items, or a Pages section titled `pagesTitle` in Pages' place when no Pages section is
+ * listed. Empty Databases and Database rows sections are left out, such as the failed one Cloud
+ * sends when its object source fails. Each item keeps its own kind, which gives its icon and what
+ * it inserts. This is how Web has shown sections; Desktop keeps a section per kind (the separate
+ * layout).
+ */
+export function foldMentionSectionsIntoPages(
+  sections: MentionSearchSection[],
+  pagesTitle: string
 ): MentionSearchSection[] {
   let databaseSection: MentionSearchSection | undefined;
   const normalizedSections: MentionSearchSection[] = [];
 
   sections.forEach((section) => {
-    // Databases AND database rows render inline in the Pages section (desktop
-    // parity: the separate "Database rows" heading was removed) — each item
-    // keeps its own kind, which drives its icon and insert behavior.
     if (
       section.kind === MentionSearchSectionKind.Databases ||
       section.kind === MentionSearchSectionKind.DatabaseRows

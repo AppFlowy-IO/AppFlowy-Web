@@ -67,3 +67,14 @@ Feature: Mention panel search
     And the mention typeahead v2 is switched on
     When I search mentions for the first letters of the fresh fixture page
     Then the mention panel shows the fresh fixture page, flagged fresh, while typed searches are held
+
+  # MEN-WEB-12, behind the picker's sections switch (localStorage, off by default). The typed
+  # answer is stubbed with its sections out of order, so only the picker decides what shows where.
+  Scenario: Typed mention sections keep the canonical order with the sections switch on
+    Given a blank mention search document page is open
+    And mention search answers the sections fixture query with the member, five pages and a database
+    And the mention sections switch is on
+    When I search mentions for the sections fixture query
+    Then the mention panel shows the people, pages and databases sections in that order
+    And the mention panel lists the fixture database in its own section beside four pages and "1 more"
+    And the mention panel offers to create a page named after the query last

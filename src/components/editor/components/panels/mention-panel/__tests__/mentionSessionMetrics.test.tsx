@@ -318,12 +318,12 @@ describe('MentionPanel session metrics', () => {
     // Expanded, the fifth page shows, and Today becomes the sixth result.
     await type(editor, ' @');
     await act(async () => {
-      fireEvent.click(screen.getByText('document.mention.moreResults').closest('button') as HTMLElement);
+      fireEvent.click(screen.getByText('document.mentionMenu.moreResults').closest('button') as HTMLElement);
     });
     await pick('Five');
     await type(editor, ' @');
     await act(async () => {
-      fireEvent.click(screen.getByText('document.mention.moreResults').closest('button') as HTMLElement);
+      fireEvent.click(screen.getByText('document.mentionMenu.moreResults').closest('button') as HTMLElement);
     });
     await pick('Today');
 

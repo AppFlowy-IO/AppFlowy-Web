@@ -15,7 +15,8 @@ export function RichTextCellEditorControls({
   return (
     <>
       <RichTextCellToolbar />
-      <MentionPanel notifyOnInsert={false} onPersonPicked={onPersonPicked} />
+      {/* A cell's @ never offers to create a page, as on Desktop. */}
+      <MentionPanel notifyOnInsert={false} onPersonPicked={onPersonPicked} canCreatePages={false} />
       <HrefPopover open={!!linkOpen} onClose={() => closeLinkPopover?.()} />
     </>
   );

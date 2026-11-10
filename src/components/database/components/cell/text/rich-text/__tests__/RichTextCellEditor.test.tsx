@@ -26,6 +26,8 @@ const mockNotifyError = jest.fn();
 const mockNotifyPerson = jest.fn();
 const mockEditors: ReactEditor[] = [];
 let mockPersonPicked: (id: string, requireNotification: boolean) => void;
+// Whether the cell's @ picker may offer to create a page, as it was rendered last.
+let mockCanCreatePages: boolean | undefined;
 let mockContext: Record<string, unknown> = {};
 let fields: Y.Map<Y.Map<unknown>>;
 
@@ -52,8 +54,15 @@ jest.mock('@/components/_shared/notify', () => ({
   notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
 }));
 jest.mock('@/components/editor/components/panels/mention-panel/MentionPanel', () => ({
-  MentionPanel: ({ onPersonPicked }: { onPersonPicked: typeof mockPersonPicked }) => {
+  MentionPanel: ({
+    onPersonPicked,
+    canCreatePages,
+  }: {
+    onPersonPicked: typeof mockPersonPicked;
+    canCreatePages?: boolean;
+  }) => {
     mockPersonPicked = onPersonPicked;
+    mockCanCreatePages = canCreatePages;
     const { usePanelContext } = jest.requireActual('@/components/editor/components/panels/Panels.hooks');
     const { activePanel } = usePanelContext();
 
@@ -546,6 +555,17 @@ describe('RichTextCellEditor', () => {
       await pressEnter(editable);
       expect(savedTexts()).toEqual(['Hello @か']);
       expect(onExit).toHaveBeenCalledTimes(1);
+    });
+
+    // MEN-WEB-12: a typed @ may offer to create a page, but never in a cell, as on Desktop.
+    it("never lets the cell's mention panel offer to create a page", async () => {
+      jest.spyOn(selectionToolbarUtils, 'getRangeRect').mockReturnValue(null);
+      mockCanCreatePages = undefined;
+      const { editor } = await renderEditor();
+
+      await typeAtEnd(editor, ' @road');
+      expect(screen.queryByTestId('mention-panel')).not.toBeNull();
+      expect(mockCanCreatePages).toBe(false);
     });
 
     it('refuses a draft whose formatting Desktop could not save, and keeps it open', async () => {

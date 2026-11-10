@@ -7,9 +7,12 @@ import {
   MENTION_LOCAL_ROWS_OVERRIDE_KEY,
   MENTION_LOCAL_ROWS_SKIP_SERVER_DEFAULT,
   MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY,
+  MENTION_SECTIONS_V2_DEFAULT,
+  MENTION_SECTIONS_V2_OVERRIDE_KEY,
   MENTION_TYPEAHEAD_LEGACY,
   MENTION_TYPEAHEAD_V2_DEFAULT,
   MENTION_TYPEAHEAD_V2_OVERRIDE_KEY,
+  readMentionSectionsV2,
   readMentionTypeaheadSettings,
 } from '../mentionTypeaheadFlag';
 
@@ -98,6 +101,32 @@ describe('mentionTypeaheadFlag', () => {
     localStorage.removeItem(MENTION_LOCAL_ROWS_OVERRIDE_KEY);
     localStorage.setItem(MENTION_LOCAL_LANE_OVERRIDE_KEY, 'false');
     expect(readMentionTypeaheadSettings()).toMatchObject({ localLane: false, localRows: false, skipServerRows: false });
+  });
+
+  // MEN-WEB-12: the sections switch is off by default and independent of v2.
+  it('keeps the sections folded by default, and turns them separate only from their own override', () => {
+    expect(MENTION_SECTIONS_V2_DEFAULT).toBe(false);
+    expect(readMentionSectionsV2()).toBe(false);
+
+    localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true');
+    expect(readMentionSectionsV2()).toBe(false);
+
+    localStorage.setItem(MENTION_SECTIONS_V2_OVERRIDE_KEY, 'true');
+    expect(readMentionSectionsV2()).toBe(true);
+    // Neither switch moves the other.
+    expect(readMentionTypeaheadSettings().v2).toBe(true);
+    localStorage.removeItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY);
+    expect(readMentionSectionsV2()).toBe(true);
+    expect(readMentionTypeaheadSettings()).toEqual(MENTION_TYPEAHEAD_LEGACY);
+
+    localStorage.setItem(MENTION_SECTIONS_V2_OVERRIDE_KEY, 'TRUE');
+    expect(readMentionSectionsV2()).toBe(MENTION_SECTIONS_V2_DEFAULT);
+
+    localStorage.setItem(MENTION_SECTIONS_V2_OVERRIDE_KEY, 'true');
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(readMentionSectionsV2()).toBe(MENTION_SECTIONS_V2_DEFAULT);
   });
 
   it.each(['false', 'TRUE', '1', ''])('reads %p as the default', (value) => {

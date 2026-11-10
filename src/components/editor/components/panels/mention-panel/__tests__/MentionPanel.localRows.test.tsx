@@ -622,7 +622,7 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       await advance(1_000);
       expect(titles()).toHaveLength(4);
       act(() => {
-        fireEvent.click(screen.getByText('document.mention.moreResults').closest('button') as HTMLElement);
+        fireEvent.click(screen.getByText('document.mentionMenu.moreResults').closest('button') as HTMLElement);
       });
       await highlight(view, 'Zebra map');
       expect(highlighted()).toBe('Zebra map');
@@ -665,7 +665,7 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       await advance(1_000);
       expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb']);
       act(() => {
-        fireEvent.click(screen.getByText('document.mention.moreResults').closest('button') as HTMLElement);
+        fireEvent.click(screen.getByText('document.mentionMenu.moreResults').closest('button') as HTMLElement);
       });
       expect(titles()).toContain('Quarterly plan');
 

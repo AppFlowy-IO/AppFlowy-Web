@@ -102,6 +102,10 @@ type MentionFixtureState = {
   heldTypedSearchesAnswered?: number;
   /** A page this tab created and renamed a moment ago, which no mention answer lists yet (MEN-WEB-09). */
   freshPage?: { id: string; title: string };
+  /** The typed query whose stubbed answer lists the member, five pages and a database (MEN-WEB-12). */
+  sectionsQuery?: string;
+  /** The title of the database in that answer. */
+  sectionsDatabaseTitle?: string;
 };
 
 /** When the first keystroke of a query came, and when an option showed a title (MEN-WEB-09). */
@@ -116,8 +120,9 @@ type MentionNarrowProbe = {
   narrowedAt?: number;
 };
 
-// The switch MentionPanel reads when it opens (src/.../mention-panel/mentionTypeaheadFlag.ts).
+// The switches MentionPanel reads when it opens (src/.../mention-panel/mentionTypeaheadFlag.ts).
 const MENTION_TYPEAHEAD_V2_OVERRIDE_KEY = '__mention_typeahead_v2';
+const MENTION_SECTIONS_V2_OVERRIDE_KEY = '__mention_sections_v2';
 
 const stateByPage = new WeakMap<Page, MentionFixtureState>();
 
@@ -325,6 +330,91 @@ Given('the mention typeahead v2 is switched on', async ({ page }) => {
   await page.evaluate((key) => localStorage.setItem(key, 'true'), MENTION_TYPEAHEAD_V2_OVERRIDE_KEY);
 });
 
+Given('the mention sections switch is on', async ({ page }) => {
+  // Read when the picker opens, as the v2 switch is.
+  await page.evaluate((key) => localStorage.setItem(key, 'true'), MENTION_SECTIONS_V2_OVERRIDE_KEY);
+});
+
+Given(
+  'mention search answers the sections fixture query with the member, five pages and a database',
+  async ({ page }) => {
+    const state = getState(page);
+    const query = `sections${state.runId}`;
+    const databaseTitle = `Database ${query}`;
+    const databaseId = uuidv4();
+    const databaseViewId = uuidv4();
+    const pages = [1, 2, 3, 4, 5].map((index) => ({ id: uuidv4(), title: `Page ${index} ${query}` }));
+    const memberUuid = state.memberUuid ?? uuidv4();
+
+    state.sectionsQuery = query;
+    state.sectionsDatabaseTitle = databaseTitle;
+    await page.route('**/mentions/search{,?**}', async (route) => {
+      const body = route.request().postDataJSON() as { query?: string; include?: string[] } | null;
+
+      if (body?.query?.trim() !== query) {
+        await route.fallback();
+        return;
+      }
+
+      const rowsOnly = Array.isArray(body.include) && body.include.length === 1 && body.include[0] === 'database_row';
+      // Out of the order servers send, so only the picker can put People, Pages and Databases in it.
+      const sections = rowsOnly
+        ? []
+        : [
+            {
+              kind: 'databases',
+              title: 'Databases',
+              has_more: false,
+              status: 'ok',
+              items: [
+                {
+                  kind: 'database',
+                  object_id: databaseId,
+                  title: databaseTitle,
+                  database_id: databaseId,
+                  database_view_id: databaseViewId,
+                  mention: { type: 'database', database_id: databaseId, database_view_id: databaseViewId },
+                },
+              ],
+            },
+            {
+              kind: 'pages',
+              title: 'Pages',
+              has_more: false,
+              status: 'ok',
+              items: pages.map(({ id, title }) => ({
+                kind: 'page',
+                object_id: id,
+                title,
+                mention: { type: 'page', page_id: id },
+              })),
+            },
+            {
+              kind: 'people',
+              title: 'People',
+              has_more: false,
+              status: 'ok',
+              items: [
+                {
+                  kind: 'person',
+                  object_id: memberUuid,
+                  title: state.memberName,
+                  subtitle: state.memberEmail,
+                  mention: { type: 'person', person_id: memberUuid, person_name: state.memberName, page_id: uuidv4() },
+                },
+              ],
+            },
+          ];
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, message: 'success', data: { sections, partial: false } }),
+      });
+    });
+  }
+);
+
 Given('a mention search document contains an indexed fixture database row', async ({ page, request }) => {
   const state = getState(page);
   const rowKeyword = `Mention Row ${state.runId}`;
@@ -437,6 +527,10 @@ When('I search mentions for the first letters of the fresh fixture page', async 
   await page.keyboard.type(title.slice(0, 'Fresh '.length + 3), { delay: 30 });
 });
 
+When('I search mentions for the sections fixture query', async ({ page }) => {
+  await searchMentionsInEditor(page, requireSectionsQuery(getState(page)));
+});
+
 When('I search mentions for the fixture member', async ({ page }) => {
   await searchMentionsInEditor(page, getState(page).memberName);
 });
@@ -490,9 +584,8 @@ Then('the mention panel does not show a links section', async ({ page }) => {
 });
 
 Then('the mention panel does not show database rows', async ({ page }) => {
-  // Desktop parity: rows render inline in the Pages section (no "Database
-  // rows" heading exists anymore), so absence is asserted on row RESULT
-  // buttons via their data-option-kind.
+  // By default the picker folds a Database rows section into Pages (MEN-WEB-12's separate layout
+  // is behind its switch), so absence is asserted on row results by their data-option-kind too.
   await expect(mentionPanel(page).getByText('Database rows', { exact: true })).toHaveCount(0);
   await expect(mentionPanel(page).locator('[data-option-kind="database_row"]')).toHaveCount(0);
 });
@@ -547,6 +640,53 @@ Then(
     expect.soft((probe?.shownAt ?? 0) - (probe?.keyAt ?? 0), 'keystroke to the fresh page, ms').toBeLessThan(100);
   }
 );
+
+Then('the mention panel shows the people, pages and databases sections in that order', async ({ page }) => {
+  const sections = mentionPanel(page).locator('[data-section-kind]');
+
+  await expect
+    .poll(() => sections.evaluateAll((shown) => shown.map((section) => section.getAttribute('data-section-kind'))), {
+      timeout: 15000,
+    })
+    .toEqual(['people', 'pages', 'databases']);
+  // Titled from the translations, which in English read as servers title them.
+  for (const [kind, title] of [
+    ['people', 'People'],
+    ['pages', 'Pages'],
+    ['databases', 'Databases'],
+  ]) {
+    const heading = mentionPanel(page).locator(`[data-section-kind="${kind}"]`).getByText(title, { exact: true });
+
+    await expect(heading).toBeVisible();
+  }
+});
+
+Then(
+  'the mention panel lists the fixture database in its own section beside four pages and "1 more"',
+  async ({ page }) => {
+    const state = getState(page);
+    const panel = mentionPanel(page);
+    const pagesSection = panel.locator('[data-section-kind="pages"]');
+
+    await expect(
+      panel.locator('[data-section-kind="databases"] [data-option-kind="database"]').filter({
+        hasText: requireSectionsDatabaseTitle(state),
+      })
+    ).toBeVisible({ timeout: 15000 });
+    await expect(pagesSection.locator('[data-option-kind="page"]')).toHaveCount(4);
+    await expect(pagesSection.locator('[data-option-key="pages|more"]')).toHaveText('1 more results...');
+  }
+);
+
+Then('the mention panel offers to create a page named after the query last', async ({ page }) => {
+  const query = requireSectionsQuery(getState(page));
+  const options = mentionPanel(page).locator('[data-option-key]');
+  const keys = await options.evaluateAll((shown) => shown.map((option) => option.getAttribute('data-option-key')));
+
+  // After every result: the sub-page, then the page reference.
+  expect(keys.slice(-2)).toEqual(['createPage:childPage', 'createPage:pageReference']);
+  await expect(options.nth(keys.length - 2)).toHaveText(`Create "${query}" sub-page`);
+});
 
 Then('the mention panel shows the fixture member', async ({ page }) => {
   await expect(mentionPanel(page).getByText(getState(page).memberName, { exact: true })).toBeVisible({
@@ -642,8 +782,8 @@ Then('the mention panel shows the fixture database row', async ({ page }) => {
     .locator('[data-option-kind="database_row"]')
     .filter({ hasText: new RegExp(requireRowKeyword(getState(page))) });
 
-  // Desktop parity: the row renders inline in the Pages section — there is no
-  // separate "Database rows" heading.
+  // The stubbed rows answer has a Database rows section, which the default folded layout shows in
+  // Pages: there is no "Database rows" heading.
   await expect(rowResult.first()).toBeVisible({ timeout: 30000 });
   await expect(resultSection.getByText('Database rows', { exact: true })).toHaveCount(0);
 });
@@ -1159,6 +1299,22 @@ function isDatabaseRowOnlyRecordedRequest(request: RecordedMentionRequest): bool
   const include = request.body?.include;
 
   return Array.isArray(include) && include.length === 1 && include[0] === 'database_row';
+}
+
+function requireSectionsQuery(state: MentionFixtureState): string {
+  if (!state.sectionsQuery) {
+    throw new Error('The stubbed sections mention answer is not initialized');
+  }
+
+  return state.sectionsQuery;
+}
+
+function requireSectionsDatabaseTitle(state: MentionFixtureState): string {
+  if (!state.sectionsDatabaseTitle) {
+    throw new Error('The stubbed sections mention answer is not initialized');
+  }
+
+  return state.sectionsDatabaseTitle;
 }
 
 function requireFreshPage(state: MentionFixtureState): { id: string; title: string } {

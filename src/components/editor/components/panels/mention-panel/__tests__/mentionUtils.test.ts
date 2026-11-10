@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
+import en from '@/@types/translations/en.json';
 import {
   MentionSearchResponse,
   MentionSearchResultItem,
@@ -15,18 +16,23 @@ import {
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
+  foldMentionSectionsIntoPages,
   getMentionSearchResultDisplayTitle,
   hasFailedMentionSection,
   isCacheableMentionResponse,
   isCompleteMentionResponse,
   isDatabaseRowOnlyMentionRequest,
   isSupersededMentionResponse,
+  layoutMentionSectionsForPicker,
+  MENTION_SECTION_COLLAPSE_LIMIT,
   mentionItemNavKey,
   MentionPanelSearchResult,
   mentionSearchItemToMention,
+  mentionSectionCollapses,
+  mentionSectionTitle,
   mergeMentionSearchResponses,
-  normalizeMentionSearchSectionsForPicker,
   reconcileMentionOptionSelection,
+  separateMentionSections,
   shouldRetryMentionRowsResponse,
 } from '../mentionUtils';
 
@@ -187,7 +193,7 @@ describe('mention option keys', () => {
     // Search returns typed rows inside the Pages section.
     const rows = { sections: [sectionOf(MentionSearchSectionKind.Pages, [row('dbY', 'r1'), row('dbY', 'r2')])] };
     const keysOf = (sections: MentionSearchSection[]) =>
-      flattenMentionSearchSections(normalizeMentionSearchSectionsForPicker(sections)).map((result) => result.key);
+      flattenMentionSearchSections(foldMentionSectionsIntoPages(sections, 'Pages')).map((result) => result.key);
 
     const before = keysOf(mergeMentionSearchResponses([primary]).sections);
     const after = keysOf(mergeMentionSearchResponses([primary, rows]).sections);
@@ -822,60 +828,64 @@ describe('mention panel API mapping', () => {
     ]);
   });
 
-  it('normalizes database sections into pages for desktop picker parity', () => {
-    const sections = normalizeMentionSearchSectionsForPicker([
-      {
-        kind: MentionSearchSectionKind.People,
-        title: 'People',
-        has_more: false,
-        status: 'ready',
-        items: [],
-      },
-      {
-        kind: MentionSearchSectionKind.Pages,
-        title: 'Pages',
-        has_more: false,
-        status: 'ready',
-        items: [
-          {
-            kind: MentionTargetKind.Page,
-            object_id: 'page-1',
-            title: 'Project Tracker 2',
-            subtitle: 'Page',
-            mention: {
-              type: MentionTargetKind.Page,
-              page_id: 'page-1',
+  it('folds a Databases section into Pages in the folded layout', () => {
+    const sections = layoutMentionSectionsForPicker(
+      [
+        {
+          kind: MentionSearchSectionKind.People,
+          title: 'People',
+          has_more: false,
+          status: 'ready',
+          items: [],
+        },
+        {
+          kind: MentionSearchSectionKind.Pages,
+          title: 'Pages',
+          has_more: false,
+          status: 'ready',
+          items: [
+            {
+              kind: MentionTargetKind.Page,
+              object_id: 'page-1',
+              title: 'Project Tracker 2',
+              subtitle: 'Page',
+              mention: {
+                type: MentionTargetKind.Page,
+                page_id: 'page-1',
+              },
             },
-          },
-        ],
-      },
-      {
-        kind: MentionSearchSectionKind.Databases,
-        title: 'Databases',
-        has_more: false,
-        status: 'ready',
-        items: [
-          {
-            kind: MentionTargetKind.Database,
-            object_id: 'database-view-1',
-            title: 'Completed Project',
-            subtitle: 'Database',
-            mention: {
-              type: MentionTargetKind.Database,
-              database_id: 'database-1',
-              database_view_id: 'database-view-1',
+          ],
+        },
+        {
+          kind: MentionSearchSectionKind.Databases,
+          title: 'Databases',
+          has_more: false,
+          status: 'ready',
+          items: [
+            {
+              kind: MentionTargetKind.Database,
+              object_id: 'database-view-1',
+              title: 'Completed Project',
+              subtitle: 'Database',
+              mention: {
+                type: MentionTargetKind.Database,
+                database_id: 'database-1',
+                database_view_id: 'database-view-1',
+              },
             },
-          },
-        ],
-      },
-      {
-        kind: MentionSearchSectionKind.Dates,
-        title: 'Date & Reminder',
-        has_more: false,
-        status: 'ready',
-        items: [],
-      },
-    ]);
+          ],
+        },
+        {
+          kind: MentionSearchSectionKind.Dates,
+          title: 'Date & Reminder',
+          has_more: false,
+          status: 'ready',
+          items: [],
+        },
+      ],
+      'folded',
+      'Pages'
+    );
 
     expect(sections.map((section) => section.kind)).toEqual([
       MentionSearchSectionKind.People,
@@ -887,54 +897,57 @@ describe('mention panel API mapping', () => {
     expect(sections[1].items[1].kind).toBe(MentionTargetKind.Database);
   });
 
-  it('normalizes database row sections into pages for desktop picker parity', () => {
-    const sections = normalizeMentionSearchSectionsForPicker([
-      {
-        kind: MentionSearchSectionKind.Pages,
-        title: 'Pages',
-        has_more: false,
-        status: 'ready',
-        items: [
-          {
-            kind: MentionTargetKind.Page,
-            object_id: 'page-1',
-            title: 'Project Tracker',
-            mention: {
-              type: MentionTargetKind.Page,
-              page_id: 'page-1',
+  it('folds a Database rows section into Pages in the folded layout', () => {
+    const sections = layoutMentionSectionsForPicker(
+      [
+        {
+          kind: MentionSearchSectionKind.Pages,
+          title: 'Pages',
+          has_more: false,
+          status: 'ready',
+          items: [
+            {
+              kind: MentionTargetKind.Page,
+              object_id: 'page-1',
+              title: 'Project Tracker',
+              mention: {
+                type: MentionTargetKind.Page,
+                page_id: 'page-1',
+              },
             },
-          },
-        ],
-      },
-      {
-        kind: MentionSearchSectionKind.DatabaseRows,
-        title: 'Database rows',
-        has_more: false,
-        status: 'ready',
-        items: [
-          {
-            kind: MentionTargetKind.DatabaseRow,
-            object_id: 'row-1',
-            title: 'Roadmap row',
-            mention: {
-              type: MentionTargetKind.DatabaseRow,
-              database_id: 'database-1',
-              row_id: 'row-1',
+          ],
+        },
+        {
+          kind: MentionSearchSectionKind.DatabaseRows,
+          title: 'Database rows',
+          has_more: false,
+          status: 'ready',
+          items: [
+            {
+              kind: MentionTargetKind.DatabaseRow,
+              object_id: 'row-1',
+              title: 'Roadmap row',
+              mention: {
+                type: MentionTargetKind.DatabaseRow,
+                database_id: 'database-1',
+                row_id: 'row-1',
+              },
             },
-          },
-        ],
-      },
-    ]);
+          ],
+        },
+      ],
+      'folded',
+      'Pages'
+    );
 
-    // Desktop parity: no separate "Database rows" heading — rows render inline
-    // in the Pages section, keeping their own item kind (drives the grid icon).
+    // No Database rows heading: the rows show in Pages, each keeping its kind (its grid icon).
     expect(sections.map((section) => section.kind)).toEqual([MentionSearchSectionKind.Pages]);
     expect(sections[0].items.map((item) => item.title)).toEqual(['Project Tracker', 'Roadmap row']);
     expect(sections[0].items[1].kind).toBe(MentionTargetKind.DatabaseRow);
   });
 
-  it('synthesizes a pages section when only database rows are returned', () => {
-    const sections = normalizeMentionSearchSectionsForPicker(
+  it('makes a Pages section when only database rows are returned, in the folded layout', () => {
+    const sections = foldMentionSectionsIntoPages(
       [
         {
           kind: MentionSearchSectionKind.DatabaseRows,
@@ -972,6 +985,198 @@ describe('mention panel API mapping', () => {
     expect(buildMentionSearchRequestsCacheKey(requests, scope).split('\n')[0]).toBe(
       buildMentionSearchCacheScopeKey(scope)
     );
+  });
+});
+
+// MEN-WEB-12: section titles in the user's language, and the separate layout behind its switch.
+describe('mention picker sections', () => {
+  const identity = (key: string) => key;
+  // What servers title each kind (`MentionSectionKind::default_title` in the Cloud entity crate).
+  const SERVER_TITLES: Record<MentionSearchSectionKind, string> = {
+    [MentionSearchSectionKind.Suggested]: 'Suggested',
+    [MentionSearchSectionKind.People]: 'People',
+    [MentionSearchSectionKind.Pages]: 'Pages',
+    [MentionSearchSectionKind.Databases]: 'Databases',
+    [MentionSearchSectionKind.DatabaseRows]: 'Database rows',
+    [MentionSearchSectionKind.Dates]: 'Dates',
+    [MentionSearchSectionKind.Links]: 'Links',
+  };
+  const TITLE_KEYS: Record<MentionSearchSectionKind, string> = {
+    [MentionSearchSectionKind.Suggested]: 'document.mentionMenu.suggested',
+    [MentionSearchSectionKind.People]: 'document.mentionMenu.people',
+    [MentionSearchSectionKind.Pages]: 'document.mentionMenu.pages',
+    [MentionSearchSectionKind.Databases]: 'document.mentionMenu.databases',
+    [MentionSearchSectionKind.DatabaseRows]: 'document.mentionMenu.databaseRows',
+    [MentionSearchSectionKind.Dates]: 'document.mentionMenu.dates',
+    [MentionSearchSectionKind.Links]: 'document.mentionMenu.links',
+  };
+  const UNKNOWN_KIND = 'tasks' as MentionSearchSectionKind;
+
+  function english(key: string): unknown {
+    return key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en);
+  }
+
+  function failedSection(kind: MentionSearchSectionKind): MentionSearchSection {
+    return { kind, title: kind, has_more: false, status: 'failed', message: 'source failed', items: [] };
+  }
+
+  it('titles every kind by its document.mentionMenu key, whatever the server titled it', () => {
+    Object.values(MentionSearchSectionKind).forEach((kind) => {
+      expect(mentionSectionTitle(kind, identity, `Server ${kind}`)).toBe(TITLE_KEYS[kind]);
+      // English shows what servers send, so an English picker reads as it did.
+      expect(english(TITLE_KEYS[kind])).toBe(SERVER_TITLES[kind]);
+    });
+  });
+
+  it('keeps the server title of a kind this client does not know', () => {
+    expect(mentionSectionTitle(UNKNOWN_KIND, identity, 'Tasks')).toBe('Tasks');
+    expect(mentionSectionTitle(UNKNOWN_KIND, identity)).toBe('');
+  });
+
+  it('carries the picker strings it translates in en.json', () => {
+    expect(english('document.mentionMenu.moreResults')).toBe('{{count}} more results...');
+    expect(english('document.mentionMenu.sendNotification')).toBe('Send notification');
+    expect(english('document.mentionMenu.createSubPage')).toBe('Create "{{name}}" sub-page');
+    expect(english('document.mentionMenu.createPageIn')).toBe('Create "{{name}}" page in...');
+    expect(english('document.mentionMenu.createNewSubPage')).toBe('Create new sub-page');
+    expect(english('document.mentionMenu.createNewPageIn')).toBe('Create new page in...');
+  });
+
+  it('keeps a database in its own section beside four or more pages in the separate layout', () => {
+    const pages = ['p1', 'p2', 'p3', 'p4', 'p5'].map((id) => page(id));
+    const sections = layoutMentionSectionsForPicker(
+      [
+        sectionOf(MentionSearchSectionKind.People, [person('ada')]),
+        sectionOf(MentionSearchSectionKind.Pages, pages),
+        sectionOf(MentionSearchSectionKind.Databases, [database('db1', 'grid1')]),
+      ],
+      'separate',
+      'Pages'
+    );
+
+    expect(sections.map((section) => section.kind)).toEqual([
+      MentionSearchSectionKind.People,
+      MentionSearchSectionKind.Pages,
+      MentionSearchSectionKind.Databases,
+    ]);
+    expect(sections[1].items).toEqual(pages);
+    expect(sections[2].items.map(mentionItemNavKey)).toEqual(['database:db1:grid1']);
+    // Folded, the database joins Pages after the five pages, where only four show.
+    const folded = layoutMentionSectionsForPicker(
+      [
+        sectionOf(MentionSearchSectionKind.Pages, pages),
+        sectionOf(MentionSearchSectionKind.Databases, [database('db1')]),
+      ],
+      'folded',
+      'Pages'
+    );
+
+    expect(folded.map((section) => section.kind)).toEqual([MentionSearchSectionKind.Pages]);
+    expect(folded[0].items.map(mentionItemNavKey).indexOf('database:db1:-')).toBe(5);
+  });
+
+  it('puts sections in the canonical order whatever order they came in, unknown kinds last', () => {
+    const otherUnknown = 'boards' as MentionSearchSectionKind;
+    const shuffled = [
+      MentionSearchSectionKind.Links,
+      UNKNOWN_KIND,
+      MentionSearchSectionKind.Databases,
+      MentionSearchSectionKind.Dates,
+      MentionSearchSectionKind.Pages,
+      otherUnknown,
+      MentionSearchSectionKind.People,
+      MentionSearchSectionKind.DatabaseRows,
+      MentionSearchSectionKind.Suggested,
+    ].map((kind) => sectionOf(kind, []));
+    const ordered = separateMentionSections(shuffled);
+
+    expect(ordered.map((section) => section.kind)).toEqual([
+      MentionSearchSectionKind.Suggested,
+      MentionSearchSectionKind.People,
+      MentionSearchSectionKind.Pages,
+      MentionSearchSectionKind.Databases,
+      MentionSearchSectionKind.DatabaseRows,
+      MentionSearchSectionKind.Dates,
+      MentionSearchSectionKind.Links,
+      UNKNOWN_KIND,
+      otherUnknown,
+    ]);
+    // Each section is kept as it came, and an answer already in order is returned as it is.
+    ordered.forEach((section) => expect(shuffled).toContain(section));
+    expect(separateMentionSections(ordered)).toBe(ordered);
+  });
+
+  it('keeps typed rows inside Pages and a failed Database rows section as it is in the separate layout', () => {
+    // Search sends typed rows inside Pages; Cloud fails the rows source as a Database rows section.
+    const pages = sectionOf(MentionSearchSectionKind.Pages, [page('a'), row('dbY', 'r1', 'gridY')]);
+    const failedRows = failedSection(MentionSearchSectionKind.DatabaseRows);
+    const sections = layoutMentionSectionsForPicker([pages, failedRows], 'separate', 'Pages');
+
+    expect(sections).toEqual([pages, failedRows]);
+    expect(sections[1].status).toBe('failed');
+    // Folded, the empty failed section is left out.
+    expect(
+      layoutMentionSectionsForPicker([pages, failedRows], 'folded', 'Pages').map((section) => section.kind)
+    ).toEqual([MentionSearchSectionKind.Pages]);
+  });
+
+  it('shows a Database rows section with items under its own heading in the separate layout', () => {
+    // As a server that sends rows in a Database rows section answers.
+    const rows = sectionOf(MentionSearchSectionKind.DatabaseRows, [row('dbY', 'r1', 'gridY')]);
+    const sections = layoutMentionSectionsForPicker(
+      [sectionOf(MentionSearchSectionKind.Pages, [page('a')]), rows],
+      'separate',
+      'Pages'
+    );
+
+    expect(sections.map((section) => section.kind)).toEqual([
+      MentionSearchSectionKind.Pages,
+      MentionSearchSectionKind.DatabaseRows,
+    ]);
+    expect(flattenMentionSearchSections(sections).map((result) => result.key)).toEqual([
+      'pages|page:a',
+      'database_rows|row:dbY:r1',
+    ]);
+  });
+
+  it('keeps a database key in its own section when typed rows merge into Pages, in the separate layout', () => {
+    const primary = {
+      sections: [
+        sectionOf(MentionSearchSectionKind.Pages, [page('a')]),
+        sectionOf(MentionSearchSectionKind.Databases, [database('dbX', 'grid')]),
+      ],
+    };
+    const rows = { sections: [sectionOf(MentionSearchSectionKind.Pages, [row('dbY', 'r1')])] };
+    const keysOf = (sections: MentionSearchSection[]) =>
+      flattenMentionSearchSections(layoutMentionSectionsForPicker(sections, 'separate', 'Pages')).map(
+        (result) => result.key
+      );
+
+    expect(keysOf(mergeMentionSearchResponses([primary]).sections)).toEqual([
+      'pages|page:a',
+      'databases|database:dbX:grid',
+    ]);
+    expect(keysOf(mergeMentionSearchResponses([primary, rows]).sections)).toEqual([
+      'pages|page:a',
+      'pages|row:dbY:r1',
+      'databases|database:dbX:grid',
+    ]);
+  });
+
+  it('collapses only Pages when folded, and every people and object section when separate', () => {
+    const collapsing = (layout: 'folded' | 'separate') =>
+      Object.values(MentionSearchSectionKind).filter((kind) => mentionSectionCollapses(kind, layout));
+
+    expect(MENTION_SECTION_COLLAPSE_LIMIT).toBe(4);
+    expect(collapsing('folded')).toEqual([MentionSearchSectionKind.Pages]);
+    expect(collapsing('separate')).toEqual([
+      MentionSearchSectionKind.Suggested,
+      MentionSearchSectionKind.People,
+      MentionSearchSectionKind.Pages,
+      MentionSearchSectionKind.Databases,
+      MentionSearchSectionKind.DatabaseRows,
+    ]);
+    expect(mentionSectionCollapses(UNKNOWN_KIND, 'separate')).toBe(false);
   });
 });
 
