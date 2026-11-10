@@ -85,16 +85,27 @@ const MENTION_SECTION_TITLE_KEYS: Readonly<Record<MentionSearchSectionKind, stri
   [MentionSearchSectionKind.Links]: 'document.mentionMenu.links',
 };
 
+/** The translation key of a Dates section's title while it lists a reminder (Desktop's key too). */
+const MENTION_DATE_AND_REMINDER_TITLE_KEY = 'document.mentionMenu.dateAndReminder';
+
 /**
- * The title the picker shows for a section of `kind`: the translation of its `document.mentionMenu`
- * key, never the title a server sent, which is English whatever the user's language (MEN-WEB-12).
- * A kind this client does not know keeps `serverTitle`, so such a section still has a heading.
+ * The title the picker shows for a section of `kind` that lists `items`: the translation of its
+ * `document.mentionMenu` key, never the title a server sent, which is English whatever the user's
+ * language (MEN-WEB-12). A Dates section that lists a reminder is "Date & Reminder", as every
+ * released Cloud titles it (`build_date_section`), so pass the items the picker shows, after the
+ * reminders it does not offer are left out. A kind this client does not know keeps `serverTitle`,
+ * so such a section still has a heading.
  */
 export function mentionSectionTitle(
   kind: MentionSearchSectionKind,
   t: (key: string) => string,
-  serverTitle = ''
+  serverTitle = '',
+  items: readonly MentionSearchResultItem[] = []
 ): string {
+  if (kind === MentionSearchSectionKind.Dates && items.some((item) => item.kind === MentionTargetKind.Reminder)) {
+    return t(MENTION_DATE_AND_REMINDER_TITLE_KEY);
+  }
+
   const key = (MENTION_SECTION_TITLE_KEYS as Partial<Record<string, string>>)[kind];
 
   return key ? t(key) : serverTitle;

@@ -1289,7 +1289,8 @@ export function MentionPanel({
       : NO_MENTION_SECTIONS;
   }, [mentionV2View]);
   // The sections as the picker lays them out (MentionSectionLayout). A server's are titled by kind,
-  // in the user's language, never with the English titles servers send (MEN-WEB-12); the local
+  // in the user's language, never with the English titles servers send (MEN-WEB-12), and Dates by
+  // the items it shows: "Date & Reminder" while it lists a reminder, as servers title it. The local
   // fallback titles its own ("Recent pages").
   const pickerMentionSections = useMemo(() => {
     const sections = layoutMentionSectionsForPicker(
@@ -1306,7 +1307,7 @@ export function MentionPanel({
     if (useLocalMentionFallback) return sections;
 
     return sections.map((section) => {
-      const title = mentionSectionTitle(section.kind, t, section.title);
+      const title = mentionSectionTitle(section.kind, t, section.title, section.items);
 
       return title === section.title ? section : { ...section, title };
     });
@@ -2011,14 +2012,37 @@ export function MentionPanel({
     [closePanel, removeContent, editor]
   );
 
+  // The opening of the panel on screen (null while it is closed or unmounted), and the opening a
+  // page is being created from, until `addPage` settles.
+  const openingRef = useRef(mentionRequestLanes);
+  const creatingInRef = useRef<MentionRequestLanes | null>(null);
+
+  useLayoutEffect(() => {
+    openingRef.current = mentionRequestLanes;
+    return () => {
+      openingRef.current = null;
+    };
+  }, [mentionRequestLanes]);
+
   const handleAddPage = useCallback(
     async (type: MentionType.childPage | MentionType.PageRef = MentionType.PageRef) => {
-      if (!addPage || !viewId) return;
+      const opening = openingRef.current;
+
+      // One choice creates one page: Enter or a click on a create option while it is created does
+      // nothing.
+      if (!addPage || !viewId || !opening || creatingInRef.current === opening) return;
+
+      creatingInRef.current = opening;
 
       const recordSelection = beginSelection();
 
       try {
         const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
+
+        // The panel closed, or closed and opened again, while the page was created: it no longer
+        // tracks the typed `@query`, which would stay, and the mention would land wherever the
+        // caret is now. The page stays created.
+        if (openingRef.current !== opening) return;
 
         if (handleAddMention({ page_id: response.view_id, type })) {
           // The created page was no result, so the report gives no rank, section or source.
@@ -2027,6 +2051,8 @@ export function MentionPanel({
         }
       } catch (error) {
         console.error(error);
+      } finally {
+        if (creatingInRef.current === opening) creatingInRef.current = null;
       }
     },
     [addPage, beginSelection, handleAddMention, openPageModal, searchText, viewId]
@@ -2253,11 +2279,7 @@ export function MentionPanel({
               <MentionPanelLoadingState />
             ) : (
               mentionResultSections.map(({ key, section, options }, sectionResultIndex) => (
-                <div
-                  key={key}
-                  data-section-kind={section.kind}
-                  className={'flex flex-col px-2 py-1'}
-                >
+                <div key={key} data-section-kind={section.kind} className={'flex flex-col px-2 py-1'}>
                   {sectionResultIndex > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
                   <MentionSectionTitle
                     section={section}

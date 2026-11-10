@@ -3256,6 +3256,7 @@
       "databases": "Databases",
       "databaseRows": "Database rows",
       "dates": "Dates",
+      "dateAndReminder": "Date & Reminder",
       "links": "Links",
       "moreResults": "{{count}} more results...",
       "sendNotification": "Send notification",

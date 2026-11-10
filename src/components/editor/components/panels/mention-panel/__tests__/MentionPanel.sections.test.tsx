@@ -105,6 +105,16 @@ function database(title: string): MentionSearchResultItem {
   };
 }
 
+// A quick pick as Cloud lists it in Dates: no object id.
+function quickPick(kind: MentionTargetKind.Date | MentionTargetKind.Reminder, title: string): MentionSearchResultItem {
+  return {
+    kind,
+    title,
+    subtitle: '2026-01-02',
+    mention: { type: MentionTargetKind.Date, date: '2026-01-02T09:00:00Z', include_time: true },
+  };
+}
+
 // Titled as no server titles a section: the picker must never show these titles.
 function section(kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection {
   return { kind, title: `Server ${kind}`, items, has_more: false, status: 'ok' };
@@ -264,6 +274,7 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
     mockEditorContext.addPage = undefined;
     mockEditorContext.viewId = undefined;
     mockEditorContext.openPageModal = undefined;
+    mockEditorContext.enableReminderMentions = undefined;
     Element.prototype.scrollIntoView = jest.fn();
   });
 
@@ -286,6 +297,53 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
       expect(headings()).toEqual(['Personen', 'Seiten']);
       // The strings the second language lacks fall back to English.
       expect(moreRowIn(MentionSearchSectionKind.Pages)?.textContent).toBe('2 more results...');
+    });
+
+    it('titles Dates "Date & Reminder" while it lists a reminder, as servers title it, and "Dates" otherwise', async () => {
+      const dateKinds = () =>
+        resultsIn(MentionSearchSectionKind.Dates).map((shown) => shown.getAttribute('data-option-kind'));
+
+      // The search ignores what a request includes, so the picker's own rule decides what it offers.
+      // "tod" matches "Today" alone.
+      mockEditorContext.searchMentions = createSearch((lane) => {
+        if (lane === 'bare') {
+          return {
+            sections: [
+              section(MentionSearchSectionKind.Pages, [page('Recent page')]),
+              section(MentionSearchSectionKind.Dates, [
+                quickPick(MentionTargetKind.Date, 'Today'),
+                quickPick(MentionTargetKind.Reminder, 'Reminder tomorrow 9 AM'),
+              ]),
+            ],
+          };
+        }
+
+        return lane === 'primary'
+          ? { sections: [section(MentionSearchSectionKind.Dates, [quickPick(MentionTargetKind.Date, 'Today')])] }
+          : EMPTY;
+      });
+
+      // A document's bare `@`, which asks for reminders.
+      const view = renderPanel();
+
+      await advance(100);
+      expect(headings()).toEqual(['Pages', 'Date & Reminder']);
+      expect(dateKinds()).toEqual([MentionTargetKind.Date, MentionTargetKind.Reminder]);
+
+      mockPanelContext.searchText = 'tod';
+      view.rerender();
+      await advance(1_000);
+      expect(headings()).toEqual(['Dates']);
+      cleanup();
+
+      // A picker that offers no reminder, as a database Text cell's, titles the same answer Dates.
+      clearMentionSearchCacheForTests();
+      mockEditorContext.enableReminderMentions = false;
+      mockPanelContext.searchText = '';
+      renderPanel();
+      await advance(100);
+      expect(headings()).toEqual(['Pages', 'Dates']);
+      expect(dateKinds()).toEqual([MentionTargetKind.Date]);
     });
 
     it('folds the database into Pages behind "N more", lists every person, and offers no page to create', async () => {
@@ -425,6 +483,148 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
         view.editor,
         expect.objectContaining({ value: { page_id: 'new-page', type: MentionType.childPage } })
       );
+    });
+
+    it('creates one page for one choice: Enter or a click on a create option while it is created does nothing', async () => {
+      let finishCreate: (created: { view_id: string }) => void = () => undefined;
+      const addPage = jest.fn(
+        () =>
+          new Promise<{ view_id: string }>((resolve) => {
+            finishCreate = resolve;
+          })
+      );
+      const openPageModal = jest.fn();
+
+      mockEditorContext.addPage = addPage;
+      mockEditorContext.viewId = 'current-page';
+      mockEditorContext.openPageModal = openPageModal;
+
+      const view = await openAndType('road');
+
+      await placeCaretAtEnd(view.editor);
+      await pressKey('ArrowUp');
+      await pressKey('ArrowUp');
+      expect(highlighted()).toEqual(['createPage:childPage']);
+      await pressKey('Enter');
+      await pressKey('Enter');
+      act(() => {
+        fireEvent.click(createOptions()[1]);
+      });
+      expect(addPage).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        finishCreate({ view_id: 'new-page' });
+      });
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+      expect(mockAddMark).toHaveBeenCalledWith(
+        view.editor,
+        expect.objectContaining({ value: { page_id: 'new-page', type: MentionType.childPage } })
+      );
+      expect(openPageModal).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a create that failed be chosen again', async () => {
+      const addPage = jest
+        .fn<Promise<{ view_id: string }>, []>()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({ view_id: 'new-page' });
+
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockEditorContext.addPage = addPage;
+      mockEditorContext.viewId = 'current-page';
+
+      const view = await openAndType('road');
+
+      await placeCaretAtEnd(view.editor);
+      await pressKey('ArrowUp');
+      await pressKey('ArrowUp');
+      await pressKey('Enter');
+      await advance(0);
+      expect(mockAddMark).not.toHaveBeenCalled();
+
+      await pressKey('Enter');
+      await advance(0);
+      expect(addPage).toHaveBeenCalledTimes(2);
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+    });
+
+    it('adds no mention for a page created after its picker closed, even once the picker opened again', async () => {
+      const finishCreates: ((created: { view_id: string }) => void)[] = [];
+      const addPage = jest.fn(
+        () =>
+          new Promise<{ view_id: string }>((resolve) => {
+            finishCreates.push(resolve);
+          })
+      );
+      const openPageModal = jest.fn();
+
+      mockEditorContext.addPage = addPage;
+      mockEditorContext.viewId = 'current-page';
+      mockEditorContext.openPageModal = openPageModal;
+
+      const view = await openAndType('road');
+
+      await placeCaretAtEnd(view.editor);
+      await pressKey('ArrowUp');
+      await pressKey('ArrowUp');
+      await pressKey('Enter');
+      // Escape closes the picker while the page is created, and `@road` opens it again.
+      await pressKey('Escape');
+      expect(mockPanelContext.closePanel).toHaveBeenCalledTimes(1);
+      mockPanelContext.isPanelOpen = () => false;
+      view.rerender();
+      mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+      view.rerender();
+      await advance(1_000);
+
+      // The new opening creates a page of its own, whatever the first create is doing.
+      await pressKey('ArrowUp');
+      await pressKey('ArrowUp');
+      expect(highlighted()).toEqual(['createPage:childPage']);
+      await pressKey('Enter');
+      expect(addPage).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        finishCreates[0]({ view_id: 'first-page' });
+      });
+      expect(mockAddMark).not.toHaveBeenCalled();
+      expect(openPageModal).not.toHaveBeenCalled();
+      expect(Editor.string(view.editor, [])).toBe('@road');
+
+      await act(async () => {
+        finishCreates[1]({ view_id: 'second-page' });
+      });
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+      expect(mockAddMark).toHaveBeenCalledWith(
+        view.editor,
+        expect.objectContaining({ value: { page_id: 'second-page', type: MentionType.childPage } })
+      );
+      expect(openPageModal).toHaveBeenCalledWith('second-page');
+    });
+
+    it('adds no mention for a page created after its picker unmounted', async () => {
+      let finishCreate: (created: { view_id: string }) => void = () => undefined;
+
+      mockEditorContext.addPage = jest.fn(
+        () =>
+          new Promise<{ view_id: string }>((resolve) => {
+            finishCreate = resolve;
+          })
+      );
+      mockEditorContext.viewId = 'current-page';
+
+      const view = await openAndType('road');
+
+      await placeCaretAtEnd(view.editor);
+      await pressKey('ArrowUp');
+      await pressKey('ArrowUp');
+      await pressKey('Enter');
+      cleanup();
+      await act(async () => {
+        finishCreate({ view_id: 'new-page' });
+      });
+      expect(mockAddMark).not.toHaveBeenCalled();
+      expect(Editor.string(view.editor, [])).toBe('@road');
     });
 
     it('shows the typed name as typed in the create labels, on its own', async () => {

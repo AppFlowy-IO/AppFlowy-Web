@@ -36,6 +36,8 @@ import {
   shouldRetryMentionRowsResponse,
 } from '../mentionUtils';
 
+import { loadMentionParityFixture } from './mention-parity-helpers';
+
 function person(id: string, name = id): MentionSearchResultItem {
   return {
     kind: MentionTargetKind.Person,
@@ -1031,6 +1033,44 @@ describe('mention picker sections', () => {
   it('keeps the server title of a kind this client does not know', () => {
     expect(mentionSectionTitle(UNKNOWN_KIND, identity, 'Tasks')).toBe('Tasks');
     expect(mentionSectionTitle(UNKNOWN_KIND, identity)).toBe('');
+  });
+
+  it('titles a Dates section "Date & Reminder" while it lists a reminder, as servers title it', () => {
+    const today = quickPick(MentionTargetKind.Date, 'Today', '2026-01-01T00:00:00Z');
+    const reminder = quickPick(MentionTargetKind.Reminder, 'Reminder tomorrow 9 AM', '2026-01-02T09:00:00Z');
+    const dates = MentionSearchSectionKind.Dates;
+
+    // The bare `@` of a document, which asks for reminders, and a typed query matching one.
+    expect(mentionSectionTitle(dates, identity, 'Date & Reminder', [today, reminder])).toBe(
+      'document.mentionMenu.dateAndReminder'
+    );
+    expect(mentionSectionTitle(dates, identity, 'Date & Reminder', [reminder])).toBe(
+      'document.mentionMenu.dateAndReminder'
+    );
+    // Dates alone, as a typed query or a picker that offers no reminder lists them: the items
+    // decide, never the title the server sent.
+    expect(mentionSectionTitle(dates, identity, 'Dates', [today])).toBe('document.mentionMenu.dates');
+    expect(mentionSectionTitle(dates, identity, 'Date & Reminder', [today])).toBe('document.mentionMenu.dates');
+    expect(mentionSectionTitle(dates, identity)).toBe('document.mentionMenu.dates');
+    // Only a Dates section is retitled by its items.
+    expect(mentionSectionTitle(MentionSearchSectionKind.Links, identity, 'Links', [reminder])).toBe(
+      'document.mentionMenu.links'
+    );
+    // Cloud's `DATE_AND_REMINDER_TITLE` (`mentions/local.rs`), and Desktop's key and English.
+    expect(english('document.mentionMenu.dateAndReminder')).toBe('Date & Reminder');
+  });
+
+  it("reads in English as servers title every server section of the contract's fixtures", () => {
+    const englishTitle = (key: string) => String(english(key));
+    const { cases } = loadMentionParityFixture<{ cases: { server?: { sections?: MentionSearchSection[] } }[] }>(
+      'merge.json'
+    );
+    const serverSections = cases.flatMap((entry) => entry.server?.sections ?? []);
+
+    expect(serverSections.map((section) => section.title)).toContain('Date & Reminder');
+    serverSections.forEach((section) => {
+      expect(mentionSectionTitle(section.kind, englishTitle, '', section.items)).toBe(section.title);
+    });
   });
 
   it('carries the picker strings it translates in en.json', () => {

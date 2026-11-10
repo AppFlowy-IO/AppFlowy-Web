@@ -437,12 +437,18 @@ rules.
 The @ picker titles each section of a server's answer by its kind, with the translation of
 `document.mentionMenu.suggested`, `people`, `pages`, `databases`, `databaseRows`, `dates` or
 `links`, never with the title the server sent, which is English whatever the user's language
-(`mentionSectionTitle` in `mentionUtils.ts`; MEN-WEB-12). In English they read as servers title
-them. A kind this client does not know keeps the server's title. The local fallback, which lists
-the outline where no mention search is available, keeps its own titles ("Recent pages", "Date").
-The "N more" row, the "Send notification" switch and the options to create a page are translated
-too, and a create option shows the typed name as typed: i18next escapes interpolated values by
-default, so the name is never passed through it.
+(`mentionSectionTitle` in `mentionUtils.ts`; MEN-WEB-12). A Dates section that lists a reminder
+takes `dateAndReminder` ("Date & Reminder") instead, as every released Cloud titles it
+(`build_date_section`): a document's bare `@`, which asks for reminders, reads "Date & Reminder",
+and a typed query that matches only dates reads "Dates". The picker decides by the items it shows,
+after leaving out the reminders it does not offer, as in a database Text cell. So in English every
+section reads as servers title it. A kind this client does not know keeps the server's title. The
+local fallback, which lists the outline where no mention search is available, keeps its own titles
+("Recent pages", "Date"). The "N more" row, the "Send notification" switch and the options to
+create a page are translated too, and a create option shows the typed name as typed: i18next
+escapes interpolated values by default, so the name is never passed through it. Choosing a create
+option again while its page is created does nothing, and a page created after the picker closed,
+or closed and opened again, adds no mention (the page stays).
 
 By default the sections show as before (the `folded` layout): databases and database rows inside
 Pages, after its pages, and only Pages collapses to four results and "N more". The picker's sections
