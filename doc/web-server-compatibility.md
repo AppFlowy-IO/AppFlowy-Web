@@ -228,3 +228,35 @@ and Desktop collaborators on the page. Without it they count as neither particip
 present, and the remaining keys order them. A person without `last_mentioned_at`, or with a value
 that does not parse, counts as never mentioned. Neither order sends a request or changes the
 stored comment format (`@[name](person_id)`).
+
+## Mention pick memory
+
+The editor's @ picker can remember which item the user inserted after typing what, and list that
+item first in its tier the next time they type it (`mentionPickMemory.ts`, applied by
+`mentionPickRanking.ts`). It is off by default until it passes the replay gate and product signs
+off. A browser opts in with `localStorage.__mention_pick_memory = 'true'`, read when a picker opens;
+while it is off the picker neither records nor reads picks.
+
+- Only inserting a person, page, database or row records a pick. Showing, highlighting or hovering
+  an item never does, and neither do dates, reminders, links or a page created from the picker.
+- The memory is the typeahead contract's (AppFlowy-Cloud-Premium
+  `doc/context/workspace/mention_typeahead_contract.md`, section Pick memory): Firefox's
+  adaptive-history parameters as integers in millionths, decay by whole days, a stored input counts
+  for every typed input it starts with and double for the same input, and at most 1,000 entries.
+- Inside a tier, pick memory comes first. Four picks after exactly the typed input, the same day,
+  lift an item one tier and never more, so only those picks can put an item above another's exact
+  title. A section where no pick scores keeps the server's order; one where a pick scores is
+  ranked by the contract's client ranking, so a body-only hit there drops below the title matches.
+- A picked page, database or person that the answer lacks (the index has not caught up, or the
+  roster is refreshing) joins from the tab's local index, when the picker asked for its kind and
+  its current title or name still matches the query. The session report counts such a pick as
+  `local`.
+- The memory stays on the device, under `af.mention.pick-memory.v1:<workspace_id>:<uid>`: normalized
+  inputs of at most 32 code points, navigation keys, counts and times, no title, name or address.
+  An explicit sign-out removes the user's memories in every workspace; a session that expires keeps
+  them, as it keeps the device's other local state. Blocked or full storage leaves the picker
+  without pick memory and otherwise unchanged.
+
+Pick memory sends nothing and changes no request or header, so every server, released or older
+self-hosted, receives what it received before. It reads only the item fields every released server
+sends (the kind, title, subtitle and mention payload ids).

@@ -67,7 +67,8 @@ function withDatabaseRowSearchFilter(request: MentionSearchRequest): MentionSear
   };
 }
 
-function mentionSectionOrder(kind: MentionSearchSectionKind) {
+/** A section kind's place in the canonical order servers send: Suggested, People, Pages, … Links. */
+export function mentionSectionOrder(kind: MentionSearchSectionKind) {
   const index = MENTION_SECTION_ORDER.indexOf(kind);
 
   return index === -1 ? MENTION_SECTION_ORDER.length : index;

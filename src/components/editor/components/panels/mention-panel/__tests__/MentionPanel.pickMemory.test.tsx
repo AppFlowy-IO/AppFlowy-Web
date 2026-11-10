@@ -1,0 +1,489 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { ReactNode } from 'react';
+import { createEditor, Editor, Transforms } from 'slate';
+import { Editable, Slate, withReact } from 'slate-react';
+
+import {
+  MENTION_FEATURE_SESSION_METRICS_V1,
+  MentionPickerSessionReport,
+  resetMentionSessionMetricsForTests,
+} from '@/application/services/js-services/http/mention-presentation-metrics';
+import {
+  MentionablePerson,
+  MentionPersonRole,
+  MentionSearchOptions,
+  MentionSearchRequest,
+  MentionSearchResponse,
+  MentionSearchResultItem,
+  MentionSearchSection,
+  MentionSearchSectionKind,
+  MentionTargetKind,
+  View,
+  ViewLayout,
+} from '@/application/types';
+import { PanelProvider } from '@/components/editor/components/panels/PanelsContext';
+import { getConfigValue } from '@/utils/runtime-config';
+import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
+
+import { MentionPanel } from '../MentionPanel';
+import { clearMentionLocalIndex, recordMentionRoster, setMentionIndexSources } from '../mentionLocalIndex';
+import { MENTION_PICK_MEMORY_OVERRIDE_KEY, MENTION_PICK_MEMORY_STORAGE_PREFIX } from '../mentionPickMemory';
+import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
+
+const mockAddMark = jest.fn();
+const mockPost = jest.fn();
+const mockEditorContext: Record<string, unknown> = {};
+const mockCurrentUser = {
+  uid: '7',
+  uuid: '00000000-0000-4000-8000-0000000000aa',
+  email: 'me@appflowy.io',
+  name: 'Me',
+  avatar: null,
+  latestWorkspaceId: 'workspace',
+};
+
+jest.mock('@/application/services/js-services/http/core', () => ({ getAxios: () => ({ post: mockPost }) }));
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('@/application/services/domains', () => ({ WorkspaceService: {} }));
+jest.mock('../useNotifyPersonMention', () => ({ useNotifyPersonMention: () => jest.fn() }));
+jest.mock('@/application/slate-yjs/command', () => ({
+  CustomEditor: { addMark: (...args: unknown[]) => mockAddMark(...args) },
+}));
+jest.mock('@/components/editor/EditorContext', () => ({ useEditorContext: () => mockEditorContext }));
+jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => mockCurrentUser }));
+jest.mock('@/components/_shared/popover', () => ({
+  Popover: ({ open, children }: { open: boolean; children: ReactNode }) =>
+    open ? <div data-testid='mention-panel'>{children}</div> : null,
+  calculateOptimalOrigins: () => ({ transformOrigin: { vertical: 'top', horizontal: 'left' } }),
+}));
+// jsdom has no DOM Range geometry; the panels open at the editor's bounds.
+jest.mock('@/components/editor/components/toolbar/selection-toolbar/utils', () => ({
+  ...jest.requireActual('@/components/editor/components/toolbar/selection-toolbar/utils'),
+  getRangeRect: () => null,
+}));
+
+const SERVER_URL = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
+const WORKSPACE = 'workspace';
+const STORAGE_KEY = `${MENTION_PICK_MEMORY_STORAGE_PREFIX}:${WORKSPACE}:7`;
+const ANSWER_MS = 40;
+const TYPING_DEBOUNCE_MS = 120;
+
+function uuid(n: number): string {
+  return `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+}
+
+function page(n: number, title: string): MentionSearchResultItem {
+  const id = uuid(n);
+
+  return { kind: MentionTargetKind.Page, object_id: id, title, mention: { type: MentionTargetKind.Page, page_id: id } };
+}
+
+function section(kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection {
+  return { kind, title: kind, items, has_more: false, status: 'ok' };
+}
+
+const ROADMAP = page(1, 'Roadmap');
+const ROADMAP_2026 = page(2, 'Roadmap 2026');
+const ROADMAP_Q4 = page(3, 'Roadmap Q4');
+const RECENT = page(9, 'Recent page');
+const ANNIE: MentionablePerson = {
+  uid: 21,
+  avatar_url: null,
+  cover_image_url: null,
+  custom_image_url: null,
+  description: null,
+  email: 'annie@appflowy.io',
+  name: 'Annie Wang',
+  role: MentionPersonRole.Member,
+  person_id: uuid(21),
+  invited: false,
+  last_mentioned_at: null,
+};
+const ANNIE_ITEM: MentionSearchResultItem = {
+  kind: MentionTargetKind.Person,
+  object_id: ANNIE.person_id,
+  title: ANNIE.name,
+  subtitle: ANNIE.email,
+  mention: { type: MentionTargetKind.Person, person_id: ANNIE.person_id, person_name: ANNIE.name, page_id: uuid(99) },
+};
+
+/** What the server finds for `ro` and for `an`; tests change them to model an index that lags. */
+let typedPages: MentionSearchResultItem[];
+let typedPeople: MentionSearchResultItem[];
+
+function isRowRequest(request: MentionSearchRequest) {
+  return request.include?.length === 1 && request.include[0] === MentionTargetKind.DatabaseRow;
+}
+
+// Answers after ANSWER_MS, or rejects as cancelled as soon as the request is aborted, like axios.
+function createSearch() {
+  return jest.fn(
+    (request: MentionSearchRequest, options?: MentionSearchOptions) =>
+      new Promise<MentionSearchResponse>((resolve, reject) => {
+        const cancelled = { code: -1, message: 'canceled', sourceDomain: 'transport', transportFailure: 'cancelled' };
+
+        if (options?.signal?.aborted) {
+          reject(cancelled);
+          return;
+        }
+
+        const timer = setTimeout(() => {
+          const asksForPeople = !request.include?.length || request.include.includes(MentionTargetKind.Person);
+
+          if (!request.query) resolve({ sections: [section(MentionSearchSectionKind.Pages, [RECENT])] });
+          else if (isRowRequest(request)) resolve({ sections: [] });
+          else if (request.query === 'an' && asksForPeople) {
+            resolve({ sections: [section(MentionSearchSectionKind.People, typedPeople)] });
+          } else {
+            resolve({ sections: [section(MentionSearchSectionKind.Pages, request.query === 'ro' ? typedPages : [])] });
+          }
+        }, ANSWER_MS);
+
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            reject(cancelled);
+          },
+          { once: true }
+        );
+      })
+  );
+}
+
+function renderEditor() {
+  const editor = Object.assign(withReact(createEditor()), { flushLocalChanges: jest.fn() });
+
+  render(
+    <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: 'See' }] }]}>
+      <PanelProvider editor={editor}>
+        <Editable data-testid='editor' />
+        <MentionPanel notifyOnInsert={false} />
+      </PanelProvider>
+    </Slate>
+  );
+  return editor;
+}
+
+async function advance(ms: number) {
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(ms);
+  });
+}
+
+// Types at the end of the document, as a user does.
+async function type(editor: Editor, text: string) {
+  await act(async () => {
+    Transforms.select(editor, Editor.end(editor, []));
+    for (const character of text) editor.insertText(character);
+  });
+}
+
+async function pressKey(key: string) {
+  await act(async () => {
+    fireEvent.keyDown(screen.getByTestId('editor'), { key });
+  });
+}
+
+/** Opens the picker with `trigger` and types `query`, waiting for any answer the session needs. */
+async function openAndType(editor: Editor, query: string, trigger = '@') {
+  await type(editor, ` ${trigger}`);
+  await advance(ANSWER_MS);
+  await type(editor, query);
+  await advance(TYPING_DEBOUNCE_MS + ANSWER_MS);
+}
+
+async function openAndTypeRo(editor: Editor) {
+  await openAndType(editor, 'ro');
+}
+
+function shownTitles() {
+  return Array.from(document.querySelectorAll('[data-option-key]')).map((option) => option.textContent);
+}
+
+function shownKeys() {
+  return Array.from(document.querySelectorAll('[data-option-key]')).map((option) =>
+    option.getAttribute('data-option-key')
+  );
+}
+
+function highlightedTitle() {
+  return document.querySelector('[data-option-key][data-selected="true"]')?.textContent;
+}
+
+/** Highlights `title` with ArrowDown, then inserts it with Enter. */
+async function pickWithEnter(title: string) {
+  for (let step = 0; step < 10 && highlightedTitle() !== title; step += 1) await pressKey('ArrowDown');
+  expect(highlightedTitle()).toBe(title);
+  await pressKey('Enter');
+}
+
+function storedMemory(): unknown {
+  const raw = localStorage.getItem(STORAGE_KEY);
+
+  return raw === null ? null : JSON.parse(raw);
+}
+
+function pickMemoryKeys() {
+  return Object.keys(localStorage).filter((key) => key.startsWith(MENTION_PICK_MEMORY_STORAGE_PREFIX));
+}
+
+function insertedPageIds() {
+  return mockAddMark.mock.calls.map(([, mark]) => (mark as { value: { page_id?: string } }).value.page_id);
+}
+
+function outlineView(n: number, name: string): View {
+  return {
+    view_id: uuid(n),
+    name,
+    icon: null,
+    layout: ViewLayout.Document,
+    extra: null,
+    children: [],
+    is_published: false,
+    is_private: false,
+  };
+}
+
+describe('MentionPanel pick memory', () => {
+  const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+
+  beforeAll(() => {
+    // jsdom does not scroll; the panel scrolls the highlighted option into view.
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: jest.fn() });
+  });
+
+  afterAll(() => {
+    if (scrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', scrollIntoView);
+    else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockPost.mockResolvedValue({ status: 204, data: '' });
+    clearMentionSearchCacheForTests();
+    clearMentionLocalIndex();
+    resetMentionSessionMetricsForTests();
+    localStorage.clear();
+    typedPages = [ROADMAP, ROADMAP_2026, ROADMAP_Q4];
+    typedPeople = [ANNIE_ITEM];
+    Object.keys(mockEditorContext).forEach((key) => delete mockEditorContext[key]);
+    mockEditorContext.workspaceId = WORKSPACE;
+    mockEditorContext.searchMentions = createSearch();
+  });
+
+  afterEach(() => {
+    cleanup();
+    clearMentionLocalIndex();
+    updateServerInfo(SERVER_URL, SERVER_INFO_LOADING);
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  describe('switched on', () => {
+    beforeEach(() => localStorage.setItem(MENTION_PICK_MEMORY_OVERRIDE_KEY, 'true'));
+
+    it("ranks 'Roadmap 2026' first in its tier after it was picked twice from @ro", async () => {
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap 2026', 'Roadmap Q4']);
+      await pickWithEnter('Roadmap 2026');
+      const firstPickAt = Date.now();
+
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+      await pickWithEnter('Roadmap 2026');
+      const secondPickAt = Date.now();
+
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+      expect(insertedPageIds()).toEqual([uuid(2), uuid(2)]);
+      expect(secondPickAt).toBeGreaterThan(firstPickAt);
+
+      // The device keeps the normalized input and the navigation key, nothing it showed.
+      expect(storedMemory()).toEqual({ v: 1, e: [[`page:${uuid(2)}`, 'ro', 1_900_000, secondPickAt]] });
+      expect(localStorage.getItem(STORAGE_KEY)).not.toMatch(/roadmap|recent|see|me@/i);
+      expect(pickMemoryKeys()).toEqual([STORAGE_KEY]);
+    });
+
+    it('never reinforces what it only shows: rendering, arrowing and closing record nothing', async () => {
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      for (let step = 0; step < 5; step += 1) await pressKey('ArrowDown');
+      await pressKey('ArrowUp');
+      await pressKey('Escape');
+      await openAndTypeRo(editor);
+      await pressKey('Escape');
+
+      expect(mockAddMark).not.toHaveBeenCalled();
+      expect(pickMemoryKeys()).toEqual([]);
+    });
+
+    it('brings a picked page the answer lacks from the local index, at the top of its tier', async () => {
+      setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026'), outlineView(4, 'Budget')] });
+      updateServerInfo(SERVER_URL, {
+        status: 'available',
+        info: { enable_page_history: true, mention_features: [MENTION_FEATURE_SESSION_METRICS_V1] },
+      });
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+
+      // The index has not caught up: the server's answer leaves the page out.
+      typedPages = [ROADMAP, ROADMAP_Q4];
+      clearMentionSearchCacheForTests();
+      await openAndTypeRo(editor);
+
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+      await pickWithEnter('Roadmap 2026');
+      expect(insertedPageIds()).toEqual([uuid(2), uuid(2)]);
+      // The session reports count the second pick as the local lane's.
+      expect(
+        mockPost.mock.calls.map(([, body]) => {
+          const { selected_rank, selected_source } = body as MentionPickerSessionReport;
+
+          return { selected_rank, selected_source };
+        })
+      ).toEqual([
+        { selected_rank: 2, selected_source: 'server' },
+        { selected_rank: 1, selected_source: 'local' },
+      ]);
+    });
+
+    it('adds a picked person the answer lacks only to a picker that lists people', async () => {
+      setMentionIndexSources(WORKSPACE, { outline: [] });
+      recordMentionRoster(WORKSPACE, [ANNIE]);
+      const annie = `people|person:${ANNIE.person_id}`;
+      const editor = renderEditor();
+
+      await openAndType(editor, 'an');
+      expect(shownKeys()).toEqual([annie]);
+      await pressKey('ArrowDown');
+      await pressKey('Enter');
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+
+      // The roster is refreshing, and Cloud answers without her.
+      typedPeople = [];
+      clearMentionSearchCacheForTests();
+      await openAndType(editor, 'an');
+      expect(shownKeys()).toEqual([annie]);
+      await pressKey('Escape');
+
+      // '+' links a page: it asks for no people, so she stays out.
+      const search = mockEditorContext.searchMentions as jest.Mock;
+
+      search.mockClear();
+      await openAndType(editor, 'an', '+');
+      expect(screen.queryByTestId('mention-panel')).not.toBeNull();
+      expect(search.mock.calls.map(([request]) => [request.query, request.include])).toEqual([
+        ['', [MentionTargetKind.Page, MentionTargetKind.Database]],
+        ['an', [MentionTargetKind.Page, MentionTargetKind.Database]],
+        ['an', [MentionTargetKind.DatabaseRow]],
+      ]);
+      expect(shownKeys()).toEqual([]);
+    });
+
+    it('keeps the requester last among people, even after they picked themselves', async () => {
+      const me: MentionSearchResultItem = {
+        ...ANNIE_ITEM,
+        object_id: mockCurrentUser.uuid,
+        title: 'Anna Me',
+        subtitle: mockCurrentUser.email,
+        mention: {
+          type: MentionTargetKind.Person,
+          person_id: mockCurrentUser.uuid,
+          person_name: 'Anna Me',
+          page_id: uuid(99),
+        },
+      };
+      const meKey = `people|person:${mockCurrentUser.uuid}`;
+      const annieKey = `people|person:${ANNIE.person_id}`;
+
+      // Cloud lists the requester last in their class.
+      typedPeople = [ANNIE_ITEM, me];
+      const editor = renderEditor();
+
+      await openAndType(editor, 'an');
+      expect(shownKeys()).toEqual([annieKey, meKey]);
+      await pressKey('ArrowDown');
+      await pressKey('ArrowDown');
+      await pressKey('Enter');
+
+      await openAndType(editor, 'an');
+      expect(shownKeys()).toEqual([annieKey, meKey]);
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')?.e?.[0]?.[0]).toBe(
+        `person:${mockCurrentUser.uuid}`
+      );
+    });
+
+    it('keeps the server order and inserts as before when its storage throws', async () => {
+      const getItem = Storage.prototype.getItem;
+      const setItem = Storage.prototype.setItem;
+      const denied = (key: string) => key.startsWith(MENTION_PICK_MEMORY_STORAGE_PREFIX);
+
+      // Only the pick memory's keys fail; the scheduler's and the notification switch's still work.
+      jest.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
+        if (denied(key)) throw new DOMException('denied', 'SecurityError');
+        return getItem.call(window.localStorage, key);
+      });
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
+        if (denied(key)) throw new DOMException('quota', 'QuotaExceededError');
+        return setItem.call(window.localStorage, key, value);
+      });
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+      await openAndTypeRo(editor);
+
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap 2026', 'Roadmap Q4']);
+      await pickWithEnter('Roadmap Q4');
+      expect(insertedPageIds()).toEqual([uuid(2), uuid(3)]);
+    });
+  });
+
+  it('is off by default: the server order stays, and nothing is stored', async () => {
+    const editor = renderEditor();
+
+    await openAndTypeRo(editor);
+    await pickWithEnter('Roadmap 2026');
+    await openAndTypeRo(editor);
+    await pickWithEnter('Roadmap 2026');
+    await openAndTypeRo(editor);
+
+    expect(shownTitles()).toEqual(['Roadmap', 'Roadmap 2026', 'Roadmap Q4']);
+    expect(insertedPageIds()).toEqual([uuid(2), uuid(2)]);
+    expect(pickMemoryKeys()).toEqual([]);
+  });
+
+  it('works without storage at all, when the localStorage getter throws', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new DOMException('denied', 'SecurityError');
+      },
+    });
+
+    try {
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap 2026', 'Roadmap Q4']);
+      await pickWithEnter('Roadmap 2026');
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap 2026', 'Roadmap Q4']);
+      expect(insertedPageIds()).toEqual([uuid(2)]);
+    } finally {
+      cleanup();
+      if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+      else delete (window as { localStorage?: Storage }).localStorage;
+    }
+  });
+});

@@ -19,9 +19,11 @@
  * Matching reads prepared text: each title, name and address is normalized and split into words
  * once and kept by its own string, so re-ranking on every keystroke only compares, however the
  * candidates are split into sections ({@link PreparedCache}). Nothing here depends on React, the
- * DOM or the network. The editor's picker does not call it yet: it keeps the server's order until
- * MEN-WEB-08 and MEN-WEB-09 use it behind their flag. The comment @ pickers match people with
- * {@link personTier} when their own `ranked` order is on (`@/application/comment-mention-ranking`).
+ * DOM or the network. The editor's picker keeps the server's order, except that with pick memory
+ * on (`mentionPickMemory.ts`, off by default) it re-tiers a typed answer's sections where a pick
+ * scores (`mentionPickRanking.ts`); MEN-WEB-08 and MEN-WEB-09 re-tier and merge every typed answer
+ * behind their flag. The comment @ pickers match people with {@link personTier} when their own
+ * `ranked` order is on (`@/application/comment-mention-ranking`).
  */
 import {
   MentionSearchResultItem,
@@ -642,13 +644,14 @@ export interface MentionServerRankCandidate extends MentionRankCandidate {
 }
 
 /**
- * A server item at `serverRank` as a candidate. Cloud sends a person's address as the subtitle and
+ * A server item at `serverRank` as a candidate, or with no `serverRank` an item the server did not
+ * send, which ranks as a local-only candidate. Cloud sends a person's address as the subtitle and
  * titles a person whose name is blank by that address, so a title equal to the subtitle is a blank
  * name: the domain then never matches as a name.
  */
 export function mentionServerCandidate(
   item: MentionSearchResultItem,
-  serverRank: number,
+  serverRank: number | undefined,
   signals?: MentionRankSignals
 ): MentionServerRankCandidate {
   const email = item.kind === MentionTargetKind.Person ? item.subtitle ?? '' : '';
@@ -668,6 +671,12 @@ export interface RetierServerSectionOptions {
   nowMs?: number;
   /** The client's signals for an item, by its navigation key. */
   signals?: (key: string, item: MentionSearchResultItem) => MentionRankSignals | undefined;
+  /**
+   * Items the client adds to the section, such as a picked target the answer lacks (MEN-WEB-10).
+   * They rank as local-only candidates: after server items whose keys tie with theirs, and dropped
+   * unless their title or name matches the query. One whose key the section lists is left out.
+   */
+  localItems?: readonly MentionSearchResultItem[];
 }
 
 /**
@@ -675,8 +684,8 @@ export interface RetierServerSectionOptions {
  * with {@link rankSection}, so an item whose title or name does not match the query (a body hit, a
  * typo, an older title) moves below every title match, in any server's answer. Inside a tier the
  * server's order holds unless the client's own signals say otherwise. Other sections, and a bare
- * `@`, keep the server's order. An item the section lists twice keeps its better place. The
- * section comes back as it was when nothing moves.
+ * `@`, keep the server's order, and a bare `@` adds no local item. An item the section lists twice
+ * keeps its better place. The section comes back as it was when nothing moves.
  */
 export function retierServerSection(
   query: MentionQuery | string,
@@ -687,10 +696,21 @@ export function retierServerSection(
 
   if (!lane) return section;
 
-  const { nowMs = Date.now(), signals } = options;
+  const { nowMs = Date.now(), signals, localItems = [] } = options;
   const candidates = section.items.map((item, index) =>
     mentionServerCandidate(item, index, signals?.(mentionItemNavKey(item), item))
   );
+
+  if (localItems.length > 0) {
+    const listed = new Set(candidates.map((candidate) => candidate.key));
+
+    localItems.forEach((item) => {
+      const key = mentionItemNavKey(item);
+
+      if (!listed.has(key)) candidates.push(mentionServerCandidate(item, undefined, signals?.(key, item)));
+    });
+  }
+
   const items = rankSection(query, lane, candidates, nowMs).map((candidate) => candidate.item);
 
   return items.length === section.items.length && items.every((item, index) => item === section.items[index])

@@ -3246,7 +3246,9 @@
       "offline": "You're offline",
       "retry": "Retry",
       "retrying": "Retrying…",
-      "busyRetryingIn": "Busy, retrying in {{seconds}} s"
+      "busyRetryingIn": "Busy, retrying in {{seconds}} s",
+      "peopleSection": "People",
+      "pagesSection": "Pages"
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"

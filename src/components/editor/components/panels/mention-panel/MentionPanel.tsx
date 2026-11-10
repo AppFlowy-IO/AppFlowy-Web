@@ -42,6 +42,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
+import {
+  loadMentionPickMemory,
+  mentionPickMemoryStorageKey,
+  readMentionPickMemoryEnabled,
+  recordMentionPick,
+} from './mentionPickMemory';
+import { mentionLocalPickItem, rankMentionSectionsByPicks } from './mentionPickRanking';
 import { mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
 import {
   ensureMentionSearchCacheScope,
@@ -75,6 +82,7 @@ import {
   normalizeMentionSearchSectionsForPicker,
   reconcileMentionOptionSelection,
 } from './mentionUtils';
+import { useMentionLocalSnapshot } from './useMentionLocalSnapshot';
 import { useMentionPickerSession } from './useMentionPickerSession';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
 
@@ -623,7 +631,59 @@ export function MentionPanel({
 
     return sections;
   }, [activePanel, mentionableFallbackViews, searchText, t, useLocalMentionFallback]);
-  const sourceMentionSections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
+  // Pick memory (MEN-WEB-10), off by default: what this user inserted after typing what, read from
+  // the device once per opening. It orders a typed answer where a pick scores, and brings a picked
+  // target the answer lacks from the local index.
+  const hasSearchMentions = Boolean(searchMentions);
+  const pickMemoryKey = useMemo(
+    () => mentionPickMemoryStorageKey(workspaceId, currentUser?.uid),
+    [currentUser?.uid, workspaceId]
+  );
+  const pickMemory = useMemo(
+    () =>
+      open && hasSearchMentions && pickMemoryKey && readMentionPickMemoryEnabled()
+        ? loadMentionPickMemory(pickMemoryKey)
+        : undefined,
+    [hasSearchMentions, open, pickMemoryKey]
+  );
+  const pickLocalSnapshot = useMentionLocalSnapshot(pickMemory ? workspaceId : undefined);
+  const sectionsByPicks = useMemo(() => {
+    const sections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
+
+    if (!pickMemory || useLocalMentionFallback || !hasMentionSearchQuery) return { sections, localKeys: undefined };
+
+    const query = searchText ?? '';
+    const nowMs = Date.now();
+
+    return rankMentionSectionsByPicks({
+      query,
+      sections,
+      scores: pickMemory.scores(query, nowMs),
+      request: { include: mentionInclude },
+      requesterPersonId: currentUser?.uuid,
+      localItem: (key) => mentionLocalPickItem(pickLocalSnapshot, key),
+      // Web lists databases and rows inside Pages, so a created Databases section is titled so too.
+      sectionTitle: (kind) =>
+        kind === MentionSearchSectionKind.People
+          ? t('document.mention.peopleSection')
+          : t('document.mention.pagesSection'),
+      nowMs,
+    });
+  }, [
+    currentUser?.uuid,
+    hasMentionSearchQuery,
+    localFallbackMentionSections,
+    mentionInclude,
+    mentionSections,
+    pickLocalSnapshot,
+    pickMemory,
+    searchText,
+    t,
+    useLocalMentionFallback,
+  ]);
+  const sourceMentionSections = sectionsByPicks.sections;
+  // The picked targets the local index added, which a session report counts as the local lane's.
+  const pickLocalKeys = sectionsByPicks.localKeys;
   const pickerMentionSections = useMemo(
     () => normalizeMentionSearchSectionsForPicker(
       enableReminderMentions === false
@@ -1291,7 +1351,13 @@ export function MentionPanel({
 
       if (!handleAddMention(mention)) return;
 
-      recordSelection({ rank: resultRanks.get(result.key), section: result.sectionKind, source: shownSource });
+      recordSelection({
+        rank: resultRanks.get(result.key),
+        section: result.sectionKind,
+        source: pickLocalKeys?.has(result.navKey) ? 'local' : shownSource,
+      });
+      // Only an insertion reinforces pick memory, never what the picker shows or highlights.
+      if (pickMemory && pickMemoryKey) recordMentionPick(pickMemoryKey, searchText ?? '', result.navKey);
       if (mention.type === MentionType.Person && mention.person_id) {
         if (onPersonPicked) onPersonPicked(mention.person_id, sendNotification);
         else if (notifyOnInsert) void notifyPersonMention(mention, sendNotification);
@@ -1306,7 +1372,11 @@ export function MentionPanel({
       notifyOnInsert,
       notifyPersonMention,
       onPersonPicked,
+      pickLocalKeys,
+      pickMemory,
+      pickMemoryKey,
       resultRanks,
+      searchText,
       sendNotification,
       shownSource,
       viewId,
