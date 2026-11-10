@@ -20,7 +20,8 @@ request out?
   which is observed; any other row from its committed seed (`peekDatabaseRowDocSeed`), decoded into
   a throwaway document in slices of about 8 ms. Only titles and creation times are kept, and a
   seed's title is kept with the seed object, so the next picker does not decode it again.
-  `complete` holds when every row has a title, no slice is left and `holdsDatabaseSourceRows` holds.
+  `complete` holds when every row has a title and `holdsDatabaseSourceRows` holds; a row whose seed
+  waits for a slice has no title yet, and a refresh that reads a titled row's seed again keeps it.
 - `src/components/editor/components/panels/mention-panel/mentionLocalRows.ts`: per keystroke, a
   word filter (a title matches at some tier only if it contains every query word) and then the
   typeahead contract's tiers and in-tier keys, at most 60 rows, as lane items the contract's merge

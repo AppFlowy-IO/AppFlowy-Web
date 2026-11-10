@@ -12,8 +12,8 @@
  *   decoded into a throwaway document in short slices off the keystroke path: the index keeps
  *   titles, never documents (10,000 decoded rows would hold about 200 MB, their titles under 1 MB).
  *   A decoded seed's title is kept with the seed, so the next picker reads it without decoding.
- * - `complete`: the membership is loaded, every row has a title, no slice is left, and the tab holds
- *   every row of the database (`holdsDatabaseSourceRows`).
+ * - `complete`: the membership is loaded, every row has a title, and the tab holds every row of the
+ *   database (`holdsDatabaseSourceRows`). A row whose seed waits for a slice has none yet.
  *
  * Limits: a row another user edited is read from its seed until the tab opens it, as filter and sort
  * read it; a database whose rows the tab does not hold (a row page, or a grid revisited with a cached
@@ -422,7 +422,8 @@ export function createDatabaseMentionRowsSource({
     return {
       databaseId,
       rows: rows.length > 0 ? rows : EMPTY_ROWS,
-      complete: titled && pending.size === 0 && holdsRows(databaseId),
+      // A titled row waiting for a newer seed still has a title: a refresh never makes it incomplete.
+      complete: titled && holdsRows(databaseId),
     };
   }
 

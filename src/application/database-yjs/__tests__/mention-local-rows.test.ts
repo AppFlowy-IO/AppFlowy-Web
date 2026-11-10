@@ -254,6 +254,24 @@ describe('database mention rows source (MEN-WEB-15)', () => {
     expect(test.titles()).toContain('Hiring plan 2027');
   });
 
+  it('stays complete while a refresh reads the seeds of rows that have a title again', async () => {
+    const test = harness(databaseDoc(ids));
+
+    ids.forEach((id, index) => test.seed(id, `Row ${index}`));
+    test.subscribe();
+    test.runSlices();
+    expect(test.source.getSnapshot().complete).toBe(true);
+
+    // Another database became resident: every listener looks again, which queues the seed rows.
+    test.residency.forEach((listener) => listener());
+    await microtasks();
+    expect(test.tasks).toHaveLength(1);
+    expect(test.source.getSnapshot().complete).toBe(true);
+    test.runSlices();
+    expect(test.source.getSnapshot().complete).toBe(true);
+    expect(test.onChange).toHaveBeenCalledTimes(1);
+  });
+
   it('lists a row created while the picker is open as soon as its row order is added', async () => {
     const doc = databaseDoc(ids.slice(0, 2));
     const test = harness(doc);
