@@ -103,6 +103,7 @@ interface CommentPeopleIndex {
   /** People with a person id, each once, in roster order. */
   readonly people: readonly MentionablePerson[];
   readonly byPersonId: ReadonlyMap<string, MentionablePerson>;
+  /** Empty when the server sends no `uid` (before 0.18.2); an id that only a uid names then names no one. */
   readonly byUid: ReadonlyMap<string, MentionablePerson>;
 }
 

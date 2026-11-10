@@ -18,7 +18,7 @@ const mockPeople: MentionablePerson[] = ['Alice', 'Bob', 'Cy'].map((name, index)
   invited: false,
   last_mentioned_at: null,
 }));
-const [alice, bob] = mockPeople;
+const [alice, bob, cy] = mockPeople;
 
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
   useMentionableUsersWithAutoFetch: () => ({ users: mockPeople, loading: false }),
@@ -26,10 +26,10 @@ jest.mock('@/components/database/components/cell/person/useMentionableUsers', ()
 jest.mock('@mui/material', () => ({ Portal: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-// Bob has the page open.
+// Cy has the page open. Cy's name sorts last, so only presence ranks Cy ahead of Bob.
 const mockAwareness = {
   getStates: () =>
-    new Map([[9, { user: { uid: 2 }, metadata: JSON.stringify({ user_name: 'Bob', user_uuid: bob.person_id }) }]]),
+    new Map([[9, { user: { uid: 3 }, metadata: JSON.stringify({ user_name: 'Cy', user_uuid: cy.person_id }) }]]),
   on: jest.fn(),
   off: jest.fn(),
 };
@@ -91,7 +91,7 @@ describe('InlineCommentComposer person mentions', () => {
     render(<InlineCommentComposer />);
     type('@');
 
-    expect(options()).toEqual(['Bob', 'Cy', 'Alice']);
+    expect(options()).toEqual(['Cy', 'Bob', 'Alice']);
     expect(mockUseAppAwareness).toHaveBeenCalledWith('view-1');
     expect(mockAwareness.on).toHaveBeenCalledWith('change', expect.any(Function));
   });

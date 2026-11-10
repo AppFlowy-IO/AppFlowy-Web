@@ -211,13 +211,20 @@ composer mounts:
 - Inside a class: the commenter last; then the discussion's participants, the most recent first
   (a reply's thread, then, on a row, the row's other commenters; a new row or Feed comment ranks
   everyone who commented on the row); then people on the page, for document comments, from the
-  page's awareness while the picker is open; then the commenter's latest mention of the person
-  (`last_mentioned_at`); then Cloud's own tie-breaks for people (the shorter name on a typed
-  query, the lowercased name, the person id). A bare `@` uses the same keys without the class.
-- The highlighted person stays highlighted when the list changes without a keystroke, so Enter
-  inserts the person the user chose.
+  page's awareness while the picker is open (a Web collaborator by person id, a Desktop one by
+  the exact uid its awareness metadata carries as `id`); then the commenter's latest mention of
+  the person (`last_mentioned_at`); then Cloud's own tie-breaks for people (the shorter name on a
+  typed query, the lowercased name, the person id). A bare `@` uses the same keys without the
+  class.
+- In both orders the highlight stays on the person it shows when the list changes without a
+  keystroke (the roster arrives in another order; under `ranked`, a comment arrives or someone
+  joins or leaves the page), from the first render of the list, so Enter inserts the person on
+  screen.
 
-Both orders read the roster fields every released server sends (`person_id`, `uid`, `name`,
-`email`). `last_mentioned_at` is optional: a person without it, or with a value that does not
-parse, counts as never mentioned. Neither order sends a request or changes the stored comment
-format (`@[name](person_id)`).
+Both orders read `person_id`, `name` and `email`, which every released server sends. The ranked
+order also reads two optional fields. `uid`, which servers before 0.18.2 omit, resolves the
+people that comments and awareness name by uid: the authors of row comments written with a uid,
+and Desktop collaborators on the page. Without it they count as neither participants nor
+present, and the remaining keys order them. A person without `last_mentioned_at`, or with a value
+that does not parse, counts as never mentioned. Neither order sends a request or changes the
+stored comment format (`@[name](person_id)`).

@@ -10,7 +10,7 @@ import { CommentDraft, EMPTY_COMMENT_DRAFT, InlineCommentInput } from '../Inline
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-const mockPeople: MentionablePerson[] = ['Ada', 'Bob', 'Cy'].map((name, index) => ({
+const mockPeople: MentionablePerson[] = ['Ada', 'Bob', 'Cy', 'Dee'].map((name, index) => ({
   person_id: `00000000-0000-4000-8000-00000000000${index + 1}`,
   uid: index + 1,
   name,
@@ -23,16 +23,16 @@ const mockPeople: MentionablePerson[] = ['Ada', 'Bob', 'Cy'].map((name, index) =
   invited: false,
   last_mentioned_at: null,
 }));
-const [ada, bob, cy] = mockPeople;
+const [ada, , cy, dee] = mockPeople;
 
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
   useMentionableUsersWithAutoFetch: () => ({ users: mockPeople, loading: false }),
 }));
 
-/** Bob is on the page. */
+/** Dee is on the page. Dee's name sorts last, so only presence ranks Dee ahead of Bob. */
 const awareness = {
   getStates: () =>
-    new Map([[7, { user: { uid: 2 }, metadata: JSON.stringify({ user_name: 'Bob', user_uuid: bob.person_id }) }]]),
+    new Map([[7, { user: { uid: 4 }, metadata: JSON.stringify({ user_name: 'Dee', user_uuid: dee.person_id }) }]]),
   on: jest.fn(),
   off: jest.fn(),
 } as unknown as CommentMentionAwareness;
@@ -79,7 +79,7 @@ describe('inline comment mention ranking', () => {
   it('keeps the roster order by default, whoever takes part or is present', () => {
     render(<Harness submit={jest.fn()} />);
     type('@');
-    expect(options()).toEqual(['Ada', 'Bob', 'Cy']);
+    expect(options()).toEqual(['Ada', 'Bob', 'Cy', 'Dee']);
     expect(awareness.on).not.toHaveBeenCalled();
   });
 
@@ -90,13 +90,13 @@ describe('inline comment mention ranking', () => {
     render(<Harness submit={submit} />);
     const input = type('@');
 
-    expect(options()).toEqual(['Cy', 'Bob', 'Ada']);
+    expect(options()).toEqual(['Cy', 'Dee', 'Bob', 'Ada']);
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(input.value).toBe('@Bob ');
+    expect(input.value).toBe('@Dee ');
     expect(submit).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(submit).toHaveBeenCalledWith(`@[Bob](${bob.person_id}) `);
+    expect(submit).toHaveBeenCalledWith(`@[Dee](${dee.person_id}) `);
   });
 
   it('still finds a full address, and no one by the shared domain, once ranked', () => {

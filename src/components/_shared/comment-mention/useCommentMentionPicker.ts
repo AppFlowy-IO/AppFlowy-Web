@@ -16,8 +16,13 @@ const NO_ONE: ReadonlySet<string> = new Set();
 const NO_SUGGESTIONS: MentionablePerson[] = [];
 
 /**
- * Who is on the page: every collaborator the page header shows (an awareness state with a user and
- * a name), by person id, or by uid when an older client sent no person id. Sorted, each once.
+ * Who is on the page, sorted, each once: the collaborators the page header shows (an awareness
+ * state with a user and a name) that name themselves exactly. Web sends its person id
+ * (`metadata.user_uuid`). Desktop sends none, and its `user.uid` is an i64 JSON number, which
+ * `JSON.parse` rounds above 2^53, as Cloud's uids are; its exact uid is the string `metadata.id`.
+ * So a collaborator is their person id, else `metadata.id`, else `user.uid` while it is a string
+ * or a safe integer. One who names none of them (a Desktop build that sends no `metadata.id`) is
+ * shown by the header but not counted here.
  */
 export function readPresentPersonIds(awareness: Pick<Awareness, 'getStates'>): string[] {
   const ids = new Set<string>();
@@ -28,19 +33,25 @@ export function readPresentPersonIds(awareness: Pick<Awareness, 'getStates'>): s
 
     if (!user || !metadata || typeof metadata !== 'object') return;
 
-    const { user_name: name, user_uuid: uuid } = metadata as { user_name?: unknown; user_uuid?: unknown };
+    const {
+      user_name: name,
+      user_uuid: uuid,
+      id: uid,
+    } = metadata as { user_name?: unknown; user_uuid?: unknown; id?: unknown };
 
     if (typeof name !== 'string' || !name) return;
 
-    const id =
-      typeof uuid === 'string' && uuid
-        ? uuid
-        : canonicalizeUserUid(typeof user.uid === 'number' || typeof user.uid === 'string' ? user.uid : null);
+    const id = typeof uuid === 'string' && uuid ? uuid : exactUid(uid) ?? exactUid(user.uid);
 
     if (id) ids.add(id);
   });
 
   return [...ids].sort();
+}
+
+/** `value` as a canonical uid while it is a decimal string or a safe integer; a rounded number is none. */
+function exactUid(value: unknown): string | null {
+  return typeof value === 'string' || typeof value === 'number' ? canonicalizeUserUid(value) : null;
 }
 
 function parseMetadata(raw: string): unknown {
@@ -116,7 +127,10 @@ export interface CommentMentionPicker {
 
 interface ActiveSuggestion {
   index: number;
-  /** The highlighted person, followed when the list changes without a new query. */
+  /**
+   * The highlighted person, followed when the list changes without a new query. Unset only until
+   * the list shows someone at `index`, who is then pinned.
+   */
   personId?: string;
 }
 
@@ -127,9 +141,12 @@ const FIRST_SUGGESTION: ActiveSuggestion = { index: 0 };
  * `readCommentMentionRanking` picks, and the highlighted one. Row comments, Feed cards and document
  * comments share it; each composer keeps its own trigger, keys and insertion.
  *
- * The highlight stays on its person when the list changes without a new query (the roster loads,
- * a comment arrives, someone joins the page), so Enter inserts the person the user chose. Presence
- * is read only while a ranked picker is open.
+ * The highlight stays on the person it shows when the list changes without a new query (the
+ * roster loads or arrives in another order, a comment arrives, someone joins or leaves the page),
+ * so Enter inserts the person on screen. That holds from the first render of a list, before the
+ * user moves the highlight; `resetActive` highlights the first suggestion of the next list. When
+ * the person leaves the list, the highlight keeps its place and follows whoever is shown there.
+ * Presence is read only while a ranked picker is open.
  */
 export function useCommentMentionPicker({
   query,
@@ -149,8 +166,20 @@ export function useCommentMentionPicker({
     [participantIds, people, presentIds, query, ranking, requesterId]
   );
   const [active, setActive] = useState<ActiveSuggestion>(FIRST_SUGGESTION);
-  const kept = active.personId ? suggestions.findIndex((person) => person.person_id === active.personId) : -1;
+  const kept =
+    active.personId === undefined
+      ? -1
+      : suggestions[active.index]?.person_id === active.personId
+      ? active.index
+      : suggestions.findIndex((person) => person.person_id === active.personId);
   const activeIndex = kept >= 0 ? kept : Math.min(active.index, Math.max(0, suggestions.length - 1));
+  const shownId = suggestions[activeIndex]?.person_id;
+
+  // Pin the highlight to the person on screen, the default first suggestion included. React
+  // renders again at once, before committing, and the second pass finds nothing to change.
+  if (shownId !== undefined && (shownId !== active.personId || activeIndex !== active.index)) {
+    setActive({ index: activeIndex, personId: shownId });
+  }
 
   const highlight = useCallback(
     (index: number) => {

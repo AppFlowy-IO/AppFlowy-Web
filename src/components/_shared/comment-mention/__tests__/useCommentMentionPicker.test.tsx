@@ -42,6 +42,30 @@ function state(name: string, uuid?: string, uid: unknown = 1): FakeState {
   return { user: { uid, device_id: `${name}-device` }, metadata: JSON.stringify({ user_name: name, user_uuid: uuid }) };
 }
 
+/** A Cloud uid: a Snowflake id far above 2^53. */
+const DESKTOP_UID = '626259007224418304';
+
+/**
+ * A Desktop collaborator's state as y-protocols hands it to Web: `JSON.parse` of what Desktop's Rust
+ * core writes (`DocumentAwarenessState`, `uid` an i64 JSON number), with Desktop's metadata
+ * (`document_bloc.dart`: its uid as the string `id`, no `user_uuid`).
+ */
+function desktopState(name: string, uid = DESKTOP_UID, metadata: Record<string, unknown> = { id: uid }): FakeState {
+  const fields = JSON.stringify({
+    ...metadata,
+    cursor_color: '0xff00b5ff',
+    selection_color: '0x9900b5ff',
+    user_name: name,
+    user_email: `${name.toLowerCase()}@appflowy.io`,
+    user_avatar: '',
+  });
+
+  return JSON.parse(
+    `{"version":1,"user":{"uid":${uid},"device_id":"${name}-desktop"},"selection":null,` +
+      `"metadata":${JSON.stringify(fields)},"timestamp":1}`
+  ) as FakeState;
+}
+
 /** An awareness whose states the test edits, emitting `change` on demand. */
 function createAwareness(initial: FakeState[] = []) {
   const states = new Map<number, FakeState>(initial.map((entry, index) => [index + 1, entry]));
@@ -79,6 +103,25 @@ describe('readPresentPersonIds', () => {
     ]);
 
     expect(readPresentPersonIds(awareness)).toEqual([bob.person_id, '1'].sort());
+  });
+
+  it('names a Desktop collaborator by the exact uid in its metadata, not the rounded user.uid', () => {
+    const zed = desktopState('Zed');
+
+    // The premise: the uid Desktop writes as a JSON number arrives rounded.
+    expect(Number.isSafeInteger(zed.user?.uid)).toBe(false);
+    expect(String(zed.user?.uid)).not.toBe(DESKTOP_UID);
+
+    const { awareness } = createAwareness([
+      zed,
+      // A Desktop build that sends no metadata id names no one; an id that is no uid falls back.
+      desktopState('Old desktop', '626259007224418305', {}),
+      desktopState('Odd id', '7', { id: 'not-a-uid' }),
+      // A person id wins over a uid.
+      { user: { uid: 8 }, metadata: JSON.stringify({ id: '8', user_name: 'Web', user_uuid: ada.person_id }) },
+    ]);
+
+    expect(readPresentPersonIds(awareness)).toEqual([DESKTOP_UID, '7', ada.person_id].sort());
   });
 });
 
@@ -174,6 +217,16 @@ describe('useCommentMentionPicker', () => {
     expect(awareness.on).toHaveBeenCalledTimes(1);
   });
 
+  it('ranks a Desktop collaborator on the page by the uid the roster gives, once ranked', () => {
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    // Cloud sends the roster's uid as a decimal string.
+    const zed = { ...person(4, 'Zed'), uid: DESKTOP_UID };
+    const { awareness } = createAwareness([desktopState('Zed')]);
+    const { result } = renderPicker({ people: [ada, zed], awareness });
+
+    expect(names(result.current.suggestions)).toEqual(['Zed', 'Ada']);
+  });
+
   it('reads the order once, when it mounts', () => {
     const { result, rerender } = renderPicker({ query: 'b', participantIds: [cy.person_id] });
 
@@ -215,6 +268,7 @@ describe('useCommentMentionPicker', () => {
   });
 
   it('keeps the highlight on its person when the list changes without a new query', () => {
+    const dee = person(5, 'Dee');
     const { result, rerender } = renderPicker();
 
     act(() => result.current.setActiveIndex(1));
@@ -224,7 +278,13 @@ describe('useCommentMentionPicker', () => {
     rerender({ query: '', people: [cy, ada, bob] });
     expect(result.current.suggestions[result.current.activeIndex]).toBe(bob);
 
-    // Once Bob is gone the highlight keeps its place, within the list.
+    // Once Bob is gone the highlight keeps the place Bob had on screen, then follows who is there.
+    rerender({ query: '', people: [cy, ada, dee] });
+    expect(result.current.activeIndex).toBe(2);
+    rerender({ query: '', people: [ada, dee, cy] });
+    expect(result.current.suggestions[result.current.activeIndex]).toBe(dee);
+
+    // The place stays within the list.
     rerender({ query: '', people: [cy] });
     expect(result.current.activeIndex).toBe(0);
 
@@ -233,5 +293,46 @@ describe('useCommentMentionPicker', () => {
     expect(result.current.activeIndex).toBe(0);
     act(() => result.current.moveActive(1));
     expect(result.current.activeIndex).toBe(0);
+  });
+
+  it('keeps the first suggestion on its person when the roster arrives in another order', () => {
+    const { result, rerender } = renderPicker();
+
+    expect(result.current.suggestions[result.current.activeIndex]).toBe(ada);
+
+    // The server's roster replaces the cached one before the user moves the highlight.
+    rerender({ query: '', people: [cy, bob, ada] });
+    expect(result.current.activeIndex).toBe(2);
+    expect(result.current.suggestions[result.current.activeIndex]).toBe(ada);
+
+    // A new query highlights its own first suggestion again.
+    act(() => result.current.resetActive());
+    expect(result.current.activeIndex).toBe(0);
+    rerender({ query: '', people: [ada, bob, cy] });
+    expect(result.current.suggestions[result.current.activeIndex]).toBe(cy);
+  });
+
+  it('keeps the first suggestion on its person when someone leaves the page, once ranked', () => {
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    const { awareness, states, emit } = createAwareness([state('Cy', cy.person_id)]);
+    const { result } = renderPicker({ awareness });
+
+    expect(names(result.current.suggestions)).toEqual(['Cy', 'Ada', 'Bob']);
+    expect(result.current.activeIndex).toBe(0);
+
+    // Cy leaves before the user moves the highlight: Enter must still insert Cy.
+    states.clear();
+    emit();
+    expect(names(result.current.suggestions)).toEqual(['Ada', 'Bob', 'Cy']);
+    expect(result.current.suggestions[result.current.activeIndex]).toBe(cy);
+  });
+
+  it('can highlight a person listed twice at either place', () => {
+    const { result } = renderPicker({ people: [ada, bob, ada] });
+
+    act(() => result.current.moveActive(-1));
+    expect(result.current.activeIndex).toBe(2);
+    act(() => result.current.moveActive(-1));
+    expect(result.current.activeIndex).toBe(1);
   });
 });
