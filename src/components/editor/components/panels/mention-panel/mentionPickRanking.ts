@@ -5,7 +5,8 @@
  * typeahead contract's client ranking (`retierServerSection`): pick memory's `adaptive` is the
  * first key inside a tier, and the entry for exactly the typed input lifts an item one tier, never
  * more. A section no pick scores keeps the server's order, so the picker changes only where the
- * memory has something to say; MEN-WEB-08 re-tiers every typed answer.
+ * memory has something to say. With the picker's `mentionTypeaheadV2` on, MEN-WEB-08 re-tiers every
+ * typed answer's People, Pages and Database rows too (`retierKinds`), with or without pick memory.
  *
  * A picked target the answer lacks (the index has not caught up with a rename, or the server's
  * window missed it) joins from the local index (MEN-WEB-07), as the contract's merge adds a
@@ -241,6 +242,12 @@ export interface RankMentionSectionsByPicksInput {
   sectionTitle: (kind: MentionSearchSectionKind) => string;
   /** The clock in epoch milliseconds. */
   nowMs: number;
+  /**
+   * Section kinds ranked by the client ranking even where no pick scores, as the picker's
+   * `mentionTypeaheadV2` re-tiers every typed answer (MEN-WEB-08). Other kinds keep the server's
+   * order unless a pick scores in them.
+   */
+  retierKinds?: ReadonlySet<MentionSearchSectionKind>;
 }
 
 export interface MentionSectionsByPicks {
@@ -253,9 +260,28 @@ export interface MentionSectionsByPicks {
 const NO_KEYS: ReadonlySet<string> = new Set();
 
 /**
+ * The client's signals for an item by its navigation key: pick memory's `adaptive` and `lift` from
+ * `scores`, and whether the person is the requester, who stays last in their class (D10).
+ */
+export function mentionPickSignals(
+  scores: ReadonlyMap<string, MentionPickScore>,
+  requesterPersonId: string | undefined
+): (key: string) => MentionRankSignals | undefined {
+  const requesterKey = requesterPersonId ? `person:${requesterPersonId.toLowerCase()}` : undefined;
+
+  return (key) => {
+    const score = scores.get(key);
+    const requester = requesterKey !== undefined && key.toLowerCase() === requesterKey;
+
+    return score || requester ? { adaptive: score?.adaptive, lift: score?.lift, requester } : undefined;
+  };
+}
+
+/**
  * `sections` ordered by pick memory (see the module header): each section with a scored item, or a
- * picked target that joins, ranked by the contract's client ranking; the others as they are. A
- * bare query, or a query no pick scores, returns `sections` itself.
+ * picked target that joins, or of one of `retierKinds`, ranked by the contract's client ranking;
+ * the others as they are. A bare query, or a query no pick scores without `retierKinds`, returns
+ * `sections` itself.
  */
 export function rankMentionSectionsByPicks({
   query,
@@ -266,8 +292,9 @@ export function rankMentionSectionsByPicks({
   localItem,
   sectionTitle,
   nowMs,
+  retierKinds,
 }: RankMentionSectionsByPicksInput): MentionSectionsByPicks {
-  if (scores.size === 0) return { sections, localKeys: NO_KEYS };
+  if (scores.size === 0 && !retierKinds?.size) return { sections, localKeys: NO_KEYS };
 
   const listed = new Set<string>();
 
@@ -291,13 +318,7 @@ export function rankMentionSectionsByPicks({
     });
   }
 
-  const requesterKey = requesterPersonId ? `person:${requesterPersonId.toLowerCase()}` : undefined;
-  const signals = (key: string): MentionRankSignals | undefined => {
-    const score = scores.get(key);
-    const requester = requesterKey !== undefined && key.toLowerCase() === requesterKey;
-
-    return score || requester ? { adaptive: score?.adaptive, lift: score?.lift, requester } : undefined;
-  };
+  const signals = mentionPickSignals(scores, requesterPersonId);
 
   function rank(section: MentionSearchSection, localItems: MentionSearchResultItem[] = []) {
     return retierServerSection(query, section, { nowMs, signals, localItems });
@@ -308,7 +329,14 @@ export function rankMentionSectionsByPicks({
 
     joining.delete(section.kind);
     if (!mentionSectionRankLane(section.kind)) return section;
-    if (!localItems && !section.items.some((item) => scores.has(mentionItemNavKey(item)))) return section;
+    if (
+      !localItems &&
+      !retierKinds?.has(section.kind) &&
+      !section.items.some((item) => scores.has(mentionItemNavKey(item)))
+    ) {
+      return section;
+    }
+
     return rank(section, localItems);
   });
 

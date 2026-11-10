@@ -76,6 +76,46 @@ const revokedViewListeners = new Set<() => void>();
 let cacheScope: string | undefined;
 const invalidationEmitters = new WeakSet<EventEmitter>();
 
+/**
+ * The cached answers as a render reads them (MEN-WEB-08's provisional sections), replaced after
+ * every change, so a memo that depends on it reads them again.
+ */
+export interface MentionSearchCacheView {
+  /** Counts the changes to the cached answers. */
+  readonly version: number;
+  /** The cached sections of `key`, fresh or stale, as {@link getCachedMentionSections} gives them. */
+  sections(key: string): MentionSearchSection[] | undefined;
+}
+
+function createMentionSearchCacheView(version: number): MentionSearchCacheView {
+  return { version, sections: (key) => getCachedMentionSections(key) };
+}
+
+let cacheView = createMentionSearchCacheView(0);
+const cacheListeners = new Set<() => void>();
+
+function cachedAnswersChanged() {
+  cacheView = createMentionSearchCacheView(cacheView.version + 1);
+  cacheListeners.forEach((listener) => listener());
+}
+
+/**
+ * The cached answers, a new view after every change to them: one is stored, every answer turns
+ * stale, a revoked view leaves them, or the cache is cleared. Cooldown and refresh bookkeeping
+ * change no answer.
+ */
+export function getMentionSearchCacheView(): MentionSearchCacheView {
+  return cacheView;
+}
+
+/** Calls `listener` whenever {@link getMentionSearchCacheView} changes; returns the unsubscribe. */
+export function subscribeMentionSearchCache(listener: () => void): () => void {
+  cacheListeners.add(listener);
+  return () => {
+    cacheListeners.delete(listener);
+  };
+}
+
 function setMentionSearchCacheEntry(key: string, entry: MentionSearchCacheEntry) {
   if (mentionSearchCache.has(key)) {
     // Re-insert so Map iteration order tracks recency (LRU eviction).
@@ -143,6 +183,7 @@ export function setCachedMentionSections(
     sequence,
     stale: stamp !== undefined && stamp.generation !== cacheGeneration,
   });
+  cachedAnswersChanged();
 }
 
 /** Marks every cached answer stale: it is still shown at once, but its next use revalidates it. */
@@ -151,6 +192,7 @@ export function markMentionSearchCacheStale() {
   mentionSearchCache.forEach((entry, key) => {
     mentionSearchCache.set(key, { ...entry, stale: true });
   });
+  cachedAnswersChanged();
 }
 
 /** The ids an item shows a view by: the page, the database view, or the view a row is shown through. */
@@ -264,6 +306,7 @@ export function clearMentionSearchCache() {
   mentionSearchCache.clear();
   revokedViewGenerations.clear();
   if (hadRevokedViews) revokedViewsChanged();
+  cachedAnswersChanged();
 }
 
 /**

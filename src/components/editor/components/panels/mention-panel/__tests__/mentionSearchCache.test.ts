@@ -10,11 +10,13 @@ import {
 } from '@/application/types';
 
 import {
+  clearMentionSearchCache,
   clearMentionSearchCacheForTests,
   ensureMentionSearchCacheScope,
   forgetMentionSearchView,
   getCachedMentionSearch,
   getCachedMentionSections,
+  getMentionSearchCacheView,
   getRevokedMentionViews,
   markMentionSearchCacheStale,
   markMentionSearchRetryLater,
@@ -25,6 +27,7 @@ import {
   restoreMentionSearchView,
   setCachedMentionSections,
   startMentionSearchRefresh,
+  subscribeMentionSearchCache,
   subscribeMentionSearchCacheInvalidation,
   subscribeRevokedMentionViews,
   withoutMentionView,
@@ -408,6 +411,79 @@ describe('mentionSearchCache', () => {
       expect(eventEmitter.listenerCount(APP_EVENTS.FOLDER_VIEW_CHANGED)).toBe(1);
       expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(1);
       expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(1);
+    });
+  });
+
+  // MEN-WEB-08 reads the cached answers in render, and renders again when they change.
+  describe('the cache view', () => {
+    it('is replaced, and tells its subscribers, whenever a cached answer changes', () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeMentionSearchCache(listener);
+      const views = [getMentionSearchCacheView()];
+      const changed = () => {
+        const view = getMentionSearchCacheView();
+        const isNew = view !== views[views.length - 1];
+
+        views.push(view);
+        return isNew;
+      };
+
+      setCachedMentionSections('road', pages(page('Roadmap')));
+      expect(changed()).toBe(true);
+      expect(getMentionSearchCacheView().sections('road')).toEqual(pages(page('Roadmap')));
+
+      markMentionSearchCacheStale();
+      expect(changed()).toBe(true);
+      // A stale answer is still read: the picker narrows stale answers too.
+      expect(getMentionSearchCacheView().sections('road')).toBeDefined();
+
+      forgetMentionSearchView('Roadmap');
+      expect(changed()).toBe(true);
+      expect(getMentionSearchCacheView().sections('road')).toEqual(pages());
+
+      clearMentionSearchCache();
+      expect(changed()).toBe(true);
+      expect(getMentionSearchCacheView().sections('road')).toBeUndefined();
+      expect(listener).toHaveBeenCalledTimes(4);
+      expect(views.map(({ version }) => version)).toEqual(
+        Array.from({ length: 5 }, (_, index) => views[0].version + index)
+      );
+
+      unsubscribe();
+      setCachedMentionSections('road', pages());
+      expect(listener).toHaveBeenCalledTimes(4);
+    });
+
+    it('stays the same for cooldowns, refresh bookkeeping and answers it drops', async () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeMentionSearchCache(listener);
+      const sentFirst = mentionSearchCacheStamp();
+
+      setCachedMentionSections('road', pages(page('New')));
+
+      const view = getMentionSearchCacheView();
+
+      listener.mockClear();
+      markMentionSearchRetryLater('road', { code: ERROR_CODE.RETRY_LATER, message: 'retry later' });
+      await startMentionSearchRefresh('road', async () => 'refreshed');
+      // Sent before the answer stored under its key, so it is ignored.
+      setCachedMentionSections('road', pages(page('Old')), sentFirst);
+      expect(getMentionSearchCacheView()).toBe(view);
+      expect(getMentionSearchCacheView().sections('road')).toEqual(pages(page('New')));
+      expect(listener).not.toHaveBeenCalled();
+
+      const sentBeforeClear = mentionSearchCacheStamp();
+
+      clearMentionSearchCache();
+
+      const cleared = getMentionSearchCacheView();
+
+      listener.mockClear();
+      // Sent before the clear, so it is dropped.
+      setCachedMentionSections('road', pages(page('Late')), sentBeforeClear);
+      expect(getMentionSearchCacheView()).toBe(cleared);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
     });
   });
 });

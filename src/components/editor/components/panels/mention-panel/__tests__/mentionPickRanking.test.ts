@@ -16,6 +16,7 @@ import {
   mentionLocalItemSection,
   mentionLocalPickItem,
   mentionLocalPickUnderAnyView,
+  mentionPickSignals,
   rankMentionSectionsByPicks,
   RankMentionSectionsByPicksInput,
 } from '../mentionPickRanking';
@@ -643,6 +644,82 @@ describe('retierServerSection with local items', () => {
     expect(
       retierServerSection('', pages(page(60, 'Roadmap')), { localItems: [page(61, 'Road trip')] }).items
     ).toHaveLength(1);
+  });
+});
+
+describe('retierKinds, as the picker v2 re-tiers every typed answer (MEN-WEB-08)', () => {
+  const v2Kinds = new Set([
+    MentionSearchSectionKind.People,
+    MentionSearchSectionKind.Pages,
+    MentionSearchSectionKind.DatabaseRows,
+  ]);
+  const noPicks = new MentionPickMemory();
+  const today: MentionSearchResultItem = {
+    kind: MentionTargetKind.Date,
+    title: 'Today',
+    mention: { type: MentionTargetKind.Date, date: '2026-11-10' },
+  };
+  // What an older server answers for `app`: a body hit above a title prefix, a shared domain above a
+  // name, and a database whose title does not match, which Search may have found by a view name.
+  const answer = () => [
+    section(MentionSearchSectionKind.People, [
+      person(30, 'Brian Chen', 'brian@appflowy.io'),
+      person(31, 'Appleton', 'appleton@example.com'),
+    ]),
+    pages(page(32, 'Weekly notes'), page(33, 'Apple pie')),
+    section(MentionSearchSectionKind.Databases, [databaseItem(34, 35, 'Inventory'), databaseItem(36, 37, 'Apps')]),
+    section(MentionSearchSectionKind.DatabaseRows, [rowItem(38, 39, 'Weekly row'), rowItem(38, 40, 'App row')]),
+    section(MentionSearchSectionKind.Dates, [today]),
+  ];
+
+  it('ranks the given kinds with no pick, and keeps Databases and Dates in the server order', () => {
+    const sections = answer();
+    const ranked = rank('app', sections, noPicks, { retierKinds: v2Kinds }).sections;
+
+    expect(titlesOf(ranked)).toEqual([
+      ['people', ['Appleton', 'Brian Chen']],
+      ['pages', ['Apple pie', 'Weekly notes']],
+      ['databases', ['Inventory', 'Apps']],
+      ['database_rows', ['App row', 'Weekly row']],
+      ['dates', ['Today']],
+    ]);
+    expect(ranked[2]).toBe(sections[2]);
+    expect(ranked[4]).toBe(sections[4]);
+    // Without retierKinds, a query no pick scores keeps the whole answer.
+    expect(rank('app', sections, noPicks).sections).toBe(sections);
+    // A bare query keeps the server's order.
+    expect(rank('', sections, noPicks, { retierKinds: v2Kinds }).sections).toBe(sections);
+  });
+
+  it('still ranks a Databases section where a pick scores, and the others with pick memory first', () => {
+    const memory = memoryWith(['app', databaseItem(34, 35, 'Inventory'), 1], ['app', page(32, 'Weekly notes'), 4]);
+    const ranked = rank('app', answer(), memory, { retierKinds: v2Kinds }).sections;
+
+    // The picked database matches nothing, so it drops below Apps; four picks after exactly `app`
+    // lift the body hit one tier only, from T4 to T3, still below the prefix match.
+    expect(titlesOf(ranked).slice(1, 3)).toEqual([
+      ['pages', ['Apple pie', 'Weekly notes']],
+      ['databases', ['Apps', 'Inventory']],
+    ]);
+  });
+
+  it('keeps the requester last in their class with no pick', () => {
+    const me = person(41, 'Annie Wang', 'annie@appflowy.io');
+    const people = [section(MentionSearchSectionKind.People, [me, person(42, 'Andy Li', 'andy@appflowy.io')])];
+
+    expect(
+      titlesOf(rank('an', people, noPicks, { retierKinds: v2Kinds, requesterPersonId: uuid(41) }).sections)
+    ).toEqual([['people', ['Andy Li', 'Annie Wang']]]);
+  });
+
+  it('gives the signals of pick memory and the requester by navigation key', () => {
+    const scores = new Map<string, MentionPickScore>([[`page:${uuid(43)}`, { adaptive: 250_000, lift: false }]]);
+    const signals = mentionPickSignals(scores, uuid(44).toUpperCase());
+
+    expect(signals(`page:${uuid(43)}`)).toEqual({ adaptive: 250_000, lift: false, requester: false });
+    expect(signals(`person:${uuid(44)}`)).toEqual({ adaptive: undefined, lift: undefined, requester: true });
+    expect(signals(`page:${uuid(45)}`)).toBeUndefined();
+    expect(mentionPickSignals(scores, undefined)(`person:${uuid(44)}`)).toBeUndefined();
   });
 });
 
