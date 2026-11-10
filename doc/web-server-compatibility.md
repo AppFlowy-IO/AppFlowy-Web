@@ -162,3 +162,33 @@ signal shared with the search, and its errors are swallowed. Only these fields a
 outside Cloud's vocabularies are left out. Numbers are whole and within Cloud's bounds: a duration
 above 600,000 ms or a rank outside 1-1,000 is left out, and counts stop at 1,000. The body carries
 no query text and no object, user or workspace identity.
+
+## Mention request scheduling
+
+Each picker session decides when its searches are sent (`mentionSearchScheduler.ts`). The default,
+`legacy`, keeps MEN-WEB-01's rules: a typed search waits 120 ms after every keystroke, a query
+change aborts the typed search in flight, and the bare `@` request and the refresh of a cached
+answer go out at once. The `contract` scheduler follows the Scheduler section of the typeahead
+contract (AppFlowy-Cloud-Premium `doc/context/workspace/mention_typeahead_contract.md`):
+
+- A keystroke at least 100 ms after the previous one is sent at once; otherwise its query waits
+  100 ms, and a newer query replaces it.
+- At most one typed group is in flight: the primary and rows requests of one query, or the refresh
+  of one stale cached answer. A query that is ready waits for it, or aborts it once it has been in
+  flight for 400 ms.
+- A query that the group in flight already asks gets that group's answer and sends nothing, and so
+  does a return to `@` while the bare request runs. Typing never aborts the bare request.
+- Closing the picker drops the waiting query and aborts a typed search in flight; a refresh and
+  the bare request run to their deadline.
+
+A browser opts in with `localStorage.__mention_request_scheduler = 'contract'`. The default
+switches once the session reports above give the baseline the contract scheduler is measured
+against. Both schedulers send the same requests with the same headers to every server, and the
+contract scheduler sends fewer of them.
+
+Under the contract scheduler, a typed query that normalizes to one Latin letter can stay on the
+local lane until the server lists `short_prefix_v1` in `mention_features`
+(`localStorage.__mention_one_letter_local = 'true'`). This rule is off by default because the
+picker has no local lane yet (MEN-WEB-09), so a one-letter query would only keep the list already
+on screen. Web reads the feature from the server-info snapshot. Loading, failed or older server info
+lists no features, so the rule then holds.

@@ -42,7 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
-import { MENTION_TYPED_LANES, mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
+import { mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
 import {
   ensureMentionSearchCacheScope,
   getCachedMentionSearch,
@@ -57,6 +57,13 @@ import {
   withoutRevokedMentionViews,
 } from './mentionSearchCache';
 import { fetchMentionSearchSections, MentionSectionsFetchResult } from './mentionSearchFetch';
+import {
+  createMentionSearchScheduler,
+  MentionFlightWatcher,
+  MentionScheduledSearch,
+  MentionSearchFlight,
+  readMentionSchedulerSettings,
+} from './mentionSearchScheduler';
 import {
   buildMentionSearchCacheScopeKey,
   buildMentionSearchRequests,
@@ -92,6 +99,9 @@ type MentionSearchStatus = 'idle' | 'loading' | 'ok' | 'unavailable' | 'busy' | 
 
 /** Where the search's sections on screen came from: a server answer, or a cached one. */
 type MentionSectionsSource = Extract<MentionSessionSource, 'server' | 'cache'>;
+
+/** One search's requests in flight, as the panel hands them to its scheduler. */
+type MentionPanelFlight = MentionSearchFlight<MentionSectionsFetchResult, MentionSearchSection[]>;
 
 type MentionPanelOption =
   | {
@@ -548,6 +558,11 @@ export function MentionPanel({
   const mentionSearchRequestIdRef = useRef(0);
   // Each opening of the panel is a session with its own request lanes, so it sends on new streams.
   const mentionRequestLanes = useMemo(() => (open ? new MentionRequestLanes() : null), [open]);
+  // And with its own scheduler, which decides when the session's searches are sent (MEN-WEB-05).
+  const mentionSearchScheduler = useMemo(
+    () => (open ? createMentionSearchScheduler<MentionPanelFlight>(readMentionSchedulerSettings()) : null),
+    [open]
+  );
   const hasMentionSearchQuery = Boolean(searchText?.trim());
   const mentionInclude = activePanel === PanelType.PageReference
     ? PAGE_REFERENCE_INCLUDE
@@ -660,8 +675,13 @@ export function MentionPanel({
     setRetryNonce((nonce) => nonce + 1);
   }, []);
 
+  // Closing the panel or unmounting it drops the search waiting to be sent and aborts the typed
+  // search in flight. The bare request and refreshes run to their deadline, so their complete
+  // answers still reach the cache.
+  useEffect(() => () => mentionSearchScheduler?.close(), [mentionSearchScheduler]);
+
   useEffect(() => {
-    if (!open || !searchMentions || !mentionRequestLanes) {
+    if (!open || !searchMentions || !mentionRequestLanes || !mentionSearchScheduler) {
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
@@ -684,6 +704,7 @@ export function MentionPanel({
 
     const searchMentionsFn = searchMentions;
     const lanes = mentionRequestLanes;
+    const scheduler = mentionSearchScheduler;
     const cacheKey = mentionSearchCacheKey;
     let cancelled = false;
     let timer: number | undefined;
@@ -695,15 +716,6 @@ export function MentionPanel({
 
     function isCurrentRequest() {
       return !cancelled && mentionSearchRequestIdRef.current === requestId;
-    }
-
-    // Runs when the query changes, the panel closes or it unmounts. Only the typed requests are
-    // aborted: bare and refresh requests run to their deadline, so a complete answer still reaches
-    // the cache.
-    function stopSearch() {
-      cancelled = true;
-      window.clearTimeout(timer);
-      lanes.abort(MENTION_TYPED_LANES);
     }
 
     // Current on every lane it came from: no newer request replaced it and nothing aborted it. This
@@ -723,15 +735,16 @@ export function MentionPanel({
     }
 
     // `stamp` is taken as the requests are sent. A view revoked after it is left out of what they
-    // answer, on screen and in the cache.
+    // answer, on screen and in the cache. The flight serves every search that asks the same, so it
+    // goes on (its rows retry, its early sections) while one of them is the panel's.
     function fetchMentionSections({
+      flight,
       refresh,
       stamp,
-      onSections,
     }: {
+      flight: MentionPanelFlight;
       refresh: boolean;
       stamp: MentionSearchCacheStamp;
-      onSections?: (sections: MentionSearchSection[]) => void;
     }) {
       const visible = (sections: MentionSearchSection[]) => withoutRevokedMentionViews(sections, stamp);
 
@@ -739,9 +752,9 @@ export function MentionPanel({
         searchMentions: searchMentionsFn,
         requests: mentionSearchRequests,
         cacheKey,
-        isCurrent: isCurrentRequest,
-        issueTicket: (request) => lanes.issue(mentionRequestLane(request, refresh)),
-        onSections: onSections && ((sections) => onSections(visible(sections))),
+        isCurrent: () => flight.wanted(),
+        issueTicket: (request) => flight.track(lanes.issue(mentionRequestLane(request, refresh))),
+        onSections: refresh ? undefined : (sections) => flight.showInterim(visible(sections)),
       }).then((result) => ({ ...result, sections: visible(result.sections) }));
     }
 
@@ -776,70 +789,161 @@ export function MentionPanel({
       timer = window.setTimeout(send, delayMs);
     }
 
-    function runSearch() {
-      const stamp = mentionSearchCacheStamp();
+    // Shows a search's answer: its own, or that of the flight it joined.
+    function showSearchAnswer(result: MentionSectionsFetchResult) {
+      if (!isCurrentRequest()) return;
 
-      void fetchMentionSections({ refresh: false, stamp, onSections: showInterimSections })
-        .then((result) => {
-          // A bare answer is not aborted by typing, so it is still cached after the query changed.
-          cacheCompleteAnswer(result, stamp);
-          if (!isCurrentRequest()) return;
+      if (result.state === 'complete') {
+        showSections(result.sections, 'server');
+        settle('ok');
+        return;
+      }
 
-          if (result.state === 'complete') {
-            showSections(result.sections, 'server');
-            settle('ok');
-            return;
-          }
+      // Keep what the requests that answered found. Without any, keep what is on screen (the
+      // previous attempt of a retry), or a cached answer.
+      if (hasMentionItems(result.sections)) {
+        showSections(result.sections, 'server');
+      } else {
+        const cachedSections = getCachedMentionSections(cacheKey);
 
-          // Keep what the requests that answered found. Without any, keep what is on screen (the
-          // previous attempt of a retry), or a cached answer.
-          if (hasMentionItems(result.sections)) {
-            showSections(result.sections, 'server');
-          } else {
-            const cachedSections = getCachedMentionSections(cacheKey);
+        if (cachedSections) showSections(cachedSections, 'cache');
+      }
 
-            if (cachedSections) showSections(cachedSections, 'cache');
-          }
-
-          if (result.state === 'busy') sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), runSearch);
-          else settle(result.state);
-        })
-        .catch((error) => {
-          if (!isCurrentRequest()) return;
-
-          console.error(error);
-          settle('unavailable');
-        });
+      if (result.state === 'busy') sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), resubmit);
+      else settle(result.state);
     }
 
-    // Revalidates the cached answer on screen, which stays there unless the server answers
-    // completely. A refresh of the key still in flight, such as one an earlier opening of the
-    // panel sent, is joined instead of sent again, and its answer counts as this panel's own: its
-    // results, Retry row, busy countdown or offline row show here.
-    function refreshCachedAnswer() {
-      void startMentionSearchRefresh(cacheKey, async () => {
-        const stamp = mentionSearchCacheStamp();
-        const result = await fetchMentionSections({ refresh: true, stamp });
+    function showSearchFailure(error: unknown) {
+      if (!isCurrentRequest()) return;
 
-        cacheCompleteAnswer(result, stamp);
-        return result;
-      })
-        .then((result) => {
-          if (!isCurrentRequest()) return;
+      console.error(error);
+      settle('unavailable');
+    }
 
-          if (result.state === 'complete') {
-            showSections(result.sections, 'server');
-            settle('ok');
-          } else if (result.state === 'busy') {
-            sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), refreshCachedAnswer);
-          } else {
-            settle(result.state);
-          }
-        })
-        .catch((error) => {
-          console.error(error);
-          if (isCurrentRequest()) settle('unavailable');
-        });
+    // The cached answer on screen stays there unless the refresh answers completely.
+    function showRefreshAnswer(result: MentionSectionsFetchResult) {
+      if (!isCurrentRequest()) return;
+
+      if (result.state === 'complete') {
+        showSections(result.sections, 'server');
+        settle('ok');
+      } else if (result.state === 'busy') {
+        sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), resubmit);
+      } else {
+        settle(result.state);
+      }
+    }
+
+    function showRefreshFailure(error: unknown) {
+      console.error(error);
+      if (isCurrentRequest()) settle('unavailable');
+    }
+
+    const watcher: MentionFlightWatcher<MentionSearchSection[]> = {
+      isCurrent: isCurrentRequest,
+      showInterim: showInterimSections,
+    };
+
+    function startSearch(): MentionPanelFlight {
+      const flight: MentionPanelFlight = new MentionSearchFlight({
+        outlivesPicker: !hasMentionSearchQuery,
+        watcher,
+        run: async (current) => {
+          const stamp = mentionSearchCacheStamp();
+          const result = await fetchMentionSections({ flight: current, refresh: false, stamp });
+
+          // A bare answer is not aborted by typing, so it is still cached after the query changed.
+          // Neither is an older typed group under the contract scheduler.
+          cacheCompleteAnswer(result, stamp);
+          return result;
+        },
+      });
+
+      void flight.result.then(showSearchAnswer).catch(showSearchFailure);
+      return flight;
+    }
+
+    // Revalidates the cached answer on screen. A refresh of the key still in flight, such as one an
+    // earlier opening of the panel sent, is joined instead of sent again, and its answer counts as
+    // this panel's own: its results, Retry row, busy countdown or offline row show here.
+    function startRefresh(): MentionPanelFlight {
+      const flight: MentionPanelFlight = new MentionSearchFlight({
+        outlivesPicker: true,
+        watcher,
+        run: (current) =>
+          startMentionSearchRefresh(cacheKey, async () => {
+            const stamp = mentionSearchCacheStamp();
+            const result = await fetchMentionSections({ flight: current, refresh: true, stamp });
+
+            cacheCompleteAnswer(result, stamp);
+            return result;
+          }),
+      });
+
+      void flight.result.then(showRefreshAnswer).catch(showRefreshFailure);
+      return flight;
+    }
+
+    // What this query needs sent. The scheduler sends it when the session's rules allow, or hands
+    // it the flight in progress that already asks the same.
+    const search: MentionScheduledSearch<MentionPanelFlight> = {
+      key: cacheKey,
+      bare: !hasMentionSearchQuery,
+      refresh: Boolean(cached),
+      send: () => {
+        if (!isCurrentRequest()) return null;
+
+        // An answer may have arrived while the search waited, such as that of the group before it.
+        const current = getCachedMentionSearch(cacheKey);
+
+        if (current?.fresh && !isRetry) {
+          showSections(current.sections, 'cache');
+          settle('ok');
+          return null;
+        }
+
+        return current ? startRefresh() : startSearch();
+      },
+      join: (flight) => {
+        flight.watch(watcher);
+        if (cached) void flight.result.then(showRefreshAnswer).catch(showRefreshFailure);
+        else void flight.result.then(showSearchAnswer).catch(showSearchFailure);
+      },
+    };
+
+    // Sends the search again: after a server cooldown, without waiting for typing to pause.
+    function resubmit() {
+      scheduler.resubmit(search);
+    }
+
+    // A keystroke hands the search to the scheduler; a retry sends it again at once.
+    function submit() {
+      if (isRetry) scheduler.resubmit(search);
+      else scheduler.input(search);
+    }
+
+    // The server asked to wait for this query: count down, then send it. A keystroke that came
+    // back to it still counts for the scheduler.
+    function submitAfterCooldown() {
+      if (!isRetry) scheduler.input(null);
+      sendAfterCooldown(retryLaterMs, resubmit);
+    }
+
+    // Runs when the query changes, the panel closes or it unmounts. The scheduler decides what
+    // happens to the requests already sent (see mentionSearchScheduler.ts).
+    function stopSearch() {
+      cancelled = true;
+      window.clearTimeout(timer);
+      scheduler.withdraw(search);
+    }
+
+    // A one-letter query that the session keeps local sends nothing, and what is on screen stays
+    // until the local lane (MEN-WEB-09) renders such queries.
+    if (hasMentionSearchQuery && scheduler.keepsLocal(searchText ?? '')) {
+      scheduler.input(null);
+      if (cached) showSections(cached.sections, 'cache');
+      settle('ok');
+      return stopSearch;
     }
 
     if (cached) {
@@ -847,10 +951,9 @@ export function MentionPanel({
       if (!isRetry) settle('ok');
 
       // A fresh answer needs no request, unless the user asked to retry.
-      if (cached.fresh && !isRetry) return stopSearch;
-
-      if (retryLaterMs > 0) sendAfterCooldown(retryLaterMs, refreshCachedAnswer);
-      else refreshCachedAnswer();
+      if (cached.fresh && !isRetry) scheduler.input(null);
+      else if (retryLaterMs > 0) submitAfterCooldown();
+      else submit();
 
       return stopSearch;
     }
@@ -858,11 +961,11 @@ export function MentionPanel({
     if (!isRetry) showSections([]);
 
     if (retryLaterMs > 0) {
-      sendAfterCooldown(retryLaterMs, runSearch);
+      submitAfterCooldown();
     } else {
       // A retry keeps its failure row, which says "Retrying…", until the answer arrives.
       if (!isRetry) settle('loading');
-      timer = window.setTimeout(runSearch, isRetry || !hasMentionSearchQuery ? 0 : 120);
+      submit();
     }
 
     return stopSearch;
@@ -872,9 +975,11 @@ export function MentionPanel({
     mentionSearchCacheKey,
     mentionSearchCacheScope,
     mentionSearchRequests,
+    mentionSearchScheduler,
     open,
     retryNonce,
     searchMentions,
+    searchText,
     setSelection,
     useLocalMentionFallback,
   ]);

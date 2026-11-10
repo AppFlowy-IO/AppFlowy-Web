@@ -17,6 +17,8 @@ import {
   MentionType,
 } from '@/application/types';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
+import { getConfigValue } from '@/utils/runtime-config';
+import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
 import { MentionPanel } from '../MentionPanel';
 import { MENTION_BARE_DEADLINE_MS, MENTION_TYPED_DEADLINE_MS } from '../mentionRequestLanes';
@@ -25,6 +27,11 @@ import {
   getCachedMentionSections,
   MENTION_SEARCH_CACHE_FRESH_MS,
 } from '../mentionSearchCache';
+import {
+  MENTION_FEATURE_SHORT_PREFIX_V1,
+  MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY,
+  MENTION_SCHEDULER_MODE_OVERRIDE_KEY,
+} from '../mentionSearchScheduler';
 import { buildMentionSearchRequestsCacheKey, mergeMentionSearchResponses } from '../mentionUtils';
 
 const mockAddMark = jest.fn();
@@ -2022,6 +2029,401 @@ describe('MentionPanel typed search delivery', () => {
           expect(shows('Fresh road')).toBe(true);
           expect(busyRow()).toBeNull();
         });
+      });
+    });
+  });
+
+  // The typeahead contract's scheduler, which a browser opts into until it is the default.
+  describe('under the contract scheduler (MEN-WEB-05)', () => {
+    type SentLane = 'bare' | 'primary' | 'rows' | 'refresh' | 'refresh-rows';
+
+    interface Sent {
+      query: string;
+      lane: SentLane;
+      /** Virtual ms since the panel opened. */
+      at: number;
+      endedAt?: number;
+      aborted?: boolean;
+    }
+
+    const SERVER_URL = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
+    const recentPage: MentionSearchResponse = {
+      sections: [section(MentionSearchSectionKind.Pages, [pageItem('Recent page')])],
+    };
+
+    beforeEach(() => {
+      localStorage.setItem(MENTION_SCHEDULER_MODE_OVERRIDE_KEY, 'contract');
+    });
+
+    afterEach(() => {
+      updateServerInfo(SERVER_URL, SERVER_INFO_LOADING);
+    });
+
+    // Answers every request after `latencyMs(query)`: the empty query with `recentPage`, a typed one
+    // with its page or row. Records each request's lane, when it was sent and how it ended.
+    function createTimedSearch(latencyMs: (query: string) => number) {
+      const sent: Sent[] = [];
+      const openedAt = Date.now();
+      const elapsed = () => Date.now() - openedAt;
+      const search = jest.fn((request: MentionSearchRequest, options?: MentionSearchOptions) => {
+        const query = request.query ?? '';
+        const lane = (options?.streamId?.match(/-(refresh-rows|refresh|primary|rows|bare)$/)?.[1] ?? 'none') as SentLane;
+        const entry: Sent = { query, lane, at: elapsed() };
+
+        sent.push(entry);
+        // Only an abort before the answer counts. The next request on a lane also aborts the
+        // lane's answered one, which only ends that answer's currency.
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            if (entry.endedAt !== undefined) return;
+
+            entry.aborted = true;
+            entry.endedAt = elapsed();
+          },
+          { once: true }
+        );
+        return answerAfter(latencyMs(query), options?.signal, () => {
+          entry.endedAt = elapsed();
+          return query ? respond(laneOf(request), query, 'complete') : recentPage;
+        });
+      });
+
+      return { search, sent };
+    }
+
+    const typedLanes: SentLane[] = ['primary', 'refresh'];
+
+    // When each typed group (its primary or refresh request) was sent, for which query, and how it ended.
+    function typedGroups(sent: Sent[]) {
+      return sent
+        .filter(({ lane }) => typedLanes.includes(lane))
+        .map(({ at, query, endedAt, aborted }) => ({ at, query, endedAt, aborted: Boolean(aborted) }));
+    }
+
+    function expectOneTypedGroupAtATime(sent: Sent[]) {
+      const groups = typedGroups(sent);
+
+      groups.slice(1).forEach((group, index) => {
+        const previous = groups[index];
+
+        expect([group.query, group.at >= (previous.endedAt ?? Number.POSITIVE_INFINITY)]).toEqual([group.query, true]);
+      });
+    }
+
+    // Opens the panel on the bare `@` at 0 ms, then types each query at its time.
+    async function openAndType(search: SearchMock, keys: Array<[atMs: number, query: string]>) {
+      mockPanelContext.searchText = '';
+      mockEditorContext.searchMentions = search;
+
+      const view = renderPanel();
+      let now = 0;
+
+      for (const [atMs, query] of keys) {
+        await advance(atMs - now);
+        now = atMs;
+        mockPanelContext.searchText = query;
+        view.rerender();
+      }
+
+      return view;
+    }
+
+    it('sends @road typed at 40 ms per key against a 150 ms server as one typed group, once typing pauses', async () => {
+      const { search, sent } = createTimedSearch(() => 150);
+
+      await openAndType(search, [
+        [40, 'r'],
+        [80, 'ro'],
+        [120, 'roa'],
+        [160, 'road'],
+      ]);
+      await advance(249);
+      expect(isBusy()).toBe(true);
+
+      await advance(1);
+      expect(sent.map(({ at, query, lane }) => [at, query, lane])).toEqual([
+        [0, '', 'bare'],
+        [260, 'road', 'primary'],
+        [260, 'road', 'rows'],
+      ]);
+      expect(shows('Page for road')).toBe(true);
+      expect(shows('complete row for road')).toBe(true);
+    });
+
+    it('sends each keystroke at once when the user types at 250 ms per key, and shows each answer one server delay later', async () => {
+      const { search, sent } = createTimedSearch(() => 150);
+      const { rerender } = await openAndType(search, [[250, 'r']]);
+
+      await advance(149);
+      expect(shows('Page for r')).toBe(false);
+      await advance(1);
+      expect(shows('Page for r')).toBe(true);
+
+      // Each answer shows 150 ms after its keystroke; the next keystroke comes 100 ms later.
+      for (const query of ['ro', 'roa', 'road']) {
+        await advance(100);
+        mockPanelContext.searchText = query;
+        rerender();
+        await advance(149);
+        expect(shows(`Page for ${query}`)).toBe(false);
+        await advance(1);
+        expect(shows(`Page for ${query}`)).toBe(true);
+      }
+
+      expect(typedGroups(sent).map(({ at, query }) => [at, query])).toEqual([
+        [250, 'r'],
+        [500, 'ro'],
+        [750, 'roa'],
+        [1_000, 'road'],
+      ]);
+      expectOneTypedGroupAtATime(sent);
+    });
+
+    it('keeps one typed group in flight against a slow server, aborting it once it is 400 ms old', async () => {
+      const { search, sent } = createTimedSearch(() => 600);
+
+      await openAndType(search, [
+        [250, 'r'],
+        [500, 'ro'],
+        [750, 'roa'],
+        [1_000, 'road'],
+      ]);
+      await advance(650);
+
+      expect(typedGroups(sent)).toEqual([
+        { at: 250, query: 'r', endedAt: 650, aborted: true },
+        { at: 650, query: 'ro', endedAt: 1_050, aborted: true },
+        { at: 1_050, query: 'road', endedAt: 1_650, aborted: false },
+      ]);
+      expectOneTypedGroupAtATime(sent);
+      expect(shows('Page for road')).toBe(true);
+      expect(shows('Page for r')).toBe(false);
+      expect(shows('Page for ro')).toBe(false);
+      expect(console.error).not.toHaveBeenCalled();
+    });
+
+    it('lets a younger group finish, caches its answer without showing it, and paints it from the cache later', async () => {
+      const { search, sent } = createTimedSearch(() => 200);
+      const { rerender } = await openAndType(search, [
+        [200, 'ro'],
+        [250, 'roa'],
+      ]);
+
+      // `ro` answers at 400 ms, after the query changed: cached, never shown. `roa` waited for it,
+      // and goes out on the next timer tick (fake timers run a 0 ms timer set in a tick 1 ms later).
+      for (let now = 250 + STEP_MS; now <= 610; now += STEP_MS) {
+        await advance(STEP_MS);
+        expect(shows('Page for ro')).toBe(false);
+      }
+
+      expect(shows('Page for roa')).toBe(true);
+
+      const [ro, roa] = typedGroups(sent);
+
+      expect(typedGroups(sent)).toHaveLength(2);
+      expect([ro.at, ro.query, ro.endedAt, ro.aborted]).toEqual([200, 'ro', 400, false]);
+      expect([roa.query, roa.aborted, roa.at - 400]).toEqual(['roa', false, expect.any(Number)]);
+      expect(roa.at - 400).toBeLessThanOrEqual(1);
+      expect(getCachedMentionSections(sentCacheKey(search, 'ro'))).toEqual(
+        mergeMentionSearchResponses([respond('primary', 'ro', 'complete'), respond('rows', 'ro', 'complete')]).sections
+      );
+
+      // Backspacing to it paints the cached answer at once, without a request.
+      const requests = sent.length;
+
+      mockPanelContext.searchText = 'ro';
+      rerender();
+      expect(shows('Page for ro')).toBe(true);
+      expect(isBusy()).toBe(false);
+      await advance(1_000);
+      expect(sent).toHaveLength(requests);
+    });
+
+    it('shows the answer of the group in flight when the user types back to its query, without sending it again', async () => {
+      const { search, sent } = createTimedSearch(() => 600);
+
+      await openAndType(search, [
+        [300, 'ro'],
+        [350, 'roa'],
+        [400, 'ro'],
+      ]);
+      await advance(499);
+      expect(isBusy()).toBe(true);
+      expect(shows('Page for ro')).toBe(false);
+
+      await advance(1);
+      expect(shows('Page for ro')).toBe(true);
+      expect(shows('complete row for ro')).toBe(true);
+      expect(typedGroups(sent).map(({ at, query, aborted }) => [at, query, aborted])).toEqual([[300, 'ro', false]]);
+      await advance(2_000);
+      expect(sent.filter(({ query }) => query === 'roa')).toEqual([]);
+    });
+
+    it('serves a query from the answer that arrived while it waited, without sending it again', async () => {
+      const { search, sent } = createTimedSearch(() => 150);
+
+      // `ro` answers at 450 ms; the user is back on it at 400, and that query is ready at 500.
+      await openAndType(search, [
+        [300, 'ro'],
+        [350, 'roa'],
+        [400, 'ro'],
+      ]);
+      await advance(99);
+      expect(shows('Page for ro')).toBe(false);
+
+      await advance(1);
+      expect(shows('Page for ro')).toBe(true);
+      expect(shows('complete row for ro')).toBe(true);
+      await advance(1_000);
+      expect(typedGroups(sent).map(({ at, query }) => [at, query])).toEqual([[300, 'ro']]);
+    });
+
+    it('lets the rows retry of the group in flight complete the answer of a query that joined it', async () => {
+      const search = createAnswerSearchByQuery({
+        '': { primary: [[100, recentPage]], rows: [] },
+        ro: {
+          primary: [[600, respond('primary', 'ro', 'complete')]],
+          // Superseded, so retried 500 ms after the first answers, while the joined query is current.
+          rows: [
+            [600, { sections: [], partial: true }],
+            [80, respond('rows', 'ro', 'complete')],
+          ],
+        },
+      });
+
+      await openAndType(search, [
+        [300, 'ro'],
+        [350, 'roa'],
+        [400, 'ro'],
+      ]);
+      await advance(499);
+      expect(shows('Page for ro')).toBe(false);
+
+      // The primary results show while the rows retry is pending, then the retry completes them.
+      await advance(1);
+      expect(shows('Page for ro')).toBe(true);
+      expect(shows('complete row for ro')).toBe(false);
+      await advance(580);
+      expect(shows('Page for ro')).toBe(true);
+      expect(shows('complete row for ro')).toBe(true);
+      expect(retryRow()).toBeNull();
+      expect(search.mock.calls.map(([request]) => request.query)).toEqual(['', 'ro', 'ro', 'ro']);
+    });
+
+    it('never aborts the bare request for typing, and shows it when the user comes back to @ while it runs', async () => {
+      const { search, sent } = createTimedSearch((query) => (query ? 100 : 1_000));
+
+      await openAndType(search, [
+        [200, 'ro'],
+        [400, ''],
+      ]);
+      expect(shows('Page for ro')).toBe(false);
+      expect(isBusy()).toBe(true);
+
+      await advance(599);
+      expect(shows('Recent page')).toBe(false);
+      await advance(1);
+      expect(shows('Recent page')).toBe(true);
+      expect(sent.filter(({ lane }) => lane === 'bare')).toEqual([{ query: '', lane: 'bare', at: 0, endedAt: 1_000 }]);
+      expect(getCachedMentionSections(sentCacheKey(search, ''))).toEqual(recentPage.sections);
+    });
+
+    it('aborts the typed search in flight when the panel closes, and never sends the one that waited', async () => {
+      const { search, sent } = createTimedSearch((query) => (query ? 1_000 : 100));
+      const { rerender } = await openAndType(search, [
+        [200, 'ro'],
+        [250, 'roa'],
+      ]);
+
+      await advance(50);
+      mockPanelContext.isPanelOpen = () => false;
+      rerender();
+      await advance(3_000);
+
+      expect(typedGroups(sent)).toEqual([{ at: 200, query: 'ro', endedAt: 300, aborted: true }]);
+      expect(getCachedMentionSections(sentCacheKey(search, 'ro'))).toBeUndefined();
+      expect(console.error).not.toHaveBeenCalled();
+    });
+
+    it('paints each stale cached query at once while typing, and refreshes only the one typing paused on', async () => {
+      const { search, sent } = createTimedSearch(() => 100);
+
+      // Cache `ro`, `roa` and `road`, then let them turn stale.
+      await openAndType(search, [
+        [200, 'ro'],
+        [400, 'roa'],
+        [600, 'road'],
+      ]);
+      await advance(200);
+      cleanup();
+      await advance(MENTION_SEARCH_CACHE_FRESH_MS);
+
+      const before = sent.length;
+
+      mockPanelContext.searchText = '';
+
+      const { rerender } = renderPanel();
+
+      for (const query of ['r', 'ro', 'roa', 'road']) {
+        await advance(40);
+        mockPanelContext.searchText = query;
+        rerender();
+        if (query !== 'r') expect(shows(`Page for ${query}`)).toBe(true);
+      }
+
+      await advance(1_000);
+
+      const reopened = sent.slice(before);
+
+      // The bare answer was cached too, so it is refreshed at once on its own lane.
+      expect(reopened.map(({ query, lane }) => [query, lane])).toEqual([
+        ['', 'bare'],
+        ['road', 'refresh'],
+        ['road', 'refresh-rows'],
+      ]);
+      expect(reopened[1].at - reopened[0].at).toBe(260);
+      expect(shows('Page for road')).toBe(true);
+    });
+
+    describe('with the one-letter rule on', () => {
+      beforeEach(() => {
+        localStorage.setItem(MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, 'true');
+      });
+
+      it('keeps a one-letter Latin query local, keeping the list on screen, and sends the next letter', async () => {
+        const { search, sent } = createTimedSearch(() => 100);
+        const { rerender } = await openAndType(search, [[300, 'r']]);
+
+        expect(shows('Recent page')).toBe(true);
+        await advance(1_000);
+        expect(shows('Recent page')).toBe(true);
+        expect(showsNoResult()).toBe(false);
+        expect(typedGroups(sent)).toEqual([]);
+
+        mockPanelContext.searchText = 'ro';
+        rerender();
+        await advance(100);
+        expect(typedGroups(sent).map(({ query }) => query)).toEqual(['ro']);
+        expect(shows('Page for ro')).toBe(true);
+      });
+
+      it.each([
+        ['a one-letter query once the server lists short_prefix_v1', 'r', [MENTION_FEATURE_SHORT_PREFIX_V1]],
+        ['a CJK character', '路', []],
+        ['a digit', '1', []],
+      ])('sends %s', async (_name, query, features) => {
+        updateServerInfo(SERVER_URL, {
+          status: 'available',
+          info: { enable_page_history: true, mention_features: features },
+        });
+
+        const { search, sent } = createTimedSearch(() => 100);
+
+        await openAndType(search, [[300, query]]);
+        await advance(100);
+        expect(typedGroups(sent).map(({ at, query: sentQuery }) => [at, sentQuery])).toEqual([[300, query]]);
+        expect(shows(`Page for ${query}`)).toBe(true);
       });
     });
   });
