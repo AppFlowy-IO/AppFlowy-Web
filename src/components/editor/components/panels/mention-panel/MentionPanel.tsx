@@ -767,9 +767,12 @@ export function MentionPanel({
     }),
     [clientFeatures, mentionContext, mentionInclude, searchText]
   );
+  // Only a typed query sends rows: a bare `@` keeps its requests, and its search, when the last row
+  // comes into memory while it shows.
+  const skipTypedRows = skipServerRows && hasMentionSearchQuery;
   const mentionSearchRequests = useMemo(
-    () => buildMentionSearchRequests(mentionSearchRequest, { skipRows: skipServerRows }),
-    [mentionSearchRequest, skipServerRows]
+    () => buildMentionSearchRequests(mentionSearchRequest, { skipRows: skipTypedRows }),
+    [mentionSearchRequest, skipTypedRows]
   );
   const mentionSearchCacheScope = useMemo(
     () => buildMentionSearchCacheScopeKey({ workspaceId, userId: currentUser?.uuid }),

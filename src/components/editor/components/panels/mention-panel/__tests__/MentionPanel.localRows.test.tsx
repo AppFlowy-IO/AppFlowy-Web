@@ -452,6 +452,38 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb', 'primary:zebr']);
     });
 
+    it('changes nothing on a bare @ when the last row comes into memory: no search again, the highlight stays', async () => {
+      localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
+
+      const source = rowsSource(snapshot([zebra], false));
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const search = createSearch((lane) =>
+        lane === 'bare'
+          ? { delayMs: 50, response: pages(page('budget-page', 'Budget'), page('plan-page', 'Plan')) }
+          : { delayMs: 300, response: EMPTY }
+      );
+      const view = await openPanel(search);
+
+      await act(async () => {
+        Transforms.select(view.editor, Editor.end(view.editor, []));
+      });
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('editor'), { key: 'ArrowDown' });
+      });
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('editor'), { key: 'ArrowDown' });
+      });
+      expect(document.querySelector('[data-selected="true"]')?.textContent).toBe('Plan');
+
+      source.set(snapshot([zebra], true));
+      await advance(1_000);
+
+      expect(lanesSent(search)).toEqual(['bare:']);
+      expect(document.querySelector('[data-selected="true"]')?.textContent).toBe('Plan');
+    });
+
     it('is still sent for a row page of another database than the rows the editor holds', async () => {
       localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
       mockEditorContext.mentionContext = { view_id: uuid(0xd1), database_id: uuid(0xee), row_id: BUDGET };
