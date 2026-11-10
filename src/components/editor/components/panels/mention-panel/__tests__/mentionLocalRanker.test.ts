@@ -176,6 +176,37 @@ function personItem(id: string, title: string, email: string): MentionSearchResu
   };
 }
 
+function databaseItem(databaseId: string, viewId: string, title: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Database,
+    object_id: databaseId,
+    title,
+    database_id: databaseId,
+    database_view_id: viewId,
+    mention: { type: MentionTargetKind.Database, database_id: databaseId, database_view_id: viewId },
+  };
+}
+
+function rowItem(databaseId: string, rowId: string, title: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.DatabaseRow,
+    object_id: rowId,
+    title,
+    mention: { type: MentionTargetKind.DatabaseRow, database_id: databaseId, row_id: rowId },
+  };
+}
+
+function linkItem(text: string): MentionSearchResultItem {
+  const url = `https://${text}`;
+
+  return {
+    kind: MentionTargetKind.ExternalLink,
+    title: text,
+    subtitle: url,
+    mention: { type: MentionTargetKind.ExternalLink, url },
+  };
+}
+
 function section(kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection {
   return { kind, title: kind, items, has_more: false, status: 'ok' };
 }
@@ -657,14 +688,38 @@ describe('retierServerSection', () => {
     ]);
     const pages = section(MentionSearchSectionKind.Pages, [pageItem('p1', 'Weekly notes'), pageItem('p2', 'Roadmap')]);
     const ordered = section(MentionSearchSectionKind.Pages, [pageItem('p2', 'Roadmap'), pageItem('p1', 'Weekly notes')]);
+    // Ranked as objects, the second link would move first.
+    const links = section(MentionSearchSectionKind.Links, [linkItem('example.com/notes'), linkItem('road.example.com')]);
 
     expect(retierServerSection('to', dates, { nowMs: now })).toBe(dates);
+    expect(retierServerSection('road', links, { nowMs: now })).toBe(links);
     expect(retierServerSection('', pages, { nowMs: now })).toBe(pages);
     expect(retierServerSection(' ', pages, { nowMs: now })).toBe(pages);
     expect(retierServerSection('road', ordered, { nowMs: now })).toBe(ordered);
     expect(
       retierServerSection('road', section(MentionSearchSectionKind.Suggested, pages.items), { nowMs: now }).items
     ).toBe(pages.items);
+  });
+
+  it('re-tiers Databases and Database rows sections as it does Pages', () => {
+    // A database Search found through a view name or a row's cells: neither title matches.
+    const databases = section(MentionSearchSectionKind.Databases, [
+      databaseItem('db1', 'grid1', 'Team tasks'),
+      databaseItem('db2', 'board2', 'Broadway shows'),
+      databaseItem('db3', 'grid3', 'Roadmap'),
+    ]);
+    const rows = section(MentionSearchSectionKind.DatabaseRows, [
+      rowItem('db1', 'r1', 'Q3 budget'),
+      rowItem('db1', 'r2', 'Road trip'),
+      rowItem('db1', 'r3', 'Broadway'),
+    ]);
+
+    expect(titles(retierServerSection('road', databases, { nowMs: now }))).toEqual([
+      'Roadmap',
+      'Broadway shows',
+      'Team tasks',
+    ]);
+    expect(titles(retierServerSection('road', rows, { nowMs: now }))).toEqual(['Road trip', 'Broadway', 'Q3 budget']);
   });
 
   it('keeps an item listed twice at its first place', () => {
@@ -776,15 +831,124 @@ describe('the prepared-text cache', () => {
     expect(countNormalizeCalls(() => rankSection('jose', 'people', team, 0, 20))).toBe(0);
   });
 
-  it('keeps every text of a section larger than its minimum size', () => {
+  /** Accented candidates of a section other than Pages, whose titles are their own. */
+  const accentedSection = (kind: string, count: number): MentionRankCandidate[] =>
+    Array.from({ length: count }, (_, index) => ({ key: `${kind}:${index}`, title: `${kind} café ${index}` }));
+  const accentedTeam = (count: number): MentionRankCandidate[] =>
+    Array.from({ length: count }, (_, index) => ({
+      key: `person:${index}`,
+      title: `José ${index}`,
+      email: `josé.${index}@appflowy.io`,
+    }));
+  /** A server answer of new titles, accented unless `ascii`, which `normalize` never sees. */
+  const answer = (keystroke: number, count: number, ascii = false): MentionRankCandidate[] =>
+    Array.from({ length: count }, (_, index) => ({
+      key: `page:s${keystroke}-${index}`,
+      title: ascii ? `Notes ${keystroke}-${index}` : `Résumé ${keystroke}-${index}`,
+      serverRank: index,
+    }));
+
+  afterEach(() => clearMentionRankerCache());
+
+  it('keeps every section a keystroke ranks, however many texts they hold together', () => {
     clearMentionRankerCache();
 
-    // More texts than the 10,000 a cache keeps at least, ranked in the same order every time.
-    const pages = accented(12_000);
+    // 16,000 titles and names in three sections: past the 10,000 a cache holds before it first
+    // sweeps, and enough for a second sweep in the same keystroke.
+    const pages = accented(8000);
+    const databases = accentedSection('database', 4000);
+    const team = accentedTeam(4000);
+    const keystroke = (query: string) => {
+      rankSection(query, 'objects', pages, 0, 20);
+      rankSection(query, 'objects', databases, 0, 20);
+      rankSection(query, 'people', team, 0, 20);
+    };
 
-    rankSection('cafe', 'objects', pages, 0, 20);
-    expect(countNormalizeCalls(() => rankSection('cafe 1', 'objects', pages, 0, 20))).toBe(0);
+    expect(countNormalizeCalls(() => keystroke('c'))).toBe(8000 + 4000 + 2 * 4000);
+    ['ca', 'caf', 'cafe'].forEach((query) => {
+      expect([query, countNormalizeCalls(() => keystroke(query))]).toEqual([query, 0]);
+    });
+  });
+
+  it("prepares only each keystroke's new titles and forgets past server answers", () => {
     clearMentionRankerCache();
+
+    const pages = accented(1500);
+    const databases = accentedSection('database', 500);
+    const team = accentedTeam(500);
+    // The new titles come first, so a sweep runs before the keystroke reads anything else.
+    const keystroke = (n: number) => {
+      rankSection(`q${n}`, 'objects', [...answer(n, 100), ...pages], 0, 20);
+      rankSection(`q${n}`, 'objects', databases, 0, 20);
+      rankSection(`q${n}`, 'people', team, 0, 20);
+    };
+
+    keystroke(0);
+    // 2,600 texts and 100 more a keystroke: the cache sweeps three times.
+    for (let n = 1; n <= 200; n += 1) {
+      expect([n, countNormalizeCalls(() => keystroke(n))]).toEqual([n, 100]);
+    }
+
+    expect(countNormalizeCalls(() => rankSection('again', 'objects', answer(1, 100), 0, 20))).toBe(100);
+    expect(countNormalizeCalls(() => rankSection('again', 'objects', answer(200, 100), 0, 20))).toBe(0);
+  });
+
+  it('keeps a section ranked only now and then, and texts read before a stale query', () => {
+    clearMentionRankerCache();
+
+    const pages = accented(2000);
+    const team = accentedTeam(1000);
+    // Each keystroke also ranks the previous answer with the previous query, then its own again,
+    // so three passes go by; people are ranked every fifth keystroke only.
+    const keystroke = (n: number) => {
+      rankSection(`q${n}`, 'objects', [...answer(n, 200), ...pages], 0, 20);
+      if (n > 0) rankSection(`q${n - 1}`, 'objects', answer(n - 1, 200), 0, 20);
+      rankSection(`q${n}`, 'objects', answer(n, 200), 0, 20);
+      if (n % 5 === 0) rankSection(`q${n}`, 'people', team, 0, 20);
+    };
+
+    keystroke(0);
+    for (let n = 1; n <= 150; n += 1) {
+      expect([n, countNormalizeCalls(() => keystroke(n))]).toEqual([n, 200]);
+    }
+  });
+
+  it("keeps the previous keystroke's texts when new titles fill the cache on every keystroke", () => {
+    clearMentionRankerCache();
+
+    const pages = accented(3000);
+    // 12,000 new titles around the pages make the cache sweep before and after it reads them.
+    const keystroke = (n: number) => {
+      const fresh = answer(n, 12_000, true);
+
+      rankSection(`q${n}`, 'objects', [...fresh.slice(0, 6000), ...pages, ...fresh.slice(6000)], 0, 20);
+    };
+
+    keystroke(0);
+    for (let n = 1; n <= 10; n += 1) {
+      expect([n, countNormalizeCalls(() => keystroke(n))]).toEqual([n, 0]);
+    }
+  });
+
+  it('prepares texts too long to key a cache on every ranking', () => {
+    clearMentionRankerCache();
+
+    // Equal-length titles past the 16,383 UTF-16 units above which V8 hashes a string by its
+    // length alone; uncached, each costs its first 512 code points and a count of the rest.
+    const long = Array.from({ length: 20 }, (_, index) => ({
+      key: `page:long${index}`,
+      title: `Café ${'x'.repeat(20_000)} ${String(index).padStart(3, '0')}`,
+    }));
+    const short = { key: 'page:short', title: 'Café court' };
+
+    expect(countNormalizeCalls(() => rankSection('cafe', 'objects', [...long, short], 0, 30))).toBe(21);
+    expect(countNormalizeCalls(() => rankSection('cafe x', 'objects', [...long, short], 0, 30))).toBe(20);
+    expect(long.map((candidate) => objectTier('cafe', candidate.title))).toEqual(long.map(() => 1));
+
+    const address = `zoë.${'x'.repeat(20_000)}@appflowy.io`;
+
+    expect(countNormalizeCalls(() => personTier('zoe', 'Zoë', address))).toBe(2);
+    expect(countNormalizeCalls(() => personTier('zoe', 'Zoë', address))).toBe(1);
   });
 });
 

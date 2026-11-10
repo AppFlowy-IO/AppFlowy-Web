@@ -36,6 +36,7 @@ const WHITE_SPACE_ONLY = new RegExp(`^[${WHITE_SPACE_CLASS}]*$`);
 const NON_ASCII = /[\u0080-\uffff]/;
 const MARKS = /\p{M}+/gu;
 const CAPITAL_SIGMA = /\u03a3/g;
+const SURROGATE = /[\ud800-\udfff]/;
 
 /** Matching reads at most this many code points of a query, title, name or address. */
 export const MENTION_MATCH_MAX_CODE_POINTS = 512;
@@ -92,11 +93,20 @@ export function boundMentionText(text: string, max = MENTION_MATCH_MAX_CODE_POIN
   return text;
 }
 
-/** The code points of `text`, counted as `Array.from(text).length` without the array. */
+/**
+ * The code points of `text`, counted as `Array.from(text).length` without the array. Every unit
+ * before the first surrogate is a code point of its own, and the engine finds that surrogate far
+ * faster than a loop (at once in a string with no character above U+00FF), so a long title
+ * without one costs next to nothing.
+ */
 export function countCodePoints(text: string): number {
-  let count = 0;
+  const first = text.search(SURROGATE);
 
-  for (let index = 0; index < text.length; index += 1) {
+  if (first === -1) return text.length;
+
+  let count = first;
+
+  for (let index = first; index < text.length; index += 1) {
     if (isLeadSurrogatePair(text, index)) index += 1;
     count += 1;
   }

@@ -17,9 +17,10 @@
  *   above a title match, whatever server answered.
  *
  * Matching reads prepared text: each title, name and address is normalized and split into words
- * once and kept by its own string, in a cache sized to the lists ranked, so re-ranking on every
- * keystroke only compares. Nothing here depends on React, the DOM or the network, and nothing calls it yet: the
- * picker keeps the server's order until MEN-WEB-08 and MEN-WEB-09 use it behind their flag.
+ * once and kept by its own string, so re-ranking on every keystroke only compares, however the
+ * candidates are split into sections ({@link PreparedCache}). Nothing here depends on React, the
+ * DOM or the network, and nothing calls it yet: the picker keeps the server's order until
+ * MEN-WEB-08 and MEN-WEB-09 use it behind their flag.
  */
 import {
   MentionSearchResultItem,
@@ -177,8 +178,23 @@ export function prepareMentionQuery(raw: string): MentionQuery {
   };
 }
 
-function asQuery(query: MentionQuery | string): MentionQuery {
-  return typeof query === 'string' ? prepareMentionQuery(query) : query;
+/**
+ * The pass prepared texts are read in ({@link PreparedCache}), and the normalized query that began
+ * it: every ranking of one typed query is one pass.
+ */
+let rankPass = 0;
+let rankPassQuery = '';
+
+/** `query`, prepared; a typed query unlike the one before begins a pass. */
+function rankingQuery(query: MentionQuery | string): MentionQuery {
+  const prepared = typeof query === 'string' ? prepareMentionQuery(query) : query;
+
+  if (prepared.normalized && prepared.normalized !== rankPassQuery) {
+    rankPass += 1;
+    rankPassQuery = prepared.normalized;
+  }
+
+  return prepared;
 }
 
 /**
@@ -268,8 +284,16 @@ export function mentionTokensStartDistinctWords(
   return false;
 }
 
+/** When a cached text was last read, which decides what a sweep keeps. */
+interface PreparedReads {
+  /** The pass of the latest read. */
+  pass: number;
+  /** How many sweeps its cache had made at the latest read. */
+  sweep: number;
+}
+
 /** A title or name, prepared once for matching and ranking. */
-interface PreparedText {
+interface PreparedText extends PreparedReads {
   /** The normalized first 512 code points. */
   readonly normalized: string;
   /** Their first {@link MENTION_MAX_MATCH_WORDS} words. */
@@ -281,82 +305,120 @@ interface PreparedText {
 }
 
 /** An address, prepared once; the local part is everything before the first `@`. */
-interface PreparedAddress {
+interface PreparedAddress extends PreparedReads {
   readonly normalized: string;
   readonly local: string;
   readonly localWords: readonly string[];
   readonly codePoints: number;
 }
 
-/**
- * Each cache keeps at least this many prepared texts, and twice as many as the longest candidate
- * list ranked or prepared, so a section ranked on every keystroke always fits: a cache smaller than
- * the texts read in the same order each time would evict every one just before it is read again.
- * Once full, a cache forgets its oldest entry first (renamed pages, another workspace).
- */
+/** A cache holds at least this many texts before it first sweeps. */
 const PREPARED_MIN_CAPACITY = 10_000;
-let preparedCapacity = PREPARED_MIN_CAPACITY;
-const preparedTexts = new Map<string, PreparedText>();
-const preparedAddresses = new Map<string, PreparedAddress>();
+/**
+ * Texts longer than this many UTF-16 units are prepared on every read instead. V8 hashes a string
+ * longer than 16,383 units by its length only, so equal-length long titles would share one hash
+ * and every lookup would compare whole strings, a cost that grows with the square of their
+ * number. Uncached, such a title costs reading its first 512 code points and counting the rest,
+ * linear in its length, as in the Rust reference.
+ */
+const PREPARED_MAX_KEY_LENGTH = 2048;
 
-function fitPreparedCapacity(candidates: number): void {
-  preparedCapacity = Math.max(preparedCapacity, 2 * candidates);
-}
+/**
+ * Prepared texts, each kept by its own string. Reads are counted in passes ({@link rankingQuery}):
+ * every ranking of one typed query is one pass, so a keystroke that ranks each of its sections
+ * with its query reads all of them in one pass, however many sections there are and however the
+ * candidates are split between them.
+ *
+ * A full cache does not forget its oldest text, which for texts read in the same order on every
+ * keystroke is the next one read; it sweeps. A sweep keeps every text read since the previous
+ * sweep or in the current or previous pass, then makes room for half as many new texts as those
+ * two passes read, and at least half {@link PREPARED_MIN_CAPACITY}. So the texts keystrokes keep
+ * ranking are prepared once, whatever their number; a text nothing reads any more (a renamed
+ * title, a past server answer, another workspace) goes at a later sweep; and since the room
+ * follows what recent passes read, not what the sweep kept, the cache does not grow with the time
+ * the picker is used.
+ */
+class PreparedCache<T extends PreparedReads> {
+  private readonly entries = new Map<string, T>();
+  private capacity = PREPARED_MIN_CAPACITY;
+  private sweeps = 0;
 
-function remember<T>(cache: Map<string, T>, key: string, value: T): T {
-  if (cache.size >= preparedCapacity) {
-    const oldest = cache.keys().next();
+  constructor(private readonly prepare: (text: string) => T) {}
 
-    if (!oldest.done) cache.delete(oldest.value);
+  read(text: string): T {
+    if (text.length > PREPARED_MAX_KEY_LENGTH) return this.prepare(text);
+
+    let entry = this.entries.get(text);
+
+    if (!entry) {
+      if (this.entries.size >= this.capacity) this.sweep();
+      entry = this.prepare(text);
+      this.entries.set(text, entry);
+    }
+
+    entry.pass = rankPass;
+    entry.sweep = this.sweeps;
+    return entry;
   }
 
-  cache.set(key, value);
-  return value;
+  clear(): void {
+    this.entries.clear();
+    this.capacity = PREPARED_MIN_CAPACITY;
+    this.sweeps = 0;
+  }
+
+  private sweep(): void {
+    let recent = 0;
+
+    for (const [text, entry] of this.entries) {
+      if (entry.pass >= rankPass - 1) recent += 1;
+      else if (entry.sweep < this.sweeps) this.entries.delete(text);
+    }
+
+    this.sweeps += 1;
+    this.capacity = Math.max(PREPARED_MIN_CAPACITY, this.entries.size + Math.max(recent / 2, PREPARED_MIN_CAPACITY / 2));
+  }
 }
 
-function preparedText(text: string): PreparedText {
-  const cached = preparedTexts.get(text);
-
-  if (cached) return cached;
-
+const preparedTexts = new PreparedCache<PreparedText>((text) => {
   const normalized = normalizeMentionText(boundMentionText(text));
 
-  return remember(preparedTexts, text, {
+  return {
     normalized,
     words: mentionWords(normalized, MENTION_MAX_MATCH_WORDS),
     codePoints: countCodePoints(text),
     blank: isMentionBlankText(text),
-  });
-}
+    pass: 0,
+    sweep: 0,
+  };
+});
 
-function preparedAddress(address: string): PreparedAddress {
-  const cached = preparedAddresses.get(address);
-
-  if (cached) return cached;
-
+const preparedAddresses = new PreparedCache<PreparedAddress>((address) => {
   const normalized = normalizeMentionText(boundMentionText(address));
   const at = normalized.indexOf('@');
   const local = at === -1 ? normalized : normalized.slice(0, at);
 
-  return remember(preparedAddresses, address, {
+  return {
     normalized,
     local,
     localWords: mentionWords(local, MENTION_MAX_MATCH_WORDS),
     codePoints: countCodePoints(address),
-  });
-}
+    pass: 0,
+    sweep: 0,
+  };
+});
 
 /**
  * Prepares the titles, names and addresses of `candidates` ahead of the first keystroke, for
- * example when the picker opens on a new local snapshot, so that keystroke only compares.
+ * example when the picker opens on a new local snapshot, so that keystroke only compares. Each
+ * section's candidates can be prepared on their own: they stay as long as keystrokes rank them.
  */
 export function prepareMentionRankCandidates(
   candidates: readonly Pick<MentionRankCandidate, 'title' | 'email'>[]
 ): void {
-  fitPreparedCapacity(candidates.length);
   for (const candidate of candidates) {
-    preparedText(candidate.title);
-    if (candidate.email) preparedAddress(candidate.email);
+    preparedTexts.read(candidate.title);
+    if (candidate.email) preparedAddresses.read(candidate.email);
   }
 }
 
@@ -364,7 +426,8 @@ export function prepareMentionRankCandidates(
 export function clearMentionRankerCache(): void {
   preparedTexts.clear();
   preparedAddresses.clear();
-  preparedCapacity = PREPARED_MIN_CAPACITY;
+  rankPass = 0;
+  rankPassQuery = '';
 }
 
 function titleTier(query: MentionQuery, title: PreparedText): MentionTier | undefined {
@@ -408,9 +471,9 @@ function personClass(query: MentionQuery, name: PreparedText, address: PreparedA
  * contains. `mention_match::title_tier`, pinned by `mention-parity/tiers.json`.
  */
 export function objectTier(query: MentionQuery | string, title: string): MentionTier | undefined {
-  const prepared = asQuery(query);
+  const prepared = rankingQuery(query);
 
-  return prepared.normalized ? titleTier(prepared, preparedText(title)) : undefined;
+  return prepared.normalized ? titleTier(prepared, preparedTexts.read(title)) : undefined;
 }
 
 /**
@@ -421,9 +484,11 @@ export function objectTier(query: MentionQuery | string, title: string): Mention
  * `mention_match::person_match_class`, pinned by `mention-parity/people.json`.
  */
 export function personTier(query: MentionQuery | string, name: string, email: string): MentionTier | undefined {
-  const prepared = asQuery(query);
+  const prepared = rankingQuery(query);
 
-  return prepared.normalized ? personClass(prepared, preparedText(name), preparedAddress(email)) : undefined;
+  return prepared.normalized
+    ? personClass(prepared, preparedTexts.read(name), preparedAddresses.read(email))
+    : undefined;
 }
 
 /** A candidate's place in its section: the fields after `candidate` are the sort keys, in order. */
@@ -454,10 +519,10 @@ export function mentionRankEntry<C extends MentionRankCandidate>(
   candidate: C,
   nowMs: number
 ): MentionRankEntry<C> | undefined {
-  const prepared = asQuery(query);
-  const title = preparedText(candidate.title);
+  const prepared = rankingQuery(query);
+  const title = preparedTexts.read(candidate.title);
   const email = candidate.email ?? '';
-  const address = lane === 'people' || (title.blank && email) ? preparedAddress(email) : undefined;
+  const address = lane === 'people' || (title.blank && email) ? preparedAddresses.read(email) : undefined;
   let tier: number | undefined;
 
   if (prepared.normalized) {
@@ -515,12 +580,9 @@ export function rankSection<C extends MentionRankCandidate>(
   nowMs: number,
   limit = Number.POSITIVE_INFINITY
 ): C[] {
-  const prepared = asQuery(query);
+  const prepared = rankingQuery(query);
   const seen = new Set<string>();
   const ranked: C[] = [];
-
-  fitPreparedCapacity(candidates.length);
-
   const keep = (candidate: C) => {
     if (ranked.length >= limit || seen.has(candidate.key)) return;
     seen.add(candidate.key);

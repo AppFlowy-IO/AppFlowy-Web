@@ -113,6 +113,23 @@ describe('mention text helpers', () => {
     });
   });
 
+  it('counts from the first surrogate on, however long the text before it', () => {
+    const long = 'x'.repeat(5000);
+
+    [
+      long,
+      `路线${long}`,
+      `${long}😀`,
+      `😀${long}`,
+      `${long}\ud83d`,
+      `${long}\ude00${long}`,
+      `${long}😀\ud83d😀`,
+      '😀'.repeat(3000),
+    ].forEach((text) => {
+      expect([text.length, countCodePoints(text)]).toEqual([text.length, Array.from(text).length]);
+    });
+  });
+
   it('orders by code point, as UTF-8 bytes do', () => {
     const alphabet = ['a', 'z', 'é', '\ud7ff', '\ue000', '\uff21', '\uffff', '\ud800\udc00', '\ud83d\ude00'];
     let state = 7;
