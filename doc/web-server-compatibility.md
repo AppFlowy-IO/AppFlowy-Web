@@ -254,10 +254,14 @@ while it is off the picker neither records nor reads picks.
 - A picked page, database or person that the answer lacks (the index has not caught up, or the
   roster is refreshing) joins from the tab's local index, when the picker asked for its kind and
   its current title or name still matches the query. A person joins named as Cloud names them, by
-  the address when the name is blank. Until access returns (`VIEW_ACCESS_RESTORED`), a page or
-  database view the user lost access to in this session (`VIEW_ACCESS_REVOKED`) never joins, though
-  the index lists it until the outline or the recent views catch up. The session report counts such
-  a pick as `local`.
+  the address when the name is blank. The session report counts such a pick as `local`.
+- Until access returns (`VIEW_ACCESS_RESTORED`), a page or database the user lost access to in this
+  session (`VIEW_ACCESS_REVOKED`) never joins, though the index lists it until the outline or the
+  recent views catch up. The app names only the page whose share changed, so a page or database
+  below it never joins either, as far as the index knows the pages above it (from the outline, the
+  recent views' parents and this tab's creations). The one exception: a page two or more levels
+  below, which the recent views still list, can join while a page in between is listed by no
+  source, until the recent views reload.
 - The memory stays on the device, under `af.mention.pick-memory.v1:<workspace_id>:<uid>`: normalized
   inputs of at most 32 code points, navigation keys, counts and times, no title, name or address.
   An explicit sign-out removes the user's memories in every workspace; a session that expires keeps

@@ -57,7 +57,7 @@ import {
   readMentionPickMemoryEnabled,
   recordMentionPick,
 } from './mentionPickMemory';
-import { mentionLocalPickItem, rankMentionSectionsByPicks } from './mentionPickRanking';
+import { mentionLocalPickItem, mentionLocalPickUnderAnyView, rankMentionSectionsByPicks } from './mentionPickRanking';
 import { mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
 import {
   ensureMentionSearchCacheScope,
@@ -674,8 +674,8 @@ export function MentionPanel({
     [hasSearchMentions, open, pickMemoryKey]
   );
   const pickLocalSnapshot = useMentionLocalSnapshot(pickMemory ? workspaceId : undefined);
-  // The views the user lost access to in this session. The local index lists one until its sources
-  // catch up, so a picked one never joins from it.
+  // The views the user lost access to in this session. The local index lists one, and the pages
+  // below it, until its sources catch up, so a picked one never joins from it.
   const getPickRevokedViews = pickMemory ? getRevokedMentionViews : noRevokedViews;
   const pickRevokedViews = useSyncExternalStore(subscribeRevokedMentionViews, getPickRevokedViews, getPickRevokedViews);
   const pagesSectionTitle = t('document.mention.pagesSection');
@@ -697,10 +697,16 @@ export function MentionPanel({
       scores: pickMemory.scores(query, nowMs),
       request: { include: mentionInclude },
       requesterPersonId: currentUser?.uuid,
+      // A view the user lost access to never joins, nor does one below it: the app names only the
+      // view whose share changed, and the index lists the pages below it until its sources catch up.
       localItem: (key) => {
         const item = mentionLocalPickItem(pickLocalSnapshot, key);
+        const revoked =
+          item !== undefined &&
+          (mentionItemShowsAnyView(item, pickRevokedViews) ||
+            mentionLocalPickUnderAnyView(pickLocalSnapshot, key, pickRevokedViews));
 
-        return item && !mentionItemShowsAnyView(item, pickRevokedViews) ? item : undefined;
+        return revoked ? undefined : item;
       },
       // The picker shows databases inside Pages, or as Pages when no page is listed
       // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.

@@ -475,6 +475,93 @@ describe('MentionPanel pick memory', () => {
       expect(insertedPageIds()).toEqual([uuid(2)]);
     });
 
+    it.each([
+      ['right above it', 11, [2]],
+      ['two levels above it, through a page the recent views list', 10, [2, 11]],
+    ])('keeps a picked page out once the user loses access to a page %s', async (_, revokedN, recentNs) => {
+      const eventEmitter = new EventEmitter();
+      // Page 2 sits below page 11, below page 10.
+      const picked: View = { ...outlineView(2, 'Roadmap 2026'), parent_view_id: uuid(11) };
+      const plans: View = { ...outlineView(11, 'Plans'), parent_view_id: uuid(10), children: [picked] };
+      const projects: View = { ...outlineView(10, 'Projects'), children: [plans] };
+      const recent = [picked, { ...plans, children: [] }].filter((view) => recentNs.map(uuid).includes(view.view_id));
+
+      mockEditorContext.eventEmitter = eventEmitter;
+      setMentionIndexSources(WORKSPACE, { outline: [projects], recent });
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+
+      // The server's index lags: its answer leaves the page out, and the local index brings it.
+      typedPages = [ROADMAP, ROADMAP_Q4];
+      clearMentionSearchCacheForTests();
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+
+      // The app names only the page whose share changed; the page below it leaves the open panel.
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: uuid(revokedN) });
+      });
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+
+      // The outline drops the revoked page and its subtree. The recent views reload only on demand,
+      // so the index still lists what they list, and the next opening leaves the page out.
+      await pressKey('Escape');
+      setMentionIndexSources(WORKSPACE, { outline: revokedN === 11 ? [{ ...projects, children: [] }] : [], recent });
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+
+      // Access returns: the picked page joins again.
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: uuid(revokedN) });
+      });
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+      expect(insertedPageIds()).toEqual([uuid(2)]);
+    });
+
+    it.each([
+      ['its container', 20],
+      ['the view it answers through', 22],
+    ])('drops a picked database the user loses access to, whether the app names %s', async (_, revokedN) => {
+      const eventEmitter = new EventEmitter();
+      const extra = { is_space: false, database_id: uuid(21) };
+      // Database 21's container 20 answers through its grid view 22, as the server item shows it.
+      const container: View = {
+        ...outlineView(20, 'Roadmap tracker'),
+        layout: ViewLayout.Grid,
+        extra: { ...extra, is_database_container: true },
+        children: [{ ...outlineView(22, 'Grid'), layout: ViewLayout.Grid, extra }],
+      };
+      const tracker: MentionSearchResultItem = {
+        ...ROADMAP_TRACKER,
+        object_id: uuid(21),
+        database_id: uuid(21),
+        database_view_id: uuid(22),
+        mention: { type: MentionTargetKind.Database, database_id: uuid(21), database_view_id: uuid(22) },
+      };
+
+      mockEditorContext.eventEmitter = eventEmitter;
+      setMentionIndexSources(WORKSPACE, { outline: [container] });
+      typedPages = [ROADMAP];
+      typedDatabases = [tracker];
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap tracker');
+
+      // The server's index lags: its answer leaves the database out, and the local index brings it.
+      typedDatabases = [];
+      clearMentionSearchCacheForTests();
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap tracker']);
+
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: uuid(revokedN) });
+      });
+      expect(shownTitles()).toEqual(['Roadmap']);
+    });
+
     it('titles a databases-only answer, and a picked database that joins an empty one, as Pages', async () => {
       setMentionIndexSources(WORKSPACE, { outline: [databaseOutlineView(5, 'Roadmap tracker', 6)] });
       typedPages = [];

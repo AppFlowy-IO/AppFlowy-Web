@@ -15,6 +15,7 @@ import {
   MentionPickRequest,
   mentionLocalItemSection,
   mentionLocalPickItem,
+  mentionLocalPickUnderAnyView,
   rankMentionSectionsByPicks,
   RankMentionSectionsByPicksInput,
 } from '../mentionPickRanking';
@@ -466,6 +467,78 @@ describe('a picked target the answer lacks', () => {
 
       expect(item && mentionItemNavKey(item)).toBe(key);
     });
+  });
+});
+
+describe('mentionLocalPickUnderAnyView', () => {
+  // In space 1, page 10 holds page 11 (in the outline), which holds page 12 (only a recent view now).
+  // Page 13 is a recent view below page 14, which no source lists any more. Database 21's container
+  // 20 sits below page 10 and answers through its grid view 22.
+  const projects = localView(10, 'Projects', { parentViewId: uuid(1) });
+  const plans = localView(11, 'Plans', { parentViewId: uuid(10) });
+  const roadmap2026 = localView(12, 'Roadmap 2026', { parentViewId: uuid(11), source: 'recent' });
+  const roadmapQ4 = localView(13, 'Roadmap Q4', { parentViewId: uuid(14), source: 'recent' });
+  const tracker = localView(20, 'Roadmap tracker', {
+    layout: ViewLayout.Grid,
+    isDatabase: true,
+    databaseId: uuid(21),
+    databaseViewId: uuid(22),
+    navKey: `database:${uuid(21)}:${uuid(22)}`,
+    parentViewId: uuid(10),
+  });
+  const annie = rosterPerson(35, 'Annie Wang', 'annie@appflowy.io');
+  const index = snapshot([projects, plans, roadmap2026, roadmapQ4, tracker], [annie]);
+  const under = (key: string, ...revoked: number[]) =>
+    mentionLocalPickUnderAnyView(index, key, new Set(revoked.map(uuid)));
+
+  it('finds a revoked view, and every view below it as far as the index knows the parents', () => {
+    const key = `page:${uuid(12)}`;
+
+    expect(under(key, 12)).toBe(true);
+    expect(under(key, 11)).toBe(true);
+    expect(under(key, 10)).toBe(true);
+    // A parent the index does not list still counts by its id: here the space.
+    expect(under(key, 1)).toBe(true);
+    expect(under(key, 13, 14, 20)).toBe(false);
+    expect(under(key)).toBe(false);
+    // A view below a revoked one is no reason to hide the view above it.
+    expect(under(`page:${uuid(11)}`, 12)).toBe(false);
+  });
+
+  it('stops at the first parent the index does not list', () => {
+    const key = `page:${uuid(13)}`;
+
+    expect(under(key, 14)).toBe(true);
+    // Whatever lies above page 14 is unknown, so a revoke above it is not seen.
+    expect(under(key, 10, 1)).toBe(false);
+  });
+
+  it('starts a database from the view the index lists it by, a container included', () => {
+    expect(under(tracker.navKey, 20)).toBe(true);
+    expect(under(tracker.navKey, 10)).toBe(true);
+    // The container is not on its item, which shows only the database and its grid view.
+    expect(mentionLocalPickItem(index, tracker.navKey)).toMatchObject({
+      object_id: uuid(21),
+      database_view_id: uuid(22),
+    });
+  });
+
+  it('is false for people, rows, dates and keys the index does not hold', () => {
+    expect(under(`person:${annie.person_id}`, 35, 10)).toBe(false);
+    expect(under(`row:${uuid(21)}:${uuid(50)}`, 21, 50, 10)).toBe(false);
+    expect(under('date:Today', 10)).toBe(false);
+    expect(under(`page:${uuid(19)}`, 19, 10)).toBe(false);
+    // A database's own view key is no page.
+    expect(under(`page:${uuid(20)}`, 20)).toBe(false);
+  });
+
+  it('ends when the parents lead back to a view it already followed', () => {
+    const first = localView(40, 'Road one', { parentViewId: uuid(41) });
+    const second = localView(41, 'Road two', { parentViewId: uuid(40) });
+    const looped = snapshot([first, second]);
+
+    expect(mentionLocalPickUnderAnyView(looped, first.navKey, new Set([uuid(42)]))).toBe(false);
+    expect(mentionLocalPickUnderAnyView(looped, first.navKey, new Set([uuid(41)]))).toBe(true);
   });
 });
 

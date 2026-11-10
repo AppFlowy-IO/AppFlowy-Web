@@ -244,6 +244,22 @@ describe('MentionPickMemory', () => {
     expect(memory.useCount('note', PAGE, 100 * DAY_MS)).toBe(MENTION_PICK_SCALE);
   });
 
+  // The fixture has no case where a full memory records a pick it holds already.
+  it('makes room only for a new entry: a pick it holds already drops nothing from a full memory', () => {
+    const memory = new MentionPickMemory({ capacity: 2 });
+
+    memory.recordPick('road', PAGE, 0);
+    memory.recordPick('road', PAGE, 0);
+    memory.recordPick('plan', OTHER_PAGE, 0);
+    // Full, with `plan` the weakest entry: making room for this pick would drop it.
+    memory.recordPick('road', PAGE, 0);
+
+    expect(memory.size).toBe(2);
+    expect(memory.useCount('plan', OTHER_PAGE, 0)).toBe(MENTION_PICK_SCALE);
+    // 1.9 × 0.9 + 1.
+    expect(memory.useCount('road', PAGE, 0)).toBe(2_710_000);
+  });
+
   it('records nothing for a bare @ or past its input bound, counted in code points', () => {
     const memory = new MentionPickMemory({ maxInputCodePoints: 3 });
 
@@ -346,6 +362,21 @@ describe('the picker memory in localStorage', () => {
     expect(keys).not.toContain(pageKey(1));
     expect(keys).toEqual(expect.arrayContaining([pageKey(0), pageKey(2), pageKey(1_000)]));
     expect(loadMentionPickMemory(STORAGE_KEY, 2 * DAY_MS).size).toBe(1_000);
+  });
+
+  it('keeps all 1,000 entries when a full memory records a pick it holds already', () => {
+    // Page 0 picked twice after `ro`, pages 1 to 999 once.
+    const count = (n: number) => (n === 0 ? 1_900_000 : MENTION_PICK_SCALE);
+    const full = Array.from({ length: 1_000 }, (_, n) => [pageKey(n), 'ro', count(n), 0]);
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, e: full }));
+    recordMentionPick(STORAGE_KEY, 'ro', pageKey(0), 0);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null').e as [string, string, number, number][];
+
+    expect(stored).toHaveLength(1_000);
+    expect(stored).toContainEqual([pageKey(0), 'ro', 2_710_000, 0]);
+    expect(stored).toContainEqual([pageKey(1), 'ro', MENTION_PICK_SCALE, 0]);
   });
 
   it('keeps a pick another tab recorded after this picker loaded the memory', () => {

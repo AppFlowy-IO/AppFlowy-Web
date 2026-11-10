@@ -192,6 +192,35 @@ export function mentionLocalPickItem(snapshot: MentionLocalSnapshot, key: string
   return view ? localViewItem(view) : undefined;
 }
 
+/**
+ * Whether the local index's view for navigation key `key` is one of `viewIds` or lies below one,
+ * as far as the index knows the views above it: the parents that the outline, the recent views and
+ * this tab's creations give, followed up to the first parent the index does not list. The pages
+ * below a page inherit its access, while the app names only the page whose share changed; one with
+ * access of its own still shows when the server's answer lists it. A database starts from the view
+ * the index lists it by, a container included, which its item may not show. `false` for people,
+ * rows and keys the index does not hold.
+ */
+export function mentionLocalPickUnderAnyView(
+  snapshot: MentionLocalSnapshot,
+  key: string,
+  viewIds: ReadonlySet<string>
+): boolean {
+  if (viewIds.size === 0) return false;
+
+  const followed = new Set<string>();
+  let viewId = keysOf(snapshot).views.get(key)?.viewId;
+
+  // Parents that lead back to a view already followed end the walk.
+  while (viewId !== undefined && !followed.has(viewId)) {
+    if (viewIds.has(viewId)) return true;
+    followed.add(viewId);
+    viewId = snapshot.viewsById.get(viewId)?.parentViewId;
+  }
+
+  return false;
+}
+
 export interface RankMentionSectionsByPicksInput {
   /** The typed query the sections answer. */
   query: string;
@@ -204,7 +233,8 @@ export interface RankMentionSectionsByPicksInput {
   requesterPersonId?: string;
   /**
    * The local index's item for a picked navigation key the answer lacks, or `undefined` when none
-   * may join: the index does not hold it, or the user lost access to it.
+   * may join: the index does not hold it, or the user lost access to it or to a view above it
+   * ({@link mentionLocalPickUnderAnyView}).
    */
   localItem?: (key: string) => MentionSearchResultItem | undefined;
   /** The title of a section only picked local items fill. */
