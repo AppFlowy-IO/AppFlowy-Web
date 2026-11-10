@@ -16,7 +16,10 @@ import { isDatabaseRowOnlyMentionRequest } from './mentionUtils';
  */
 export type MentionLane = 'bare' | 'primary' | 'rows' | 'refresh' | 'refresh-rows';
 
-/** The lanes that a query change, closing the panel or unmounting it aborts. */
+/**
+ * The lanes of a typed search. Closing the panel or unmounting it aborts the typed search in flight;
+ * a query change does too under the legacy scheduler (see `mentionSearchScheduler.ts`).
+ */
 export const MENTION_TYPED_LANES: readonly MentionLane[] = ['primary', 'rows'];
 
 /** A typed request still pending after this long is aborted and fails. */
@@ -37,6 +40,11 @@ export interface MentionRequestTicket {
   deadlineExceeded(): boolean;
   /** Stops the deadline once the request has settled. */
   settle(): void;
+  /**
+   * Aborts the request, so its answer is never used, even once it arrived. Only a request still
+   * pending counts as aborted.
+   */
+  abort(): void;
 }
 
 /** How many requests a session sent, and how many of those it aborted while they were pending. */
