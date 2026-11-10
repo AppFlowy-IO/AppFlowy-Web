@@ -516,6 +516,12 @@ function MentionMoreResultsButton({
  */
 const CREATE_LABEL_NAME_SLOT = '\uE000';
 
+/** The create options' labels, with the typed name and without one (a bare `@`). */
+const CREATE_PAGE_LABEL_KEYS = {
+  childPage: { named: 'document.mentionMenu.createSubPage', unnamed: 'document.mentionMenu.createNewSubPage' },
+  pageIn: { named: 'document.mentionMenu.createPageIn', unnamed: 'document.mentionMenu.createNewPageIn' },
+} as const;
+
 function MentionCreatePageButton({
   createType,
   searchText,
@@ -531,13 +537,18 @@ function MentionCreatePageButton({
   selected: boolean;
   onClick: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isChildPage = createType === MentionType.childPage;
-  const label = searchText
-    ? t(isChildPage ? 'document.mentionMenu.createSubPage' : 'document.mentionMenu.createPageIn', {
-        name: CREATE_LABEL_NAME_SLOT,
-      })
-    : t(isChildPage ? 'document.mentionMenu.createNewSubPage' : 'document.mentionMenu.createNewPageIn');
+  const labelKey = CREATE_PAGE_LABEL_KEYS[isChildPage ? 'childPage' : 'pageIn'][searchText ? 'named' : 'unnamed'];
+  // A language that does not translate the label itself keeps the label the picker built before from
+  // words it does translate ("Erstellen", "Unterseite"), rather than show it all in English. `exists`
+  // without fallback languages tells; an i18next instance that cannot tell counts as translating it.
+  const translated = !i18n?.exists || i18n.exists(labelKey, { fallbackLng: [] });
+  const label = translated
+    ? t(labelKey, { name: CREATE_LABEL_NAME_SLOT })
+    : `${t('button.create')} ${searchText ? `"${CREATE_LABEL_NAME_SLOT}"` : 'new'} ${
+        isChildPage ? t('document.slashMenu.subPage.keyword1') : 'page in...'
+      }`;
   // The words of the label, with the typed name wherever the translation puts it.
   const labelParts = label.split(CREATE_LABEL_NAME_SLOT).flatMap((part, partIndex) =>
     partIndex === 0

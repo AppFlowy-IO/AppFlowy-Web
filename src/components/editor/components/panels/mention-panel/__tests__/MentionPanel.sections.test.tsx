@@ -13,7 +13,9 @@ import { I18nextProvider } from 'react-i18next';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
+import deDE from '@/@types/translations/de-DE.json';
 import en from '@/@types/translations/en.json';
+import zhCN from '@/@types/translations/zh-CN.json';
 import {
   MentionSearchOptions,
   MentionSearchRequest,
@@ -64,6 +66,11 @@ jest.mock('@/components/_shared/popover', () => ({
 // string falls back to English.
 const english = createInstance();
 const german = createInstance();
+// The shipped locale files, which translate none of the create options' labels yet.
+const shippedGerman = createInstance();
+const shippedChinese = createInstance();
+// One that translates the sub-page label itself.
+const translatedGerman = createInstance();
 
 type Lane = 'bare' | 'primary' | 'rows';
 
@@ -259,6 +266,29 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
         },
       },
     });
+    await shippedGerman.init({
+      lng: 'de-DE',
+      fallbackLng: 'en',
+      resources: { en: { translation: en }, 'de-DE': { translation: deDE } },
+    });
+    await shippedChinese.init({
+      lng: 'zh-CN',
+      fallbackLng: 'en',
+      resources: { en: { translation: en }, 'zh-CN': { translation: zhCN } },
+    });
+    await translatedGerman.init({
+      lng: 'de-DE',
+      fallbackLng: 'en',
+      resources: {
+        en: { translation: en },
+        'de-DE': {
+          translation: {
+            ...deDE,
+            document: { ...deDE.document, mentionMenu: { createSubPage: '„{{name}}" als Unterseite erstellen' } },
+          },
+        },
+      },
+    });
   });
 
   beforeEach(() => {
@@ -380,6 +410,58 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
         'Create new sub-page',
         'Create new page in...',
       ]);
+    });
+  });
+
+  // The local fallback, as in the AI chat drawer's page, offers to create a page with every switch
+  // off. Before its labels had keys of their own, they were built from `button.create` and the
+  // slash menu's "sub page", which more languages translate.
+  describe('the create options in a language that does not translate their labels', () => {
+    async function createLabels(i18n: typeof english) {
+      mockEditorContext.searchMentions = undefined;
+      mockEditorContext.loadViews = jest.fn(async () => [
+        { view_id: 'target', name: 'Target', layout: ViewLayout.Document } as View,
+      ]);
+      mockEditorContext.addPage = jest.fn();
+      mockEditorContext.viewId = 'current-page';
+      mockPanelContext.searchText = '';
+
+      const view = renderPanel({ i18n });
+
+      await advance(100);
+
+      const bare = createOptions().map((option) => option.textContent);
+
+      mockPanelContext.searchText = 'foo';
+      view.rerender();
+      await advance(100);
+
+      const typed = createOptions().map((option) => option.textContent);
+
+      cleanup();
+      return { bare, typed };
+    }
+
+    it('keep the words it translates, as before', async () => {
+      await expect(createLabels(shippedGerman)).resolves.toEqual({
+        bare: ['Erstellen new Unterseite', 'Erstellen new page in...'],
+        typed: ['Erstellen "foo" Unterseite', 'Erstellen "foo" page in...'],
+      });
+      await expect(createLabels(shippedChinese)).resolves.toEqual({
+        bare: ['创建 new sub page', '创建 new page in...'],
+        typed: ['创建 "foo" sub page', '创建 "foo" page in...'],
+      });
+    });
+
+    it('show its own translation of a label once it has one, and English reads the labels', async () => {
+      await expect(createLabels(translatedGerman)).resolves.toEqual({
+        bare: ['Erstellen new Unterseite', 'Erstellen new page in...'],
+        typed: ['„foo" als Unterseite erstellen', 'Erstellen "foo" page in...'],
+      });
+      await expect(createLabels(english)).resolves.toEqual({
+        bare: ['Create new sub-page', 'Create new page in...'],
+        typed: ['Create "foo" sub-page', 'Create "foo" page in...'],
+      });
     });
   });
 

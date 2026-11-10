@@ -457,7 +457,10 @@ section reads as servers title it. A kind this client does not know keeps the se
 local fallback, which lists the outline where no mention search is available, keeps its own titles
 ("Recent pages", "Date"). The "N more" row, the "Send notification" switch and the options to
 create a page are translated too, and a create option shows the typed name as typed: i18next
-escapes interpolated values by default, so the name is never passed through it. Choosing a create
+escapes interpolated values by default, so the name is never passed through it. A language whose
+locale file lacks a create option's label (today every one but English) keeps the label the picker
+built before from words it translates, `button.create` and the slash menu's
+`subPage.keyword1` ('Erstellen "foo" Unterseite'), rather than show it in English. Choosing a create
 option again while its page is created does nothing, and a page created after the picker closed,
 or closed and opened again, adds no mention (the page stays).
 
