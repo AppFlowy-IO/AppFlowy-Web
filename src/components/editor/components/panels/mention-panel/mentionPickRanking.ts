@@ -30,7 +30,7 @@ import {
 import { isMentionBlankText } from '@/utils/normalize-text';
 
 import { MentionRankSignals, mentionSectionRankLane, retierServerSection } from './mentionLocalRanker';
-import { mentionItemNavKey, mentionSectionOrder } from './mentionUtils';
+import { mentionIncludesKind, mentionItemNavKey, mentionSectionOrder } from './mentionUtils';
 
 import type { MentionLocalSnapshot, MentionLocalView } from './mentionLocalIndex';
 import type { MentionPickScore } from './mentionPickMemory';
@@ -44,9 +44,7 @@ export interface MentionPickRequest {
 const NAV_KEY = /^(person|page|database|row):([^:]+)(?::([^:]+))?$/;
 
 function includes(request: MentionPickRequest, kind: MentionTargetKind): boolean {
-  const include = request.include ?? [];
-
-  return include.length === 0 || include.includes(kind);
+  return mentionIncludesKind(request.include, kind);
 }
 
 function lowercased(ids: readonly string[] | undefined): string[] {

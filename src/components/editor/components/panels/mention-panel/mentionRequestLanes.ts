@@ -16,12 +16,6 @@ import { isDatabaseRowOnlyMentionRequest } from './mentionUtils';
  */
 export type MentionLane = 'bare' | 'primary' | 'rows' | 'refresh' | 'refresh-rows';
 
-/**
- * The lanes of a typed search. Closing the panel or unmounting it aborts the typed search in flight;
- * a query change does too under the legacy scheduler (see `mentionSearchScheduler.ts`).
- */
-export const MENTION_TYPED_LANES: readonly MentionLane[] = ['primary', 'rows'];
-
 /** A typed request still pending after this long is aborted and fails. */
 export const MENTION_TYPED_DEADLINE_MS = 2_500;
 /** An empty-query request still pending after this long is aborted and fails. */
@@ -115,6 +109,9 @@ class LaneTicket implements MentionRequestTicket {
 /**
  * The request lanes of one mention-panel session: a new instance, with a new session id, for each
  * time the panel opens. Each lane keeps a sequence number, and only its newest request is current.
+ * The panel aborts a search by its tickets (`MentionSearchFlight` in `mentionSearchScheduler.ts`):
+ * closing the panel or unmounting it aborts the typed search in flight, and so does a query change
+ * under the legacy scheduler.
  */
 export class MentionRequestLanes {
   readonly sessionId: string;
@@ -164,11 +161,6 @@ export class MentionRequestLanes {
   /** Whether `ticket` is its lane's newest request and was not aborted. Only such answers are cached. */
   isCurrent(ticket: MentionRequestTicket) {
     return this.newest.get(ticket.lane) === ticket && !ticket.signal.aborted;
-  }
-
-  /** Aborts the newest request of each lane, so that its answer is never used, even once it arrived. */
-  abort(lanes: readonly MentionLane[]) {
-    lanes.forEach((lane) => this.newest.get(lane)?.abort());
   }
 }
 

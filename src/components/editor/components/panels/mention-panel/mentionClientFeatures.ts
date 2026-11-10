@@ -21,6 +21,8 @@
  */
 import { getServerInfoSnapshot, type ServerInfoState } from '@/utils/server-info';
 
+import { isMentionFeatureAdvertised } from './mentionSearchScheduler';
+
 /** Failed or partial sections instead of a RetryLater for the whole answer. */
 export const MENTION_FEATURE_SECTION_DEGRADATION_V1 = 'section_degradation_v1';
 /** Short per-source deadlines on typed queries; a late source answers a failed section. */
@@ -40,11 +42,7 @@ const NO_FEATURES: readonly string[] = Object.freeze([]);
  * server that advertises nothing.
  */
 export function mentionClientFeatures(serverInfo: ServerInfoState = getServerInfoSnapshot()): readonly string[] {
-  const advertised: unknown = serverInfo.status === 'available' ? serverInfo.info.mention_features : undefined;
-
-  if (!Array.isArray(advertised)) return NO_FEATURES;
-
-  const features = WEB_MENTION_CLIENT_FEATURES.filter((feature) => advertised.includes(feature));
+  const features = WEB_MENTION_CLIENT_FEATURES.filter((feature) => isMentionFeatureAdvertised(feature, serverInfo));
 
   return features.length > 0 ? features : NO_FEATURES;
 }

@@ -446,6 +446,20 @@ export function mentionDatabaseNavKey(databaseId: string | undefined, databaseVi
 }
 
 /**
+ * The title, or a person's name, and the person's address that a server item is matched and ranked
+ * by (the typeahead contract's D21). Cloud sends a person's address as the subtitle and titles a
+ * person whose name is blank by that address, so a title equal to the subtitle is a blank name: the
+ * domain then never matches as a name.
+ */
+export function mentionServerItemText(item: MentionSearchResultItem): [name: string, email: string] {
+  if (item.kind !== MentionTargetKind.Person) return [item.title, ''];
+
+  const email = item.subtitle ?? '';
+
+  return [item.title === email ? '' : item.title, email];
+}
+
+/**
  * The section-free identity of a mention result. The same object gets the same key in every
  * section, response and merge, so the picker can keep its highlight on it, and lanes that merge
  * results later can deduplicate by it.
@@ -694,10 +708,13 @@ export function hasFailedMentionSection(response: MentionSearchResponse) {
   return response.sections.some((section) => section.status === MENTION_SECTION_STATUS_FAILED);
 }
 
-function requestIncludes(request: MentionSearchRequest, kind: MentionTargetKind) {
-  const include = request.include ?? [];
+/** Whether a request with this `include` asks for `kind`: one that names none asks for every kind. */
+export function mentionIncludesKind(include: readonly MentionTargetKind[] | undefined, kind: MentionTargetKind) {
+  return !include || include.length === 0 || include.includes(kind);
+}
 
-  return include.length === 0 || include.includes(kind);
+function requestIncludes(request: MentionSearchRequest, kind: MentionTargetKind) {
+  return mentionIncludesKind(request.include, kind);
 }
 
 /**

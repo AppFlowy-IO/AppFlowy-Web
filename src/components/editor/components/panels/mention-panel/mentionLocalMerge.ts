@@ -44,12 +44,21 @@ import {
   rankSection,
 } from './mentionLocalRanker';
 import { mentionLocalItemSection, MentionPickRequest } from './mentionPickRanking';
-import { mentionItemNavKey, mentionSectionOrder } from './mentionUtils';
+import { mentionItemNavKey, mentionSectionOrder, mentionServerItemText } from './mentionUtils';
 
 import type { MentionPickScore } from './mentionPickMemory';
 
 /** A local-only item created or renamed at most this long ago, or at a time ahead of the clock, is fresh. */
 export const MENTION_FRESH_MS = 15 * 60_000;
+
+/**
+ * Whether what changed at `changedMs` is fresh at `nowMs`: at most {@link MENTION_FRESH_MS} ago. A
+ * time ahead of the clock, from a clock that stepped back, counts as now.
+ */
+export function isMentionFresh(nowMs: number, changedMs: number | undefined): boolean {
+  return changedMs !== undefined && nowMs - changedMs <= MENTION_FRESH_MS;
+}
+
 /** The limit of a request that names none, as Cloud reads it. */
 export const MENTION_DEFAULT_LIMIT = 8;
 /** The largest limit Cloud accepts. */
@@ -225,25 +234,12 @@ function localUnlessBlank(local: string, server: string): string {
 }
 
 /**
- * A server item's title and, for a person, address. Cloud titles a person whose name is blank by
- * their address and sends the address as the subtitle; such a name is blank here too, so the domain
- * never matches as a name.
- */
-function serverText(item: MentionSearchResultItem): [string, string] {
-  if (item.kind !== MentionTargetKind.Person) return [item.title, ''];
-
-  const email = item.subtitle ?? '';
-
-  return [item.title === email ? '' : item.title, email];
-}
-
-/**
  * The title, or a person's name, and the person's address that an entry is ranked and shown by. An
  * object takes the local title when the client has the item; a person the local name and address,
  * each replaced by the server's when it is blank.
  */
 function entryText<Icon>({ key, server, local }: Entry<Icon>): [string, string] {
-  const fromServer = server ? serverText(server.item) : undefined;
+  const fromServer = server ? mentionServerItemText(server.item) : undefined;
 
   if (local && fromServer && key.startsWith('person:')) {
     return [localUnlessBlank(local.title, fromServer[0]), localUnlessBlank(local.email ?? '', fromServer[1])];
@@ -273,8 +269,7 @@ function mergedItem<Icon>(nowMs: number, entry: Entry<Icon>): MentionMergedItem<
   const { key, server, local } = entry;
   const [name, email] = entryText(entry);
   const source: MentionItemSource = local ? (server ? 'both' : 'local') : 'server';
-  // A time ahead of the clock, from a clock that stepped back, counts as now.
-  const fresh = source === 'local' && local?.changedMs !== undefined && nowMs - local.changedMs <= MENTION_FRESH_MS;
+  const fresh = source === 'local' && isMentionFresh(nowMs, local?.changedMs);
 
   return {
     key,

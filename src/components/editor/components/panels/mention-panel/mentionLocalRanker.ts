@@ -29,12 +29,7 @@
  * (`@/application/comment-mention-ranking`).
  */
 import { EventType, on } from '@/application/session/event';
-import {
-  MentionSearchResultItem,
-  MentionSearchSection,
-  MentionSearchSectionKind,
-  MentionTargetKind,
-} from '@/application/types';
+import { MentionSearchResultItem, MentionSearchSection, MentionSearchSectionKind } from '@/application/types';
 import {
   boundMentionText,
   codePointOrderKey,
@@ -46,7 +41,7 @@ import {
 } from '@/utils/normalize-text';
 
 import { MENTION_PICK_SCALE } from './mentionPickMemory';
-import { mentionItemNavKey } from './mentionUtils';
+import { mentionItemNavKey, mentionServerItemText } from './mentionUtils';
 
 /** The navigation key of a server item (MEN-WEB-02), which ranking ties break on and merges key by. */
 export { mentionItemNavKey };
@@ -135,7 +130,7 @@ export function mentionRecencyBucket(nowMs: number, lastUsedMs: number | undefin
 }
 
 /** Han, kana and Hangul. NFKD turns Hangul syllables into conjoining Jamo, so Jamo count too. */
-export function isMentionCjk(codePoint: number): boolean {
+function isMentionCjk(codePoint: number): boolean {
   return (
     (codePoint >= 0x1100 && codePoint <= 0x11ff) ||
     (codePoint >= 0x3040 && codePoint <= 0x30ff) ||
@@ -503,7 +498,7 @@ export function personTier(query: MentionQuery | string, name: string, email: st
 }
 
 /** A candidate's place in its section: the fields after `candidate` are the sort keys, in order. */
-export interface MentionRankEntry<C extends MentionRankCandidate = MentionRankCandidate> {
+interface MentionRankEntry<C extends MentionRankCandidate = MentionRankCandidate> {
   readonly candidate: C;
   /** The tier after a pick-memory lift; {@link MENTION_UNMATCHED_SERVER_TIER} for an unmatched server item. */
   readonly tier: number;
@@ -524,7 +519,7 @@ export interface MentionRankEntry<C extends MentionRankCandidate = MentionRankCa
  * title or name, while a server candidate that does not keeps the last tier, because the server
  * matched it elsewhere (its body, a typo, an older title). A lift raises the tier by one.
  */
-export function mentionRankEntry<C extends MentionRankCandidate>(
+function mentionRankEntry<C extends MentionRankCandidate>(
   query: MentionQuery | string,
   lane: MentionRankLane,
   candidate: C,
@@ -563,7 +558,7 @@ export function mentionRankEntry<C extends MentionRankCandidate>(
  * descending, present first, recency bucket, server items in server order before local-only items,
  * fewer code points, then the navigation key by code point. The key makes the order total.
  */
-export function compareMentionRankEntries(a: MentionRankEntry, b: MentionRankEntry): number {
+function compareMentionRankEntries(a: MentionRankEntry, b: MentionRankEntry): number {
   return (
     a.tier - b.tier ||
     Number(a.requester) - Number(b.requester) ||
@@ -652,21 +647,20 @@ export interface MentionServerRankCandidate extends MentionRankCandidate {
 
 /**
  * A server item at `serverRank` as a candidate, or with no `serverRank` an item the server did not
- * send, which ranks as a local-only candidate. Cloud sends a person's address as the subtitle and
- * titles a person whose name is blank by that address, so a title equal to the subtitle is a blank
- * name: the domain then never matches as a name.
+ * send, which ranks as a local-only candidate. A person whose title is their address has a blank
+ * name ({@link mentionServerItemText}): the domain then never matches as a name.
  */
 export function mentionServerCandidate(
   item: MentionSearchResultItem,
   serverRank: number | undefined,
   signals?: MentionRankSignals
 ): MentionServerRankCandidate {
-  const email = item.kind === MentionTargetKind.Person ? item.subtitle ?? '' : '';
+  const [title, email] = mentionServerItemText(item);
 
   return {
     ...signals,
     key: mentionItemNavKey(item),
-    title: item.kind === MentionTargetKind.Person && item.title === email ? '' : item.title,
+    title,
     email,
     serverRank,
     item,

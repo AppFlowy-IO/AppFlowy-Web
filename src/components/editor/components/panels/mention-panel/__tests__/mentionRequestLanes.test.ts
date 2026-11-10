@@ -4,7 +4,6 @@ import {
   isMentionSearchCancelled,
   MENTION_BARE_DEADLINE_MS,
   MENTION_TYPED_DEADLINE_MS,
-  MENTION_TYPED_LANES,
   MentionLane,
   mentionRequestLane,
   MentionRequestLanes,
@@ -85,11 +84,13 @@ describe('MentionRequestLanes', () => {
     expect([first.seq, second.seq]).toEqual([1, 2]);
   });
 
-  it('aborts the typed lanes on a query change, leaving bare and refresh requests running', () => {
+  it('aborts only the requests a typed search aborts, leaving bare and refresh requests running', () => {
     const lanes = new MentionRequestLanes('session');
     const tickets = Object.fromEntries(ALL_LANES.map((lane) => [lane, lanes.issue(lane)]));
 
-    lanes.abort(MENTION_TYPED_LANES);
+    // As the panel aborts the typed search in flight, by its tickets.
+    tickets.primary.abort();
+    tickets.rows.abort();
 
     expect(Object.fromEntries(ALL_LANES.map((lane) => [lane, tickets[lane].signal.aborted]))).toEqual({
       bare: false,
@@ -129,7 +130,7 @@ describe('MentionRequestLanes', () => {
 
     expect(jest.getTimerCount()).toBe(2);
     settled.settle();
-    lanes.abort(['bare']);
+    aborted.abort();
     expect(jest.getTimerCount()).toBe(0);
 
     jest.advanceTimersByTime(MENTION_BARE_DEADLINE_MS);
@@ -155,12 +156,12 @@ describe('MentionRequestLanes', () => {
       lanes.issue('primary');
       lanes.issue('rows');
       // A keystroke: the new pair replaces the pending one.
-      lanes.issue('primary');
-      lanes.issue('rows');
+      const typed = [lanes.issue('primary'), lanes.issue('rows')];
+
       expect(lanes.requestCounts()).toEqual({ sent: 4, aborted: 2 });
 
-      // The query changes again, or the panel closes: the typed lanes are stopped.
-      lanes.abort(MENTION_TYPED_LANES);
+      // The query changes again, or the panel closes: the typed search is stopped.
+      typed.forEach((ticket) => ticket.abort());
       expect(lanes.requestCounts()).toEqual({ sent: 4, aborted: 4 });
     });
 
@@ -173,7 +174,7 @@ describe('MentionRequestLanes', () => {
       expect(lanes.requestCounts()).toEqual({ sent: 1, aborted: 1 });
 
       // Replacing or stopping the already aborted request counts nothing more.
-      lanes.abort(['bare']);
+      ticket.abort();
       lanes.issue('bare');
       expect(lanes.requestCounts()).toEqual({ sent: 2, aborted: 1 });
     });
@@ -182,9 +183,11 @@ describe('MentionRequestLanes', () => {
       const lanes = new MentionRequestLanes('session');
 
       lanes.issue('primary').settle();
-      lanes.issue('primary').settle();
-      lanes.issue('rows').settle();
-      lanes.abort(MENTION_TYPED_LANES);
+
+      const typed = [lanes.issue('primary'), lanes.issue('rows')];
+
+      typed.forEach((ticket) => ticket.settle());
+      typed.forEach((ticket) => ticket.abort());
       expect(lanes.requestCounts()).toEqual({ sent: 3, aborted: 0 });
     });
 
@@ -192,8 +195,7 @@ describe('MentionRequestLanes', () => {
       const first = new MentionRequestLanes('first');
       const second = new MentionRequestLanes('second');
 
-      first.issue('primary');
-      first.abort(['primary']);
+      first.issue('primary').abort();
       second.issue('primary');
       expect([first.requestCounts(), second.requestCounts()]).toEqual([
         { sent: 1, aborted: 1 },
@@ -253,10 +255,9 @@ describe('mentionTicketFailure', () => {
   });
 
   it('reports a request the panel aborted as cancelled', () => {
-    const lanes = new MentionRequestLanes('session');
-    const ticket = lanes.issue('primary');
+    const ticket = new MentionRequestLanes('session').issue('primary');
 
-    lanes.abort(['primary']);
+    ticket.abort();
     const failure = mentionTicketFailure(ticket, networkError);
 
     expect(failure).toMatchObject({ code: -1, sourceDomain: 'transport', transportFailure: 'cancelled' });

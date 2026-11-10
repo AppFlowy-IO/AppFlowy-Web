@@ -110,8 +110,6 @@ export interface CachedMentionAnswer {
 export interface MentionSearchCacheView {
   /** Counts the changes to the cached answers. */
   readonly version: number;
-  /** The cached sections of `key`, fresh or stale, as {@link getCachedMentionSections} gives them. */
-  sections(key: string): MentionSearchSection[] | undefined;
   /** The cached answer of `key`, fresh or stale, with when its request was sent. */
   answer(key: string): CachedMentionAnswer | undefined;
 }
@@ -132,7 +130,7 @@ function cachedMentionAnswer(key: string): CachedMentionAnswer | undefined {
 }
 
 function createMentionSearchCacheView(version: number): MentionSearchCacheView {
-  return { version, sections: (key) => getCachedMentionSections(key), answer: cachedMentionAnswer };
+  return { version, answer: cachedMentionAnswer };
 }
 
 let cacheView = createMentionSearchCacheView(0);

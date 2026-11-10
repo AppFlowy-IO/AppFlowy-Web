@@ -43,8 +43,10 @@ import { MentionQuery, objectTier, personTier, prepareMentionQuery } from './men
 import {
   isCompleteMentionResponse,
   MENTION_SECTION_STATUS_FAILED,
+  mentionIncludesKind,
   mentionItemNavKey,
   mentionSectionOrder,
+  mentionServerItemText,
 } from './mentionUtils';
 
 import type { MentionLaneOutcome } from './mentionSearchFetch';
@@ -92,10 +94,6 @@ const SECTION_TARGET_KINDS: Partial<Record<MentionSearchSectionKind, MentionTarg
 
 const ALL_TARGET_KINDS = Object.values(MentionTargetKind);
 
-function includesKind(include: readonly MentionTargetKind[], kind: MentionTargetKind) {
-  return include.length === 0 || include.includes(kind);
-}
-
 /** Date and reminder quick picks, whose time Cloud computes when it answers. */
 function isQuickPick(kind: MentionTargetKind) {
   return kind === MentionTargetKind.Date || kind === MentionTargetKind.Reminder;
@@ -136,15 +134,13 @@ function withinTier(tier: number | undefined, worst: number) {
 }
 
 /**
- * Whether `item` still matches the typed `query` as a provisional item. Cloud titles a person with
- * a blank name by their address, so a title equal to the subtitle is a blank name, and the domain
- * then never matches as a name.
+ * Whether `item` still matches the typed `query` as a provisional item. A person whose title is
+ * their address has a blank name (`mentionServerItemText`): the domain then never matches as a name.
  */
 export function mentionProvisionalItemMatches(query: MentionQuery | string, item: MentionSearchResultItem): boolean {
   switch (item.kind) {
     case MentionTargetKind.Person: {
-      const email = item.subtitle ?? '';
-      const name = item.title === email ? '' : item.title;
+      const [name, email] = mentionServerItemText(item);
 
       return withinTier(personTier(query, name, email), MENTION_PROVISIONAL_PERSON_TIER);
     }
@@ -220,7 +216,7 @@ export function buildMentionProvisionalSections({
         section.items.forEach((item) => {
           const kind = mentionProvisionalSectionKind(item.kind);
 
-          if (!kind || isQuickPick(item.kind) !== quickPicks || !includesKind(include, item.kind)) return;
+          if (!kind || isQuickPick(item.kind) !== quickPicks || !mentionIncludesKind(include, item.kind)) return;
 
           const navKey = mentionItemNavKey(item);
 

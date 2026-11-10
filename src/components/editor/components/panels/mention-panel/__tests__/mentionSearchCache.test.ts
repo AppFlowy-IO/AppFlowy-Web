@@ -456,20 +456,20 @@ describe('mentionSearchCache', () => {
 
       setCachedMentionSections('road', pages(page('Roadmap')));
       expect(changed()).toBe(true);
-      expect(getMentionSearchCacheView().sections('road')).toEqual(pages(page('Roadmap')));
+      expect(getMentionSearchCacheView().answer('road')?.sections).toEqual(pages(page('Roadmap')));
 
       markMentionSearchCacheStale();
       expect(changed()).toBe(true);
       // A stale answer is still read: the picker narrows stale answers too.
-      expect(getMentionSearchCacheView().sections('road')).toBeDefined();
+      expect(getMentionSearchCacheView().answer('road')?.sections).toBeDefined();
 
       forgetMentionSearchView('Roadmap');
       expect(changed()).toBe(true);
-      expect(getMentionSearchCacheView().sections('road')).toEqual(pages());
+      expect(getMentionSearchCacheView().answer('road')?.sections).toEqual(pages());
 
       clearMentionSearchCache();
       expect(changed()).toBe(true);
-      expect(getMentionSearchCacheView().sections('road')).toBeUndefined();
+      expect(getMentionSearchCacheView().answer('road')?.sections).toBeUndefined();
       expect(listener).toHaveBeenCalledTimes(4);
       expect(views.map(({ version }) => version)).toEqual(
         Array.from({ length: 5 }, (_, index) => views[0].version + index)
@@ -495,7 +495,7 @@ describe('mentionSearchCache', () => {
       // Sent before the answer stored under its key, so it is ignored.
       setCachedMentionSections('road', pages(page('Old')), sentFirst);
       expect(getMentionSearchCacheView()).toBe(view);
-      expect(getMentionSearchCacheView().sections('road')).toEqual(pages(page('New')));
+      expect(getMentionSearchCacheView().answer('road')?.sections).toEqual(pages(page('New')));
       expect(listener).not.toHaveBeenCalled();
 
       const sentBeforeClear = mentionSearchCacheStamp();

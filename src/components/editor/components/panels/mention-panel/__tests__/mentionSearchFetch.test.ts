@@ -11,9 +11,9 @@ import {
 import {
   isMentionSearchCancelled,
   MENTION_TYPED_DEADLINE_MS,
-  MENTION_TYPED_LANES,
   mentionRequestLane,
   MentionRequestLanes,
+  MentionRequestTicket,
 } from '../mentionRequestLanes';
 import { clearMentionSearchCacheForTests, mentionSearchRetryLaterRemainingMs } from '../mentionSearchCache';
 import { fetchMentionSearchSections, mentionLaneFailureStatus, MentionSectionsFetchResult } from '../mentionSearchFetch';
@@ -516,6 +516,7 @@ describe('fetchMentionSearchSections', () => {
 
     it('reports nothing when the panel aborts a rows request, and does not retry it', async () => {
       const lanes = new MentionRequestLanes('session');
+      const issued: MentionRequestTicket[] = [];
       let current = true;
       const search = createTicketSearch({
         primary: [() => later(80, pages)],
@@ -526,12 +527,18 @@ describe('fetchMentionSearchSections', () => {
         requests: typedRequests,
         cacheKey: CACHE_KEY,
         isCurrent: () => current,
-        issueTicket: issueOn(lanes),
+        issueTicket: (request) => {
+          const ticket = issueOn(lanes)(request);
+
+          issued.push(ticket);
+          return ticket;
+        },
       });
 
       await jest.advanceTimersByTimeAsync(100);
       current = false;
-      lanes.abort(MENTION_TYPED_LANES);
+      // As the panel aborts the search's tickets.
+      issued.forEach((ticket) => ticket.abort());
       await jest.advanceTimersByTimeAsync(1_000);
 
       const settled = await result;

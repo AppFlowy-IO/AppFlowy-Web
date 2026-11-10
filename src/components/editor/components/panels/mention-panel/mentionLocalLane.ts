@@ -38,7 +38,7 @@ import {
 } from '@/application/types';
 import { compareCodePoints } from '@/utils/normalize-text';
 
-import { MENTION_FRESH_MS, MentionLocalItem } from './mentionLocalMerge';
+import { isMentionFresh, MENTION_FRESH_MS, MentionLocalItem } from './mentionLocalMerge';
 import {
   mentionLocalItemSection,
   mentionLocalPersonItem,
@@ -405,7 +405,7 @@ export function patchMentionBareSections({
       if (!item) return [];
       if (!listed.has(key)) {
         localKeys.add(key);
-        if (entry?.changedMs !== undefined && nowMs - entry.changedMs <= MENTION_FRESH_MS) freshKeys.add(key);
+        if (isMentionFresh(nowMs, entry?.changedMs)) freshKeys.add(key);
       }
 
       return [item];
