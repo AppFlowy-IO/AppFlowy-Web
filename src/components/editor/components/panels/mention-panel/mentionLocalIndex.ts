@@ -11,6 +11,7 @@
  *   name changes), moves to trash and restores.
  * - `useViewOperations`: opens (`loadView` with awareness, where it also adds the view to the
  *   server's recent views).
+ * - `AppPage`: the opens of AI chats, which it shows without `loadView`.
  * - `useMentionableUsers`: the roster, whenever it caches one.
  *
  * Candidates follow the server's exclusions: no spaces (their pages stay), no child views of a
@@ -39,8 +40,8 @@
  * - The trash list carries no subtree. Once the outline has dropped a page that another tab or
  *   user moved to the trash, a recent view two or more levels below it stays listed until the
  *   recent views reload, unless the recent views' own parents lead to the trashed page.
- * - Pages created outside `addPage` (duplicates, imports, AI chat pages, linked views) arrive with
- *   the next outline refresh, without a session creation time.
+ * - Pages created outside `addPage` (duplicates, imports, linked views) arrive with the next
+ *   outline refresh, without a session creation time. AI chats are created through `addPage`.
  *
  * A workspace is known from the moment the app gives its sources until the app leaves it (another
  * workspace, another account, unmount) or the session ends. Writes for any other workspace are

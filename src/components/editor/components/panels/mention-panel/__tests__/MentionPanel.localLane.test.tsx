@@ -522,7 +522,9 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
     });
 
     // Cloud's bare answer lists only the requester's opens and the page being edited, so it never
-    // lists a page this tab created and nobody opened, however new the answer is.
+    // lists a page this tab created and nobody opened, however new the answer is. In a document the
+    // page modal opens a new sub-page, which counts as an open; a row page's or a Feed card's editor
+    // offers no modal, so a sub-page added there stays unopened.
     describe('a sub-page this tab created and never opened', () => {
       beforeEach(() => {
         mockEditorContext.viewId = 'doc';
@@ -536,7 +538,8 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
         createSearch((lane) =>
           lane === 'bare' ? { delayMs, response: pages(page('doc', 'Doc'), ALPHA, BETA) } : NEVER
         );
-      // What `addPage` records for the slash menu's sub-page (`createSubpage`), which opens nothing.
+      // What `addPage` records for the slash menu's sub-page (`createSubpage`) in an editor with no
+      // page modal, where nothing opens it.
       const createSubpage = (at = Date.now()) =>
         recordMentionViewCreated(
           WORKSPACE,

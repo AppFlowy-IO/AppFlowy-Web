@@ -364,10 +364,13 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
 - A bare `@` keeps the server's order and lists no other item, except that this tab's recent
   activity comes first, the newest first: the pages and databases it opened since a minute before
   the answer arrived, since another Cloud replica can answer from a bare answer up to a minute old,
-  and those it created in the last 15 minutes and has not opened, such as a sub-page the slash menu
-  added, however new the answer is: Cloud's bare answer lists only the user's opens and the page
-  being edited, so it lists such a page only once the user opens it. The cached paint and every
-  answer lift the same creations. A lifted database leads the databases, which the picker lists
+  and those it created in the last 15 minutes and has not opened, however new the answer is: Cloud's
+  bare answer lists only the user's opens and the page being edited, so it lists such a page only
+  once the user opens it. Most creations open at once: a sub-page or "turn into page" in a document
+  opens in the page modal, and an AI chat opens in the main view, which counts as an open although
+  the tab never loads a chat as a document. What stays unopened is a sub-page added in a row page
+  or a Feed card's preview, whose editors offer no page modal, and a creation whose modal closed
+  before the page loaded. The cached paint and every answer lift the same creations. A lifted database leads the databases, which the picker lists
   after the pages, as it lists the server's. The page being edited is never lifted; it stays where
   the server puts it. People follow the same rule: the people this tab picked in the session come
   first, then up to three people on the page whom the answer or the roster lists, then the
