@@ -56,3 +56,14 @@ Feature: Mention panel search
     Then the mention panel shows both recent fixture pages
     When I type the first letters of the first recent fixture page
     Then the mention panel shows only the first recent fixture page while typed searches are held
+
+  # MEN-WEB-09, behind the same switch: the local lane lists a page this tab created a moment ago,
+  # which no answer holds yet. The bare answer is stubbed empty, so only the local lane can list it.
+  Scenario: A page created seconds ago is found at once while typed mention searches are slow
+    Given a blank mention search document page is open
+    And a fresh fixture page was created and renamed in this tab
+    And mention search answers the empty query with no pages
+    And typed mention searches are held for 1500 ms
+    And the mention typeahead v2 is switched on
+    When I search mentions for the first letters of the fresh fixture page
+    Then the mention panel shows the fresh fixture page, flagged fresh, while typed searches are held

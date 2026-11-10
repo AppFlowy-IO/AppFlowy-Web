@@ -26,6 +26,10 @@
  * kinds stay ({@link withProvisionalItems}): the rows a slower rows request has not answered yet,
  * or the pages whose search failed, next to the "unavailable, retry" row.
  *
+ * With the picker's local lane on (MEN-WEB-09), the provisional sections and the answer are merged
+ * with what the tab holds (`mentionLocalMerge.ts`), a fourth source in effect: its local-only
+ * matches join in the same render, and stay once the server answers.
+ *
  * Nothing here depends on React or the network.
  */
 import {

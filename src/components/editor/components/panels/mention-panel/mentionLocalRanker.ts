@@ -23,9 +23,10 @@
  * on (`mentionPickMemory.ts`, off by default) it re-tiers a typed answer's sections where a pick
  * scores (`mentionPickRanking.ts`), and with its `mentionTypeaheadV2` switch on (MEN-WEB-08, off by
  * default) it re-tiers every typed answer's People, Pages and Database rows and narrows the list it
- * keeps while typing with {@link objectTier} and {@link personTier} (`mentionProvisional.ts`);
- * MEN-WEB-09 merges the local lane. The comment @ pickers match people with {@link personTier} when
- * their own `ranked` order is on (`@/application/comment-mention-ranking`).
+ * keeps while typing with {@link objectTier} and {@link personTier} (`mentionProvisional.ts`), and
+ * merges the local lane with {@link rankSection} (MEN-WEB-09, `mentionLocalMerge.ts`). The comment @
+ * pickers match people with {@link personTier} when their own `ranked` order is on
+ * (`@/application/comment-mention-ranking`).
  */
 import {
   MentionSearchResultItem,

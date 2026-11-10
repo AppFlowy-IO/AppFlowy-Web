@@ -33,7 +33,7 @@ import { MentionPanel } from '../MentionPanel';
 import { MENTION_PICK_MEMORY_OVERRIDE_KEY, MENTION_PICK_MEMORY_STORAGE_PREFIX } from '../mentionPickMemory';
 import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
 import { MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
-import { MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
+import { MENTION_LOCAL_LANE_OVERRIDE_KEY, MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
 
 const mockAddMark = jest.fn();
 const mockPost = jest.fn();
@@ -675,46 +675,95 @@ describe('MentionPanel pick memory', () => {
     describe('with the picker v2 on (MEN-WEB-08)', () => {
       beforeEach(() => localStorage.setItem(MENTION_TYPEAHEAD_V2_OVERRIDE_KEY, 'true'));
 
-      it('joins a picked page the answer lacks, and keeps it out of the next keystroke until an answer', async () => {
-        setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
-        const editor = renderEditor();
+      // MEN-WEB-10's join, as it stays with the local lane switched off.
+      describe('and its local lane off', () => {
+        beforeEach(() => localStorage.setItem(MENTION_LOCAL_LANE_OVERRIDE_KEY, 'false'));
 
-        await openAndTypeRo(editor);
-        await pickWithEnter('Roadmap 2026');
+        it('joins a picked page the answer lacks, and keeps it out of the next keystroke until an answer', async () => {
+          setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+          const editor = renderEditor();
 
-        // The index has not caught up: the server's answer leaves the page out.
-        typedPages = [ROADMAP, ROADMAP_Q4];
-        clearMentionSearchCacheForTests();
-        await openAndTypeRo(editor);
-        expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+          await openAndTypeRo(editor);
+          await pickWithEnter('Roadmap 2026');
 
-        // The next keystroke narrows the list at once, without the page only the pick brought: picked
-        // targets join an answer to what is typed, and no pick of `ro` scores `roa`.
-        await type(editor, 'a');
-        expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
-        expect(showsLoadingState()).toBe(false);
+          // The index has not caught up: the server's answer leaves the page out.
+          typedPages = [ROADMAP, ROADMAP_Q4];
+          clearMentionSearchCacheForTests();
+          await openAndTypeRo(editor);
+          expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+
+          // The next keystroke narrows the list at once, without the page only the pick brought: picked
+          // targets join an answer to what is typed, and no pick of `ro` scores `roa`.
+          await type(editor, 'a');
+          expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+          expect(showsLoadingState()).toBe(false);
+        });
+
+        it('narrows the bare answer at once, and joins a picked page only to the answer to what is typed', async () => {
+          setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+          const editor = renderEditor();
+
+          await openAndTypeRo(editor);
+          await pickWithEnter('Roadmap 2026');
+
+          typedPages = [ROADMAP, ROADMAP_Q4];
+          clearMentionSearchCacheForTests();
+          await type(editor, ' @');
+          await advance(ANSWER_MS);
+          await type(editor, 'r');
+
+          // The pick of `ro` scores `r`, but the provisional list narrows only what answers held.
+          expect(shownTitles()).toEqual(['Recent page']);
+          expect(showsLoadingState()).toBe(false);
+
+          // Nothing answers `r`: the picked page joins that answer.
+          await advance(TYPING_DEBOUNCE_MS + ANSWER_MS);
+          expect(shownTitles()).toEqual(['Roadmap 2026']);
+        });
       });
 
-      it('narrows the bare answer at once, and joins a picked page only to the answer to what is typed', async () => {
-        setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
-        const editor = renderEditor();
+      // MEN-WEB-09: the local lane lists what the index holds in the keystroke's own render, so a
+      // picked page shows before the answer too, first in its tier while a pick scores it.
+      describe('and its local lane on', () => {
+        it('shows a picked page the answer lacks in the next keystroke at once, after the answer it narrows', async () => {
+          setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+          const editor = renderEditor();
 
-        await openAndTypeRo(editor);
-        await pickWithEnter('Roadmap 2026');
+          await openAndTypeRo(editor);
+          await pickWithEnter('Roadmap 2026');
 
-        typedPages = [ROADMAP, ROADMAP_Q4];
-        clearMentionSearchCacheForTests();
-        await type(editor, ' @');
-        await advance(ANSWER_MS);
-        await type(editor, 'r');
+          typedPages = [ROADMAP, ROADMAP_Q4];
+          clearMentionSearchCacheForTests();
+          await openAndTypeRo(editor);
+          expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
 
-        // The pick of `ro` scores `r`, but the provisional list narrows only what answers held.
-        expect(shownTitles()).toEqual(['Recent page']);
-        expect(showsLoadingState()).toBe(false);
+          // No pick of `ro` scores `roa`: the page follows the items on screen in its tier.
+          await type(editor, 'a');
+          expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4', 'Roadmap 2026']);
+          expect(showsLoadingState()).toBe(false);
+        });
 
-        // Nothing answers `r`: the picked page joins that answer.
-        await advance(TYPING_DEBOUNCE_MS + ANSWER_MS);
-        expect(shownTitles()).toEqual(['Roadmap 2026']);
+        it('lists a picked page in the provisional list of a prefix the pick scores, before any answer', async () => {
+          setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+          const editor = renderEditor();
+
+          await openAndTypeRo(editor);
+          await pickWithEnter('Roadmap 2026');
+
+          typedPages = [ROADMAP, ROADMAP_Q4];
+          clearMentionSearchCacheForTests();
+          await type(editor, ' @');
+          await advance(ANSWER_MS);
+          await type(editor, 'r');
+
+          // The pick of `ro` scores `r`, so the page leads the provisional list in its tier.
+          expect(shownTitles()).toEqual(['Roadmap 2026', 'Recent page']);
+          expect(showsLoadingState()).toBe(false);
+
+          // Nothing answers `r`: the local lane's page stays, with the answer's (none).
+          await advance(TYPING_DEBOUNCE_MS + ANSWER_MS);
+          expect(shownTitles()).toEqual(['Roadmap 2026']);
+        });
       });
     });
   });

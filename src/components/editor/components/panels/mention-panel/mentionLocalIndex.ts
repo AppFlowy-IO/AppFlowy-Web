@@ -1,7 +1,8 @@
 /**
  * The mention candidates this tab already holds, per workspace: the views the app has loaded, what
- * this tab did to them, and the roster. The mention picker's local lane reads it (MEN-WEB-09);
- * nothing renders it yet.
+ * this tab did to them, and the roster. The mention picker's local lane reads it (MEN-WEB-09,
+ * `mentionLocalLane.ts`, behind the picker's `mentionTypeaheadV2` switch), and so does pick memory's
+ * join (MEN-WEB-10).
  *
  * Writers:
  * - `useMentionLocalIndexSources` (in `AppBusinessLayer`): the outline, the recent views and the

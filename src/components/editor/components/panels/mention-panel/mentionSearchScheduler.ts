@@ -14,7 +14,8 @@
  *   sends nothing: it is handed that group, whose answer answers it. Any other waits for the group
  *   to end, or aborts it once it has been in flight for 400 ms.
  * - A one-letter Latin query stays on the local lane while the session keeps such queries local.
- *   Web keeps them off until its local lane ships (contract decision D8, MEN-WEB-09).
+ *   With the picker's v2 on, such a query shows the local lane's matches (MEN-WEB-09); the rule
+ *   stays off by default until product approves it (contract decision D8).
  *
  * What the contract leaves to clients, Web does this way:
  * - The panel shows a fresh cached answer before the scheduler sees the query. Such a keystroke

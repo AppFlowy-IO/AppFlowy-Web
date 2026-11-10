@@ -188,10 +188,11 @@ contract scheduler sends fewer of them.
 
 Under the contract scheduler, a typed query that normalizes to one Latin letter can stay on the
 local lane until the server lists `short_prefix_v1` in `mention_features`
-(`localStorage.__mention_one_letter_local = 'true'`). This rule is off by default because the
-picker has no local lane yet (MEN-WEB-09), so a one-letter query would only keep the list already
-on screen. Web reads the feature from the server-info snapshot. Loading, failed or older server info
-lists no features, so the rule then holds.
+(`localStorage.__mention_one_letter_local = 'true'`). With the picker's v2 on, such a query shows
+the local lane's matches (see "Mention local lane"); otherwise it keeps the list already on screen.
+The rule stays off by default until product approves it (contract decision D8). Web reads the
+feature from the server-info snapshot. Loading, failed or older server info lists no features, so
+the rule then holds.
 
 ## Comment @ pickers
 
@@ -331,3 +332,48 @@ behaves as before.
 The picker sends the same requests with the same headers to every server, with the switch on or
 off, and reads only item fields every released server sends (the kind, title, subtitle and mention
 payload ids).
+
+## Mention local lane
+
+With the picker's v2 on (`localStorage.__mention_typeahead_v2 = 'true'`, see the section above),
+the editor's @ picker also merges the candidates the tab already holds into every list
+(`mentionLocalLane.ts`, `mentionLocalMerge.ts`): the pages and databases of the local index (the
+outline, the recent views and this tab's creations, renames and opens) and the roster the tab last
+loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without it, to compare them.
+
+- Typed queries follow the typeahead contract's merge (AppFlowy-Cloud-Premium
+  `doc/context/workspace/mention_typeahead_contract.md`, section Merge, pinned by its `merge.json`
+  vectors). An item the server lists and the tab holds keeps the server's payload and shows the
+  tab's title, so a page renamed in this tab shows its new name and ranks by it. People, pages and
+  databases the tab holds that match the query (people by name or the address's local part, never
+  its domain; pages and databases at T3 or better) join in the keystroke's own render, also before
+  any answer, and stay once the server answers. They join only pickers that ask for their kind and
+  pass the request's filter, so a page-reference picker never lists people. One that this tab
+  created or renamed in the last 15 minutes carries `data-fresh="true"` on its option; the picker
+  shows no chip for it yet. A database this tab just created, whose view the outline has not listed
+  yet, merges with the server's item for that database.
+- Inside a tier, the client's signals order the items, as the contract's in-tier keys say: pick
+  memory when it is on, people on the page (read from the page's awareness, as the comment pickers
+  read it), then how recently this tab or the user opened, created or mentioned the item, then the
+  server's order. Databases keep the server's order, as with v2 alone, and the tab's databases
+  follow them.
+- A bare `@` keeps the server's order and lists no other item, except that the pages and databases
+  this tab opened or created since a minute before the answer arrived come first, the newest first:
+  another Cloud replica can answer from a bare answer up to a minute old, and Cloud lists no page
+  that was created but never opened. People follow the same rule: the people this tab picked in the
+  session come first, then up to three people on the page, then the server's order, with the
+  requester last as the server puts them.
+- When a search fails or times out, the "Suggestions unavailable · Retry" row shows under the
+  tab's matches, never "No result". A bare `@` that fails lists this tab's opens and creations.
+- A page or database the user lost access to in the session never comes from the tab, nor does one
+  below it, as far as the local index knows the pages above it; a provisional list leaves out a
+  server item below it too.
+
+The picker loads nothing for the local lane: it reads the outline, recent views and roster the app
+already loaded. Requests carry `client_features` with the opt-ins the server lists in
+`mention_features` and the picker handles, `section_degradation_v1` and `typeahead_deadline_v1`
+(Cloud MEN-CLOUD-12 and -13), and only with the v2 on; to a server that lists none they are the
+requests released Web sends. Answers to a request that carried opt-ins are kept apart in the cache,
+and one that is `partial` or has a `partial` or failed section is never cached, as those opt-ins
+require. An item the tab adds is inserted with the payload the server would send for it, so
+documents read the same in every client.

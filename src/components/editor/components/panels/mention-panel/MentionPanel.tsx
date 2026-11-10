@@ -42,6 +42,7 @@ import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
 import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
+import { usePresentPersonIds } from '@/components/_shared/comment-mention/useCommentMentionPicker';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
@@ -51,6 +52,23 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
+import { mentionClientFeatures } from './mentionClientFeatures';
+import {
+  buildMentionLocalLane,
+  getMentionSessionPersonPicks,
+  MENTION_BARE_REPLICA_STALE_MS,
+  MentionLaneItem,
+  mentionPresentPersonIds,
+  patchMentionBareSections,
+  recordMentionSessionPersonPick,
+} from './mentionLocalLane';
+import {
+  isMentionUnknownViewDatabaseKey,
+  mentionLocalItemsKeyedLike,
+  mentionMergedPickerSections,
+  mergeMentionSections,
+} from './mentionLocalMerge';
+import { prepareMentionRankCandidates } from './mentionLocalRanker';
 import {
   loadMentionPickMemory,
   MentionPickScore,
@@ -72,7 +90,6 @@ import { mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
 import {
   ensureMentionSearchCacheScope,
   getCachedMentionSearch,
-  getCachedMentionSections,
   getMentionSearchCacheView,
   getRevokedMentionViews,
   mentionItemShowsAnyView,
@@ -101,6 +118,7 @@ import {
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
+  mentionItemNavKey,
   MentionOptionSelection,
   MentionPanelSearchResult,
   normalizeMentionSearchSectionsForPicker,
@@ -142,6 +160,11 @@ interface MentionSectionsAnswer {
    * picker's `mentionTypeaheadV2` reads it: provisional items of those kinds stay on screen.
    */
   missingKinds?: ReadonlySet<MentionTargetKind>;
+  /**
+   * When the answer arrived, or when a cached one was stored, in epoch milliseconds. The bare `@`
+   * patch of the local lane lifts this tab's activity since shortly before (MEN-WEB-09).
+   */
+  at: number;
 }
 
 const NO_REVOKED_VIEWS: ReadonlySet<string> = new Set();
@@ -158,6 +181,9 @@ const NO_MENTION_SECTIONS: MentionSearchSection[] = [];
 const NO_MISSING_KINDS: ReadonlySet<MentionTargetKind> = new Set();
 const NO_NAV_KEYS: ReadonlySet<string> = new Set();
 const NO_PICK_SCORES: ReadonlyMap<string, MentionPickScore> = new Map();
+const NO_CLIENT_FEATURES: readonly string[] = [];
+const NO_LANE_ITEMS: readonly MentionLaneItem[] = [];
+const NO_PERSON_PICKS: ReadonlyMap<string, number> = new Map();
 
 /**
  * The sections of a typed answer that the picker's `mentionTypeaheadV2` ranks by the typeahead
@@ -179,10 +205,15 @@ interface MentionV2View {
   provisional: boolean;
   /** Where the sections came from, as a session report gives it. */
   source?: MentionSessionSource;
-  /** Navigation keys of the picked targets that joined from the local index (MEN-WEB-10). */
+  /**
+   * Navigation keys of the items only the local index listed: the picked targets that joined
+   * (MEN-WEB-10), or with the local lane every local-only item (MEN-WEB-09).
+   */
   localKeys?: ReadonlySet<string>;
   /** Navigation keys of the provisional items an incomplete answer keeps. */
   carriedKeys?: ReadonlySet<string>;
+  /** Navigation keys of the local-only items this tab created or renamed in the last 15 minutes. */
+  freshKeys?: ReadonlySet<string>;
 }
 
 /** One search's requests in flight, as the panel hands them to its scheduler. */
@@ -369,12 +400,15 @@ function MentionResultButton({
   optionKey,
   index,
   selected,
+  fresh,
   onClick,
 }: {
   result: MentionPanelSearchResult;
   optionKey: string;
   index: number;
   selected: boolean;
+  /** Only the local lane lists it, and this tab created or renamed it in the last 15 minutes. */
+  fresh?: boolean;
   onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -395,6 +429,7 @@ function MentionResultButton({
       data-option-key={optionKey}
       data-selected={selected || undefined}
       data-option-kind={item.kind}
+      data-fresh={fresh || undefined}
       startIcon={<MentionResultIcon item={item} title={title} />}
       className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-primary hover:bg-fill-content-hover ${
         selected ? 'bg-fill-content-hover' : ''
@@ -628,6 +663,7 @@ export function MentionPanel({
     openPageModal,
     enableReminderMentions,
     eventEmitter,
+    awareness,
   } = useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
@@ -677,6 +713,13 @@ export function MentionPanel({
   // keeps the list, narrowed at once to what still matches, until the server answers.
   const typeaheadSettings = useMemo(() => (open ? readMentionTypeaheadSettings() : MENTION_TYPEAHEAD_LEGACY), [open]);
   const typeaheadV2 = typeaheadSettings.v2 && hasSearchMentions;
+  // The local lane (MEN-WEB-09), on with the picker's v2: what this tab holds joins every list.
+  const localLane = typeaheadV2 && typeaheadSettings.localLane;
+  // The opt-ins the server advertises and the picker's v2 handles, read once per opening.
+  const clientFeatures = useMemo(
+    () => (open && typeaheadV2 ? mentionClientFeatures() : NO_CLIENT_FEATURES),
+    [open, typeaheadV2]
+  );
   // The first option is highlighted unless an arrow key holds the highlight (off by default).
   const defaultHighlight = typeaheadV2 && typeaheadSettings.defaultHighlight;
   // The query an arrow key took the highlight at: it stays on its item until the next keystroke.
@@ -691,8 +734,10 @@ export function MentionPanel({
       limit: MENTION_SEARCH_LIMIT,
       include: mentionInclude,
       context: mentionContext,
+      // Only what the server advertises, so a server that advertises nothing gets today's request.
+      ...(clientFeatures.length > 0 ? { client_features: [...clientFeatures] } : {}),
     }),
-    [mentionContext, mentionInclude, searchText]
+    [clientFeatures, mentionContext, mentionInclude, searchText]
   );
   const mentionSearchRequests = useMemo(() => buildMentionSearchRequests(mentionSearchRequest), [mentionSearchRequest]);
   const mentionSearchCacheScope = useMemo(
@@ -756,12 +801,52 @@ export function MentionPanel({
         : undefined,
     [hasSearchMentions, open, pickMemoryKey]
   );
-  const pickLocalSnapshot = useMentionLocalSnapshot(pickMemory ? workspaceId : undefined);
+  // What this tab holds (MEN-WEB-07), read while pick memory or the local lane uses it.
+  const localSnapshot = useMentionLocalSnapshot(pickMemory || localLane ? workspaceId : undefined);
   // The views the user lost access to in this session. The local index lists one, and the pages
   // below it, until its sources catch up, so a picked one never joins from it, and an earlier
   // answer may list one, so a provisional list never shows it.
   const getRevokedViews = pickMemory || typeaheadV2 ? getRevokedMentionViews : noRevokedViews;
   const revokedViews = useSyncExternalStore(subscribeRevokedMentionViews, getRevokedViews, getRevokedViews);
+  // The local lane's people on the page (awareness), without the requester. Read only with the lane
+  // on, and changed only when someone arrives or leaves.
+  const presentIds = usePresentPersonIds(localLane ? awareness : undefined);
+  const presentPersonIds = useMemo(
+    () => mentionPresentPersonIds(localSnapshot.people, presentIds, { uuid: currentUser?.uuid, uid: currentUser?.uid }),
+    [currentUser?.uid, currentUser?.uuid, localSnapshot.people, presentIds]
+  );
+  const presentKeys = useMemo(
+    () => new Set(Array.from(presentPersonIds, (personId) => `person:${personId}`)),
+    [presentPersonIds]
+  );
+  // This tab's person picks, read when the panel opens: a pick closes it.
+  const personPicks = useMemo(
+    () => (localLane ? getMentionSessionPersonPicks(workspaceId) : NO_PERSON_PICKS),
+    [localLane, workspaceId]
+  );
+  // The local lane's candidates, rebuilt when what the tab holds changes, never per keystroke.
+  const laneItems = useMemo(
+    () =>
+      localLane
+        ? buildMentionLocalLane({ snapshot: localSnapshot, presentPersonIds, revokedViews, personPicks })
+        : NO_LANE_ITEMS,
+    [localLane, localSnapshot, personPicks, presentPersonIds, revokedViews]
+  );
+
+  // A database this tab just created, whose view the outline has not listed yet, merges with the
+  // server's item for it by its database id. Most lanes hold none, and skip that pass.
+  const laneKeyedLike = useMemo(
+    () =>
+      laneItems.some((item) => isMentionUnknownViewDatabaseKey(item.key))
+        ? (sections: readonly MentionSearchSection[]) => mentionLocalItemsKeyedLike(laneItems, sections)
+        : () => laneItems,
+    [laneItems]
+  );
+
+  // Prepares the lane's titles, names and addresses ahead of the keystrokes, which then only compare.
+  useEffect(() => {
+    if (laneItems.length > 0) prepareMentionRankCandidates(laneItems);
+  }, [laneItems]);
   const pagesSectionTitle = t('document.mention.pagesSection');
   // The picker shows databases inside Pages, or as Pages when no page is listed
   // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.
@@ -777,15 +862,14 @@ export function MentionPanel({
   // whose share changed, and the index lists the pages below it until its sources catch up.
   const pickLocalItem = useCallback(
     (key: string) => {
-      const item = mentionLocalPickItem(pickLocalSnapshot, key);
+      const item = mentionLocalPickItem(localSnapshot, key);
       const revoked =
         item !== undefined &&
-        (mentionItemShowsAnyView(item, revokedViews) ||
-          mentionLocalPickUnderAnyView(pickLocalSnapshot, key, revokedViews));
+        (mentionItemShowsAnyView(item, revokedViews) || mentionLocalPickUnderAnyView(localSnapshot, key, revokedViews));
 
       return revoked ? undefined : item;
     },
-    [pickLocalSnapshot, revokedViews]
+    [localSnapshot, revokedViews]
   );
   // Whether the sections on screen answer the search for what is typed now, not one before it.
   const showsCurrentAnswer = mentionSectionsAnswer?.key === mentionSearchCacheKey;
@@ -857,6 +941,29 @@ export function MentionPanel({
       }),
     [currentUser?.uuid, mentionInclude, mentionSectionTitle, searchText, v2PickScores]
   );
+  // Merges sections with the local lane by the typeahead contract's rules (`mentionLocalMerge.ts`):
+  // the local title wins, local-only matches join a typed query, and People, Pages and rows are
+  // ranked with the client's signals. Databases keep the server's order unless a pick scores one, as
+  // MEN-WEB-08 keeps them, so local-only databases follow the server's.
+  const mergeWithLocalLane = useCallback(
+    (sections: MentionSearchSection[]) =>
+      mentionMergedPickerSections(
+        mergeMentionSections({
+          request: { query: searchText ?? '', limit: MENTION_SEARCH_LIMIT, include: mentionInclude },
+          server: sections,
+          local: laneKeyedLike(sections),
+          picks: v2PickScores,
+          present: presentKeys,
+          requesterPersonId: currentUser?.uuid,
+          nowMs: Date.now(),
+          rank: (kind, keys) => MENTION_V2_RETIER_KINDS.has(kind) || keys.some((key) => v2PickScores.has(key)),
+          // A section never shows fewer items than the server listed in it: rows join Pages.
+          limit: (_, serverItems) => Math.max(MENTION_SEARCH_LIMIT, serverItems),
+        }),
+        mentionSectionTitle
+      ),
+    [currentUser?.uuid, laneKeyedLike, mentionInclude, mentionSectionTitle, presentKeys, searchText, v2PickScores]
+  );
   const bareMentionSearchCacheKey = useMemo(
     () =>
       buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: '' }), {
@@ -866,9 +973,10 @@ export function MentionPanel({
     [currentUser?.uuid, mentionSearchRequest, workspaceId]
   );
   // A typed query's provisional sections: what still matches it in the list on screen, the cached
-  // answer of its longest typed prefix and the cached bare answer, ranked as an answer is. Date and
-  // reminder quick picks come from the newer of the two cached answers, never from the screen.
-  const provisionalMentionSections = useMemo(() => {
+  // answer of its longest typed prefix and the cached bare answer. Date and reminder quick picks come
+  // from the newer of the two cached answers, never from the screen. With the local lane, a view
+  // below a view the user lost access to is left out too, as far as the local index knows parents.
+  const provisionalNarrowed = useMemo(() => {
     if (!typeaheadV2 || !hasMentionSearchQuery) return NO_MENTION_SECTIONS;
 
     const query = searchText ?? '';
@@ -881,68 +989,150 @@ export function MentionPanel({
         : undefined;
     const prefix = longestCachedMentionPrefix(query, prefixKey, mentionCacheView.answer);
     const bare = mentionCacheView.answer(bareMentionSearchCacheKey);
-    const narrowed = buildMentionProvisionalSections({
+    const belowRevoked = (item: MentionSearchResultItem) =>
+      localLane &&
+      revokedViews.size > 0 &&
+      mentionLocalPickUnderAnyView(localSnapshot, mentionItemNavKey(item), revokedViews);
+
+    return buildMentionProvisionalSections({
       query,
       sources: [shownSectionsRef.current, prefix?.sections, bare?.sections],
       quickPickSources: [prefix, bare],
       include: mentionInclude,
-      hides: (item) => mentionItemShowsAnyView(item, revokedViews),
+      hides: (item) => mentionItemShowsAnyView(item, revokedViews) || belowRevoked(item),
       sectionTitle: mentionSectionTitle,
     });
-
-    return capMentionSections(rankV2Sections(narrowed).sections, MENTION_SEARCH_LIMIT);
   }, [
     bareMentionSearchCacheKey,
     currentUser?.uuid,
     hasMentionSearchQuery,
+    localLane,
+    localSnapshot,
     mentionCacheView,
     mentionInclude,
     mentionSearchRequest,
     mentionSectionTitle,
-    rankV2Sections,
     revokedViews,
     searchText,
     typeaheadV2,
     workspaceId,
   ]);
+  // Ranked and capped as an answer is; the local lane merges its own items into them after.
+  const provisionalMentionSections = useMemo(
+    () =>
+      provisionalNarrowed.length === 0
+        ? provisionalNarrowed
+        : capMentionSections(rankV2Sections(provisionalNarrowed).sections, MENTION_SEARCH_LIMIT),
+    [provisionalNarrowed, rankV2Sections]
+  );
+  // The bare `@` failed with no answer to show: the local lane lists this tab's activity instead.
+  const bareSearchFailed = searchStatus === 'unavailable' || searchStatus === 'offline' || searchStatus === 'busy';
   const mentionV2View = useMemo((): MentionV2View | undefined => {
     if (!typeaheadV2) return undefined;
 
     // The answer to what is typed now: on screen, or cached, which the search shows this commit.
-    const cachedNow = showsCurrentAnswer ? undefined : mentionCacheView.sections(mentionSearchCacheKey);
-    const answer = showsCurrentAnswer ? mentionSections : cachedNow;
+    const cachedNow = showsCurrentAnswer ? undefined : mentionCacheView.answer(mentionSearchCacheKey);
+    const answer = showsCurrentAnswer ? mentionSections : cachedNow?.sections;
     const source = showsCurrentAnswer ? mentionSectionsSource : cachedNow && 'cache';
 
     // A bare `@` narrows nothing: it shows its answer, or the skeleton while that is pending.
-    if (!hasMentionSearchQuery) return { sections: answer ?? NO_MENTION_SECTIONS, provisional: false, source };
-    if (!answer) return { sections: provisionalMentionSections, provisional: true, source: 'cache' };
+    if (!hasMentionSearchQuery) {
+      if (!localLane || (!answer && !bareSearchFailed)) {
+        return { sections: answer ?? NO_MENTION_SECTIONS, provisional: false, source };
+      }
+
+      // The local lane's bare patch: this tab's opens, creations and picks first (MEN-WEB-09).
+      const answerAt = showsCurrentAnswer ? mentionSectionsAnswer?.at : cachedNow?.cachedAt;
+      const merged = mergeWithLocalLane(answer ?? NO_MENTION_SECTIONS).sections;
+      const patched = patchMentionBareSections({
+        sections: merged,
+        lane: laneKeyedLike(merged),
+        liftAfterMs: answer && answerAt !== undefined ? answerAt - MENTION_BARE_REPLICA_STALE_MS : undefined,
+        personPicks,
+        presentPersonIds,
+        requesterPersonId: currentUser?.uuid,
+        request: { include: mentionInclude },
+        limit: MENTION_SEARCH_LIMIT,
+        sectionTitle: mentionSectionTitle,
+        nowMs: Date.now(),
+      });
+
+      return {
+        sections: patched.sections,
+        provisional: false,
+        source,
+        localKeys: patched.localKeys,
+        freshKeys: patched.freshKeys,
+      };
+    }
+
+    if (!answer) {
+      if (!localLane) return { sections: provisionalMentionSections, provisional: true, source: 'cache' };
+
+      // The local lane joins the provisional list in the keystroke's own render.
+      const merged = mergeWithLocalLane(provisionalMentionSections);
+
+      return {
+        sections: merged.sections,
+        provisional: true,
+        source: 'cache',
+        localKeys: merged.localKeys,
+        freshKeys: merged.freshKeys,
+      };
+    }
 
     // Provisional items of the kinds a pending or failed request did not answer stay.
     const missingKinds = (showsCurrentAnswer && mentionSectionsAnswer?.missingKinds) || NO_MISSING_KINDS;
     const { sections, carriedKeys } = withProvisionalItems(answer, provisionalMentionSections, missingKinds);
-    const ranked = rankV2Sections(sections, pickMemory ? pickLocalItem : undefined);
 
-    return { sections: ranked.sections, provisional: false, source, localKeys: ranked.localKeys, carriedKeys };
+    if (!localLane) {
+      const ranked = rankV2Sections(sections, pickMemory ? pickLocalItem : undefined);
+
+      return { sections: ranked.sections, provisional: false, source, localKeys: ranked.localKeys, carriedKeys };
+    }
+
+    // Local-only matches stay after the server answers, and the local title of a renamed item wins.
+    const merged = mergeWithLocalLane(sections);
+
+    return {
+      sections: merged.sections,
+      provisional: false,
+      source,
+      localKeys: merged.localKeys,
+      carriedKeys,
+      freshKeys: merged.freshKeys,
+    };
   }, [
+    bareSearchFailed,
+    currentUser?.uuid,
     hasMentionSearchQuery,
+    laneKeyedLike,
+    localLane,
     mentionCacheView,
+    mentionInclude,
     mentionSearchCacheKey,
+    mentionSectionTitle,
     mentionSections,
+    mentionSectionsAnswer?.at,
     mentionSectionsAnswer?.missingKinds,
     mentionSectionsSource,
+    mergeWithLocalLane,
+    personPicks,
     pickLocalItem,
     pickMemory,
+    presentPersonIds,
     provisionalMentionSections,
     rankV2Sections,
     showsCurrentAnswer,
     typeaheadV2,
   ]);
   const sourceMentionSections = mentionV2View ? mentionV2View.sections : sectionsByPicks.sections;
-  // The picked targets the local index added, which a session report counts as the local lane's.
+  // The items the local index added, which a session report counts as the local lane's.
   const pickLocalKeys = mentionV2View ? mentionV2View.localKeys : sectionsByPicks.localKeys;
 
-  // After each commit, remember what the list shows for the next keystroke, without the picked
-  // targets the local index added: those join only an answer to what is typed (MEN-WEB-10).
+  // After each commit, remember what the list shows for the next keystroke, without the items the
+  // local index added: picked targets join only an answer to what is typed (MEN-WEB-10), and the
+  // local lane adds its own items to every keystroke again (MEN-WEB-09).
   useLayoutEffect(() => {
     shownSectionsRef.current = mentionV2View
       ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
@@ -1089,11 +1279,13 @@ export function MentionPanel({
     }
 
     // Shows `sections`, the answer to this search from `source`, or no answer without one.
-    // `missingKinds` are the kinds a pending or failed request did not answer (the picker's v2).
+    // `missingKinds` are the kinds a pending or failed request did not answer (the picker's v2), and
+    // `at` when the answer arrived, or was stored for a cached one.
     function showSections(
       sections: MentionSearchSection[],
       source?: MentionSectionsSource,
-      missingKinds?: ReadonlySet<MentionTargetKind>
+      missingKinds?: ReadonlySet<MentionTargetKind>,
+      at = Date.now()
     ) {
       shownItemsKeyRef.current = source && hasMentionItems(sections) ? cacheKey : undefined;
       setMentionSections(sections);
@@ -1101,7 +1293,7 @@ export function MentionPanel({
         if (!source) return undefined;
         return shown?.key === cacheKey && shown.source === source && shown.missingKinds === missingKinds
           ? shown
-          : { key: cacheKey, source, missingKinds };
+          : { key: cacheKey, source, missingKinds, at };
       });
     }
 
@@ -1150,10 +1342,10 @@ export function MentionPanel({
       if (hasMentionItems(result.sections)) {
         showSections(result.sections, 'server', typeaheadV2 ? mentionAnswerMissingKinds(result.outcomes) : undefined);
       } else {
-        const cachedSections = getCachedMentionSections(cacheKey);
+        const cachedAnswer = getCachedMentionSearch(cacheKey);
 
-        if (cachedSections) {
-          showSections(cachedSections, 'cache');
+        if (cachedAnswer) {
+          showSections(cachedAnswer.sections, 'cache', undefined, cachedAnswer.cachedAt);
         } else if (
           typeaheadV2 &&
           shownItemsKeyRef.current !== cacheKey &&
@@ -1251,7 +1443,7 @@ export function MentionPanel({
         const current = getCachedMentionSearch(cacheKey);
 
         if (current?.fresh && !isRetry) {
-          showSections(current.sections, 'cache');
+          showSections(current.sections, 'cache', undefined, current.cachedAt);
           settle('ok');
           return null;
         }
@@ -1291,17 +1483,18 @@ export function MentionPanel({
       scheduler.withdraw(search);
     }
 
-    // A one-letter query that the session keeps local sends nothing, and what is on screen stays
-    // until the local lane (MEN-WEB-09) renders such queries.
+    // A one-letter query that the session keeps local sends nothing. With the picker's v2 its list is
+    // the provisional one, with the local lane's matches (MEN-WEB-09); otherwise what is on screen
+    // stays.
     if (hasMentionSearchQuery && scheduler.keepsLocal(searchText ?? '')) {
       scheduler.input(null);
-      if (cached) showSections(cached.sections, 'cache');
+      if (cached) showSections(cached.sections, 'cache', undefined, cached.cachedAt);
       settle('ok');
       return stopSearch;
     }
 
     if (cached) {
-      showSections(cached.sections, 'cache');
+      showSections(cached.sections, 'cache', undefined, cached.cachedAt);
       if (!isRetry) settle('ok');
 
       // A fresh answer needs no request, unless the user asked to retry.
@@ -1691,6 +1884,8 @@ export function MentionPanel({
       // Only an insertion reinforces pick memory, never what the picker shows or highlights.
       if (pickMemory && pickMemoryKey) recordMentionPick(pickMemoryKey, searchText ?? '', result.navKey);
       if (mention.type === MentionType.Person && mention.person_id) {
+        // The local lane lists this tab's person picks first on the bare `@`.
+        if (localLane) recordMentionSessionPersonPick(workspaceId, mention.person_id);
         if (onPersonPicked) onPersonPicked(mention.person_id, sendNotification);
         else if (notifyOnInsert) void notifyPersonMention(mention, sendNotification);
       }
@@ -1699,6 +1894,7 @@ export function MentionPanel({
       beginSelection,
       editor,
       handleAddMention,
+      localLane,
       mentionContext?.row_id,
       mentionContext?.view_id,
       mentionV2View?.carriedKeys,
@@ -1713,6 +1909,7 @@ export function MentionPanel({
       sendNotification,
       shownSource,
       viewId,
+      workspaceId,
     ]
   );
 
@@ -1923,6 +2120,7 @@ export function MentionPanel({
                         result={option.result}
                         index={index}
                         selected={selected}
+                        fresh={mentionV2View?.freshKeys?.has(option.navKey)}
                         onClick={() => handleSelectedSearchResult(option.result)}
                       />
                     );

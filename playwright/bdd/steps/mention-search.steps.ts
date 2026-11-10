@@ -3,6 +3,7 @@ import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
+import { renameCurrentPage } from '../../support/duplicate-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { AuthTestUtils } from '../../support/auth-utils';
 import { BlockSelectors, DatabaseGridSelectors, EditorSelectors, SidebarSelectors } from '../../support/selectors';
@@ -99,6 +100,14 @@ type MentionFixtureState = {
   recentPages?: { id: string; title: string }[];
   /** Typed mention searches that got their answer after being held. */
   heldTypedSearchesAnswered?: number;
+  /** A page this tab created and renamed a moment ago, which no mention answer lists yet (MEN-WEB-09). */
+  freshPage?: { id: string; title: string };
+};
+
+/** When the first keystroke of a query came, and when an option showed a title (MEN-WEB-09). */
+type MentionShownProbe = {
+  keyAt?: number;
+  shownAt?: number;
 };
 
 /** When the first keystroke after the probe was installed came, and when the list narrowed. */
@@ -255,6 +264,39 @@ Given('mention search answers the empty query with two recent fixture pages', as
   });
 });
 
+Given('a fresh fixture page was created and renamed in this tab', async ({ page }) => {
+  const state = getState(page);
+  const title = `Fresh ${state.runId}`;
+  const documentUrl = page.url();
+  // `addPage` and the title's rename feed the tab's local index (MEN-WEB-07).
+  const id = await createDocumentPageAndNavigate(page);
+
+  await renameCurrentPage(page, title);
+  state.freshPage = { id, title };
+
+  // Back to the first document without a reload, which would forget this tab's creation.
+  await page.goBack();
+  await page.waitForURL((url) => url.href === documentUrl);
+  await focusEditor(page);
+});
+
+Given('mention search answers the empty query with no pages', async ({ page }) => {
+  await page.route('**/mentions/search{,?**}', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+
+    if (body?.query?.trim()) {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, message: 'success', data: { sections: [], partial: false } }),
+    });
+  });
+});
+
 Given('typed mention searches are held for {int} ms', async ({ page }, holdMs: number) => {
   const state = getState(page);
 
@@ -364,6 +406,37 @@ When('I type the first letters of the first recent fixture page', async ({ page 
   await page.keyboard.type(first.title.slice(0, 2), { delay: 30 });
 });
 
+When('I search mentions for the first letters of the fresh fixture page', async ({ page }) => {
+  const { title } = requireFreshPage(getState(page));
+
+  await openMentionPanel(page);
+  // Stamps the query's first keystroke, and the first moment after it that an option shows the page.
+  await page.evaluate((shown) => {
+    const probe: MentionShownProbe = {};
+    const check = () => {
+      if (probe.keyAt === undefined || probe.shownAt !== undefined) return;
+
+      const options = Array.from(document.querySelectorAll('[data-testid="mention-panel"] [data-option-kind]'));
+
+      if (options.some((option) => option.textContent === shown)) probe.shownAt = performance.now();
+    };
+
+    (window as Window & { __mentionShownProbe?: MentionShownProbe }).__mentionShownProbe = probe;
+    document.addEventListener(
+      'keydown',
+      () => {
+        probe.keyAt = performance.now();
+        // The bare `@` may list the page already: it was opened and created seconds ago.
+        queueMicrotask(check);
+      },
+      { capture: true, once: true }
+    );
+    new MutationObserver(check).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }, title);
+  // The run id makes the page's first letters unique in the fixture workspace.
+  await page.keyboard.type(title.slice(0, 'Fresh '.length + 3), { delay: 30 });
+});
+
 When('I search mentions for the fixture member', async ({ page }) => {
   await searchMentionsInEditor(page, getState(page).memberName);
 });
@@ -451,6 +524,29 @@ Then('the mention panel shows only the first recent fixture page while typed sea
   // The plan's budget. React commits before the browser paints, so this is soft on loaded runners.
   expect.soft((probe?.narrowedAt ?? 0) - (probe?.keyAt ?? 0), 'keystroke to narrowed list, ms').toBeLessThan(100);
 });
+
+Then(
+  'the mention panel shows the fresh fixture page, flagged fresh, while typed searches are held',
+  async ({ page }) => {
+    const state = getState(page);
+    const { title } = requireFreshPage(state);
+    const option = mentionPanel(page).locator('[data-option-kind="page"]').filter({ hasText: title });
+
+    await expect(option).toBeVisible({ timeout: 1000 });
+    await expect(option).toHaveAttribute('data-fresh', 'true');
+    // No typed answer arrived: the page came from the local lane.
+    expect(state.heldTypedSearchesAnswered).toBe(0);
+
+    const probe = await page.evaluate(
+      () => (window as Window & { __mentionShownProbe?: MentionShownProbe }).__mentionShownProbe
+    );
+
+    expect(probe?.keyAt, 'the first keystroke').toBeDefined();
+    expect(probe?.shownAt, 'the fresh page').toBeDefined();
+    // The plan's budget, measured to React's commit. Soft on loaded runners.
+    expect.soft((probe?.shownAt ?? 0) - (probe?.keyAt ?? 0), 'keystroke to the fresh page, ms').toBeLessThan(100);
+  }
+);
 
 Then('the mention panel shows the fixture member', async ({ page }) => {
   await expect(mentionPanel(page).getByText(getState(page).memberName, { exact: true })).toBeVisible({
@@ -1063,6 +1159,14 @@ function isDatabaseRowOnlyRecordedRequest(request: RecordedMentionRequest): bool
   const include = request.body?.include;
 
   return Array.isArray(include) && include.length === 1 && include[0] === 'database_row';
+}
+
+function requireFreshPage(state: MentionFixtureState): { id: string; title: string } {
+  if (!state.freshPage) {
+    throw new Error('No fresh fixture page was created');
+  }
+
+  return state.freshPage;
 }
 
 function requireRecentPages(state: MentionFixtureState): { id: string; title: string }[] {
