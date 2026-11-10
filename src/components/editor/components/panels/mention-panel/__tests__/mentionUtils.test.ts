@@ -271,6 +271,29 @@ describe('reconcileMentionOptionSelection', () => {
   it('clears the selection when no option is left', () => {
     expect(reconcileMentionOptionSelection({ key: 'people|person:ada', navKey: 'person:ada' }, [])).toBeNull();
   });
+
+  // A database this tab just created is keyed without its view until the outline lists it; the
+  // local lane merges it with the server's item for that database, which names a view.
+  it('follows a database whose view was unknown to the first option naming a view of it, and back', () => {
+    const map = { key: 'pages|page:map', navKey: 'page:map' };
+    const grid = { key: 'pages|database:db:grid', navKey: 'database:db:grid' };
+    const board = { key: 'pages|database:db:board', navKey: 'database:db:board' };
+    const local = { key: 'pages|database:db:-', navKey: 'database:db:-' };
+
+    expect(reconcileMentionOptionSelection(local, [map, grid, board])).toEqual(grid);
+    expect(reconcileMentionOptionSelection(grid, [map, local])).toEqual(local);
+    // Two known views of a database are two objects, and another database is another object.
+    expect(reconcileMentionOptionSelection(grid, [map, board])).toEqual(map);
+    expect(
+      reconcileMentionOptionSelection(local, [map, { key: 'pages|database:other:grid', navKey: 'database:other:grid' }])
+    ).toEqual(map);
+    expect(
+      reconcileMentionOptionSelection({ key: 'pages|database:-:-', navKey: 'database:-:-' }, [
+        map,
+        { key: 'pages|database:-:grid', navKey: 'database:-:grid' },
+      ])
+    ).toEqual(map);
+  });
 });
 
 describe('mention panel API mapping', () => {

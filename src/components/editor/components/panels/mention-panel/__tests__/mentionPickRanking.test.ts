@@ -20,6 +20,7 @@ import {
   rankMentionSectionsByPicks,
   RankMentionSectionsByPicksInput,
 } from '../mentionPickRanking';
+import { mentionSearchItemToMention } from '../mentionUtils';
 
 import { loadMentionParityFixture } from './mention-parity-helpers';
 
@@ -459,6 +460,30 @@ describe('a picked target the answer lacks', () => {
       person_id: uuid(35),
       person_name: 'Annie Wang',
       page_id: '',
+    });
+    // A database whose view the index does not know yet names the view it lists it by, which the
+    // picker inserts as the mention's page.
+    const created = localView(37, 'Road budget', {
+      layout: ViewLayout.Grid,
+      isDatabase: true,
+      databaseId: uuid(38),
+      navKey: `database:${uuid(38)}:-`,
+      source: 'session',
+    });
+    const createdItem = mentionLocalPickItem(snapshot([created]), created.navKey);
+
+    expect(createdItem).toEqual({
+      kind: MentionTargetKind.Database,
+      object_id: uuid(37),
+      title: 'Road budget',
+      database_id: uuid(38),
+      database_view_id: undefined,
+      mention: { type: MentionTargetKind.Database, database_id: uuid(38), database_view_id: undefined },
+    });
+    expect(createdItem && mentionItemNavKey(createdItem)).toBe(created.navKey);
+    expect(createdItem && mentionSearchItemToMention(createdItem)).toMatchObject({
+      page_id: uuid(37),
+      database_id: uuid(38),
     });
     // A database's own view key is no page, and a page key is no database.
     expect(mentionLocalPickItem(index, `page:${uuid(33)}`)).toBeUndefined();

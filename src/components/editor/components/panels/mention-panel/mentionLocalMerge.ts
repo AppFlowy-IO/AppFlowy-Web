@@ -7,7 +7,11 @@
  *
  * - {@link combineMentionLaneAnswers}: the rows answer joins the primary answer after its Pages
  *   items, a key the primary answer holds stays where it put it, and a section takes the worse
- *   status (decision D17).
+ *   status (decision D17). Only the parity tests call it: the picker combines its lanes with
+ *   `mergeMentionSearchResponses` (`mentionSearchFetch.ts`), as before the contract, which keeps a
+ *   kind's first status and every item. For the picker's split they agree on screen: its primary
+ *   request asks for no rows, so no key comes from both answers, and it reads a status only from
+ *   one request's answer (an interim primary answer, or each request's outcome).
  * - {@link mergeMentionSections}: an item both have keeps the server's payload and takes the local
  *   title and icon, so a rename shows at once and is tiered by its new title (a person's blank local
  *   name or address takes the server's, D21). A typed query adds the local-only people, pages,
@@ -109,7 +113,10 @@ export interface MentionMergeRequest extends MentionPickRequest {
 
 export interface MentionMergeInput<Icon = unknown> {
   request: MentionMergeRequest;
-  /** The server's answer, combined across lanes ({@link combineMentionLaneAnswers}), or its sections. */
+  /**
+   * The server's answer, combined across lanes (the picker's `mergeMentionSearchResponses`, or
+   * {@link combineMentionLaneAnswers}), or its sections.
+   */
   server: MentionSearchResponse | readonly MentionSearchSection[];
   local: readonly MentionLocalItem<Icon>[];
   /** Pick memory's scores for the typed query, by navigation key. */
@@ -158,7 +165,8 @@ function bySectionOrder(left: { kind: MentionSearchSectionKind }, right: { kind:
  * answer's items follow the primary's own in a section of the same kind (Search returns rows in
  * Pages), a key the primary answer holds stays where it put it, and a section kind the primary
  * answer lacks is added. A section takes the worse status (failed, then partial, then ok) and the
- * primary's message, else the rows answer's; the answer is `partial` when either is.
+ * primary's message, else the rows answer's; the answer is `partial` when either is. The contract's
+ * port, pinned by `merge.json`; no picker calls it yet (see the module header).
  */
 export function combineMentionLaneAnswers(
   primary: MentionSearchResponse,

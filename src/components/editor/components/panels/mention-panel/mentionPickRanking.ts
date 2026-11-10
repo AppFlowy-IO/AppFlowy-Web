@@ -136,7 +136,12 @@ function keysOf(snapshot: MentionLocalSnapshot): LocalIndexKeys {
 
 /**
  * A local index view as the server would list it: a page, or a database by its database and the
- * view Search answers for it. `undefined` for a database whose database id the index does not know.
+ * view Search answers for it. A database whose answered view the index does not know yet (one this
+ * tab just created, or a container whose children the outline has not loaded) names the view the
+ * index lists it by, which the app opens, as its `object_id`: the picker inserts a database as a
+ * page reference to `database_view_id || object_id`, and a database id there opens nothing in any
+ * client. Its key stays `database:<id>:-`, since the payload names the database. `undefined` for a
+ * database whose database id the index does not know.
  */
 export function mentionLocalViewItem(view: MentionLocalView): MentionSearchResultItem | undefined {
   if (view.navKey.startsWith('database:')) {
@@ -144,7 +149,7 @@ export function mentionLocalViewItem(view: MentionLocalView): MentionSearchResul
 
     return {
       kind: MentionTargetKind.Database,
-      object_id: view.databaseId,
+      object_id: view.databaseViewId ? view.databaseId : view.viewId,
       title: view.name,
       database_id: view.databaseId,
       database_view_id: view.databaseViewId,

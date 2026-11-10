@@ -8,6 +8,7 @@ import {
   MentionSearchSection,
   MentionSearchSectionKind,
   MentionTargetKind,
+  MentionType,
   View,
   ViewIconType,
   ViewLayout,
@@ -34,7 +35,7 @@ import {
   setMentionIndexSources,
 } from '../mentionLocalIndex';
 import { mentionMergedPickerSections, mergeMentionSections } from '../mentionLocalMerge';
-import { mentionItemNavKey } from '../mentionUtils';
+import { mentionItemNavKey, mentionSearchItemToMention } from '../mentionUtils';
 
 const WORKSPACE = 'workspace';
 const NOW = Date.parse('2026-11-10T12:00:00.000Z');
@@ -211,6 +212,90 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
       });
     });
 
+    it('names the view a database is listed by when its view is unknown, so inserting it opens that view', () => {
+      setMentionIndexSources(WORKSPACE, {
+        outline: [
+          view('space', 'General', {
+            extra: { is_space: true },
+            children: [
+              // A container whose children the outline has not loaded yet.
+              view('container', 'Road tasks', {
+                layout: ViewLayout.Grid,
+                extra: { is_space: false, is_database_container: true, database_id: 'db' },
+              }),
+            ],
+          }),
+        ],
+      });
+      // What `addPage` records for a new Grid: the container it created, and its database.
+      recordMentionViewCreated(
+        WORKSPACE,
+        { viewId: 'new', name: 'Road budget', layout: ViewLayout.Grid, parentViewId: 'space', databaseId: 'new-db' },
+        NOW - MINUTE
+      );
+
+      const lane = buildMentionLocalLane({ snapshot: getMentionLocalSnapshot(WORKSPACE) });
+
+      expect(lane.map((entry) => [entry.key, entry.item.object_id, mentionItemNavKey(entry.item)])).toEqual([
+        ['database:db:-', 'container', 'database:db:-'],
+        ['database:new-db:-', 'new', 'database:new-db:-'],
+      ]);
+      // A page reference to the view, never to the database id, which names no view in any client.
+      expect(mentionSearchItemToMention(lane[0].item)).toEqual({
+        type: MentionType.PageRef,
+        page_id: 'container',
+        database_id: 'db',
+        data: { title: 'Road tasks' },
+      });
+      expect(mentionSearchItemToMention(lane[1].item)).toMatchObject({ page_id: 'new', database_id: 'new-db' });
+    });
+
+    it('gives the view the editor shows no recency, a database by the view it is listed or answered by', () => {
+      setMentionIndexSources(WORKSPACE, {
+        outline: [
+          view('current', 'Road trip'),
+          view('atlas', 'Road atlas'),
+          view('tasks', 'Tasks', {
+            layout: ViewLayout.Grid,
+            extra: { is_space: false, is_database_container: true, database_id: 'db' },
+            children: [
+              view('tasks-grid', 'Grid', { layout: ViewLayout.Grid, extra: { is_space: false, database_id: 'db' } }),
+            ],
+          }),
+        ],
+        recent: [view('current', 'Road trip', { last_viewed_at: new Date(NOW - 5 * MINUTE).toISOString() })],
+      });
+      recordMentionViewOpened(WORKSPACE, 'atlas', NOW - 3 * MINUTE);
+      recordMentionViewOpened(WORKSPACE, 'tasks-grid', NOW - 2 * MINUTE);
+      recordMentionViewRenamed(WORKSPACE, 'current', 'Road trip 2027', NOW - MINUTE);
+      // Opening the page being edited made it this tab's latest open.
+      recordMentionViewOpened(WORKSPACE, 'current', NOW - 1_000);
+
+      const signals = (contextViewId?: string) =>
+        buildMentionLocalLane({ snapshot: getMentionLocalSnapshot(WORKSPACE), contextViewId }).map(
+          ({ key, title, changedMs, lastUsedMs, tabUsedMs }) => [key, title, changedMs, lastUsedMs, tabUsedMs]
+        );
+      const atlas = ['page:atlas', 'Road atlas', undefined, NOW - 3 * MINUTE, NOW - 3 * MINUTE];
+      const tasks = ['database:db:tasks-grid', 'Tasks', undefined, NOW - 2 * MINUTE, NOW - 2 * MINUTE];
+
+      expect(signals()).toEqual([
+        ['page:current', 'Road trip 2027', NOW - MINUTE, NOW - 1_000, NOW - 1_000],
+        atlas,
+        tasks,
+      ]);
+      // As the context it keeps its title and when it changed, but neither this tab's open nor the
+      // server's view time.
+      expect(signals('current')).toEqual([
+        ['page:current', 'Road trip 2027', NOW - MINUTE, undefined, undefined],
+        atlas,
+        tasks,
+      ]);
+      // A Text cell's editor shows the database view Search answers for, or the container lists it.
+      ['tasks-grid', 'tasks'].forEach((contextViewId) =>
+        expect(signals(contextViewId)[2]).toEqual(['database:db:tasks-grid', 'Tasks', undefined, undefined, undefined])
+      );
+    });
+
     it('keeps a view the user lost access to out, and the views below it, as far as the index knows', () => {
       setMentionIndexSources(WORKSPACE, {
         outline: [
@@ -322,6 +407,26 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
 
       expect(keysOf(fallback.sections)).toEqual([['pages', ['page:c', 'page:b', 'page:d']]]);
       expect(fallback.sections[0].title).toBe('title:pages');
+    });
+
+    it('never lifts the view the editor shows, which stays where the server puts it', () => {
+      setMentionIndexSources(WORKSPACE, {
+        outline: [view('current', 'Road trip'), view('gamma', 'Gamma'), view('alpha', 'Alpha')],
+      });
+      recordMentionViewOpened(WORKSPACE, 'gamma', NOW - 2_000);
+      recordMentionViewOpened(WORKSPACE, 'current', NOW - 1_000);
+
+      const lane = buildMentionLocalLane({ snapshot: getMentionLocalSnapshot(WORKSPACE), contextViewId: 'current' });
+      // Search lists the page being edited first on a bare `@`.
+      const sections = [section(MentionSearchSectionKind.Pages, [page('current', 'Road trip'), page('alpha', 'Alpha')])];
+
+      expect(keysOf(patchMentionBareSections({ ...base, sections, lane, liftAfterMs: NOW - MINUTE }).sections)).toEqual([
+        ['pages', ['page:gamma', 'page:current', 'page:alpha']],
+      ]);
+      // Nor is it among this tab's opens when there is no answer.
+      expect(keysOf(patchMentionBareSections({ ...base, sections: [], lane }).sections)).toEqual([
+        ['pages', ['page:gamma']],
+      ]);
     });
 
     it('returns the sections themselves when nothing is lifted', () => {

@@ -7,13 +7,17 @@
  *   Each carries what the server's item would carry, so inserting it writes the same mention, and the
  *   client's own signals: when this tab created or renamed it (`fresh` within 15 minutes), when the
  *   user last opened, created or mentioned it (the recency bucket of the contract's in-tier keys),
- *   and, for people, whether they are on the page (awareness). A view the user lost access to in this
- *   session is left out, and so is every view below it as far as the index knows their parents.
+ *   and, for people, whether they are on the page (awareness). The view the editor shows gets no
+ *   recency: it is rarely its own mention target, and as the latest open it would lead every tier,
+ *   so Search gives it no personal score either (`is_context_view`). A view the user lost access to
+ *   in this session is left out, and so is every view below it as far as the index knows their
+ *   parents.
  * - {@link patchMentionBareSections}: the bare `@` patch. Another Cloud replica can serve a bare
  *   answer that is up to a minute old, and Cloud never lists a page that was created but not opened,
  *   so the pages and databases this tab opened or created since the answer's cutoff come first,
- *   newest first; then the people this tab picked, the most recent first, then up to three people on
- *   the page, then the server's order. The requester stays where the server puts them, last.
+ *   newest first, the view the editor shows excepted (it stays where the server puts it); then the
+ *   people this tab picked, the most recent first, then up to three people on the page, then the
+ *   server's order. The requester stays where the server puts them, last.
  * - This tab's person picks ({@link recordMentionSessionPersonPick}), kept in memory per workspace
  *   until the session ends.
  *
@@ -69,6 +73,14 @@ export interface MentionLocalLaneInput {
   revokedViews?: ReadonlySet<string>;
   /** This tab's person picks: person id to when ({@link getMentionSessionPersonPicks}). */
   personPicks?: ReadonlyMap<string, number>;
+  /**
+   * The view the picker's editor shows, as the request's `context.view_id` names it: the page being
+   * edited, or the database view a cell is edited in. Opening it made it this tab's latest open, so
+   * it gets no recency and the bare `@` never lifts it, as Search gives it no personal score. A
+   * database counts when the context is the view the index lists it by or the view Search answers
+   * for, as Search tests the view that reached a target and the target's view.
+   */
+  contextViewId?: string;
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -122,13 +134,15 @@ function parseTime(value: string | null | undefined): number | undefined {
 /**
  * The local lane for one snapshot (see the module header): the views first, in the index's order,
  * then the roster, each navigation key once. A database whose database id the index does not know,
- * and a person without a person id, are left out.
+ * and a person without a person id, are left out. The context view keeps its title, icon and
+ * `changedMs`, but no `lastUsedMs` or `tabUsedMs`.
  */
 export function buildMentionLocalLane({
   snapshot,
   presentPersonIds = NO_IDS,
   revokedViews = NO_IDS,
   personPicks = NO_PICKS,
+  contextViewId,
 }: MentionLocalLaneInput): MentionLaneItem[] {
   const lane: MentionLaneItem[] = [];
   const keys = new Set<string>();
@@ -146,7 +160,9 @@ export function buildMentionLocalLane({
       return;
     }
 
-    const tabUsedMs = latest(view.sessionOpenedAt, view.sessionCreatedAt);
+    const isContext =
+      contextViewId !== undefined && (view.viewId === contextViewId || view.databaseViewId === contextViewId);
+    const tabUsedMs = isContext ? undefined : latest(view.sessionOpenedAt, view.sessionCreatedAt);
 
     keys.add(view.navKey);
     lane.push({
@@ -154,7 +170,7 @@ export function buildMentionLocalLane({
       title: view.name,
       icon: view.icon,
       changedMs: latest(view.sessionCreatedAt, view.sessionRenamedAt),
-      lastUsedMs: latest(tabUsedMs, view.lastViewedAt),
+      lastUsedMs: isContext ? undefined : latest(tabUsedMs, view.lastViewedAt),
       tabUsedMs,
       item,
     });

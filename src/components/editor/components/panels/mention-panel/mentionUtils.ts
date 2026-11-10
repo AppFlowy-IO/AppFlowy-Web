@@ -416,10 +416,31 @@ export interface MentionOptionSelection {
   navKey?: string;
 }
 
+const DATABASE_NAV_KEY = /^database:([^:]+):([^:]+)$/;
+
+/**
+ * Whether two navKeys name one database and exactly one of them lacks its view
+ * (`database:<id>:-`): a database the client knows only by its id, as one this tab just created
+ * until the outline lists its views, and an item that names a view of it, as the server's item that
+ * the local lane merges it with. Two known views of a database are two objects.
+ */
+function isSameDatabaseOneViewUnknown(left: string, right: string): boolean {
+  const [, leftDatabase, leftView] = DATABASE_NAV_KEY.exec(left) ?? [];
+  const [, rightDatabase, rightView] = DATABASE_NAV_KEY.exec(right) ?? [];
+
+  return (
+    leftDatabase !== undefined &&
+    leftDatabase !== '-' &&
+    leftDatabase === rightDatabase &&
+    (leftView === '-') !== (rightView === '-')
+  );
+}
+
 /**
  * Re-resolves the highlight after the option list changed. It stays on the same option while its
- * key is listed, else moves to the same object in another section, else to the first option.
- * Returns `selection` itself when nothing changed.
+ * key is listed, else moves to the same object in another section, or to the same database once
+ * its view is known (or no longer), else to the first option. Returns `selection` itself when
+ * nothing changed.
  */
 export function reconcileMentionOptionSelection(
   selection: MentionOptionSelection | null,
@@ -427,8 +448,12 @@ export function reconcileMentionOptionSelection(
 ): MentionOptionSelection | null {
   if (!selection || options.some((option) => option.key === selection.key)) return selection;
 
+  const { navKey } = selection;
   const sameObject =
-    selection.navKey === undefined ? undefined : options.find((option) => option.navKey === selection.navKey);
+    navKey === undefined
+      ? undefined
+      : options.find((option) => option.navKey === navKey) ??
+        options.find((option) => option.navKey !== undefined && isSameDatabaseOneViewUnknown(navKey, option.navKey));
   const next = sameObject ?? options[0];
 
   return next ? { key: next.key, navKey: next.navKey } : null;

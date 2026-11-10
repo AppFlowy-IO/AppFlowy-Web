@@ -351,20 +351,25 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   pass the request's filter, so a page-reference picker never lists people. One that this tab
   created or renamed in the last 15 minutes carries `data-fresh="true"` on its option; the picker
   shows no chip for it yet. A database this tab just created, whose view the outline has not listed
-  yet, merges with the server's item for that database.
+  yet, merges with the server's item for that database, and the highlight stays on it when an
+  answer brings that item.
 - Inside a tier, the client's signals order the items, as the contract's in-tier keys say: pick
   memory when it is on, people on the page (read from the page's awareness, as the comment pickers
   read it), then how recently this tab or the user opened, created or mentioned the item, then the
   server's order. Databases keep the server's order, as with v2 alone, and the tab's databases
-  follow them.
+  follow them. The page being edited (the request's `context.view_id`; for a Text cell, the
+  database view it is edited in) gets no recency: opening it made it the tab's latest open, but it
+  is rarely its own mention target, and Search gives it no personal score either.
 - A bare `@` keeps the server's order and lists no other item, except that the pages and databases
   this tab opened or created since a minute before the answer arrived come first, the newest first:
   another Cloud replica can answer from a bare answer up to a minute old, and Cloud lists no page
-  that was created but never opened. People follow the same rule: the people this tab picked in the
-  session come first, then up to three people on the page, then the server's order, with the
-  requester last as the server puts them.
+  that was created but never opened. The page being edited is never lifted; it stays where the
+  server puts it. People follow the same rule: the people this tab picked in the session come
+  first, then up to three people on the page, then the server's order, with the requester last as
+  the server puts them.
 - When a search fails or times out, the "Suggestions unavailable · Retry" row shows under the
-  tab's matches, never "No result". A bare `@` that fails lists this tab's opens and creations.
+  tab's matches, never "No result". A bare `@` that fails lists this tab's opens and creations,
+  the page being edited excepted.
 - A page or database the user lost access to in the session never comes from the tab, nor does one
   below it, as far as the local index knows the pages above it; a provisional list leaves out a
   server item below it too.
@@ -376,4 +381,7 @@ already loaded. Requests carry `client_features` with the opt-ins the server lis
 requests released Web sends. Answers to a request that carried opt-ins are kept apart in the cache,
 and one that is `partial` or has a `partial` or failed section is never cached, as those opt-ins
 require. An item the tab adds is inserted with the payload the server would send for it, so
-documents read the same in every client.
+documents read the same in every client. The one exception is a database whose view the tab does
+not know yet (one it just created, or a container whose children the outline has not loaded): it
+is inserted as a page reference to the view the tab lists it by, which every client opens, where
+the server's item would name the database's first view. A database id there would open nothing.

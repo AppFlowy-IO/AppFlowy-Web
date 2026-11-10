@@ -824,13 +824,16 @@ export function MentionPanel({
     () => (localLane ? getMentionSessionPersonPicks(workspaceId) : NO_PERSON_PICKS),
     [localLane, workspaceId]
   );
+  // The view the editor shows. Opening it made it this tab's latest open, but it is rarely its own
+  // mention target, so the lane gives it no recency, as Search gives it no personal score.
+  const contextViewId = mentionContext?.view_id ?? viewId;
   // The local lane's candidates, rebuilt when what the tab holds changes, never per keystroke.
   const laneItems = useMemo(
     () =>
       localLane
-        ? buildMentionLocalLane({ snapshot: localSnapshot, presentPersonIds, revokedViews, personPicks })
+        ? buildMentionLocalLane({ snapshot: localSnapshot, presentPersonIds, revokedViews, personPicks, contextViewId })
         : NO_LANE_ITEMS,
-    [localLane, localSnapshot, personPicks, presentPersonIds, revokedViews]
+    [contextViewId, localLane, localSnapshot, personPicks, presentPersonIds, revokedViews]
   );
 
   // A database this tab just created, whose view the outline has not listed yet, merges with the

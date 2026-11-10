@@ -301,13 +301,21 @@ async function placeCaretAtEnd(editor: Editor) {
   });
 }
 
-async function pickWithEnter(view: PanelView, title: string) {
+function highlighted() {
+  return document.querySelector<HTMLElement>('[data-selected="true"]');
+}
+
+/** Moves the highlight down to the option titled `title`, as the user would with ArrowDown. */
+async function highlight(view: PanelView, title: string) {
   await placeCaretAtEnd(view.editor);
   for (let step = 0; step < 10; step += 1) {
     await pressKey('ArrowDown');
-    if (document.querySelector('[data-selected="true"]')?.textContent?.startsWith(title)) break;
+    if (highlighted()?.textContent?.startsWith(title)) break;
   }
+}
 
+async function pickWithEnter(view: PanelView, title: string) {
+  await highlight(view, title);
   await pressKey('Enter');
 }
 
@@ -727,6 +735,134 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
     await advance(1_000);
     expect(optionKeys()).toEqual(['pages|database:db:grid']);
     expect(titles()).toEqual(['Road tasks']);
+  });
+
+  describe('a database this tab just created, whose view the outline has not listed', () => {
+    beforeEach(() => {
+      setMentionIndexSources(WORKSPACE, {
+        outline: [view('space', 'General', { extra: { is_space: true } }), view('map', 'Road map')],
+      });
+      // What `addPage` records for a new Grid: the container it created, and its database.
+      recordMentionViewCreated(WORKSPACE, {
+        viewId: 'container',
+        name: 'Road tasks',
+        layout: ViewLayout.Grid,
+        parentViewId: 'space',
+        databaseId: 'db',
+      });
+    });
+
+    const serverDatabase: MentionSearchResultItem = {
+      kind: MentionTargetKind.Database,
+      object_id: 'db',
+      title: 'Road tasks',
+      database_id: 'db',
+      database_view_id: 'grid',
+      mention: { type: MentionTargetKind.Database, database_id: 'db', database_view_id: 'grid' },
+    };
+
+    it('is inserted before any answer as a mention of the view it created, which every client opens', async () => {
+      const panel = await openPanel(
+        createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: EMPTY } : NEVER))
+      );
+
+      type(panel, 'road');
+      expect(optionKeys()).toEqual(['pages|page:map', 'pages|database:db:-']);
+
+      await pickWithEnter(panel, 'Road tasks');
+      // Its page is the container, never the database id, which names no view.
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+      expect(mockAddMark.mock.calls[0][1].value).toEqual({
+        type: MentionType.PageRef,
+        page_id: 'container',
+        database_id: 'db',
+        data: { title: 'Road tasks' },
+      });
+    });
+
+    it('keeps the highlight when the answer names its view, and Enter inserts the server item', async () => {
+      const answer: MentionSearchResponse = {
+        sections: [
+          section(MentionSearchSectionKind.Pages, [page('map', 'Road map')]),
+          section(MentionSearchSectionKind.Databases, [serverDatabase]),
+        ],
+      };
+      const panel = await openPanel(
+        createSearch((lane) =>
+          lane === 'primary' ? { delayMs: 400, response: answer } : { delayMs: 50, response: EMPTY }
+        )
+      );
+
+      type(panel, 'road');
+      await highlight(panel, 'Road tasks');
+      expect(highlighted()?.getAttribute('data-option-key')).toBe('pages|database:db:-');
+
+      await advance(1_000);
+      expect(optionKeys()).toEqual(['pages|page:map', 'pages|database:db:grid']);
+      expect(highlighted()?.getAttribute('data-option-key')).toBe('pages|database:db:grid');
+
+      await pressKey('Enter');
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+      expect(mockAddMark.mock.calls[0][1].value).toEqual(
+        expect.objectContaining({ page_id: 'grid', database_id: 'db', database_view_id: 'grid' })
+      );
+    });
+  });
+
+  // The editor's own page is rarely its own mention target: Search gives it no personal score, and
+  // the lane no recency, although opening it made it this tab's latest open.
+  describe('the page being edited', () => {
+    beforeEach(() => {
+      mockEditorContext.viewId = 'current';
+      mockEditorContext.mentionContext = { view_id: 'current' };
+      setMentionIndexSources(WORKSPACE, {
+        outline: [
+          view('current', 'Road trip'),
+          view('atlas', 'Road atlas'),
+          view('map', 'Road map'),
+          view('alpha', 'Alpha'),
+          view('beta', 'Beta'),
+        ],
+      });
+      // The user opened Road map, then came back to the page being edited, which `loadView` records too.
+      recordMentionViewOpened(WORKSPACE, 'map', Date.now() - 2_000);
+      recordMentionViewOpened(WORKSPACE, 'current', Date.now() - 1_000);
+    });
+
+    it('stays where the server puts it on the bare @, so the page opened just before it comes first', async () => {
+      // Search lists the page being edited first; this replica has not seen the open of Road map.
+      await openPanel(
+        createSearch((lane) =>
+          lane === 'bare' ? { delayMs: 50, response: pages(page('current', 'Road trip'), ALPHA, BETA) } : NEVER
+        )
+      );
+
+      expect(titles()).toEqual(['Road map', 'Road trip', 'Alpha', 'Beta']);
+    });
+
+    it("is not among this tab's opens on a bare @ that fails", async () => {
+      await openPanel(
+        createSearch(() => ({ delayMs: 50, error: { code: 500, message: 'internal error' } })),
+        200
+      );
+
+      expect(titles()).toEqual(['Road map']);
+      expect(retryRow()?.getAttribute('data-status')).toBe('unavailable');
+    });
+
+    it('gets no recency in a typed query, while a page this tab opened still does', async () => {
+      // Search gives the page being edited no personal score.
+      const answer = pages(page('atlas', 'Road atlas'), page('current', 'Road trip'), page('map', 'Road map'));
+      const panel = await openPanel(
+        createSearch((lane) =>
+          lane === 'primary' ? { delayMs: 100, response: answer } : { delayMs: 50, response: EMPTY }
+        )
+      );
+
+      type(panel, 'road');
+      await advance(1_000);
+      expect(titles()).toEqual(['Road map', 'Road atlas', 'Road trip']);
+    });
   });
 
   // Search also matches a database by the name of the view that reached it, which the item does not
