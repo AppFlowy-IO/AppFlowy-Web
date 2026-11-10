@@ -11,11 +11,17 @@
  * is listed in the keystroke's own render, before Search has indexed it, and flagged fresh for 15
  * minutes after its creation (its `created_at`, whoever created it).
  *
+ * A row the server lists too keeps the server's payload, and the title of a row whose live document
+ * the tab syncs ({@link MentionLocalRow.synced}), so a rename typed or received here shows at once.
+ * A title read from a copy that may lag behind Search's (the row walk's seed, a cached document no
+ * longer synced) gives way to the server's: {@link mentionLocalRowsForSections} leaves that row to
+ * the server's item.
+ *
  * Search matches a row by any text the row holds (its other cells, its page), the lane only by its
  * title, so the picker keeps sending the server's rows request. It leaves that request out only when
  * the database's rows are all in memory ({@link MentionLocalRowsSnapshot.complete}) and the browser
  * asks for it (`__mention_local_rows_skip_server`, off by default until the coverage it loses is
- * measured; `doc/MENTION_LOCAL_ROWS_SPIKE.md`).
+ * measured; `doc/MENTION_LOCAL_ROWS_SPIKE.md`), and decides that once per typed query.
  *
  * Matching reads a normalized copy of each title, made once per row and kept with it, and first
  * drops every row that lacks one of the query's words: a title matches at some tier only if it
@@ -30,6 +36,7 @@ import {
 import { boundMentionText, normalizeMentionText } from '@/utils/normalize-text';
 
 import { MentionQuery, prepareMentionQuery, rankSection } from './mentionLocalRanker';
+import { mentionItemNavKey } from './mentionUtils';
 
 import type { MentionLaneItem } from './mentionLocalLane';
 import type { MentionPickScore } from './mentionPickMemory';
@@ -41,6 +48,12 @@ export interface MentionLocalRow {
   readonly title: string;
   /** When the row was created (its `created_at`), in epoch milliseconds; absent when unknown. */
   readonly createdAtMs?: number;
+  /**
+   * The title was read from the row's live document while the tab syncs it, so it is at least as
+   * new as Search's. Otherwise (absent or false) it comes from a copy that may lag behind Search's,
+   * such as the row walk's seed, and the server's title wins for a row the server lists.
+   */
+  readonly synced?: boolean;
 }
 
 /** What the database holds in memory now. A new snapshot after each change. */
@@ -185,20 +198,38 @@ export function mentionLocalRowCandidates(query: MentionQuery, rows: readonly Me
   return candidates;
 }
 
+/** A matched row as the merge takes it, with where its title came from. */
+export interface MentionLocalRowLaneItem extends MentionLaneItem {
+  /** {@link MentionLocalRow.synced}: the title follows the row's synced live document. */
+  readonly synced: boolean;
+}
+
 /**
- * The best of `rows` (ranked by {@link rankMentionLocalRows}) that a merge with `sections` can keep:
- * the merge keeps at most `max(limit, what the server listed)` items in Pages, where rows join, so no
- * row past that many can make it in, whatever else the section holds.
+ * What a merge with `sections` should get of `rows` (ranked by {@link rankMentionLocalRows}):
+ * - not a row whose title may lag behind Search's ({@link MentionLocalRow.synced} unset) that the
+ *   sections list, so the server's item, its title and its payload stand alone (the merge would
+ *   give the local title the win);
+ * - at most the best `max(limit, what the server listed)`: the merge keeps no more items in Pages,
+ *   where rows join, so no row past that many can make it in, whatever else the section holds.
  */
 export function mentionLocalRowsForSections(
-  rows: readonly MentionLaneItem[],
+  rows: readonly MentionLocalRowLaneItem[],
   sections: readonly MentionSearchSection[],
   limit: number
-): readonly MentionLaneItem[] {
+): readonly MentionLocalRowLaneItem[] {
   const pages = sections.find((section) => section.kind === MentionSearchSectionKind.Pages)?.items.length ?? 0;
   const keep = Math.max(limit, pages);
+  let kept = rows;
 
-  return rows.length <= keep ? rows : rows.slice(0, keep);
+  if (rows.some((row) => !row.synced)) {
+    const listed = new Set(sections.flatMap((section) => section.items.map(mentionItemNavKey)));
+
+    if (rows.some((row) => !row.synced && listed.has(row.key))) {
+      kept = rows.filter((row) => row.synced || !listed.has(row.key));
+    }
+  }
+
+  return kept.length <= keep ? kept : kept.slice(0, keep);
 }
 
 export interface RankMentionLocalRowsInput {
@@ -219,8 +250,9 @@ export interface RankMentionLocalRowsInput {
  * The rows that match the typed query at T3 or better, ranked as the contract's merge ranks
  * local-only items (tier, pick memory, length, then the navigation key) and cut to `limit`, as lane
  * items the merge takes: keyed and inserted as Search's rows, with the creation time as when the row
- * changed, so one created at most 15 minutes ago is flagged fresh. Rows carry no recency: the
- * contract's recency is the client's own open, creation or mention, which a row does not record.
+ * changed, so one created at most 15 minutes ago is flagged fresh, and where the title came from.
+ * Rows carry no recency: the contract's recency is the client's own open, creation or mention,
+ * which a row does not record.
  */
 export function rankMentionLocalRows({
   query,
@@ -229,7 +261,7 @@ export function rankMentionLocalRows({
   picks,
   nowMs,
   limit = MENTION_LOCAL_ROWS_LIMIT,
-}: RankMentionLocalRowsInput): MentionLaneItem[] {
+}: RankMentionLocalRowsInput): MentionLocalRowLaneItem[] {
   if (snapshot.rows.length === 0 || limit <= 0) return [];
 
   const prepared = prepareMentionQuery(query);
@@ -246,5 +278,6 @@ export function rankMentionLocalRows({
     icon: null,
     changedMs: row.createdAtMs,
     item: mentionLocalRowItem(snapshot.databaseId, databaseViewId, row),
+    synced: row.synced === true,
   }));
 }

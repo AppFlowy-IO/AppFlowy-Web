@@ -1,8 +1,9 @@
 # Mention local rows lane: spike report (MEN-WEB-15)
 
-Status: measured 2026-11-11 on branch `wip/mention-web-w3`. Decision: ship the lane behind the @
-picker's v2 switch; keep the server's rows request (leaving it out stays behind a switch of its own,
-off by default).
+Status: measured 2026-11-11 on branch `wip/mention-web-w3`, and measured again after the review
+fixes; the numbers below are the second measurement. Decision: ship the lane behind the @ picker's
+v2 switch; keep the server's rows request (leaving it out stays behind a switch of its own, off by
+default).
 
 ## Question
 
@@ -19,14 +20,21 @@ request out?
   orders). A row the tab has open (rendered, opened, just created) is read from its live document,
   which is observed; any other row from its committed seed (`peekDatabaseRowDocSeed`), decoded into
   a throwaway document in slices of about 8 ms. Only titles and creation times are kept, and a
-  seed's title is kept with the seed object, so the next picker does not decode it again.
+  seed's title is kept with the seed object, so the next picker does not decode it again. Each row
+  says whether its title came from a live document the tab syncs (`synced`, from
+  `hasRowDocSyncBinding`) or from a copy that may lag behind Search (a seed, a cached document no
+  longer synced). Titles are read again only when what the primary field's text depends on changes
+  (which field, its type, its type options), not when it is renamed or its icon changes.
   `complete` holds when every row has a title and `holdsDatabaseSourceRows` holds; a row whose seed
   waits for a slice has no title yet, and a refresh that reads a titled row's seed again keeps it.
 - `src/components/editor/components/panels/mention-panel/mentionLocalRows.ts`: per keystroke, a
   word filter (a title matches at some tier only if it contains every query word) and then the
   typeahead contract's tiers and in-tier keys, at most 60 rows, as lane items the contract's merge
-  adds to Pages. A row created at most 15 minutes ago is flagged fresh.
-- The panel, the Text cell context and the row page wire them; see "Mention local rows lane" in
+  adds to Pages. A row created at most 15 minutes ago is flagged fresh. A row the server lists too
+  keeps the server's payload, and its own title only when it is `synced`; any other is left to the
+  server's item (`mentionLocalRowsForSections`), whose title is likely the newer one.
+- The panel, the Text cell context and the row page wire them. Whether a typed query leaves the
+  rows request out is decided once, when the query is typed; see "Mention local rows lane" in
   `doc/web-server-compatibility.md`.
 
 ## Method
@@ -44,8 +52,16 @@ request out?
   ```
 
 - Plain Node, the same modules bundled with esbuild (no jsdom, no ts-jest), for V8 numbers close to
-  a browser's: the index build from seeds, the keystroke cost and the merge.
-- Machine: Apple M1 Max, macOS, Node 23.5.0. Three Jest runs and five Node runs; ranges below.
+  a browser's: the index build from seeds, the keystroke cost and the merge. A probe in raw Yjs
+  gives what keeping every row as a decoded document costs.
+- Machine: Apple M1 Max, 32 GB, macOS 27.0, Node 23.5.0 (the runs print it). Three Jest runs and
+  five Node runs; each Node run builds the index from seeds three times, so its index-build figures
+  cover 15 builds. The probe ran three times. Each range is the lowest and highest value the runs
+  printed, the low end rounded down and the high end rounded up to the precision shown.
+- The first measurement, before the review fixes, logged three Jest runs and two Node runs. One of
+  those Jest runs was slow throughout, for no recorded cause: a 58.6 ms slice, 1.31 s of slices,
+  17.9 ms to subscribe with kept titles, a 15.8 ms membership read, and a merge p95 of 23.1 ms
+  without rows and 26.9 ms with them. No run of the second measurement was.
 - Not measured here: a browser on a seeded 10,000-row grid against a live stack, and the coverage
   comparison with the live mention API (see "Remaining").
 
@@ -69,7 +85,7 @@ Measured (Jest):
 
 | Case                                                   | Result                                                                                                                                                                                                                              |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cold walk, 10,000 rows, 40 pages, 7.26 MB of row state | Seeds committed (`seedsReady`) after 119-141 ms of client work, walk settled after 1.44-1.73 s (persisting into the fake store); `holdsDatabaseSourceRows` true from `seedsReady`, resident once settled, all 10,000 seeds readable |
+| Cold walk, 10,000 rows, 40 pages, 7.26 MB of row state | Seeds committed (`seedsReady`) after 111-131 ms of client work, walk settled after 1.35-1.50 s (persisting into the fake store); `holdsDatabaseSourceRows` true from `seedsReady`, resident once settled, all 10,000 seeds readable |
 | 10,001 rows                                            | Resident, but 10,000 seeds readable: the seed lookup holds 10,000 seeds across all databases (`MAX_ROW_DOC_SEEDS_LOOKUP`). The index lists 10,000 rows and is never complete                                                        |
 | A 1,000-row database walked after those two            | The first database keeps none of its 10,000 seeds and the 10,001-row one 9,000, while both stay `isDatabaseSourceResident`                                                                                                          |
 | Reload with a cached RID, 25 rows changed              | Not resident; the index lists the 40 rows the grid rendered (live) and is never complete                                                                                                                                            |
@@ -81,15 +97,15 @@ treats the database as complete only when every row has a title.
 
 ## Index build
 
-|                                                                                    | Jest                                                                                | Node                                                |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------- |
-| 10,000 rows from seeds: on subscribe (synchronous)                                 | 10.3-12.7 ms                                                                        | 7.2-9.4 ms                                          |
-| then seed slices                                                                   | 89-134 slices, 727-1,313 ms in all, longest 9.4 ms (58.6 ms in one run, a GC pause) | 21-22 slices, 169-179 ms in all, longest 8.6-9.4 ms |
-| Heap kept by the index                                                             | 2.9 MB                                                                              | 2.3-3.9 MB                                          |
-| The next picker (titles kept with their seeds)                                     | 9.4-17.9 ms on subscribe, 3-4 slices, 23-26 ms                                      | 7.8-8.5 ms, 1 slice of 4.7-5.9 ms                   |
-| 10,000 live rows, all read on subscribe                                            | 51-57 ms                                                                            | not run                                             |
-| 500 live rows and the rest from kept titles                                        | not run                                                                             | 10.4-12.2 ms on subscribe                           |
-| Reading every row through the shared seed documents (`peekRowDocFromSeed`) instead | 194 MB kept per 10,000 rows                                                         | 198 MB (19.4 KB a row)                              |
+|                                                    | Jest                                                                                                       | Node                                                                                    |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 10,000 rows from seeds: on subscribe (synchronous) | 9.4-11.6 ms                                                                                                | 6.8-8.2 ms                                                                              |
+| then seed slices                                   | 86-91 slices, 698-742 ms in all, longest 9.2-10.4 ms                                                       | 20-22 slices, 158-174 ms in all, longest 8.5-8.9 ms                                     |
+| Heap kept by the index                             | 3.0 MB                                                                                                     | 2.4-4.0 MB                                                                              |
+| The next picker (titles kept with their seeds)     | 9.0-9.3 ms on subscribe, 3 slices, 21.9-22.2 ms                                                            | 6.6-8.1 ms on subscribe, 1 slice of 4.1-6.4 ms                                          |
+| 10,000 live rows, all read on subscribe            | 49-53 ms                                                                                                   | not run                                                                                 |
+| 500 live rows and the rest from kept titles        | not run                                                                                                    | 10.3-11.7 ms on subscribe                                                               |
+| Every row kept as a decoded document instead       | 194 MB per 10,000 rows, through the shared seed documents (`peekRowDocFromSeed`'s path), measured on 2,000 | 198.2 MB, 19.4 KB a document: plain Yjs documents decoded from 10,000 seeds (the probe) |
 
 The shared seed documents that filter and sort build would cost about 200 MB for 10,000 rows, so
 the lane decodes each seed into a throwaway document and keeps only the title.
@@ -100,15 +116,16 @@ Twenty queries (one letter to three words, CJK, digits, no match), warm caches:
 
 |                                                    | Jest median  | Jest p95     | Node median  | Node p95     |
 | -------------------------------------------------- | ------------ | ------------ | ------------ | ------------ |
-| The rows lane over 10,000 titles                   | 1.39-1.54 ms | 3.41-3.93 ms | 0.79-0.87 ms | 1.86-1.89 ms |
-| The same ranking without the word filter           | 2.25-2.78 ms | 3.31-4.19 ms | 1.07-1.16 ms | 1.52-1.76 ms |
-| The picker's merge with 5,000 views, without rows  | 1.36-2.09 ms | 3.65-5.04 ms | 0.86-1.04 ms | 2.32-3.01 ms |
-| The same with the rows lane (its ranking included) | 2.99-3.57 ms | 5.54-7.72 ms | 1.89-2.03 ms | 3.59-3.81 ms |
+| The rows lane over 10,000 titles                   | 1.35-1.54 ms | 3.45-3.67 ms | 0.77-0.84 ms | 1.81-1.97 ms |
+| The same ranking without the word filter           | 2.24-2.43 ms | 3.36-3.79 ms | 1.06-1.09 ms | 1.51-1.56 ms |
+| The picker's merge with 5,000 views, without rows  | 1.25-1.52 ms | 3.45-4.61 ms | 0.82-0.88 ms | 1.81-1.87 ms |
+| The same with the rows lane (its ranking included) | 2.81-3.00 ms | 5.66-5.92 ms | 1.69-1.84 ms | 2.74-3.46 ms |
 
-Normalizing the 10,000 titles once, when the picker opens: 5.9-7.2 ms (Jest), 4.7-4.9 ms (Node). The
-synthetic titles share a twelve-word vocabulary, so a query like `road` keeps a sixth of them past
-the word filter; with real, more varied titles the filter drops more. A one-letter query matches
-thousands of titles either way; the ranking stops at the 60 best.
+The merge takes the rows as the picker passes them (`mentionLocalRowsForSections`). Normalizing the
+10,000 titles once, when the picker opens: 5.8-6.1 ms (Jest), 4.4-4.8 ms (Node). The synthetic
+titles share a twelve-word vocabulary, so a query like `road` keeps a sixth of them past the word
+filter; with real, more varied titles the filter drops more. A one-letter query matches thousands of
+titles either way; the ranking stops at the 60 best.
 
 ## Freshness
 
@@ -116,8 +133,8 @@ thousands of titles either way; the ranking stops at the 60 best.
   `rowMap` once the server commits it, as its row order reaches the database document; the index
   reads it as a live row at once, also on a picker opened later.
 - With the picker open, a row added to a 10,000-row database is listed after the transaction that
-  adds its row order (one microtask): 5.6-15.8 ms in Jest and 4.1-5.7 ms in Node to read the
-  membership again. Typing its title costs 0.26-0.36 ms; the row is then found by its prefix and
+  adds its row order (one microtask): 5.3-6.1 ms in Jest and 3.7-4.6 ms in Node to read the
+  membership again. Typing its title costs 0.23-0.26 ms; the row is then found by its prefix and
   flagged fresh.
 - The panel test lists a row created a second earlier in the render of the keystroke that matches
   it, before any answer, with `data-fresh="true"`.
@@ -135,12 +152,14 @@ other cells, nor by Search's typo tolerance (which the client ranks at T4 anyway
 - The lane ships behind the picker's v2 switch, on with its local lane
   (`localStorage.__mention_local_rows = 'false'` turns it off): it adds only what the tab already
   holds, within the measured cost, and makes a row created seconds ago findable at once. Every
-  suggested ship criterion it can be measured against holds: index under 1 s of idle time after
-  `seedsReady` (0.17-0.18 s in Node; Jest's 0.73-1.31 s is a slow upper bound), under 5 MB, and a
-  keystroke p95 under 4 ms.
+  suggested ship criterion it can be measured against holds: the index takes under 1 s of idle time
+  after `seedsReady` (158-174 ms of slices in Node; Jest's 698-742 ms is a slow upper bound), keeps
+  under 5 MB (2.4-4.0 MB), and a keystroke's match has a p95 under 4 ms (1.81-1.97 ms in Node,
+  3.45-3.67 ms in Jest).
 - The server's rows request stays by default. Leaving it out
   (`localStorage.__mention_local_rows_skip_server = 'true'`) applies only while the database is
-  complete, which is rare (above), and would drop the non-title matches whose share is unmeasured.
+  complete, which is rare (above), is decided once per typed query, and would drop the non-title
+  matches whose share is unmeasured.
 
 ## Remaining
 

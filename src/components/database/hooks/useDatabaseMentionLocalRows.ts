@@ -5,6 +5,7 @@ import {
   peekDatabaseRowDocSeed,
   subscribeToDatabaseSourceResidency,
 } from '@/application/database-blob';
+import { hasRowDocSyncBinding } from '@/application/database-blob/row-doc-retention';
 import {
   createDatabaseMentionRowsSource,
   DatabaseMentionRowsSource,
@@ -18,8 +19,9 @@ const sources = new WeakMap<YDoc, DatabaseMentionRowsSource>();
 
 /**
  * The @ picker's rows source of a database document (`mention-local-rows.ts`), one per document, so
- * every Text cell and row page of the database shares it. It reads the tab's live row documents, the
- * row walk's committed seeds and whether the tab holds every row of the database.
+ * every Text cell and row page of the database shares it. It reads the tab's live row documents
+ * (and whether each is synced), the row walk's committed seeds and whether the tab holds every row
+ * of the database.
  */
 export function getDatabaseMentionRowsSource(databaseDoc: YDoc): DatabaseMentionRowsSource {
   let source = sources.get(databaseDoc);
@@ -28,6 +30,7 @@ export function getDatabaseMentionRowsSource(databaseDoc: YDoc): DatabaseMention
     source = createDatabaseMentionRowsSource({
       databaseDoc,
       getLiveRowDoc: getCachedRowDoc,
+      isRowDocSynced: hasRowDocSyncBinding,
       peekRowSeed: peekDatabaseRowDocSeed,
       holdsRows: holdsDatabaseSourceRows,
       subscribeToResidency: subscribeToDatabaseSourceResidency,
@@ -69,7 +72,13 @@ export function useDatabaseMentionLocalRows(
   // The row walk committed its seeds: rows without a title may have one now, and the tab may hold them all.
   useEffect(() => {
     if (!source || !subscribeToRowPassState) return;
-    return subscribeToRowPassState(source.refresh);
+
+    // This editor's own listener: the store keeps its listeners in a set, and every editor of the
+    // database shares the source, so the first one to unmount would unsubscribe a shared
+    // `source.refresh` for all of them.
+    const onRowPass = () => source.refresh();
+
+    return subscribeToRowPassState(onRowPass);
   }, [source, subscribeToRowPassState]);
 
   return useMemo(() => (source && databaseViewId ? { source, databaseViewId } : undefined), [databaseViewId, source]);

@@ -12,6 +12,8 @@
  * server sends them), with the network, IndexedDB and the outbox replaced by in-memory fakes, so its
  * times are the client's own work only. The assertions hold the facts the report relies on.
  */
+import { cpus, totalmem } from 'os';
+
 import { parse as uuidParse } from 'uuid';
 import * as Y from 'yjs';
 
@@ -46,6 +48,7 @@ import { prepareMentionQuery, rankSection } from '../mentionLocalRanker';
 import {
   MENTION_LOCAL_ROWS_LIMIT,
   mentionLocalRowNavKey,
+  mentionLocalRowsForSections,
   MentionLocalRowsSnapshot,
   prepareMentionLocalRows,
   rankMentionLocalRows,
@@ -302,6 +305,8 @@ describeBench('MEN-WEB-15 spike: the open database of 10,000 rows', () => {
     report('machine', {
       node: process.version,
       platform: `${process.platform} ${process.arch}`,
+      cpu: cpus()[0]?.model,
+      memoryGb: Math.round(totalmem() / 2 ** 30),
       gc: Boolean(gc),
     });
   });
@@ -488,11 +493,12 @@ describeBench('MEN-WEB-15 spike: the open database of 10,000 rows', () => {
         status: 'ok',
       },
     ];
+    // As the picker passes them: a row the server lists too, read from a seed, left to the server.
     const merge = (withRows: boolean) => (query: string) =>
       mergeMentionSections({
         request: { query, limit: 20 },
         server,
-        local: withRows ? [...views, ...lane(query)] : views,
+        local: withRows ? [...views, ...mentionLocalRowsForSections(lane(query), server, 20)] : views,
         nowMs,
       });
 

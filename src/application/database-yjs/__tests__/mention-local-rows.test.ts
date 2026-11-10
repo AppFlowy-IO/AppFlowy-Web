@@ -340,6 +340,95 @@ describe('database mention rows source (MEN-WEB-15)', () => {
     expect(test.titles()).toEqual(['Row 0', 'Row 2']);
   });
 
+  it('reads no title again when the primary field is renamed or its icon changes', async () => {
+    const doc = databaseDoc(ids);
+    const test = harness(doc);
+
+    ids.forEach((id, index) => test.seed(id, `Row ${index}`));
+    test.subscribe();
+    test.runSlices();
+
+    const before = test.source.getSnapshot();
+
+    expect(before.complete).toBe(true);
+    expect(test.onChange).toHaveBeenCalledTimes(1);
+
+    // As `useUpdatePropertyNameDispatch` and `useUpdatePropertyIconDispatch` write them.
+    doc.transact(() => {
+      const field = databaseOf(doc).get(YjsDatabaseKey.fields).get(NAME);
+
+      field.set(YjsDatabaseKey.last_modified, '1762862500');
+      field.set(YjsDatabaseKey.name, 'Task');
+    });
+    doc.transact(() => {
+      const field = databaseOf(doc).get(YjsDatabaseKey.fields).get(NAME);
+
+      field.set(YjsDatabaseKey.last_modified, '1762862600');
+      field.set(YjsDatabaseKey.icon, 'emoji:🚀');
+    });
+    await microtasks();
+
+    expect(test.tasks).toHaveLength(0);
+    expect(test.source.getSnapshot()).toBe(before);
+    expect(test.onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads every title again when the primary field's type options change", async () => {
+    const doc = databaseDoc(ids);
+    const test = harness(doc);
+
+    ids.forEach((id, index) => test.seed(id, `Row ${index}`));
+    test.subscribe();
+    test.runSlices();
+    mockedApplyYDoc.mockClear();
+
+    doc.transact(() => {
+      const typeOptions = new Y.Map<unknown>();
+      const richText = new Y.Map<unknown>();
+
+      richText.set(YjsDatabaseKey.content, 'changed');
+      typeOptions.set(String(FieldType.RichText), richText);
+      databaseOf(doc).get(YjsDatabaseKey.fields).get(NAME).set(YjsDatabaseKey.type_option, typeOptions);
+    });
+    await microtasks();
+    test.runSlices();
+
+    // Each seed is decoded again: its kept title was read with the options before.
+    expect(mockedApplyYDoc).toHaveBeenCalledTimes(3);
+    expect(test.titles().sort()).toEqual(['Row 0', 'Row 1', 'Row 2']);
+    expect(test.source.getSnapshot().complete).toBe(true);
+  });
+
+  it('says where each title came from, and hears when a live document starts to sync', async () => {
+    const synced = new Set([ids[0]]);
+    const test = harness(databaseDoc(ids), { isRowDocSynced: (rowDocId) => synced.has(rowDocId) });
+
+    test.open(ids[0], 'Road trip');
+    test.open(ids[1], 'Budget review');
+    test.seed(ids[2], 'Hiring plan');
+    test.subscribe();
+    test.runSlices();
+
+    const syncedOf = () => Object.fromEntries(test.source.getSnapshot().rows.map((row) => [row.title, row.synced]));
+
+    expect(syncedOf()).toEqual({ 'Road trip': true, 'Budget review': false, 'Hiring plan': false });
+
+    // A refresh with nothing changed keeps the snapshot.
+    const before = test.source.getSnapshot();
+
+    test.source.refresh();
+    await microtasks();
+    test.runSlices();
+    expect(test.source.getSnapshot()).toBe(before);
+
+    // The view registered the row's sync since: the next look reads it as synced.
+    synced.add(ids[1]);
+    test.source.refresh();
+    await microtasks();
+    test.runSlices();
+    expect(syncedOf()).toEqual({ 'Road trip': true, 'Budget review': true, 'Hiring plan': false });
+  });
+
   it('reads every title again when another field becomes the primary one', async () => {
     const doc = databaseDoc(ids);
     const test = harness(doc);

@@ -70,7 +70,9 @@ import {
 } from './mentionLocalMerge';
 import { prepareMentionRankCandidates } from './mentionLocalRanker';
 import {
+  MentionLocalRowLaneItem,
   mentionLocalRowsForSections,
+  MentionLocalRowsSource,
   NO_MENTION_LOCAL_ROWS,
   prepareMentionLocalRows,
   rankMentionLocalRows,
@@ -190,9 +192,19 @@ const NO_PICK_SCORES: ReadonlyMap<string, MentionPickScore> = new Map();
 const NO_CLIENT_FEATURES: readonly string[] = [];
 const NO_LANE_ITEMS: readonly MentionLaneItem[] = [];
 const NO_PERSON_PICKS: ReadonlyMap<string, number> = new Map();
+const NO_ROW_LANE_ITEMS: readonly MentionLocalRowLaneItem[] = [];
 
 function noLocalRows() {
   return NO_MENTION_LOCAL_ROWS;
+}
+
+/** Whether a typed query leaves the server's rows request out, as decided when it was typed. */
+interface MentionRowsSkipDecision {
+  readonly query: string;
+  /** The opening of the panel it was typed in. */
+  readonly session: MentionRequestLanes | null;
+  readonly source: MentionLocalRowsSource | undefined;
+  readonly skip: boolean;
 }
 
 /**
@@ -767,9 +779,33 @@ export function MentionPanel({
     }),
     [clientFeatures, mentionContext, mentionInclude, searchText]
   );
-  // Only a typed query sends rows: a bare `@` keeps its requests, and its search, when the last row
-  // comes into memory while it shows.
-  const skipTypedRows = skipServerRows && hasMentionSearchQuery;
+  // Only a typed query sends rows, and whether it leaves them out is decided when it is typed, then
+  // kept while it shows: the database completing, or losing a row's title, changes only the next
+  // keystroke's requests. Deciding again for the query on screen would give it another cache key,
+  // so it would be sent again, losing its highlight, its expanded list and the server's other row
+  // matches. The query is read as the cache key reads it (trimmed, lowercased), so a keystroke that
+  // changes only that keeps the decision and the cached answer. A bare `@` never leaves rows out.
+  // The decision is stored as the render reads it (state that follows its inputs), so the query's
+  // first render already sends what it decided.
+  const typedQuery = hasMentionSearchQuery ? (searchText ?? '').trim().toLowerCase() : '';
+  const [rowsSkipDecision, setRowsSkipDecision] = useState<MentionRowsSkipDecision | undefined>(undefined);
+  const decidedRowsSkip =
+    rowsSkipDecision?.query === typedQuery &&
+    rowsSkipDecision.session === mentionRequestLanes &&
+    rowsSkipDecision.source === localRowsSource
+      ? rowsSkipDecision
+      : undefined;
+  const skipTypedRows = decidedRowsSkip ? decidedRowsSkip.skip : skipServerRows && hasMentionSearchQuery;
+
+  if (!decidedRowsSkip) {
+    setRowsSkipDecision({
+      query: typedQuery,
+      session: mentionRequestLanes,
+      source: localRowsSource,
+      skip: skipTypedRows,
+    });
+  }
+
   const mentionSearchRequests = useMemo(
     () => buildMentionSearchRequests(mentionSearchRequest, { skipRows: skipTypedRows }),
     [mentionSearchRequest, skipTypedRows]
@@ -994,7 +1030,7 @@ export function MentionPanel({
             picks: v2PickScores,
             nowMs: Date.now(),
           })
-        : NO_LANE_ITEMS,
+        : NO_ROW_LANE_ITEMS,
     [hasMentionSearchQuery, localRows, localRowsSnapshot, revokedViews, searchText, v2PickScores]
   );
   // Merges sections with the local lane by the typeahead contract's rules (`mentionLocalMerge.ts`):
@@ -1055,7 +1091,7 @@ export function MentionPanel({
     const prefixKey = (prefix: string) =>
       prefix.trim()
         ? buildMentionSearchRequestsCacheKey(
-            buildMentionSearchRequests({ ...mentionSearchRequest, query: prefix }, { skipRows: skipServerRows }),
+            buildMentionSearchRequests({ ...mentionSearchRequest, query: prefix }, { skipRows: skipTypedRows }),
             { workspaceId, userId: currentUser?.uuid }
           )
         : undefined;
@@ -1086,7 +1122,7 @@ export function MentionPanel({
     mentionSectionTitle,
     revokedViews,
     searchText,
-    skipServerRows,
+    skipTypedRows,
     typeaheadV2,
     workspaceId,
   ]);

@@ -102,6 +102,23 @@ describe('mentionLocalRows (MEN-WEB-15)', () => {
       });
     });
 
+    it('says whether the title follows a synced live document', () => {
+      const ranked = rank(
+        'road',
+        snapshot([
+          { rowId: rowId(1), title: 'Road', synced: true },
+          { rowId: rowId(2), title: 'Road trip', synced: false },
+          { rowId: rowId(3), title: 'Road planning' },
+        ])
+      );
+
+      expect(ranked.map((item) => [item.title, item.synced])).toEqual([
+        ['Road', true],
+        ['Road trip', false],
+        ['Road planning', false],
+      ]);
+    });
+
     it('carries the creation time as when the row changed, and no recency', () => {
       const [item] = rank('road', snapshot([{ rowId: rowId(1), title: 'Road', createdAtMs: NOW - MINUTE }]));
 
@@ -310,6 +327,53 @@ describe('mentionLocalRows (MEN-WEB-15)', () => {
       expect(mentionLocalRowsForSections(ranked, pages(5), 20)).toEqual(ranked.slice(0, 20));
       expect(mentionLocalRowsForSections(ranked, pages(34), 20)).toEqual(ranked.slice(0, 34));
       expect(mentionLocalRowsForSections(ranked.slice(0, 3), pages(34), 20)).toEqual(ranked.slice(0, 3));
+    });
+
+    describe('a row the server lists too', () => {
+      // Renamed elsewhere: the walk's seed still has the old title, Search has the new one.
+      const seedRow: MentionLocalRow = { rowId: rowId(1), title: 'Budget review' };
+      // Renamed in this tab: its synced live document has the new title, Search the old one.
+      const liveRow: MentionLocalRow = { rowId: rowId(2), title: 'Budget plan 2027', synced: true };
+      const lane = rank('budget', snapshot([seedRow, liveRow]));
+      const serverRow = (row: MentionLocalRow, title: string) => ({
+        ...mentionLocalRowItem(DATABASE, 'another-view', { rowId: row.rowId, title }),
+        row_document_id: `doc-${row.rowId}`,
+      });
+      const server: MentionSearchSection[] = [
+        {
+          kind: MentionSearchSectionKind.Pages,
+          title: 'Pages',
+          items: [serverRow(seedRow, 'Budget review Q3'), serverRow(liveRow, 'Budget plan')],
+          has_more: false,
+          status: 'ok',
+        },
+      ];
+
+      it('is left to the server when its title comes from a copy that may lag, and kept when synced', () => {
+        expect(mentionLocalRowsForSections(lane, server, 20).map((item) => item.title)).toEqual(['Budget plan 2027']);
+        // Not listed by the server: both join.
+        expect(mentionLocalRowsForSections(lane, pages(3), 20)).toEqual(lane);
+      });
+
+      it("shows and inserts the server's newer title for a seed's row, the synced title for a live one", () => {
+        const [section] = mergeMentionSections({
+          request: { query: 'budget', limit: 20 },
+          server,
+          local: mentionLocalRowsForSections(lane, server, 20),
+          nowMs: NOW,
+        });
+        const byKey = new Map(section.items.map((item) => [item.key, item]));
+
+        expect(byKey.get(mentionLocalRowNavKey(DATABASE, seedRow.rowId))).toMatchObject({
+          source: 'server',
+          title: 'Budget review Q3',
+        });
+        expect(byKey.get(mentionLocalRowNavKey(DATABASE, liveRow.rowId))).toMatchObject({
+          source: 'both',
+          title: 'Budget plan 2027',
+        });
+        expect(section.items).toHaveLength(2);
+      });
     });
   });
 });

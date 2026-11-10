@@ -216,7 +216,12 @@ function lanesSent(search: SearchMock) {
   return search.mock.calls.map(([request]) => `${laneOf(request)}:${request.query ?? ''}`);
 }
 
-async function pickWithEnter(view: PanelView, title: string) {
+function highlighted() {
+  return document.querySelector<HTMLElement>('[data-selected="true"]')?.textContent ?? undefined;
+}
+
+/** Moves the highlight down with the arrow key until it is on `title`. */
+async function highlight(view: PanelView, title: string) {
   await act(async () => {
     Transforms.select(view.editor, Editor.end(view.editor, []));
   });
@@ -224,9 +229,12 @@ async function pickWithEnter(view: PanelView, title: string) {
     await act(async () => {
       fireEvent.keyDown(screen.getByTestId('editor'), { key: 'ArrowDown' });
     });
-    if (document.querySelector<HTMLElement>('[data-selected="true"]')?.textContent?.startsWith(title)) break;
+    if (highlighted()?.startsWith(title)) break;
   }
+}
 
+async function pickWithEnter(view: PanelView, title: string) {
+  await highlight(view, title);
   await act(async () => {
     fireEvent.keyDown(screen.getByTestId('editor'), { key: 'Enter' });
   });
@@ -265,11 +273,13 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
   });
 
   describe('a row created a second ago', () => {
+    // The created row is read from its live document, which the tab syncs; the older one from the
+    // row walk's seed.
     const rows = () =>
       rowsSource(
         snapshot(
           [
-            { rowId: ZEBRA, title: 'Zebra launch', createdAtMs: NOW - SECOND },
+            { rowId: ZEBRA, title: 'Zebra launch', createdAtMs: NOW - SECOND, synced: true },
             { rowId: BUDGET, title: 'Budget review', createdAtMs: NOW - 30 * 24 * 60 * MINUTE },
           ],
           false
@@ -341,9 +351,10 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       expect(freshTitles()).toEqual([]);
     });
 
-    it('is listed once, with the server payload, when the server lists it too', async () => {
+    it('is listed once, with the server payload and its own title, when the server lists it too', async () => {
+      // Search indexed the row under the title it had before this tab finished typing it.
       const serverRow = {
-        ...mentionLocalRowItem(DATABASE, uuid(0xa2), { rowId: ZEBRA, title: 'Zebra launch' }),
+        ...mentionLocalRowItem(DATABASE, uuid(0xa2), { rowId: ZEBRA, title: 'Zebra' }),
         row_document_id: uuid(0xd0),
       };
 
@@ -362,7 +373,45 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       expect(mockAddMark).toHaveBeenCalledWith(
         view.editor,
         expect.objectContaining({
-          value: expect.objectContaining({ database_view_id: uuid(0xa2), row_document_id: uuid(0xd0) }),
+          value: expect.objectContaining({
+            database_view_id: uuid(0xa2),
+            row_document_id: uuid(0xd0),
+            data: expect.objectContaining({ title: 'Zebra launch' }),
+          }),
+        })
+      );
+    });
+
+    it("shows and inserts the server's title for a row read from its seed, which may be older", async () => {
+      // Renamed elsewhere after the row walk downloaded its seed; Search follows the rename.
+      const serverRow = {
+        ...mentionLocalRowItem(DATABASE, uuid(0xa2), { rowId: BUDGET, title: 'Budget review Q3' }),
+        row_document_id: uuid(0xd1),
+      };
+
+      mockEditorContext.mentionLocalRows = rows().access;
+
+      const view = await openPanel(
+        createSearch((lane) => (lane === 'rows' ? { delayMs: 300, response: pages(serverRow) } : BARE_BUDGET(lane)))
+      );
+
+      type(view, 'budget');
+      // Before the answer, the seed's title is all the tab has.
+      expect(titles()).toContain('Budget review');
+
+      await advance(1_000);
+      expect(titles()).toEqual(['Budget review Q3']);
+
+      await pickWithEnter(view, 'Budget review Q3');
+      expect(mockAddMark).toHaveBeenCalledWith(
+        view.editor,
+        expect.objectContaining({
+          value: expect.objectContaining({
+            database_view_id: uuid(0xa2),
+            row_id: BUDGET,
+            row_document_id: uuid(0xd1),
+            data: expect.objectContaining({ title: 'Budget review Q3' }),
+          }),
         })
       );
     });
@@ -450,6 +499,171 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       await advance(1_000);
 
       expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb', 'primary:zebr']);
+    });
+
+    // Search's answer to `zeb`: four pages, so the list collapses, and a row it finds by its
+    // content, which the lane, matching titles, cannot list.
+    const zebPages = ['Zebra plan', 'Zebra map', 'Zebra notes', 'Zebra crossing'].map((title, index) =>
+      page(`zebra-page-${index}`, title)
+    );
+    const contentRow = mentionLocalRowItem(DATABASE, GRID, { rowId: uuid(3), title: 'Quarterly plan' });
+    const answerZeb = (lane: Lane): Reply => {
+      if (lane === 'bare') return BARE_BUDGET(lane);
+      return { delayMs: 300, response: lane === 'rows' ? pages(contentRow) : pages(...zebPages) };
+    };
+
+    it('keeps the query on screen as it was sent when the last row comes into memory while it shows', async () => {
+      localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
+
+      const source = rowsSource(snapshot([zebra], false));
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const search = createSearch(answerZeb);
+      const view = await openPanel(search);
+
+      type(view, 'zeb');
+      await advance(1_000);
+      expect(titles()).toHaveLength(4);
+      act(() => {
+        fireEvent.click(screen.getByText('document.mention.moreResults').closest('button') as HTMLElement);
+      });
+      await highlight(view, 'Zebra map');
+      expect(highlighted()).toBe('Zebra map');
+      expect(titles()).toHaveLength(6);
+      expect(titles()).toContain('Quarterly plan');
+
+      // The index completes while `zeb` shows: nothing is sent again, and the list stays as it is.
+      source.set(snapshot([zebra], true));
+      await advance(1_000);
+
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb']);
+      expect(highlighted()).toBe('Zebra map');
+      expect(titles()).toHaveLength(6);
+      expect(titles()).toContain('Quarterly plan');
+
+      // The next keystroke leaves the rows request out.
+      type(view, 'zebr');
+      await advance(1_000);
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb', 'primary:zebr']);
+    });
+
+    it('keeps the decision for a keystroke that changes only the case or a trailing space', async () => {
+      localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
+
+      const source = rowsSource(snapshot([zebra], false));
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const search = createSearch(answerZeb);
+      const view = await openPanel(search);
+
+      type(view, 'zeb');
+      await advance(1_000);
+      source.set(snapshot([zebra], true));
+
+      // The same query to the cache: its answer shows, and nothing is sent.
+      type(view, 'zeb ');
+      await advance(1_000);
+      type(view, 'Zeb ');
+      await advance(1_000);
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb']);
+      act(() => {
+        fireEvent.click(screen.getByText('document.mention.moreResults').closest('button') as HTMLElement);
+      });
+      expect(titles()).toContain('Quarterly plan');
+
+      type(view, 'zebr');
+      await advance(1_000);
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb', 'primary:zebr']);
+    });
+
+    it('decides again in a new opening of the picker', async () => {
+      localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
+
+      const source = rowsSource(snapshot([zebra], false));
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const search = createSearch(answerZeb);
+      const view = await openPanel(search);
+
+      type(view, 'zeb');
+      await advance(1_000);
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb']);
+
+      // Closed with `zeb` typed, and opened on it again once every row is in memory.
+      mockPanelContext.isPanelOpen = () => false;
+      view.rerender();
+      source.set(snapshot([zebra], true));
+      mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+      view.rerender();
+      await advance(1_000);
+
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'rows:zeb', 'primary:zeb']);
+    });
+
+    it("keeps a cached prefix's quick pick for the query on screen when the last row comes into memory", async () => {
+      localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
+
+      const source = rowsSource(snapshot([zebra], false));
+      // Quick picks come from cached answers only, never from the list on screen.
+      const tomorrow: MentionSearchResultItem = {
+        kind: MentionTargetKind.Date,
+        title: 'Tomorrow',
+        mention: { type: MentionTargetKind.Date, start: '2026-11-12T00:00:00Z' },
+      };
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const search = createSearch((lane, query) => {
+        if (lane === 'bare') return BARE_BUDGET(lane);
+        // `tomo` waits for its answer.
+        if (query !== 'tom') return { delayMs: 60_000, response: EMPTY };
+        return {
+          delayMs: 50,
+          response: lane === 'primary' ? { sections: [section(MentionSearchSectionKind.Dates, [tomorrow])] } : EMPTY,
+        };
+      });
+      const view = await openPanel(search);
+
+      type(view, 'tom');
+      await advance(1_000);
+      expect(titles()).toEqual(['Tomorrow']);
+
+      type(view, 'tomo');
+      expect(titles()).toEqual(['Tomorrow']);
+
+      // `tomo` is asked with the rows request: its provisional list still reads `tom`'s answer.
+      source.set(snapshot([zebra], true));
+      expect(titles()).toEqual(['Tomorrow']);
+    });
+
+    it('keeps the query on screen as it was sent when a row leaves memory while it shows', async () => {
+      localStorage.setItem(MENTION_LOCAL_ROWS_SKIP_SERVER_OVERRIDE_KEY, 'true');
+
+      const source = rowsSource(snapshot([zebra], true));
+
+      mockEditorContext.mentionLocalRows = source.access;
+
+      const search = createSearch(answerZeb);
+      const view = await openPanel(search);
+
+      type(view, 'zeb');
+      await advance(1_000);
+      await highlight(view, 'Zebra map');
+
+      // A collaborator adds a row the tab has no title for: `zeb` stays as it was sent.
+      source.set(snapshot([zebra], false));
+      await advance(1_000);
+
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb']);
+      expect(highlighted()).toBe('Zebra map');
+
+      // The next keystroke sends the rows request again.
+      type(view, 'zebr');
+      await advance(1_000);
+      expect(lanesSent(search)).toEqual(['bare:', 'primary:zeb', 'primary:zebr', 'rows:zebr']);
     });
 
     it('changes nothing on a bare @ when the last row comes into memory: no search again, the highlight stays', async () => {

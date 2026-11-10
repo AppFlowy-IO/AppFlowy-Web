@@ -12,6 +12,11 @@
  *   decoded into a throwaway document in short slices off the keystroke path: the index keeps
  *   titles, never documents (10,000 decoded rows would hold about 200 MB, their titles under 1 MB).
  *   A decoded seed's title is kept with the seed, so the next picker reads it without decoding.
+ * - A row says where its title came from (`synced`): a live document the tab keeps in sync, or a
+ *   copy that may lag behind Search (a seed, a cached document no longer synced), whose title the
+ *   picker gives up for the server's when the server lists the row.
+ * - The primary field is read again when what its text depends on changes (which field, its type,
+ *   its type options); renaming it or changing its icon reads no title again.
  * - `complete`: the membership is loaded, every row has a title, and the tab holds every row of the
  *   database (`holdsDatabaseSourceRows`). A row whose seed waits for a slice has none yet.
  *
@@ -25,7 +30,15 @@ import * as Y from 'yjs';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { getLiveDatabaseRowIds } from '@/application/database-yjs/relation/row-orders';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { YDatabase, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import {
+  YDatabase,
+  YDatabaseField,
+  YDatabaseFieldTypeOption,
+  YDatabaseRow,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import type {
   MentionLocalRow,
@@ -45,6 +58,11 @@ export interface DatabaseMentionRowsOptions {
   databaseDoc: YDoc;
   /** The live document of a row the tab has open, by row key (the row document cache). */
   getLiveRowDoc: (rowKey: string) => YDoc | undefined;
+  /**
+   * Whether the tab keeps a live row document in sync, by the document's id
+   * (`hasRowDocSyncBinding`). Without it every live document counts as synced.
+   */
+  isRowDocSynced?: (rowDocId: string) => boolean;
   /** A row's committed seed, by row key, without consuming it (`peekDatabaseRowDocSeed`). */
   peekRowSeed: (rowKey: string) => MentionRowSeed | null;
   /** Whether the tab holds every row of the database in memory (`holdsDatabaseSourceRows`). */
@@ -137,6 +155,24 @@ function readMembership(database: YDatabase | undefined): string[] | null {
   return getLiveDatabaseRowIds(database);
 }
 
+/**
+ * A key of what the text of a primary field's cells depends on: which field, its type and its type
+ * options (`decodeCellToText` reads a converted cell by its own type's options). Its name, its icon
+ * and `last_modified`, which a rename or an icon change bumps, change no title.
+ */
+function primaryFieldKey(id: string, field: YDatabaseField): string {
+  const type = field.get(YjsDatabaseKey.type) ?? null;
+
+  try {
+    const typeOptions = field.get(YjsDatabaseKey.type_option) as YDatabaseFieldTypeOption | undefined;
+
+    return JSON.stringify([id, type, typeOptions?.toJSON?.() ?? null]);
+  } catch {
+    // Options that do not serialize: any change of the field reads the titles again.
+    return JSON.stringify([id, type, String(field.get(YjsDatabaseKey.last_modified) ?? '')]);
+  }
+}
+
 function readPrimaryField(database: YDatabase | undefined): { id?: string; field?: YDatabaseField; key: string } {
   const fields = database?.get(YjsDatabaseKey.fields);
   let found: { id: string; field: YDatabaseField } | undefined;
@@ -147,10 +183,7 @@ function readPrimaryField(database: YDatabase | undefined): { id?: string; field
 
   if (!found) return { key: '' };
 
-  return {
-    ...found,
-    key: [found.id, found.field.get(YjsDatabaseKey.type), found.field.get(YjsDatabaseKey.last_modified) ?? ''].join(':'),
-  };
+  return { ...found, key: primaryFieldKey(found.id, found.field) };
 }
 
 /** Whether a deep change of the database document can change its membership or its primary field. */
@@ -196,6 +229,7 @@ function createdAtMs(value: unknown): number | undefined {
 export function createDatabaseMentionRowsSource({
   databaseDoc,
   getLiveRowDoc,
+  isRowDocSynced,
   peekRowSeed,
   holdsRows,
   subscribeToResidency,
@@ -226,7 +260,8 @@ export function createDatabaseMentionRowsSource({
 
   const rowKeyOf = (rowId: string) => getRowKey(databaseId, rowId);
 
-  function readRow(doc: YDoc, rowId: string): MentionLocalRow | null {
+  /** The row in `doc`; `synced` when `doc` is a live document the tab keeps in sync. */
+  function readRow(doc: YDoc, rowId: string, synced: boolean): MentionLocalRow | null {
     const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
     if (!row) return null;
@@ -240,11 +275,22 @@ export function createDatabaseMentionRowsSource({
       title = '';
     }
 
-    return { rowId, title, createdAtMs: createdAtMs(row.get(YjsDatabaseKey.created_at)) };
+    return { rowId, title, createdAtMs: createdAtMs(row.get(YjsDatabaseKey.created_at)), synced };
+  }
+
+  function readLiveRow(doc: YDoc, rowId: string): MentionLocalRow | null {
+    return readRow(doc, rowId, isRowDocSynced ? isRowDocSynced(doc.guid) : true);
   }
 
   function sameRow(left: MentionLocalRow | null, right: MentionLocalRow | null) {
-    return left === right || (!!left && !!right && left.title === right.title && left.createdAtMs === right.createdAtMs);
+    return (
+      left === right ||
+      (!!left &&
+        !!right &&
+        left.title === right.title &&
+        left.createdAtMs === right.createdAtMs &&
+        left.synced === right.synced)
+    );
   }
 
   /** What the seed gave when it was decoded for the current primary field; `undefined` if it was not. */
@@ -260,7 +306,7 @@ export function createDatabaseMentionRowsSource({
 
     try {
       applyYDoc(doc, seed.bytes, seed.encoderVersion);
-      row = readRow(doc, rowId);
+      row = readRow(doc, rowId, false);
     } catch {
       row = null;
     } finally {
@@ -276,7 +322,7 @@ export function createDatabaseMentionRowsSource({
     const onChange = () => {
       if (!active || entries.get(rowId) !== entry) return;
 
-      const next = readRow(doc, rowId);
+      const next = readLiveRow(doc, rowId);
 
       // A live document that lost its row data, as while it reloads, keeps the title it had.
       if (next === null || sameRow(entry.row, next)) return;
@@ -300,7 +346,8 @@ export function createDatabaseMentionRowsSource({
 
   /**
    * Gives the row its title from its live document, which is then observed; else queues it for a
-   * slice, which reads its seed. A row without either keeps what it had.
+   * slice, which reads its seed. A row without either keeps what it had, and so does one whose
+   * title and source did not change.
    */
   function resolve(rowId: string, entry: RowEntry) {
     if (!entry.live) {
@@ -309,10 +356,10 @@ export function createDatabaseMentionRowsSource({
       if (doc) attachLive(rowId, entry, doc);
     }
 
-    const live = entry.live ? readRow(entry.live.doc, rowId) : null;
+    const live = entry.live ? readLiveRow(entry.live.doc, rowId) : null;
 
     if (live) {
-      entry.row = live;
+      if (!sameRow(entry.row, live)) entry.row = live;
       pending.delete(rowId);
       return;
     }
@@ -454,13 +501,14 @@ export function createDatabaseMentionRowsSource({
   }
 
   // Rows the tab opened since, and seeds a walk committed since: a row without a live document is
-  // resolved again (a live one is kept current by its observer).
+  // resolved again, and so is one whose live document was not synced (a synced one is kept current
+  // by its observer).
   function runRefresh() {
     refreshQueued = false;
     if (!active) return;
 
     entries.forEach((entry, rowId) => {
-      if (!entry.live || !entry.row) resolve(rowId, entry);
+      if (!entry.live || !entry.row?.synced) resolve(rowId, entry);
     });
     scheduleSlice();
     publish();
