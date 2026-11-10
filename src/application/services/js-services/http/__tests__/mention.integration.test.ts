@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
+    BlockType,
     MentionSearchRequest,
     MentionSearchResponse,
     MentionSearchResultItem,
@@ -14,6 +15,11 @@ import {
     MentionType,
     ViewLayout,
 } from '@/application/types';
+import {
+    MENTION_UNMATCHED_SERVER_TIER,
+    objectTier,
+    retierServerSection,
+} from '@/components/editor/components/panels/mention-panel/mentionLocalRanker';
 import {
     APIService,
     AuthHelper,
@@ -248,6 +254,73 @@ describe('HTTP API - Mention Search', () => {
         });
         expect(section(response, MentionSearchSectionKind.Dates)).toBeUndefined();
     }, 30000);
+
+    // The server tiers typed Pages by their current title (MEN-SEARCH-08) with the matcher the Web
+    // ranker ports (MEN-WEB-06), so re-tiering the server's own answer on the client moves nothing,
+    // and a page found only through its body sits below every title match.
+    it('agrees with the client ranker on the title tiers of a typed Pages answer', async () => {
+        const token = `retier${uuidv4().replace(/-/g, '').slice(0, 10)}`;
+        const { outline } = await APIService.getAppOutline(workspaceId);
+        const rootViewId = outline[0]?.view_id || workspaceId;
+        // Exact, prefix, word start and substring: T0 to T3.
+        const titles = [token, `${token} 2026`, `Notes ${token}`, `x${token}`];
+        const titledIds: string[] = [];
+
+        for (const name of titles) {
+            const { view_id } = await APIService.addAppPage(workspaceId, rootViewId, {
+                layout: ViewLayout.Document,
+                name,
+            });
+
+            titledIds.push(view_id);
+        }
+
+        const { view_id: bodyPageId } = await APIService.addAppPage(workspaceId, rootViewId, {
+            layout: ViewLayout.Document,
+            name: `Weekly sync ${uuidv4().slice(0, 8)}`,
+            page_data: {
+                type: BlockType.Page,
+                children: [
+                    {
+                        type: BlockType.Paragraph,
+                        data: { delta: [{ insert: `Agenda: ${token} review` }] },
+                        children: [],
+                    },
+                ],
+            },
+        });
+
+        // Recent views reach the recent lane before the keyword index has the new titles.
+        await APIService.addRecentPages(workspaceId, titledIds);
+
+        const { response } = await waitForMentionItem(
+            workspaceId,
+            {
+                query: token,
+                limit: 8,
+                include: [MentionTargetKind.Page],
+                context: { view_id: contextPageId },
+            },
+            (item) => item.object_id === bodyPageId
+        );
+        const pages = section(response, MentionSearchSectionKind.Pages);
+
+        expect(pages).toBeDefined();
+        if (!pages) return;
+
+        const tiers = pages.items.map((item) => objectTier(token, item.title) ?? MENTION_UNMATCHED_SERVER_TIER);
+
+        expect(tiers).toEqual([...tiers].sort((left, right) => left - right));
+        expect(retierServerSection(token, pages)).toBe(pages);
+        expect(tiers[pages.items.findIndex((item) => item.object_id === bodyPageId)]).toBe(MENTION_UNMATCHED_SERVER_TIER);
+
+        const seeded = pages.items
+            .map((item) => titledIds.indexOf(item.object_id ?? ''))
+            .filter((index) => index !== -1);
+
+        expect(seeded[0]).toBe(0);
+        expect(seeded).toEqual([...seeded].sort((left, right) => left - right));
+    }, 120000);
 
     describe('picker session reports (MEN-CLOUD-05)', () => {
         const session: MentionPickerSession = {
