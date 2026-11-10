@@ -871,6 +871,25 @@ describe.each([
     expect(titles()).toEqual(['Budget']);
   });
 
+  it('narrows no answer whose request was in flight when the access changed', async () => {
+    const eventEmitter = new EventEmitter();
+    const search = createSearch((lane) =>
+      lane === 'bare' ? { delayMs: 300, response: pages(ROADMAP, BUDGET) } : NEVER
+    );
+
+    mockEditorContext.eventEmitter = eventEmitter;
+
+    const view = await openPanel(search);
+
+    eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+    await advance(300);
+    // The server answered for the access before the change: shown, as any answer is.
+    expect(titles()).toEqual(['Roadmap', 'Budget']);
+
+    type(view, 'r');
+    expect(titles()).toEqual([]);
+  });
+
   it('reports a pick from the provisional list as a cached one, and the first paint with it', async () => {
     const search = createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER));
     const view = await openPanel(search);

@@ -1304,12 +1304,11 @@ export function MentionPanel({
   const sourceMentionSections = mentionV2View ? mentionV2View.sections : sectionsByPicks.sections;
   // The items the local index added, which a session report counts as the local lane's.
   const pickLocalKeys = mentionV2View ? mentionV2View.localKeys : sectionsByPicks.localKeys;
-  // The list shows a cached answer asked for before an access change that names no view, as the
-  // picker shows a stale answer while it asks again: it feeds no provisional list.
+  // The list shows an answer asked for before an access change that names no view: the cached one,
+  // which the picker shows while it asks again, or one whose request was in flight then. It feeds no
+  // provisional list.
   const showsAnswerBeforeAccessChange =
-    typeaheadV2 &&
-    (!showsCurrentAnswer || mentionSectionsSource === 'cache') &&
-    mentionCacheView.answer(mentionSearchCacheKey)?.beforeAccessChange === true;
+    typeaheadV2 && mentionCacheView.answer(mentionSearchCacheKey)?.beforeAccessChange === true;
 
   // After each commit, remember what the list shows for the next keystroke, without the items the
   // local index added: picked targets join only an answer to what is typed (MEN-WEB-10), and the
