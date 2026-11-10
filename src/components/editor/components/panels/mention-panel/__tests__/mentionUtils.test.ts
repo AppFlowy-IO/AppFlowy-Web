@@ -618,6 +618,37 @@ describe('mention panel API mapping', () => {
     ]);
   });
 
+  // MEN-WEB-15: the picker that matches every row of its database itself leaves the rows request out.
+  it('leaves the typed rows request out when asked, keeping the primary request and its cache key apart', () => {
+    const request = {
+      query: 'road',
+      include: [MentionTargetKind.Person, MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
+      context: { view_id: 'view-1', database_view_id: 'database-view-1' },
+    };
+    const both = buildMentionSearchRequests(request);
+    const primaryOnly = buildMentionSearchRequests(request, { skipRows: true });
+
+    expect(primaryOnly).toEqual([both[0]]);
+    expect(primaryOnly[0].include).toEqual([MentionTargetKind.Person, MentionTargetKind.Page]);
+    expect(buildMentionSearchRequests(request, { skipRows: false })).toEqual(both);
+    expect(buildMentionSearchRequestsCacheKey(primaryOnly)).not.toEqual(buildMentionSearchRequestsCacheKey(both));
+    // An empty include means every kind: the primary request names every kind but rows.
+    expect(buildMentionSearchRequests({ query: 'road' }, { skipRows: true })).toEqual([
+      buildMentionSearchRequests({ query: 'road' })[0],
+    ]);
+    // A bare `@` never asks for rows anyway.
+    expect(buildMentionSearchRequests({ ...request, query: '' }, { skipRows: true })).toEqual(
+      buildMentionSearchRequests({ ...request, query: '' })
+    );
+  });
+
+  it('keeps the rows request of a picker that asks for rows alone, which would send nothing without it', () => {
+    const rowsOnly = { query: 'road', include: [MentionTargetKind.DatabaseRow] };
+
+    expect(buildMentionSearchRequests(rowsOnly, { skipRows: true })).toEqual(buildMentionSearchRequests(rowsOnly));
+    expect(buildMentionSearchRequests(rowsOnly, { skipRows: true })).toHaveLength(1);
+  });
+
   it('preserves explicit database filters on typed database-row mention search', () => {
     const requests = buildMentionSearchRequests({
       query: 'road',

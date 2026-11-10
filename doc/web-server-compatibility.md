@@ -389,3 +389,34 @@ documents read the same in every client. The one exception is a database whose v
 not know yet (one it just created, or a container whose children the outline has not loaded): it
 is inserted as a page reference to the view the tab lists it by, which every client opens, where
 the server's item would name the database's first view. A database id there would open nothing.
+
+## Mention local rows lane
+
+With the local lane on, the @ picker of a Text cell or a row page also matches the rows of its
+database by title (`mentionLocalRows.ts`; MEN-WEB-15). `localStorage.__mention_local_rows =
+'false'` turns it off. The rows come from the database's rows source
+(`src/application/database-yjs/mention-local-rows.ts`), which reads nothing until a picker
+subscribes and lets everything go once the last one closes:
+
+- Rows the tab has open (those the view rendered, a row page, a row this tab just created) are read
+  from their live documents, which are observed while the picker is open, so a title typed into a
+  row shows at once. Any other row is read from the seed the row walk downloaded, decoded off the
+  keystroke path in slices of about 8 ms; only titles and creation times are kept, and a seed is
+  decoded once.
+- A typed query adds the rows whose primary-field text matches at T3 or better to Pages, where
+  Search returns rows, ranked by the typeahead contract's rules with the other Pages items. A row
+  created at most 15 minutes ago (its `created_at`) carries `data-fresh="true"`, as a page this tab
+  created does. A row the server lists too keeps the server's payload and shows once. A bare `@`
+  lists no row, as before.
+- An inserted row is the mention a server row item gives: a page reference to the view the editor
+  is in, with the database, the row and the view, so every client opens it. A row of a view the
+  user lost access to in the session is not listed.
+
+The picker keeps sending the rows request it sent before: Search matches a row by its whole text,
+the lane by its title. `localStorage.__mention_local_rows_skip_server = 'true'` leaves that request
+out while the database is complete: every row has a title and the tab holds every row of the
+database (`holdsDatabaseSourceRows`). That is rare: only a cold or full walk makes a database
+resident, a grid revisited after a reload walks only the rows that changed, and the row walk's seed
+lookup holds 10,000 rows across all databases. The switch is off by default, and the primary
+request still asks for no rows, so the request a server receives is the primary request it already
+knew. `doc/MENTION_LOCAL_ROWS_SPIKE.md` gives the measurements behind these rules.

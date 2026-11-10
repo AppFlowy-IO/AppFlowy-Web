@@ -37,6 +37,7 @@ import {
 import { isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { useDatabaseMentionLocalRows } from '@/components/database/hooks/useDatabaseMentionLocalRows';
 import { Editor } from '@/components/editor';
 import type { EditorContentPadding } from '@/components/editor/EditorContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -100,6 +101,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       row_id: rowId,
     }),
     [context?.activeViewId, context?.mentionContext, databaseId, documentId, rowId]
+  );
+  // The @ picker of a writable row page matches the database's rows by title too (MEN-WEB-15).
+  const mentionLocalRows = useDatabaseMentionLocalRows(
+    context,
+    mentionContext.database_view_id,
+    !context?.readOnly && context?.canWrite !== false
   );
 
   // Row document operations from context (mode-specific implementations)
@@ -776,6 +783,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       canComment={context.canComment ?? false}
       canWrite={context.canWrite ?? !context.readOnly}
       mentionContext={mentionContext}
+      mentionLocalRows={mentionLocalRows}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}
     />

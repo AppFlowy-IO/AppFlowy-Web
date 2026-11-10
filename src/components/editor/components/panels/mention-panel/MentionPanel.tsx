@@ -70,6 +70,12 @@ import {
 } from './mentionLocalMerge';
 import { prepareMentionRankCandidates } from './mentionLocalRanker';
 import {
+  mentionLocalRowsForSections,
+  NO_MENTION_LOCAL_ROWS,
+  prepareMentionLocalRows,
+  rankMentionLocalRows,
+} from './mentionLocalRows';
+import {
   loadMentionPickMemory,
   MentionPickScore,
   mentionPickMemoryStorageKey,
@@ -184,6 +190,10 @@ const NO_PICK_SCORES: ReadonlyMap<string, MentionPickScore> = new Map();
 const NO_CLIENT_FEATURES: readonly string[] = [];
 const NO_LANE_ITEMS: readonly MentionLaneItem[] = [];
 const NO_PERSON_PICKS: ReadonlyMap<string, number> = new Map();
+
+function noLocalRows() {
+  return NO_MENTION_LOCAL_ROWS;
+}
 
 /**
  * The sections of a typed answer that the picker's `mentionTypeaheadV2` ranks by the typeahead
@@ -664,6 +674,7 @@ export function MentionPanel({
     enableReminderMentions,
     eventEmitter,
     awareness,
+    mentionLocalRows,
   } = useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
@@ -715,6 +726,23 @@ export function MentionPanel({
   const typeaheadV2 = typeaheadSettings.v2 && hasSearchMentions;
   // The local lane (MEN-WEB-09), on with the picker's v2: what this tab holds joins every list.
   const localLane = typeaheadV2 && typeaheadSettings.localLane;
+  // With it, a Text cell's or row page's picker matches the rows of its database by title (MEN-WEB-15),
+  // so a row created seconds ago is listed before Search has indexed it. Subscribing starts the read.
+  const localRows = localLane && typeaheadSettings.localRows ? mentionLocalRows : undefined;
+  const localRowsSource = localRows?.source;
+  const localRowsSnapshot = useSyncExternalStore(
+    localRowsSource?.subscribe ?? noCacheSubscription,
+    localRowsSource?.getSnapshot ?? noLocalRows,
+    localRowsSource?.getSnapshot ?? noLocalRows
+  );
+  // The server's rows request is left out only when the browser asks for it and the tab holds every
+  // row of the database the request is filtered to: Search also matches a row by text the lane does
+  // not read (its other cells, its page).
+  const skipServerRows =
+    Boolean(localRows) &&
+    typeaheadSettings.skipServerRows &&
+    localRowsSnapshot.complete &&
+    (!mentionContext?.database_id || mentionContext.database_id === localRowsSnapshot.databaseId);
   // The opt-ins the server advertises and the picker's v2 handles, read once per opening.
   const clientFeatures = useMemo(
     () => (open && typeaheadV2 ? mentionClientFeatures() : NO_CLIENT_FEATURES),
@@ -739,7 +767,10 @@ export function MentionPanel({
     }),
     [clientFeatures, mentionContext, mentionInclude, searchText]
   );
-  const mentionSearchRequests = useMemo(() => buildMentionSearchRequests(mentionSearchRequest), [mentionSearchRequest]);
+  const mentionSearchRequests = useMemo(
+    () => buildMentionSearchRequests(mentionSearchRequest, { skipRows: skipServerRows }),
+    [mentionSearchRequest, skipServerRows]
+  );
   const mentionSearchCacheScope = useMemo(
     () => buildMentionSearchCacheScopeKey({ workspaceId, userId: currentUser?.uuid }),
     [currentUser?.uuid, workspaceId]
@@ -850,6 +881,10 @@ export function MentionPanel({
   useEffect(() => {
     if (laneItems.length > 0) prepareMentionRankCandidates(laneItems);
   }, [laneItems]);
+  // And the database's row titles, normalized once per row.
+  useEffect(() => {
+    if (localRows) prepareMentionLocalRows(localRowsSnapshot);
+  }, [localRows, localRowsSnapshot]);
   const pagesSectionTitle = t('document.mention.pagesSection');
   // The picker shows databases inside Pages, or as Pages when no page is listed
   // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.
@@ -944,17 +979,39 @@ export function MentionPanel({
       }),
     [currentUser?.uuid, mentionInclude, mentionSectionTitle, searchText, v2PickScores]
   );
+  // The database's rows that match what is typed, ranked among themselves (MEN-WEB-15). None when the
+  // user lost access to the view the editor is in, whose rows a mention would open.
+  const rowLaneItems = useMemo(
+    () =>
+      localRows && hasMentionSearchQuery && !revokedViews.has(localRows.databaseViewId)
+        ? rankMentionLocalRows({
+            query: searchText ?? '',
+            snapshot: localRowsSnapshot,
+            databaseViewId: localRows.databaseViewId,
+            picks: v2PickScores,
+            nowMs: Date.now(),
+          })
+        : NO_LANE_ITEMS,
+    [hasMentionSearchQuery, localRows, localRowsSnapshot, revokedViews, searchText, v2PickScores]
+  );
   // Merges sections with the local lane by the typeahead contract's rules (`mentionLocalMerge.ts`):
   // the local title wins, local-only matches join a typed query, and People, Pages and rows are
   // ranked with the client's signals. Databases keep the server's order unless a pick scores one, as
-  // MEN-WEB-08 keeps them, so local-only databases follow the server's.
+  // MEN-WEB-08 keeps them, so local-only databases follow the server's. The database's rows join as
+  // local items, as many as Pages can keep.
   const mergeWithLocalLane = useCallback(
     (sections: MentionSearchSection[]) =>
       mentionMergedPickerSections(
         mergeMentionSections({
           request: { query: searchText ?? '', limit: MENTION_SEARCH_LIMIT, include: mentionInclude },
           server: sections,
-          local: laneKeyedLike(sections),
+          local:
+            rowLaneItems.length === 0
+              ? laneKeyedLike(sections)
+              : [
+                  ...laneKeyedLike(sections),
+                  ...mentionLocalRowsForSections(rowLaneItems, sections, MENTION_SEARCH_LIMIT),
+                ],
           picks: v2PickScores,
           present: presentKeys,
           requesterPersonId: currentUser?.uuid,
@@ -965,7 +1022,16 @@ export function MentionPanel({
         }),
         mentionSectionTitle
       ),
-    [currentUser?.uuid, laneKeyedLike, mentionInclude, mentionSectionTitle, presentKeys, searchText, v2PickScores]
+    [
+      currentUser?.uuid,
+      laneKeyedLike,
+      mentionInclude,
+      mentionSectionTitle,
+      presentKeys,
+      rowLaneItems,
+      searchText,
+      v2PickScores,
+    ]
   );
   const bareMentionSearchCacheKey = useMemo(
     () =>
@@ -985,10 +1051,10 @@ export function MentionPanel({
     const query = searchText ?? '';
     const prefixKey = (prefix: string) =>
       prefix.trim()
-        ? buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: prefix }), {
-            workspaceId,
-            userId: currentUser?.uuid,
-          })
+        ? buildMentionSearchRequestsCacheKey(
+            buildMentionSearchRequests({ ...mentionSearchRequest, query: prefix }, { skipRows: skipServerRows }),
+            { workspaceId, userId: currentUser?.uuid }
+          )
         : undefined;
     const prefix = longestCachedMentionPrefix(query, prefixKey, mentionCacheView.answer);
     const bare = mentionCacheView.answer(bareMentionSearchCacheKey);
@@ -1017,6 +1083,7 @@ export function MentionPanel({
     mentionSectionTitle,
     revokedViews,
     searchText,
+    skipServerRows,
     typeaheadV2,
     workspaceId,
   ]);

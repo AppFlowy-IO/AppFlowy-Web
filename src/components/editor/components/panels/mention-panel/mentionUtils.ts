@@ -516,7 +516,23 @@ export function isDatabaseRowOnlyMentionRequest(request: MentionSearchRequest) {
   return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
 }
 
-export function buildMentionSearchRequests(request: MentionSearchRequest): MentionSearchRequest[] {
+export interface MentionSearchRequestsOptions {
+  /**
+   * Leave the typed rows request out, as when the picker matches every row of the database it is in
+   * itself (MEN-WEB-15). The primary request still asks for no rows, so the server sends none.
+   */
+  skipRows?: boolean;
+}
+
+/**
+ * The requests a picker request is sent as: a bare `@` as one request without database rows, a typed
+ * one as the primary request for every other kind and a rows-only request, filtered to the database
+ * of a database context, unless `options.skipRows` leaves that one out (and a primary one remains).
+ */
+export function buildMentionSearchRequests(
+  request: MentionSearchRequest,
+  options: MentionSearchRequestsOptions = {}
+): MentionSearchRequest[] {
   const query = request.query?.trim() ?? '';
   const include = request.include ?? [];
   const includesDatabaseRows = include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
@@ -538,9 +554,13 @@ export function buildMentionSearchRequests(request: MentionSearchRequest): Menti
     include.length > 0
       ? include.filter((kind) => kind !== MentionTargetKind.DatabaseRow)
       : ALL_MENTION_TARGETS_EXCEPT_DATABASE_ROWS;
+  const primary = primaryInclude.length > 0 ? [{ ...request, include: primaryInclude }] : [];
+
+  // A picker that asks for rows alone keeps its request: without it, it would send nothing.
+  if (options.skipRows && primary.length > 0) return primary;
 
   return [
-    ...(primaryInclude.length > 0 ? [{ ...request, include: primaryInclude }] : []),
+    ...primary,
     withDatabaseRowSearchFilter({
       ...request,
       include: [MentionTargetKind.DatabaseRow],
