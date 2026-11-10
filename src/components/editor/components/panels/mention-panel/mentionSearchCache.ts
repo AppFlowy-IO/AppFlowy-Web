@@ -7,8 +7,9 @@ import type { EventEmitter } from 'events';
 
 const MENTION_SEARCH_CACHE_LIMIT = 50;
 const DEFAULT_MENTION_SEARCH_RETRY_LATER_MS = 3000;
-// How many revoked views are remembered to filter late answers. A request settles within seconds,
-// and far fewer views are revoked in that time.
+// How many revoked views are remembered. They filter late answers, which settle within seconds, and
+// keep the picker from bringing one back from the local index until access returns (MEN-WEB-10);
+// far fewer views are revoked in a session.
 const MENTION_SEARCH_REVOKED_VIEW_LIMIT = 100;
 
 /**
@@ -64,9 +65,13 @@ let cacheEpoch = 0;
 let cacheGeneration = 0;
 // Counts stamps and writes, in the order requests were sent.
 let cacheSequence = 0;
-// Each view the user lost access to, with the generation its revoke started. Answers to requests
-// sent before may still list it.
+// Each view the user lost access to and has not regained, with the generation its revoke started.
+// Answers to requests sent before may still list it, and so may the local index until its sources
+// catch up.
 const revokedViewGenerations = new Map<string, number>();
+// The ids in `revokedViewGenerations`, replaced whenever they change, and who to tell.
+let revokedViewIds: ReadonlySet<string> = new Set();
+const revokedViewListeners = new Set<() => void>();
 // The workspace and user of the entries, from the last panel that opened.
 let cacheScope: string | undefined;
 const invalidationEmitters = new WeakSet<EventEmitter>();
@@ -148,18 +153,26 @@ export function markMentionSearchCacheStale() {
   });
 }
 
-function itemTargetsView(item: MentionSearchResultItem, viewId: string) {
+/** The ids an item shows a view by: the page, the database view, or the view a row is shown through. */
+function shownViewIds(item: MentionSearchResultItem): unknown[] {
   // A person's payload names the page the person would be mentioned on, not the person.
-  if (item.kind === MentionTargetKind.Person) return false;
+  if (item.kind === MentionTargetKind.Person) return [];
 
   const payload = item.mention as unknown as Record<string, unknown>;
 
-  return (
-    item.object_id === viewId ||
-    item.database_view_id === viewId ||
-    payload.page_id === viewId ||
-    payload.database_view_id === viewId
-  );
+  return [item.object_id, item.database_view_id, payload.page_id, payload.database_view_id];
+}
+
+function itemTargetsView(item: MentionSearchResultItem, viewId: string) {
+  return shownViewIds(item).includes(viewId);
+}
+
+/**
+ * Whether `item` shows one of `viewIds`, as {@link withoutMentionView} tells: the page, the database
+ * view or a row shown through it, never a person.
+ */
+export function mentionItemShowsAnyView(item: MentionSearchResultItem, viewIds: ReadonlySet<string>): boolean {
+  return viewIds.size > 0 && shownViewIds(item).some((id) => typeof id === 'string' && viewIds.has(id));
 }
 
 /**
@@ -188,10 +201,15 @@ export function withoutRevokedMentionViews(sections: MentionSearchSection[], sta
   return visible;
 }
 
+function revokedViewsChanged() {
+  revokedViewIds = new Set(revokedViewGenerations.keys());
+  revokedViewListeners.forEach((listener) => listener());
+}
+
 /**
  * The user lost access to `viewId`: drops it from every cached answer, and from the answers to
  * requests sent before that are stored later, so its title is never shown from the cache. Marks
- * every answer stale.
+ * every answer stale. It counts as revoked ({@link getRevokedMentionViews}) until access returns.
  */
 export function forgetMentionSearchView(viewId: string) {
   mentionSearchCache.forEach((entry, key) => {
@@ -207,14 +225,45 @@ export function forgetMentionSearchView(viewId: string) {
 
     if (oldestViewId !== undefined) revokedViewGenerations.delete(oldestViewId);
   }
+
+  revokedViewsChanged();
+}
+
+/**
+ * The user regained access to `viewId`: it no longer counts as revoked, so an answer to a request
+ * sent before its revoke keeps it too.
+ */
+export function restoreMentionSearchView(viewId: string) {
+  if (revokedViewGenerations.delete(viewId)) revokedViewsChanged();
+}
+
+/**
+ * The views the user lost access to in this cache's scope (workspace and account) and has not
+ * regained, at most the last {@link MENTION_SEARCH_REVOKED_VIEW_LIMIT}. The same set until one is
+ * revoked or restored, or the cache is cleared. The local index lists such a view until its sources
+ * catch up, so the picker never brings one back from it.
+ */
+export function getRevokedMentionViews(): ReadonlySet<string> {
+  return revokedViewIds;
+}
+
+/** Calls `listener` whenever {@link getRevokedMentionViews} changes; returns the unsubscribe. */
+export function subscribeRevokedMentionViews(listener: () => void): () => void {
+  revokedViewListeners.add(listener);
+  return () => {
+    revokedViewListeners.delete(listener);
+  };
 }
 
 /** Forgets every cached answer and cooldown. Answers to requests sent before are never stored. */
 export function clearMentionSearchCache() {
+  const hadRevokedViews = revokedViewGenerations.size > 0;
+
   cacheEpoch += 1;
   cacheGeneration += 1;
   mentionSearchCache.clear();
   revokedViewGenerations.clear();
+  if (hadRevokedViews) revokedViewsChanged();
 }
 
 /**
@@ -230,8 +279,9 @@ export function ensureMentionSearchCacheScope(scope: string) {
 
 /**
  * Keeps the cache in step with the app's workspace events: answers turn stale when the outline,
- * the recent views, the people or permissions change, and a revoked view is dropped. One listener
- * set per app emitter, which stays while no panel is open.
+ * the recent views, the people or permissions change, a revoked view is dropped, and a restored
+ * one no longer counts as revoked. One listener set per app emitter, which stays while no panel is
+ * open.
  */
 export function subscribeMentionSearchCacheInvalidation(eventEmitter: EventEmitter | undefined) {
   if (!eventEmitter || invalidationEmitters.has(eventEmitter)) return;
@@ -243,6 +293,9 @@ export function subscribeMentionSearchCacheInvalidation(eventEmitter: EventEmitt
   eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, (payload?: { viewId?: string }) => {
     if (payload?.viewId) forgetMentionSearchView(payload.viewId);
     else markMentionSearchCacheStale();
+  });
+  eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, (payload?: { viewId?: string }) => {
+    if (payload?.viewId) restoreMentionSearchView(payload.viewId);
   });
 }
 

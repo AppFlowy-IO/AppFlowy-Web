@@ -38,6 +38,23 @@ const PAGE = 'page:00000000-0000-4000-8000-0000000002a1';
 const OTHER_PAGE = 'page:00000000-0000-4000-8000-0000000002a2';
 const STORAGE_KEY = 'af.mention.pick-memory.v1:workspace-1:7';
 
+/** The navigation key of page `n`, so a test can pick many distinct pages. */
+function pageKey(n: number): string {
+  return `page:00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+}
+
+/**
+ * Picks 1,001 distinct pages after `ro`, through `pick`: page 0 twice on day 0 (the oldest entry,
+ * and the strongest), page 1 once on day 1 (one day of decay makes it the weakest), and pages 2 to
+ * 1,000 once on day 2.
+ */
+function pickThousandAndOne(pick: (key: string, nowMs: number) => void) {
+  pick(pageKey(0), 0);
+  pick(pageKey(0), 0);
+  pick(pageKey(1), DAY_MS);
+  for (let n = 2; n <= 1_000; n += 1) pick(pageKey(n), 2 * DAY_MS);
+}
+
 /** What a memory answers to one step, in the fixture's terms. */
 function answer(step: PickStep, score: (input: string, key: string, nowMs: number) => unknown) {
   return { step, answer: score(step.input, step.key, step.t_ms) };
@@ -200,6 +217,19 @@ describe('MentionPickMemory', () => {
     expect(memory.useCount('spec', OTHER_PAGE, 0)).toBe(MENTION_PICK_SCALE);
   });
 
+  it('keeps 1,000 entries by default, and a full memory forgets its weakest one, not its oldest', () => {
+    const memory = new MentionPickMemory();
+
+    pickThousandAndOne((key, nowMs) => memory.recordPick('ro', key, nowMs));
+
+    expect(memory.size).toBe(1_000);
+    expect(memory.useCount('ro', pageKey(1), 2 * DAY_MS)).toBeNull();
+    // 1.9 after two days of decay, each rounded down.
+    expect(memory.useCount('ro', pageKey(0), 2 * DAY_MS)).toBe(1_806_187);
+    expect(memory.useCount('ro', pageKey(2), 2 * DAY_MS)).toBe(MENTION_PICK_SCALE);
+    expect(memory.useCount('ro', pageKey(1_000), 2 * DAY_MS)).toBe(MENTION_PICK_SCALE);
+  });
+
   it('drops every forgotten entry when it is full, before it forgets a live one', () => {
     const memory = new MentionPickMemory({ capacity: 3 });
 
@@ -304,6 +334,18 @@ describe('the picker memory in localStorage', () => {
     expect(memory.useCount(han(MENTION_PICK_MAX_INPUT_CODE_POINTS), OTHER_PAGE, 0)).toBe(MENTION_PICK_SCALE);
     // A longer typed input starts no stored one.
     expect(memory.score(emoji(MENTION_PICK_MAX_INPUT_CODE_POINTS + 1), PAGE, 0)).toEqual({ adaptive: 0, lift: false });
+  });
+
+  it('stores at most 1,000 entries, and a pick into a full memory drops the weakest one', () => {
+    pickThousandAndOne((key, nowMs) => recordMentionPick(STORAGE_KEY, 'ro', key, nowMs));
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null').e as [string, string, number, number][];
+    const keys = stored.map(([key]) => key);
+
+    expect(stored).toHaveLength(1_000);
+    expect(keys).not.toContain(pageKey(1));
+    expect(keys).toEqual(expect.arrayContaining([pageKey(0), pageKey(2), pageKey(1_000)]));
+    expect(loadMentionPickMemory(STORAGE_KEY, 2 * DAY_MS).size).toBe(1_000);
   });
 
   it('keeps a pick another tab recorded after this picker loaded the memory', () => {

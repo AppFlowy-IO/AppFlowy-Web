@@ -15,14 +15,18 @@ import {
   forgetMentionSearchView,
   getCachedMentionSearch,
   getCachedMentionSections,
+  getRevokedMentionViews,
   markMentionSearchCacheStale,
   markMentionSearchRetryLater,
   MENTION_SEARCH_CACHE_FRESH_MS,
+  mentionItemShowsAnyView,
   mentionSearchCacheStamp,
   mentionSearchRetryLaterRemainingMs,
+  restoreMentionSearchView,
   setCachedMentionSections,
   startMentionSearchRefresh,
   subscribeMentionSearchCacheInvalidation,
+  subscribeRevokedMentionViews,
   withoutMentionView,
   withoutRevokedMentionViews,
 } from '../mentionSearchCache';
@@ -243,6 +247,86 @@ describe('mentionSearchCache', () => {
       expect(withoutMentionView(sections, revoked)).toBe(sections);
       expect(withoutMentionView(pages(page(revoked), page('kept')), revoked)).toEqual(sections);
     });
+
+    it('counts as revoked until access returns, telling the subscribers of each change', () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeRevokedMentionViews(listener);
+
+      forgetMentionSearchView(revoked);
+      const revokedViews = getRevokedMentionViews();
+
+      expect([...revokedViews]).toEqual([revoked]);
+      // The same set until it changes, as useSyncExternalStore needs.
+      expect(getRevokedMentionViews()).toBe(revokedViews);
+      restoreMentionSearchView('never-revoked');
+      expect(getRevokedMentionViews()).toBe(revokedViews);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      restoreMentionSearchView(revoked);
+      expect(getRevokedMentionViews().size).toBe(0);
+      expect(listener).toHaveBeenCalledTimes(2);
+
+      // A clear (sign-out, another workspace or account) forgets every revoke.
+      forgetMentionSearchView(revoked);
+      clearMentionSearchCacheForTests();
+      expect(getRevokedMentionViews().size).toBe(0);
+      expect(listener).toHaveBeenCalledTimes(4);
+
+      unsubscribe();
+      forgetMentionSearchView(revoked);
+      expect(listener).toHaveBeenCalledTimes(4);
+    });
+
+    it('keeps only the last 100 revokes', () => {
+      for (let n = 0; n <= 100; n += 1) forgetMentionSearchView(`view-${n}`);
+
+      expect(getRevokedMentionViews().size).toBe(100);
+      expect(getRevokedMentionViews().has('view-0')).toBe(false);
+      expect(getRevokedMentionViews().has('view-100')).toBe(true);
+    });
+
+    it('no longer leaves a view out of a late answer once access to it returns', () => {
+      const stamp = mentionSearchCacheStamp();
+      const answer = pages(page(revoked), page('kept'));
+
+      forgetMentionSearchView(revoked);
+      restoreMentionSearchView(revoked);
+
+      expect(withoutRevokedMentionViews(answer, stamp)).toBe(answer);
+    });
+
+    it('tells the items that show a view: the page, the database view or a row of it, never a person', () => {
+      const viewIds = new Set([revoked]);
+      const database: MentionSearchResultItem = {
+        kind: MentionTargetKind.Database,
+        object_id: 'database-1',
+        title: 'Tasks',
+        database_view_id: revoked,
+        mention: { type: MentionTargetKind.Database, database_id: 'database-1', database_view_id: revoked },
+      };
+      const row: MentionSearchResultItem = {
+        kind: MentionTargetKind.DatabaseRow,
+        object_id: 'row-1',
+        title: 'Row',
+        mention: {
+          type: MentionTargetKind.DatabaseRow,
+          database_id: 'database-1',
+          database_view_id: revoked,
+          row_id: 'row-1',
+        },
+      };
+      const person: MentionSearchResultItem = {
+        kind: MentionTargetKind.Person,
+        object_id: 'ada',
+        title: 'Ada',
+        mention: { type: MentionTargetKind.Person, person_id: 'ada', person_name: 'Ada', page_id: revoked },
+      };
+
+      expect(
+        [page(revoked), database, row, person, page('kept')].map((item) => mentionItemShowsAnyView(item, viewIds))
+      ).toEqual([true, true, true, false, false]);
+      expect(mentionItemShowsAnyView(page(revoked), new Set())).toBe(false);
+    });
   });
 
   describe('send order', () => {
@@ -302,6 +386,18 @@ describe('mentionSearchCache', () => {
       expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('kept')) });
     });
 
+    it('counts a view as revoked from VIEW_ACCESS_REVOKED until VIEW_ACCESS_RESTORED', () => {
+      const eventEmitter = new EventEmitter();
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'gone' });
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'back' });
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'back' });
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, {});
+
+      expect([...getRevokedMentionViews()]).toEqual(['gone']);
+    });
+
     it('subscribes once per emitter, however many panels mount', () => {
       const eventEmitter = new EventEmitter();
 
@@ -311,6 +407,7 @@ describe('mentionSearchCache', () => {
 
       expect(eventEmitter.listenerCount(APP_EVENTS.FOLDER_VIEW_CHANGED)).toBe(1);
       expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(1);
+      expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(1);
     });
   });
 });

@@ -156,18 +156,20 @@ function localViewItem(view: MentionLocalView): MentionSearchResultItem | undefi
 }
 
 /**
- * A roster member as the server would list them: titled by name, or by address when the name is
- * blank (decision D21), with the address as the subtitle. The picker fills the page on insertion.
+ * A roster member as the server would list them: titled and named by name, or by address when the
+ * name is blank (decision D21, Cloud's `person_mention_item`), with the address as the subtitle. The
+ * picker fills the page on insertion.
  */
 function localPersonItem(person: MentionablePerson): MentionSearchResultItem {
   const name = person.name ?? '';
+  const title = isMentionBlankText(name) && person.email ? person.email : name;
 
   return {
     kind: MentionTargetKind.Person,
     object_id: person.person_id,
-    title: isMentionBlankText(name) && person.email ? person.email : name,
+    title,
     subtitle: person.email || undefined,
-    mention: { type: MentionTargetKind.Person, person_id: person.person_id, person_name: name, page_id: '' },
+    mention: { type: MentionTargetKind.Person, person_id: person.person_id, person_name: title, page_id: '' },
   };
 }
 
@@ -200,7 +202,10 @@ export interface RankMentionSectionsByPicksInput {
   request: MentionPickRequest;
   /** The requester's person id: the requester stays last in their class. */
   requesterPersonId?: string;
-  /** The local index's item for a picked navigation key the answer lacks. */
+  /**
+   * The local index's item for a picked navigation key the answer lacks, or `undefined` when none
+   * may join: the index does not hold it, or the user lost access to it.
+   */
   localItem?: (key: string) => MentionSearchResultItem | undefined;
   /** The title of a section only picked local items fill. */
   sectionTitle: (kind: MentionSearchSectionKind) => string;

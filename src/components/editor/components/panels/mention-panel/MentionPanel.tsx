@@ -1,7 +1,16 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import dayjs from 'dayjs';
-import { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -54,12 +63,15 @@ import {
   ensureMentionSearchCacheScope,
   getCachedMentionSearch,
   getCachedMentionSections,
+  getRevokedMentionViews,
+  mentionItemShowsAnyView,
   mentionSearchCacheStamp,
   MentionSearchCacheStamp,
   mentionSearchRetryLaterRemainingMs,
   setCachedMentionSections,
   startMentionSearchRefresh,
   subscribeMentionSearchCacheInvalidation,
+  subscribeRevokedMentionViews,
   withoutMentionView,
   withoutRevokedMentionViews,
 } from './mentionSearchCache';
@@ -107,6 +119,18 @@ type MentionSearchStatus = 'idle' | 'loading' | 'ok' | 'unavailable' | 'busy' | 
 
 /** Where the search's sections on screen came from: a server answer, or a cached one. */
 type MentionSectionsSource = Extract<MentionSessionSource, 'server' | 'cache'>;
+
+/** The answer the sections on screen show: the cache key of its search, and where it came from. */
+interface MentionSectionsAnswer {
+  key: string;
+  source: MentionSectionsSource;
+}
+
+const NO_REVOKED_VIEWS: ReadonlySet<string> = new Set();
+
+function noRevokedViews() {
+  return NO_REVOKED_VIEWS;
+}
 
 /** One search's requests in flight, as the panel hands them to its scheduler. */
 type MentionPanelFlight = MentionSearchFlight<MentionSectionsFetchResult, MentionSearchSection[]>;
@@ -550,8 +574,10 @@ export function MentionPanel({
   }, []);
   const editor = useSlateStatic() as YjsEditor;
   const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
-  // Set with the sections, for the session report of a pick.
-  const [mentionSectionsSource, setMentionSectionsSource] = useState<MentionSectionsSource | undefined>(undefined);
+  // Set with the sections, unset while they show no answer: pick memory orders only the answer to
+  // the search on screen, and a session report gives where a pick came from.
+  const [mentionSectionsAnswer, setMentionSectionsAnswer] = useState<MentionSectionsAnswer | undefined>(undefined);
+  const mentionSectionsSource = mentionSectionsAnswer?.source;
   const [searchStatus, setSearchStatus] = useState<MentionSearchStatus>('idle');
   // An explicit retry (the Retry row, or the browser coming back online) is pending.
   const [retrying, setRetrying] = useState(false);
@@ -632,8 +658,9 @@ export function MentionPanel({
     return sections;
   }, [activePanel, mentionableFallbackViews, searchText, t, useLocalMentionFallback]);
   // Pick memory (MEN-WEB-10), off by default: what this user inserted after typing what, read from
-  // the device once per opening. It orders a typed answer where a pick scores, and brings a picked
-  // target the answer lacks from the local index.
+  // the device once per opening. It orders the answer to a typed search once that answer is on
+  // screen (a pending one shows the loading state as before), and brings a picked target the
+  // answer lacks from the local index.
   const hasSearchMentions = Boolean(searchMentions);
   const pickMemoryKey = useMemo(
     () => mentionPickMemoryStorageKey(workspaceId, currentUser?.uid),
@@ -647,10 +674,19 @@ export function MentionPanel({
     [hasSearchMentions, open, pickMemoryKey]
   );
   const pickLocalSnapshot = useMentionLocalSnapshot(pickMemory ? workspaceId : undefined);
+  // The views the user lost access to in this session. The local index lists one until its sources
+  // catch up, so a picked one never joins from it.
+  const getPickRevokedViews = pickMemory ? getRevokedMentionViews : noRevokedViews;
+  const pickRevokedViews = useSyncExternalStore(subscribeRevokedMentionViews, getPickRevokedViews, getPickRevokedViews);
+  const pagesSectionTitle = t('document.mention.pagesSection');
+  // Whether the sections on screen answer the search for what is typed now, not one before it.
+  const showsCurrentAnswer = mentionSectionsAnswer?.key === mentionSearchCacheKey;
   const sectionsByPicks = useMemo(() => {
     const sections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
 
-    if (!pickMemory || useLocalMentionFallback || !hasMentionSearchQuery) return { sections, localKeys: undefined };
+    if (!pickMemory || useLocalMentionFallback || !hasMentionSearchQuery || !showsCurrentAnswer) {
+      return { sections, localKeys: undefined };
+    }
 
     const query = searchText ?? '';
     const nowMs = Date.now();
@@ -661,12 +697,15 @@ export function MentionPanel({
       scores: pickMemory.scores(query, nowMs),
       request: { include: mentionInclude },
       requesterPersonId: currentUser?.uuid,
-      localItem: (key) => mentionLocalPickItem(pickLocalSnapshot, key),
-      // Web lists databases and rows inside Pages, so a created Databases section is titled so too.
+      localItem: (key) => {
+        const item = mentionLocalPickItem(pickLocalSnapshot, key);
+
+        return item && !mentionItemShowsAnyView(item, pickRevokedViews) ? item : undefined;
+      },
+      // The picker shows databases inside Pages, or as Pages when no page is listed
+      // (normalizeMentionSearchSectionsForPicker), so a created Databases section is titled Pages.
       sectionTitle: (kind) =>
-        kind === MentionSearchSectionKind.People
-          ? t('document.mention.peopleSection')
-          : t('document.mention.pagesSection'),
+        kind === MentionSearchSectionKind.People ? t('document.mention.peopleSection') : pagesSectionTitle,
       nowMs,
     });
   }, [
@@ -675,9 +714,12 @@ export function MentionPanel({
     localFallbackMentionSections,
     mentionInclude,
     mentionSections,
+    pagesSectionTitle,
     pickLocalSnapshot,
     pickMemory,
+    pickRevokedViews,
     searchText,
+    showsCurrentAnswer,
     t,
     useLocalMentionFallback,
   ]);
@@ -685,15 +727,17 @@ export function MentionPanel({
   // The picked targets the local index added, which a session report counts as the local lane's.
   const pickLocalKeys = sectionsByPicks.localKeys;
   const pickerMentionSections = useMemo(
-    () => normalizeMentionSearchSectionsForPicker(
-      enableReminderMentions === false
-        ? sourceMentionSections.map((section) => ({
-            ...section,
-            items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
-          }))
-        : sourceMentionSections
-    ),
-    [sourceMentionSections, enableReminderMentions]
+    () =>
+      normalizeMentionSearchSectionsForPicker(
+        enableReminderMentions === false
+          ? sourceMentionSections.map((section) => ({
+              ...section,
+              items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
+            }))
+          : sourceMentionSections,
+        pagesSectionTitle
+      ),
+    [sourceMentionSections, enableReminderMentions, pagesSectionTitle]
   );
 
   useEffect(() => {
@@ -745,7 +789,7 @@ export function MentionPanel({
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
-      setMentionSectionsSource(undefined);
+      setMentionSectionsAnswer(undefined);
       setSearchStatus('idle');
       setRetrying(false);
       setBusyUntil(undefined);
@@ -818,10 +862,13 @@ export function MentionPanel({
       }).then((result) => ({ ...result, sections: visible(result.sections) }));
     }
 
-    // Shows `sections` and where they came from, which a session report gives for a pick.
+    // Shows `sections`, the answer to this search from `source`, or no answer without one.
     function showSections(sections: MentionSearchSection[], source?: MentionSectionsSource) {
       setMentionSections(sections);
-      setMentionSectionsSource(source);
+      setMentionSectionsAnswer((shown) => {
+        if (!source) return undefined;
+        return shown?.key === cacheKey && shown.source === source ? shown : { key: cacheKey, source };
+      });
     }
 
     // Sections that arrive while the rest of the answer is pending. Without items they would only

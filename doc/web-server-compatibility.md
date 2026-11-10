@@ -247,10 +247,17 @@ while it is off the picker neither records nor reads picks.
   lift an item one tier and never more, so only those picks can put an item above another's exact
   title. A section where no pick scores keeps the server's order; one where a pick scores is
   ranked by the contract's client ranking, so a body-only hit there drops below the title matches.
+- Pick memory orders only the answer to what is typed now, once it is on screen: a server answer,
+  part of one, or a cached one. While that answer is pending the loading state shows as before,
+  and the answer to an earlier search, such as the bare one a local one-letter query keeps, stays
+  as it is.
 - A picked page, database or person that the answer lacks (the index has not caught up, or the
   roster is refreshing) joins from the tab's local index, when the picker asked for its kind and
-  its current title or name still matches the query. The session report counts such a pick as
-  `local`.
+  its current title or name still matches the query. A person joins named as Cloud names them, by
+  the address when the name is blank. Until access returns (`VIEW_ACCESS_RESTORED`), a page or
+  database view the user lost access to in this session (`VIEW_ACCESS_REVOKED`) never joins, though
+  the index lists it until the outline or the recent views catch up. The session report counts such
+  a pick as `local`.
 - The memory stays on the device, under `af.mention.pick-memory.v1:<workspace_id>:<uid>`: normalized
   inputs of at most 32 code points, navigation keys, counts and times, no title, name or address.
   An explicit sign-out removes the user's memories in every workspace; a session that expires keeps
@@ -260,3 +267,7 @@ while it is off the picker neither records nor reads picks.
 Pick memory sends nothing and changes no request or header, so every server, released or older
 self-hosted, receives what it received before. It reads only the item fields every released server
 sends (the kind, title, subtitle and mention payload ids).
+
+With pick memory on or off, the picker shows databases and rows inside Pages, and titles the Pages
+section it makes from an answer that lists databases or rows but no pages with the translated
+`document.mention.pagesSection` ("Pages" in English) rather than the untranslated "Pages".

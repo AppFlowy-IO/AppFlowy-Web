@@ -444,12 +444,19 @@ describe('a picked target the answer lacks', () => {
       database_view_id: uuid(33),
       mention: { type: MentionTargetKind.Database, database_id: uuid(34), database_view_id: uuid(33) },
     });
+    // A blank name is shown and inserted as the address, as Cloud names such a person.
     expect(mentionLocalPickItem(index, `person:${uuid(36)}`)).toEqual({
       kind: MentionTargetKind.Person,
       object_id: uuid(36),
       title: 'ann.lee@appflowy.io',
       subtitle: 'ann.lee@appflowy.io',
-      mention: { type: MentionTargetKind.Person, person_id: uuid(36), person_name: ' ', page_id: '' },
+      mention: { type: MentionTargetKind.Person, person_id: uuid(36), person_name: 'ann.lee@appflowy.io', page_id: '' },
+    });
+    expect(mentionLocalPickItem(index, `person:${uuid(35)}`)?.mention).toEqual({
+      type: MentionTargetKind.Person,
+      person_id: uuid(35),
+      person_name: 'Annie Wang',
+      page_id: '',
     });
     // A database's own view key is no page, and a page key is no database.
     expect(mentionLocalPickItem(index, `page:${uuid(33)}`)).toBeUndefined();

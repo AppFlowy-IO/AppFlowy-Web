@@ -1,8 +1,11 @@
+import { EventEmitter } from 'events';
+
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
+import { APP_EVENTS } from '@/application/constants';
 import {
   MENTION_FEATURE_SESSION_METRICS_V1,
   MentionPickerSessionReport,
@@ -25,10 +28,11 @@ import { PanelProvider } from '@/components/editor/components/panels/PanelsConte
 import { getConfigValue } from '@/utils/runtime-config';
 import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
-import { MentionPanel } from '../MentionPanel';
 import { clearMentionLocalIndex, recordMentionRoster, setMentionIndexSources } from '../mentionLocalIndex';
+import { MentionPanel } from '../MentionPanel';
 import { MENTION_PICK_MEMORY_OVERRIDE_KEY, MENTION_PICK_MEMORY_STORAGE_PREFIX } from '../mentionPickMemory';
 import { clearMentionSearchCacheForTests } from '../mentionSearchCache';
+import { MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, MENTION_SCHEDULER_MODE_OVERRIDE_KEY } from '../mentionSearchScheduler';
 
 const mockAddMark = jest.fn();
 const mockPost = jest.fn();
@@ -86,6 +90,15 @@ const ROADMAP = page(1, 'Roadmap');
 const ROADMAP_2026 = page(2, 'Roadmap 2026');
 const ROADMAP_Q4 = page(3, 'Roadmap Q4');
 const RECENT = page(9, 'Recent page');
+// The database 6, answered through its grid view 5.
+const ROADMAP_TRACKER: MentionSearchResultItem = {
+  kind: MentionTargetKind.Database,
+  object_id: uuid(6),
+  title: 'Roadmap tracker',
+  database_id: uuid(6),
+  database_view_id: uuid(5),
+  mention: { type: MentionTargetKind.Database, database_id: uuid(6), database_view_id: uuid(5) },
+};
 const ANNIE: MentionablePerson = {
   uid: 21,
   avatar_url: null,
@@ -109,7 +122,16 @@ const ANNIE_ITEM: MentionSearchResultItem = {
 
 /** What the server finds for `ro` and for `an`; tests change them to model an index that lags. */
 let typedPages: MentionSearchResultItem[];
+let typedDatabases: MentionSearchResultItem[];
 let typedPeople: MentionSearchResultItem[];
+
+/** The answer to `ro`: its pages and its databases, each section only when it has items. */
+function roSections(): MentionSearchSection[] {
+  return [
+    ...(typedPages.length > 0 ? [section(MentionSearchSectionKind.Pages, typedPages)] : []),
+    ...(typedDatabases.length > 0 ? [section(MentionSearchSectionKind.Databases, typedDatabases)] : []),
+  ];
+}
 
 function isRowRequest(request: MentionSearchRequest) {
   return request.include?.length === 1 && request.include[0] === MentionTargetKind.DatabaseRow;
@@ -134,8 +156,10 @@ function createSearch() {
           else if (isRowRequest(request)) resolve({ sections: [] });
           else if (request.query === 'an' && asksForPeople) {
             resolve({ sections: [section(MentionSearchSectionKind.People, typedPeople)] });
+          } else if (request.query === 'ro') {
+            resolve({ sections: roSections() });
           } else {
-            resolve({ sections: [section(MentionSearchSectionKind.Pages, request.query === 'ro' ? typedPages : [])] });
+            resolve({ sections: [section(MentionSearchSectionKind.Pages, [])] });
           }
         }, ANSWER_MS);
 
@@ -207,6 +231,17 @@ function shownKeys() {
   );
 }
 
+function sectionHeadings() {
+  return Array.from(document.querySelectorAll('[data-section-kind]')).map(
+    (shown) => shown.querySelector(':scope > div > span')?.textContent
+  );
+}
+
+/** Whether the loading skeleton stands in for the results. */
+function showsLoadingState() {
+  return screen.getByTestId('mention-panel').querySelector('[aria-busy="true"]') !== null;
+}
+
 function highlightedTitle() {
   return document.querySelector('[data-option-key][data-selected="true"]')?.textContent;
 }
@@ -245,6 +280,11 @@ function outlineView(n: number, name: string): View {
   };
 }
 
+/** A grid view `n` of database `databaseN`, which the index keys as the server keys it. */
+function databaseOutlineView(n: number, name: string, databaseN: number): View {
+  return { ...outlineView(n, name), layout: ViewLayout.Grid, extra: { is_space: false, database_id: uuid(databaseN) } };
+}
+
 describe('MentionPanel pick memory', () => {
   const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 
@@ -268,6 +308,7 @@ describe('MentionPanel pick memory', () => {
     resetMentionSessionMetricsForTests();
     localStorage.clear();
     typedPages = [ROADMAP, ROADMAP_2026, ROADMAP_Q4];
+    typedDatabases = [];
     typedPeople = [ANNIE_ITEM];
     Object.keys(mockEditorContext).forEach((key) => delete mockEditorContext[key]);
     mockEditorContext.workspaceId = WORKSPACE;
@@ -353,6 +394,103 @@ describe('MentionPanel pick memory', () => {
         { selected_rank: 2, selected_source: 'server' },
         { selected_rank: 1, selected_source: 'local' },
       ]);
+    });
+
+    it('joins a picked page only once the answer is on screen: until then the loading state shows', async () => {
+      setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+
+      // The index has not caught up: the server's answer will leave the page out.
+      typedPages = [ROADMAP, ROADMAP_Q4];
+      clearMentionSearchCacheForTests();
+      await type(editor, ' @');
+      await advance(ANSWER_MS);
+      await type(editor, 'ro');
+
+      // Nothing typed is answered yet, so the skeleton stands in for the results, as without picks.
+      expect(shownTitles()).toEqual([]);
+      expect(showsLoadingState()).toBe(true);
+
+      await advance(TYPING_DEBOUNCE_MS + ANSWER_MS);
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+      expect(showsLoadingState()).toBe(false);
+    });
+
+    it('leaves the answer to another search as it is, such as the bare one a local letter keeps', async () => {
+      localStorage.setItem(MENTION_SCHEDULER_MODE_OVERRIDE_KEY, 'contract');
+      localStorage.setItem(MENTION_ONE_LETTER_LOCAL_OVERRIDE_KEY, 'true');
+      setMentionIndexSources(WORKSPACE, { outline: [outlineView(2, 'Roadmap 2026')] });
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+
+      // `r` stays local: nothing is sent, and the bare answer stays on screen, neither ordered by
+      // the pick for `ro` nor joined by it.
+      await openAndType(editor, 'r');
+      expect(shownTitles()).toEqual(['Recent page']);
+    });
+
+    it.each([
+      ['outline', (view: View) => ({ outline: [view] })],
+      ['recent views', (view: View) => ({ outline: [], recent: [view] })],
+    ])('drops a page the user loses access to, and never brings it back from the %s', async (_, sources) => {
+      const eventEmitter = new EventEmitter();
+
+      mockEditorContext.eventEmitter = eventEmitter;
+      // The index lists the page until its sources catch up with the revoke.
+      setMentionIndexSources(WORKSPACE, sources(outlineView(2, 'Roadmap 2026')));
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      await pickWithEnter('Roadmap 2026');
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: uuid(2) });
+      });
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+
+      // The next opening: the server leaves the page out, and the index still lists it.
+      await pressKey('Escape');
+      typedPages = [ROADMAP, ROADMAP_Q4];
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+
+      // Access returns: the picked page joins again.
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: uuid(2) });
+      });
+      expect(shownTitles()).toEqual(['Roadmap 2026', 'Roadmap', 'Roadmap Q4']);
+
+      // Revoked again while only the index brings it: it leaves the open panel at once too.
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: uuid(2) });
+      });
+      expect(shownTitles()).toEqual(['Roadmap', 'Roadmap Q4']);
+      expect(insertedPageIds()).toEqual([uuid(2)]);
+    });
+
+    it('titles a databases-only answer, and a picked database that joins an empty one, as Pages', async () => {
+      setMentionIndexSources(WORKSPACE, { outline: [databaseOutlineView(5, 'Roadmap tracker', 6)] });
+      typedPages = [];
+      typedDatabases = [ROADMAP_TRACKER];
+      const editor = renderEditor();
+
+      await openAndTypeRo(editor);
+      expect(sectionHeadings()).toEqual(['document.mention.pagesSection']);
+      await pickWithEnter('Roadmap tracker');
+
+      // The index has not caught up: nothing answers `ro`, and the picked database joins.
+      typedDatabases = [];
+      clearMentionSearchCacheForTests();
+      await openAndTypeRo(editor);
+      expect(shownTitles()).toEqual(['Roadmap tracker']);
+      expect(sectionHeadings()).toEqual(['document.mention.pagesSection']);
     });
 
     it('adds a picked person the answer lacks only to a picker that lists people', async () => {
