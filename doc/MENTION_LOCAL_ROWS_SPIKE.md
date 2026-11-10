@@ -132,10 +132,20 @@ runs over the same titles and queries, each query timed with and without it alte
 figures were not measured again; the pass adds the same amount there.
 
 The merge takes the rows as the picker passes them (`mentionLocalRowsForSections`). Normalizing the
-10,000 titles once, when the picker opens: 5.8-6.1 ms (Jest), 4.4-4.8 ms (Node). The synthetic
+10,000 titles once, when the picker opens: 5.8-6.1 ms (Jest), 4.4-4.8 ms (Node). That copy serves
+only the word filter: ranking the titles that pass it prepares each of them again in the ranker's
+own cache, so the first keystroke that matches a title pays for it once more. The figures above
+are for warm caches. Measured after the final review in plain Node, 7 runs, medians: over 10,000
+varied titles a first `e` took 6.7 ms (1.0 ms warm), over 10,000 templated titles a first `o` took
+8.4 ms (2.4 ms warm). Preparing the ranker's cache at the opening too took those first keystrokes
+to 1.4 and 2.9 ms but the opening from 6.4 to 16.2 ms and from 3.6 to 9.1 ms. The synthetic
 titles share a twelve-word vocabulary, so a query like `road` keeps a sixth of them past the word
 filter; with real, more varied titles the filter drops more. A one-letter query matches thousands of
-titles either way; the ranking stops at the 60 best.
+titles either way: the ranking returns the 60 best, but ranks every title that passes the filter
+and sorts each tier until one fills the 60, so templated titles that all share the typed word, such
+as `Order 00001` to `Order 10000`, cost the most: typing `o` to `order 01` over them took
+2.55-2.65 ms median and 3.20-3.46 ms p95 in five plain-Node runs, against 0.86-0.96 ms and
+1.50-1.89 ms for the vocabulary above.
 
 ## Freshness
 

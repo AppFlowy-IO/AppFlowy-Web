@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { ReactNode } from 'react';
+import { Profiler, ReactNode } from 'react';
 import { createEditor, Editor, Transforms } from 'slate';
 import { Editable, Slate, withReact } from 'slate-react';
 
@@ -40,6 +40,9 @@ import {
 const mockAddMark = jest.fn();
 const mockReport = jest.fn();
 const WORKSPACE = 'workspace';
+// How many times the picker's render ran, and how many it had run at each commit.
+let mockPanelRenders = 0;
+let rendersAtCommit: number[] = [];
 
 function uuid(n: number): string {
   return `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
@@ -83,7 +86,10 @@ jest.mock('@/application/slate-yjs/command', () => ({
   CustomEditor: { addMark: (...args: unknown[]) => mockAddMark(...args) },
 }));
 jest.mock('@/components/editor/components/panels/Panels.hooks', () => ({
-  usePanelContext: () => mockPanelContext,
+  usePanelContext: () => {
+    mockPanelRenders += 1;
+    return mockPanelContext;
+  },
 }));
 jest.mock('@/components/editor/EditorContext', () => ({ useEditorContext: () => mockEditorContext }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => mockCurrentUser }));
@@ -171,7 +177,9 @@ function renderPanel() {
   const tree = () => (
     <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@zeb' }] }]}>
       <Editable data-testid='editor' />
-      <MentionPanel notifyOnInsert={false} />
+      <Profiler id='mention-panel' onRender={() => rendersAtCommit.push(mockPanelRenders)}>
+        <MentionPanel notifyOnInsert={false} />
+      </Profiler>
     </Slate>
   );
   const view = render(tree());
@@ -847,6 +855,32 @@ describe('MentionPanel local rows lane (MEN-WEB-15)', () => {
       view.rerender();
       expect(source.listeners.size).toBe(0);
     });
+  });
+
+  // The rows skip is decided only where the rows lane may leave rows out. Storing a decision is a
+  // state update during render, after which React runs the picker's render again before it commits.
+  it.each([
+    ['every switch at its default', () => localStorage.clear()],
+    ['the rows lane on and the rows skip off', () => undefined],
+  ])('renders the picker once before committing an opening and a keystroke, with %s', async (_, setUp) => {
+    setUp();
+    mockEditorContext.mentionLocalRows = rowsSource(
+      snapshot([{ rowId: ZEBRA, title: 'Zebra launch', createdAtMs: NOW - SECOND }], true)
+    ).access;
+    mockEditorContext.searchMentions = createSearch(BARE_BUDGET);
+    mockPanelContext.searchText = '';
+    mockPanelRenders = 0;
+    rendersAtCommit = [];
+
+    const view = renderPanel();
+
+    expect(rendersAtCommit[0]).toBe(1);
+    await advance(100);
+
+    mockPanelRenders = 0;
+    rendersAtCommit = [];
+    type(view, 'zeb');
+    expect(rendersAtCommit[0]).toBe(1);
   });
 
   it('lists no row of a view the user lost access to', async () => {

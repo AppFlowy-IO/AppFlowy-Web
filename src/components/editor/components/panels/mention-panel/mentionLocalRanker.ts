@@ -28,6 +28,7 @@
  * pickers match people with {@link personTier} when their own `ranked` order is on
  * (`@/application/comment-mention-ranking`).
  */
+import { EventType, on } from '@/application/session/event';
 import {
   MentionSearchResultItem,
   MentionSearchSection,
@@ -436,6 +437,9 @@ export function clearMentionRankerCache(): void {
   rankPass = 0;
   rankPassQuery = '';
 }
+
+// The prepared texts are the signed-in account's titles, names and addresses. Sign-out emits this too.
+on(EventType.SESSION_INVALID, clearMentionRankerCache);
 
 function titleTier(query: MentionQuery, title: PreparedText): MentionTier | undefined {
   const text = title.normalized;

@@ -1,5 +1,6 @@
 import { performance } from 'perf_hooks';
 
+import { emit, EventType } from '@/application/session/event';
 import {
   MentionSearchResultItem,
   MentionSearchSection,
@@ -820,6 +821,18 @@ describe('the prepared-text cache', () => {
         ['c', 'ca', 'caf', 'cafe 1', 'cafe 12'].forEach((query) => rankSection(query, 'objects', pages, 0, 20))
       )
     ).toBe(0);
+  });
+
+  it("forgets every prepared text when the session ends, as they are the account's", () => {
+    clearMentionRankerCache();
+
+    const team = accented(50).map((candidate) => ({ ...candidate, email: `jos\u00e9.${candidate.key}@appflowy.io` }));
+
+    prepareMentionRankCandidates(team);
+    expect(countNormalizeCalls(() => rankSection('jose', 'people', team, 0, 20))).toBe(0);
+
+    emit(EventType.SESSION_INVALID);
+    expect(countNormalizeCalls(() => rankSection('jose', 'people', team, 0, 20))).toBe(team.length * 2);
   });
 
   it('can prepare candidates before the first keystroke', () => {

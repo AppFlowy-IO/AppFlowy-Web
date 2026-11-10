@@ -25,9 +25,10 @@
  * asks for it (`__mention_local_rows_skip_server`, off by default until the coverage it loses is
  * measured; `doc/MENTION_LOCAL_ROWS_SPIKE.md`), and decides that once per typed query.
  *
- * Matching reads a normalized copy of each title, made once per row and kept with it, and first
- * drops every row that lacks one of the query's words: a title matches at some tier only if it
- * contains each of them. Nothing here depends on React, the database's internals or the network.
+ * Matching first drops every row that lacks one of the query's words, which a title must contain to
+ * match at any tier, reading a normalized copy of each title made once per row and kept with it.
+ * Ranking the rows that pass prepares their titles again, in the ranker's own cache, once per title
+ * text. Nothing here depends on React, the database's internals or the network.
  */
 import {
   MentionSearchResultItem,
@@ -158,7 +159,11 @@ function normalizedTitlesOf(rows: readonly MentionLocalRow[]): readonly string[]
   return titles;
 }
 
-/** Normalizes every title of `snapshot` ahead of the first keystroke, which then only compares. */
+/**
+ * Normalizes every title of `snapshot` for the word filter ahead of the first keystroke. The
+ * ranking of the titles that pass it prepares them in the ranker's own cache on the keystroke that
+ * first matches them.
+ */
 export function prepareMentionLocalRows(snapshot: MentionLocalRowsSnapshot): void {
   normalizedTitlesOf(snapshot.rows);
 }

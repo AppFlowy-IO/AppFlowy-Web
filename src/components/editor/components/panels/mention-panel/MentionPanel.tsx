@@ -841,7 +841,9 @@ export function MentionPanel({
   // matches. The query is read as the cache key reads it (trimmed, lowercased), so a keystroke that
   // changes only that keeps the decision and the cached answer. A bare `@` never leaves rows out.
   // The decision is stored as the render reads it (state that follows its inputs), so the query's
-  // first render already sends what it decided.
+  // first render already sends what it decided. Only a picker that may leave rows out stores one:
+  // any other decides to send them on every render, and a state update during render would run the
+  // picker's render twice per keystroke.
   const typedQuery = hasMentionSearchQuery ? (searchText ?? '').trim().toLowerCase() : '';
   const [rowsSkipDecision, setRowsSkipDecision] = useState<MentionRowsSkipDecision | undefined>(undefined);
   const decidedRowsSkip =
@@ -852,7 +854,7 @@ export function MentionPanel({
       : undefined;
   const skipTypedRows = decidedRowsSkip ? decidedRowsSkip.skip : skipServerRows && hasMentionSearchQuery;
 
-  if (!decidedRowsSkip) {
+  if (localRows && typeaheadSettings.skipServerRows && !decidedRowsSkip) {
     setRowsSkipDecision({
       query: typedQuery,
       session: mentionRequestLanes,
@@ -975,7 +977,8 @@ export function MentionPanel({
   useEffect(() => {
     if (laneItems.length > 0) prepareMentionRankCandidates(laneItems);
   }, [laneItems]);
-  // And the database's row titles, normalized once per row.
+  // And the database's row titles for the word filter, normalized once per row (the ranking prepares
+  // the titles that pass it on the keystroke that first matches them).
   useEffect(() => {
     if (localRows) prepareMentionLocalRows(localRowsSnapshot);
   }, [localRows, localRowsSnapshot]);
@@ -1124,13 +1127,16 @@ export function MentionPanel({
       v2PickScores,
     ]
   );
+  // Only the picker's v2 reads it (provisionalNarrowed).
   const bareMentionSearchCacheKey = useMemo(
     () =>
-      buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: '' }), {
-        workspaceId,
-        userId: currentUser?.uuid,
-      }),
-    [currentUser?.uuid, mentionSearchRequest, workspaceId]
+      typeaheadV2
+        ? buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: '' }), {
+            workspaceId,
+            userId: currentUser?.uuid,
+          })
+        : '',
+    [currentUser?.uuid, mentionSearchRequest, typeaheadV2, workspaceId]
   );
   // A typed query's provisional sections: what still matches it in the list on screen, the cached
   // answer of its longest typed prefix and the cached bare answer. Date and reminder quick picks come
