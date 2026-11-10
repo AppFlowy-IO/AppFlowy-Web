@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Title tiers. `tier` is title_tier(`query`, `title`); null is no title match.",
+  "cases": [
+    {"id": "exact", "query": "roadmap", "title": "Roadmap", "tier": "T0"},
+    {"id": "prefix", "query": "road", "title": "Roadmap Q3 2026", "tier": "T1"},
+    {"id": "prefix-two-tokens", "query": "roadmap q3", "title": "Roadmap Q3 2026", "tier": "T1"},
+    {"id": "word-start", "query": "road", "title": "Product roadmap review", "tier": "T2"},
+    {"id": "word-start-any-order", "query": "q3 road", "title": "Roadmap Q3 2026", "tier": "T2"},
+    {"id": "substring", "query": "road", "title": "Broadway notes", "tier": "T3"},
+    {
+      "id": "one-letter-substring-is-no-match",
+      "query": "r",
+      "title": "Broadway notes",
+      "tier": null
+    },
+    {"id": "one-letter-alone", "query": "r", "title": "Broadway", "tier": null},
+    {
+      "id": "every-token-must-start-a-word",
+      "query": "meeting notes",
+      "title": "Broadway notes",
+      "tier": null
+    },
+    {"id": "no-match", "query": "plan", "title": "Team offsite", "tier": null},
+    {"id": "query-longer-than-title", "query": "roadmaps", "title": "Roadmap", "tier": null},
+    {"id": "empty-query", "query": "", "title": "Roadmap", "tier": null},
+    {"id": "whitespace-query", "query": "   ", "title": "Roadmap", "tier": null},
+    {"id": "trailing-space-query", "query": "road ", "title": "Roadmap", "tier": "T1"},
+    {"id": "collapsed-spaces", "query": "road   map", "title": "Road\nmap", "tier": "T0"},
+    {"id": "accent-exact", "query": "resume", "title": "Résumé", "tier": "T0"},
+    {"id": "cafe-exact", "query": "cafe", "title": "Café", "tier": "T0"},
+    {"id": "cafe-prefix", "query": "cafe", "title": "Café menu", "tier": "T1"},
+    {"id": "no-break-space-title", "query": "road map", "title": "Road\u00a0map", "tier": "T0"},
+    {"id": "fullwidth-title", "query": "road", "title": "ＲＯＡＤ ｍａｐ", "tier": "T1"},
+    {"id": "ligature-title", "query": "finance", "title": "\ufb01nance report", "tier": "T1"},
+    {"id": "dotted-capital-i-title", "query": "istanbul", "title": "İstanbul trip", "tier": "T1"},
+    {"id": "digits-start-words", "query": "2026", "title": "Roadmap Q3 2026", "tier": "T2"},
+    {"id": "punctuation-splits-words", "query": "road", "title": "(Road) map", "tier": "T2"},
+    {"id": "hyphen-splits-words", "query": "jane", "title": "Mary-Jane notes", "tier": "T2"},
+    {
+      "id": "curly-apostrophe-word-starts",
+      "query": "nathan's",
+      "title": "Nathan\u2019s notes",
+      "tier": "T2"
+    },
+    {"id": "final-sigma-trap", "query": "οδος", "title": "ΟΔΟΣ", "tier": null},
+    {"id": "medial-sigma", "query": "οδοσ", "title": "ΟΔΟΣ", "tier": "T0"},
+    {"id": "ae-trap", "query": "encyclopaedia", "title": "Encyclopædia", "tier": null},
+    {"id": "ae-literal", "query": "encyclopædia", "title": "Encyclopædia", "tier": "T0"},
+    {"id": "sharp-s-not-folded", "query": "strasse", "title": "Straße", "tier": null},
+    {"id": "cjk-contains", "query": "路线", "title": "产品路线图", "tier": "T2"},
+    {"id": "cjk-prefix", "query": "产品", "title": "产品路线图", "tier": "T1"},
+    {"id": "cjk-one-character", "query": "路", "title": "产品路线图", "tier": "T2"},
+    {"id": "hangul-contains", "query": "의록", "title": "주간 회의록", "tier": "T2"},
+    {"id": "hangul-prefix", "query": "회의", "title": "회의록", "tier": "T1"},
+    {"id": "kana-prefix", "query": "ロード", "title": "ロードマップ", "tier": "T1"},
+    {"id": "kana-voicing-overmatch", "query": "ロート", "title": "ロード", "tier": "T0"},
+    {
+      "id": "devanagari-prefix",
+      "query": "\u0939\u093f\u0902\u0926\u0940",
+      "title": "\u0939\u093f\u0902\u0926\u0940 \u0938\u092e\u093e\u091a\u093e\u0930",
+      "tier": "T1"
+    },
+    {
+      "id": "devanagari-overmatch",
+      "query": "हद",
+      "title": "\u0939\u093f\u0902\u0926\u0940",
+      "tier": "T0"
+    },
+    {"id": "distinct-words", "query": "a ab", "title": "ab a", "tier": "T2"},
+    {"id": "distinct-words-one-word", "query": "a ab", "title": "abc", "tier": null},
+    {
+      "id": "every-token-needs-a-word",
+      "query": "a b c d e f g",
+      "title": "alpha beta gamma delta echo foxtrot golf",
+      "tier": null
+    },
+    {
+      "id": "seven-tokens-any-order",
+      "query": "a b c d e f g",
+      "title": "golf foxtrot echo delta charlie bravo alpha",
+      "tier": "T2"
+    },
+    {"id": "longer-token-leaves-a-word", "query": "ab a abc", "title": "abc ab a", "tier": "T2"},
+    {
+      "id": "twelve-tokens-any-order",
+      "query": "a b c d e f g h i j k l",
+      "title": "l k j i h g f e d c b a",
+      "tier": "T2"
+    },
+    {
+      "id": "thirteen-tokens-only-as-a-whole",
+      "query": "a b c d e f g h i j k l m",
+      "title": "m l k j i h g f e d c b a",
+      "tier": null
+    },
+    {
+      "id": "thirteen-tokens-as-a-prefix",
+      "query": "a b c d e f g h i j k l m",
+      "title": "a b c d e f g h i j k l m n",
+      "tier": "T1"
+    },
+    {
+      "id": "only-the-first-64-words",
+      "query": "b a",
+      "title": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a b",
+      "tier": null
+    },
+    {
+      "id": "within-512-characters",
+      "query": "road",
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx road",
+      "tier": "T2"
+    },
+    {
+      "id": "past-512-characters",
+      "query": "road",
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx road",
+      "tier": null
+    },
+    {"id": "symbol-query-one-character", "query": "-", "title": "Mary-Jane", "tier": null},
+    {"id": "symbol-query-prefix", "query": "-", "title": "-draft", "tier": "T1"},
+    {"id": "symbol-query-substring", "query": "--", "title": "Q3--draft", "tier": "T3"}
+  ]
+}

@@ -1,0 +1,539 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Client ranking. Each case ranks `items` with rank_section and expects `expected`, the keys in order; omitted item fields take the README's defaults.",
+  "now_ms": 1767225600000,
+  "cases": [
+    {
+      "id": "meeting-notes-by-recency-bucket",
+      "query": "meeting notes",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000a1",
+          "title": "Meeting notes",
+          "used_ago_ms": 864000000,
+          "server_rank": 0
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000a2",
+          "title": "Meeting notes",
+          "used_ago_ms": 10800000,
+          "server_rank": 1
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000a3",
+          "title": "Meeting notes",
+          "used_ago_ms": 300000,
+          "server_rank": 2
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000000a3",
+        "page:00000000-0000-4000-8000-0000000000a2",
+        "page:00000000-0000-4000-8000-0000000000a1"
+      ]
+    },
+    {
+      "id": "exact-title-beats-recent-prefix",
+      "query": "road",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000b1",
+          "title": "Road",
+          "used_ago_ms": 3456000000,
+          "server_rank": 1
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000b2",
+          "title": "Roadmap",
+          "used_ago_ms": 60000,
+          "server_rank": 0,
+          "adaptive": 900000
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000000b1",
+        "page:00000000-0000-4000-8000-0000000000b2"
+      ]
+    },
+    {
+      "id": "pick-memory-first-inside-a-tier",
+      "query": "road",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000c1",
+          "title": "Road trip",
+          "used_ago_ms": 60000,
+          "server_rank": 0
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000c2",
+          "title": "Roadmap",
+          "adaptive": 300000,
+          "server_rank": 1
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000000c2",
+        "page:00000000-0000-4000-8000-0000000000c1"
+      ]
+    },
+    {
+      "id": "a-lift-needs-the-typed-input",
+      "query": "road",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-0000000000d1", "title": "Road", "server_rank": 2},
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000d2",
+          "title": "Roadmap",
+          "adaptive": 700000,
+          "server_rank": 0
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000d3",
+          "title": "Roadster",
+          "adaptive": 650000,
+          "lift": true,
+          "server_rank": 1
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000000d3",
+        "page:00000000-0000-4000-8000-0000000000d1",
+        "page:00000000-0000-4000-8000-0000000000d2"
+      ]
+    },
+    {
+      "id": "a-lift-is-one-tier",
+      "query": "road",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000e1",
+          "title": "Broadway notes",
+          "adaptive": 1000000,
+          "lift": true
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000e2",
+          "title": "Product roadmap",
+          "server_rank": 0
+        },
+        {"key": "page:00000000-0000-4000-8000-0000000000e3", "title": "Roadmap"}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000000e3",
+        "page:00000000-0000-4000-8000-0000000000e1",
+        "page:00000000-0000-4000-8000-0000000000e2"
+      ]
+    },
+    {
+      "id": "a-lift-from-the-body-tier",
+      "query": "road",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000f1",
+          "title": "Broadway notes",
+          "server_rank": 0
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000000f2",
+          "title": "Q3 planning",
+          "server_rank": 1,
+          "adaptive": 800000,
+          "lift": true
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000000f2",
+        "page:00000000-0000-4000-8000-0000000000f1"
+      ]
+    },
+    {
+      "id": "present-before-recency",
+      "query": "spec",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000101",
+          "title": "Spec B",
+          "used_ago_ms": 60000
+        },
+        {"key": "page:00000000-0000-4000-8000-000000000102", "title": "Spec A", "present": true}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000102",
+        "page:00000000-0000-4000-8000-000000000101"
+      ]
+    },
+    {
+      "id": "server-rank-before-length",
+      "query": "pla",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-000000000111", "title": "Plans"},
+        {"key": "page:00000000-0000-4000-8000-000000000112", "title": "Plan", "server_rank": 1},
+        {
+          "key": "page:00000000-0000-4000-8000-000000000113",
+          "title": "Planning notes",
+          "server_rank": 0
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000113",
+        "page:00000000-0000-4000-8000-000000000112",
+        "page:00000000-0000-4000-8000-000000000111"
+      ]
+    },
+    {
+      "id": "length-counts-code-points-not-graphemes",
+      "query": "plan",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-00000000012b", "title": "Plan e\u0301"},
+        {"key": "page:00000000-0000-4000-8000-00000000012a", "title": "Plan ab"}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-00000000012a",
+        "page:00000000-0000-4000-8000-00000000012b"
+      ]
+    },
+    {
+      "id": "length-counts-code-points-not-utf16-units",
+      "query": "plan",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-00000000012c", "title": "Plan ab"},
+        {"key": "page:00000000-0000-4000-8000-00000000012d", "title": "Plan 👩"}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-00000000012d",
+        "page:00000000-0000-4000-8000-00000000012c"
+      ]
+    },
+    {
+      "id": "length-counts-code-points-not-utf8-bytes",
+      "query": "plan",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-00000000012e", "title": "Plan ab"},
+        {"key": "page:00000000-0000-4000-8000-00000000012f", "title": "Plan é"}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-00000000012f",
+        "page:00000000-0000-4000-8000-00000000012e"
+      ]
+    },
+    {
+      "id": "the-key-breaks-full-ties",
+      "query": "notes",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "row:00000000-0000-4000-8000-00000000013d:00000000-0000-4000-8000-00000000013e",
+          "title": "Notes"
+        },
+        {"key": "page:00000000-0000-4000-8000-00000000013b", "title": "Notes"},
+        {"key": "database:00000000-0000-4000-8000-00000000013c:-", "title": "Notes"},
+        {"key": "page:00000000-0000-4000-8000-00000000013a", "title": "Notes"}
+      ],
+      "expected": [
+        "database:00000000-0000-4000-8000-00000000013c:-",
+        "page:00000000-0000-4000-8000-00000000013a",
+        "page:00000000-0000-4000-8000-00000000013b",
+        "row:00000000-0000-4000-8000-00000000013d:00000000-0000-4000-8000-00000000013e"
+      ]
+    },
+    {
+      "id": "a-server-item-without-a-title-match-ranks-last",
+      "query": "budget",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000141",
+          "title": "Q3 planning",
+          "server_rank": 0
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000142",
+          "title": "Budget 2026",
+          "server_rank": 1
+        },
+        {"key": "page:00000000-0000-4000-8000-000000000143", "title": "Finance"},
+        {"key": "page:00000000-0000-4000-8000-000000000144", "title": "Annual budget"}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000142",
+        "page:00000000-0000-4000-8000-000000000144",
+        "page:00000000-0000-4000-8000-000000000141"
+      ]
+    },
+    {
+      "id": "recency-bucket-boundaries",
+      "query": "spec",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-000000000157", "title": "Spec"},
+        {
+          "key": "page:00000000-0000-4000-8000-000000000155",
+          "title": "Spec",
+          "used_ago_ms": 86400001
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000154",
+          "title": "Spec",
+          "used_ago_ms": 86400000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000153",
+          "title": "Spec",
+          "used_ago_ms": 3600000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000152",
+          "title": "Spec",
+          "used_ago_ms": 900001
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000156",
+          "title": "Spec",
+          "used_ago_ms": -60000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000151",
+          "title": "Spec",
+          "used_ago_ms": 900000
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000151",
+        "page:00000000-0000-4000-8000-000000000156",
+        "page:00000000-0000-4000-8000-000000000152",
+        "page:00000000-0000-4000-8000-000000000153",
+        "page:00000000-0000-4000-8000-000000000154",
+        "page:00000000-0000-4000-8000-000000000155",
+        "page:00000000-0000-4000-8000-000000000157"
+      ]
+    },
+    {
+      "id": "recency-bucket-bounds-are-inclusive",
+      "query": "spec",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-0000000001d1",
+          "title": "Spec",
+          "used_ago_ms": 86400001
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000001d2",
+          "title": "Spec",
+          "used_ago_ms": 86400000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000001d3",
+          "title": "Spec",
+          "used_ago_ms": 3600001
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000001d4",
+          "title": "Spec",
+          "used_ago_ms": 3600000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-0000000001d5",
+          "title": "Spec",
+          "used_ago_ms": 900001
+        },
+        {"key": "page:00000000-0000-4000-8000-0000000001d6", "title": "Spec", "used_ago_ms": 900000}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-0000000001d6",
+        "page:00000000-0000-4000-8000-0000000001d4",
+        "page:00000000-0000-4000-8000-0000000001d5",
+        "page:00000000-0000-4000-8000-0000000001d2",
+        "page:00000000-0000-4000-8000-0000000001d3",
+        "page:00000000-0000-4000-8000-0000000001d1"
+      ]
+    },
+    {
+      "id": "limit-applies-after-ranking",
+      "query": "road",
+      "lane": "objects",
+      "limit": 2,
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-000000000161", "title": "Road trip"},
+        {"key": "page:00000000-0000-4000-8000-000000000162", "title": "Roadmap", "server_rank": 0},
+        {"key": "page:00000000-0000-4000-8000-000000000163", "title": "Road"}
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000163",
+        "page:00000000-0000-4000-8000-000000000162"
+      ]
+    },
+    {
+      "id": "a-bare-query-keeps-the-server-order",
+      "query": "",
+      "lane": "objects",
+      "items": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000171",
+          "title": "Zeta",
+          "server_rank": 1,
+          "used_ago_ms": 60000
+        },
+        {"key": "page:00000000-0000-4000-8000-000000000172", "title": "Alpha", "server_rank": 0},
+        {
+          "key": "page:00000000-0000-4000-8000-000000000173",
+          "title": "Local only",
+          "present": true
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000172",
+        "page:00000000-0000-4000-8000-000000000171"
+      ]
+    },
+    {
+      "id": "total-order",
+      "query": "road",
+      "lane": "objects",
+      "items": [
+        {"key": "page:00000000-0000-4000-8000-000000000186", "title": "Roadmaps"},
+        {"key": "page:00000000-0000-4000-8000-000000000188", "title": "Roadmap"},
+        {"key": "page:00000000-0000-4000-8000-000000000185", "title": "Roadmap", "server_rank": 0},
+        {"key": "page:00000000-0000-4000-8000-000000000183", "title": "Roadmap", "present": true},
+        {"key": "page:00000000-0000-4000-8000-000000000187", "title": "Roadmap"},
+        {"key": "page:00000000-0000-4000-8000-000000000181", "title": "Road"},
+        {
+          "key": "page:00000000-0000-4000-8000-000000000184",
+          "title": "Roadmap",
+          "used_ago_ms": 600000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000182",
+          "title": "Roadmap",
+          "adaptive": 500000
+        }
+      ],
+      "expected": [
+        "page:00000000-0000-4000-8000-000000000181",
+        "page:00000000-0000-4000-8000-000000000182",
+        "page:00000000-0000-4000-8000-000000000183",
+        "page:00000000-0000-4000-8000-000000000184",
+        "page:00000000-0000-4000-8000-000000000185",
+        "page:00000000-0000-4000-8000-000000000187",
+        "page:00000000-0000-4000-8000-000000000188",
+        "page:00000000-0000-4000-8000-000000000186"
+      ]
+    },
+    {
+      "id": "the-requester-is-last-in-their-class",
+      "query": "an",
+      "lane": "people",
+      "items": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000191",
+          "title": "Annie Wang",
+          "email": "annie@appflowy.io",
+          "requester": true,
+          "adaptive": 900000,
+          "used_ago_ms": 60000
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-000000000192",
+          "title": "Andy Li",
+          "email": "andy@appflowy.io"
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-000000000193",
+          "title": "Brian Chen",
+          "email": "brian@appflowy.io"
+        }
+      ],
+      "expected": [
+        "person:00000000-0000-4000-8000-000000000192",
+        "person:00000000-0000-4000-8000-000000000191",
+        "person:00000000-0000-4000-8000-000000000193"
+      ]
+    },
+    {
+      "id": "people-classes-before-recency",
+      "query": "an",
+      "lane": "people",
+      "items": [
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001a1",
+          "title": "Brian Chen",
+          "email": "brian@appflowy.io",
+          "used_ago_ms": 60000,
+          "server_rank": 0
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001a2",
+          "title": "Sam",
+          "email": "joanne@appflowy.io"
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001a3",
+          "title": "Anna",
+          "email": "anna@appflowy.io"
+        }
+      ],
+      "expected": [
+        "person:00000000-0000-4000-8000-0000000001a3",
+        "person:00000000-0000-4000-8000-0000000001a1",
+        "person:00000000-0000-4000-8000-0000000001a2"
+      ]
+    },
+    {
+      "id": "a-blank-name-shows-and-counts-the-address",
+      "query": "x",
+      "lane": "people",
+      "items": [
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001b1",
+          "title": "",
+          "email": "x@appflowy.io"
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001b2",
+          "title": "Xavier",
+          "email": "xavier@appflowy.io"
+        }
+      ],
+      "expected": [
+        "person:00000000-0000-4000-8000-0000000001b2",
+        "person:00000000-0000-4000-8000-0000000001b1"
+      ]
+    },
+    {
+      "id": "a-server-person-without-a-match-follows-c3",
+      "query": "@x.io",
+      "lane": "people",
+      "items": [
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001c2",
+          "title": "Cy",
+          "email": "cy@y.io",
+          "server_rank": 0
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-0000000001c1",
+          "title": "Bo",
+          "email": "bo@x.io",
+          "server_rank": 1
+        },
+        {"key": "person:00000000-0000-4000-8000-0000000001c3", "title": "Di", "email": "di@y.io"}
+      ],
+      "expected": [
+        "person:00000000-0000-4000-8000-0000000001c1",
+        "person:00000000-0000-4000-8000-0000000001c2"
+      ]
+    }
+  ]
+}

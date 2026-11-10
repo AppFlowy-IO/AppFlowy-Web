@@ -1,0 +1,432 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Cacheability. `cacheable` is is_cacheable(`request`, `response`, `current`, `aborted`).",
+  "cases": [
+    {
+      "id": "an-ordinary-typed-answer",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000401",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000401"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "cacheable": true
+    },
+    {
+      "id": "partial-with-object-sections-stays-cacheable",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000401",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000401"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ],
+        "partial": true
+      },
+      "cacheable": true
+    },
+    {
+      "id": "a-partial-section-stays-cacheable",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000401",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000401"}
+              }
+            ],
+            "has_more": false,
+            "status": "partial"
+          }
+        ],
+        "partial": true
+      },
+      "cacheable": true
+    },
+    {
+      "id": "a-failed-section-is-not-cacheable",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [],
+            "has_more": false,
+            "status": "failed",
+            "message": "keyword search is unavailable"
+          }
+        ]
+      },
+      "cacheable": false
+    },
+    {
+      "id": "a-failed-rows-section-is-not-cacheable",
+      "request": {"query": "road", "include": ["database_row"]},
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "database_rows",
+            "title": "Database rows",
+            "items": [],
+            "has_more": false,
+            "status": "failed",
+            "message": "mention search failed"
+          }
+        ],
+        "partial": true
+      },
+      "cacheable": false
+    },
+    {
+      "id": "searchs-superseded-shape-is-not-cacheable",
+      "request": {"query": "road", "include": ["database_row"]},
+      "current": true,
+      "aborted": false,
+      "response": {"sections": [], "partial": true},
+      "cacheable": false
+    },
+    {
+      "id": "clouds-superseded-shape-is-not-cacheable",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ],
+        "partial": true
+      },
+      "cacheable": false
+    },
+    {
+      "id": "an-empty-rows-answer-is-cacheable",
+      "request": {"query": "road", "include": ["database_row"]},
+      "current": true,
+      "aborted": false,
+      "response": {"sections": []},
+      "cacheable": true
+    },
+    {
+      "id": "a-partial-people-only-answer-is-cacheable",
+      "request": {"query": "an", "include": ["person"]},
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ],
+        "partial": true
+      },
+      "cacheable": true
+    },
+    {
+      "id": "a-bare-answer-is-cacheable",
+      "request": {
+        "query": "",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000401",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000401"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "cacheable": true
+    },
+    {
+      "id": "an-empty-partial-bare-answer-is-cacheable",
+      "request": {
+        "query": "",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": false,
+      "response": {"sections": [], "partial": true},
+      "cacheable": true
+    },
+    {
+      "id": "an-answer-that-is-not-current-is-not-cacheable",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": false,
+      "aborted": false,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000401",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000401"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "cacheable": false
+    },
+    {
+      "id": "an-aborted-answer-is-not-cacheable",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "date", "reminder", "external_link"]
+      },
+      "current": true,
+      "aborted": true,
+      "response": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000402",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000402",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000401",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000401"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "cacheable": false
+    }
+  ]
+}
