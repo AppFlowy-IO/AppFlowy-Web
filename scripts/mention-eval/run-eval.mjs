@@ -3,9 +3,11 @@
 //
 // Generates the seeded sessions (sessions.ts), replays every prefix of every pick through the
 // production ranker with pick memory, the same ranker without pick memory, MRU and today's
-// substring filter (replay.ts), and grades them (metrics.ts). The TypeScript modules, the
-// production ranker and pick memory among them, are bundled in memory with the esbuild that Vite
-// ships, so the replay runs in plain Node and nothing is copied.
+// substring filter (replay.ts), and grades the configuration each ranking switch ships: the ranker
+// without pick memory for mentionTypeaheadV2, the ranker with it for pick memory (metrics.ts,
+// guard.ts). The TypeScript modules, the production ranker and pick memory among them, are bundled
+// in memory with the esbuild that Vite ships, so the replay runs in plain Node and nothing is
+// copied.
 //
 // The files it writes, and checks, are in
 // src/components/editor/components/panels/mention-panel/__fixtures__/mention-eval/ (README.md there
@@ -31,8 +33,10 @@ Modes:
   --write            Rewrite sessions.json, expected-rankings.json, verdict.json and FIXTURES.sha256.
 
 Options:
-  --require-gate     Fail when a gate fails. Without it, a failing gate fails the run only while
-                     mentionTypeaheadV2 or pick memory defaults on.
+  --require-gate     Fail when any configuration fails a gate. Without it, a configuration's failing
+                     gate fails the run only while the switch that ships it defaults on:
+                     MENTION_TYPEAHEAD_V2_DEFAULT for typeahead_v2 (the ranker without pick
+                     memory), MENTION_PICK_MEMORY_DEFAULT for pick_memory (the ranker with it).
   --report <file>    Also write a JSON report: the verdict, every metric and example cases where the
                      ranker and MRU disagree on the first result.
   --copy-to <dir>    Also write the whole folder, README included, into <dir>, such as Desktop's
@@ -149,29 +153,61 @@ function tables(h, metrics) {
   return lines;
 }
 
+const CONFIGURATION_LABELS = {
+  typeahead_v2: 'mentionTypeaheadV2 alone, ranked without pick memory',
+  pick_memory: 'pick memory, ranked with it',
+};
+
 function gateLines(h, verdict) {
   const mrr = (rr, cases) => h.mentionEvalRatio(rr, cases * h.MENTION_EVAL_RR_UNIT);
   const mark = (passed) => (passed ? '[pass]' : '[FAIL]');
-  const { mrr_at_least_mru: bucketGate, unique_exact_title_hit_at_1: exact } = verdict;
-  const tiers = verdict.no_t0_t1_title_below_t3_t4;
-  const duplicates = verdict.duplicate_exact_title_hit_at_1;
+  const points = (hits, cases) => (cases === 0 ? '-' : `${hits >= 0 ? '+' : ''}${((100 * hits) / cases).toFixed(2)} pp`);
+  const lines = ['Gates of each configuration (its switch may default on only while all pass):'];
 
-  return [
-    'Gates (mentionTypeaheadV2 and pick memory may default on only when all pass):',
-    `  ${mark(bucketGate.passed)} MRR@8 at least MRU's in every bucket: ${bucketGate.buckets
-      .map(
-        (bucket) =>
-          `${bucket.bucket} ${mrr(bucket.ranker_rr, bucket.cases)} ${bucket.passed ? '>=' : '<'} ${mrr(
-            bucket.mru_rr,
-            bucket.cases
-          )}`
-      )
-      .join('; ')}`,
-    `  ${mark(exact.passed)} unique exact title hit@1 = 100%: ${exact.hits}/${exact.cases}`,
-    `  ${mark(tiers.passed)} no T0 or T1 title below a T3 or T4 title: ${tiers.violations} in ${tiers.cases} cases`,
-    '  [....] identical Dart and TypeScript rankings: Desktop mention_eval_parity_test.dart',
-    `  (not a gate) duplicate exact title hit@1: ${duplicates.hits}/${duplicates.cases}`,
-  ];
+  h.MENTION_EVAL_CONFIGURATIONS.forEach((name) => {
+    const configuration = verdict.configurations[name];
+    const { mrr_at_least_mru: bucketGate, unique_exact_title_hit_at_1: exact } = configuration.gates;
+    const tiers = configuration.gates.no_t0_t1_title_below_t3_t4;
+    const control = configuration.gates.hit_at_1_within_0_5_pp_of_control;
+    const duplicates = configuration.informational.duplicate_exact_title_hit_at_1;
+
+    lines.push(
+      `${name} (${CONFIGURATION_LABELS[name]}; ${h.MENTION_EVAL_SWITCHES[name]}): ` +
+        `${configuration.passed ? 'passes' : 'FAILS'}`,
+      `  ${mark(bucketGate.passed)} MRR@8 at least MRU's in every bucket: ${bucketGate.buckets
+        .map(
+          (bucket) =>
+            `${bucket.bucket} ${mrr(bucket.ranker_rr, bucket.cases)} ${bucket.passed ? '>=' : '<'} ${mrr(
+              bucket.mru_rr,
+              bucket.cases
+            )}`
+        )
+        .join('; ')}`,
+      `  ${mark(exact.passed)} unique exact title hit@1 = 100%: ${exact.hits}/${exact.cases}`,
+      `  ${mark(tiers.passed)} no T0 or T1 title below a T3 or T4 title: ${tiers.violations} in ${tiers.cases} cases`
+    );
+    if (control) {
+      lines.push(
+        `  ${mark(control.passed)} hit@1 at most 0.5 pp below ${ARM_LABELS[control.control]} in every bucket: ` +
+          control.buckets
+            .map((bucket) => `${bucket.bucket} ${points(bucket.hit1 - bucket.control_hit1, bucket.cases)}`)
+            .join('; ')
+      );
+    }
+
+    lines.push(`  (not a gate) duplicate exact title hit@1: ${duplicates.hits}/${duplicates.cases}`);
+  });
+  lines.push('[....] identical Dart and TypeScript rankings: Desktop mention_eval_parity_test.dart');
+  return lines;
+}
+
+/** One line per configuration: whether it passes. */
+function verdictLines(h, verdict) {
+  return h.MENTION_EVAL_CONFIGURATIONS.map(
+    (name) =>
+      `${name} (${CONFIGURATION_LABELS[name]}): ` +
+      `${verdict.configurations[name].passed ? 'every replay gate passes' : 'a replay gate fails'}`
+  );
 }
 
 /** Up to `limit` cases per bucket where one arm ranks the target first and the other does not. */
@@ -215,12 +251,7 @@ function stepSummary(h, metrics, verdict, stale) {
 
   const head = `| arm | ${h.MENTION_EVAL_BUCKETS.join(' | ')} | all |`;
   const rule = `|---|${h.MENTION_EVAL_BUCKETS.map(() => '---:').join('|')}|---:|`;
-  const lines = [
-    '## @-mention replay (MEN-X-07)',
-    '',
-    `Verdict: ${verdict.passed ? 'every replay gate passes' : 'a replay gate fails'}.`,
-    '',
-  ];
+  const lines = ['## @-mention replay (MEN-X-07)', '', ...verdictLines(h, verdict).map((line) => `- ${line}`), ''];
 
   lines.push('MRR@8 by prefix bucket', '', head, rule);
   h.MENTION_EVAL_ARMS.forEach((arm) => {
@@ -337,10 +368,8 @@ async function main() {
 
   stepSummary(h, metrics, verdict, stale);
 
-  const defaultsOn = [
-    h.MENTION_TYPEAHEAD_V2_DEFAULT ? 'MENTION_TYPEAHEAD_V2_DEFAULT' : undefined,
-    h.MENTION_PICK_MEMORY_DEFAULT ? 'MENTION_PICK_MEMORY_DEFAULT' : undefined,
-  ].filter(Boolean);
+  const blocked = h.mentionEvalBlockedDefaults(verdict);
+  const failing = h.MENTION_EVAL_CONFIGURATIONS.filter((name) => !verdict.configurations[name].passed);
   let failed = false;
 
   if (stale.length > 0) {
@@ -352,16 +381,24 @@ async function main() {
     failed = true;
   }
 
-  if (verdict.passed) {
-    console.log('\nVerdict: every replay gate passes; Desktop parity is checked by its own test.');
-  } else if (options.requireGate || defaultsOn.length > 0) {
-    console.error(
-      `\nVerdict: a replay gate fails${defaultsOn.length > 0 ? ` while ${defaultsOn.join(' and ')} is on` : ''}.`
-    );
-    failed = true;
-  } else {
-    console.log('\nVerdict: a replay gate fails, so mentionTypeaheadV2 and pick memory must stay off by default.');
+  console.log('');
+  if (failing.length === 0) {
+    console.log('Verdict: every configuration passes every replay gate; Desktop parity is checked by its own test.');
   }
+
+  failing.forEach((name) => {
+    const switchName = h.MENTION_EVAL_SWITCHES[name];
+
+    if (blocked.includes(name)) {
+      console.error(`Verdict: ${name} fails a replay gate while ${switchName} defaults on.`);
+      failed = true;
+    } else if (options.requireGate) {
+      console.error(`Verdict: ${name} fails a replay gate (--require-gate).`);
+      failed = true;
+    } else {
+      console.log(`Verdict: ${name} fails a replay gate, so ${switchName} must stay off by default.`);
+    }
+  });
 
   return failed ? 1 : 0;
 }

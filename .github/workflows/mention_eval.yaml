@@ -3,8 +3,8 @@ name: Mention ranker replay
 # The @-mention client ranker replay and parity gate (MEN-X-07): replays the seeded sessions
 # through the production ranker and pick memory, fails when the committed rankings or verdict in
 # src/components/editor/components/panels/mention-panel/__fixtures__/mention-eval/ are stale, and
-# fails on a failing gate while mentionTypeaheadV2 or pick memory defaults on. Desktop replays the
-# same files through its Dart ranker.
+# fails when mentionTypeaheadV2 or pick memory defaults on while the configuration it ships fails a
+# gate (scripts/mention-eval/guard.ts). Desktop replays the same files through its Dart ranker.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]

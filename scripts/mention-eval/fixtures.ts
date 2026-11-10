@@ -6,7 +6,13 @@
  */
 import { compareCodePoints } from '@/utils/normalize-text';
 
-import { MentionEvalMetrics, MENTION_EVAL_RR_UNIT, MentionEvalVerdict } from './metrics';
+import {
+  MENTION_EVAL_CONFIGURATIONS,
+  MentionEvalConfiguration,
+  MentionEvalMetrics,
+  MENTION_EVAL_RR_UNIT,
+  MentionEvalVerdict,
+} from './metrics';
 import { MENTION_EVAL_TOP, MentionEvalCase } from './replay';
 import { MENTION_EVAL_VERSION, mentionEvalJson, mentionEvalJsonLines } from './sessions';
 
@@ -36,9 +42,19 @@ const RANKINGS_ABOUT =
   'sessions.json. Written by AppFlowy-Web scripts/mention-eval (run-eval.mjs --write); Desktop must ' +
   'rank the same. Do not edit. See README.md.';
 const VERDICT_ABOUT =
-  'The replay gates and metrics of every arm (MEN-X-07). Written by AppFlowy-Web ' +
-  'scripts/mention-eval (run-eval.mjs --write); do not edit. Counts are integers; rr sums ' +
-  'reciprocal ranks in units of 1/rr_unit. See README.md.';
+  'The replay gates of each configuration a ranking switch ships, and the metrics of every arm ' +
+  '(MEN-X-07). Written by AppFlowy-Web scripts/mention-eval (run-eval.mjs --write); do not edit. ' +
+  'Counts are integers; rr sums reciprocal ranks in units of 1/rr_unit. See README.md.';
+const CONFIGURATION_ABOUT: Readonly<Record<MentionEvalConfiguration, string>> = {
+  typeahead_v2:
+    'mentionTypeaheadV2 on, pick memory off: the ranker without pick memory. Web ' +
+    "MENTION_TYPEAHEAD_V2_DEFAULT, and Desktop's v2 switch once it exists (MEN-DESK-07, -08), may " +
+    'default on only while it passes.',
+  pick_memory:
+    'Pick memory on: the ranker with pick memory, whose rankings expected-rankings.json records, ' +
+    'also against the ranker without it. Web MENTION_PICK_MEMORY_DEFAULT and Desktop ' +
+    'FeatureFlag.mentionPickMemory may default on only while it passes.',
+};
 
 /** `expected-rankings.json`: one case a line. */
 export function serializeMentionEvalRankings(cases: readonly MentionEvalCase[], sessionsSha256: string): string {
@@ -65,7 +81,10 @@ export function parseMentionEvalRankings(text: string): MentionEvalRankings {
   return rankings;
 }
 
-/** `verdict.json`: the gates over the events' cases, then every arm's integer counts, the probes' apart. */
+/**
+ * `verdict.json`: each configuration's gates over the events' cases, then every arm's integer
+ * counts, the probes' apart.
+ */
 export function serializeMentionEvalVerdict(
   verdict: MentionEvalVerdict,
   metrics: MentionEvalMetrics,
@@ -78,15 +97,14 @@ export function serializeMentionEvalVerdict(
     about: VERDICT_ABOUT,
     sessions_sha256: sessionsSha256,
     rankings_sha256: rankingsSha256,
-    passed: verdict.passed,
-    gates: {
-      mrr_at_least_mru: verdict.mrr_at_least_mru,
-      unique_exact_title_hit_at_1: verdict.unique_exact_title_hit_at_1,
-      no_t0_t1_title_below_t3_t4: verdict.no_t0_t1_title_below_t3_t4,
-      dart_typescript_parity:
-        'AppFlowy-Premium frontend/appflowy_flutter/test/unit_test/mention_person/mention_eval_parity_test.dart',
-    },
-    informational: { duplicate_exact_title_hit_at_1: verdict.duplicate_exact_title_hit_at_1 },
+    configurations: Object.fromEntries(
+      MENTION_EVAL_CONFIGURATIONS.map((name) => [
+        name,
+        { about: CONFIGURATION_ABOUT[name], ...verdict.configurations[name] },
+      ])
+    ),
+    dart_typescript_parity:
+      'AppFlowy-Premium frontend/appflowy_flutter/test/unit_test/mention_person/mention_eval_parity_test.dart',
     rr_unit: MENTION_EVAL_RR_UNIT,
     metrics,
     probe_metrics: probeMetrics,

@@ -234,10 +234,12 @@ stored comment format (`@[name](person_id)`).
 
 The editor's @ picker can remember which item the user inserted after typing what, and list that
 item first in its tier the next time they type it (`mentionPickMemory.ts`, applied by
-`mentionPickRanking.ts`). It is off by default until product signs off; the replay gate it needed
-passes (see "Mention ranker replay gate"). A browser opts in with
-`localStorage.__mention_pick_memory = 'true'`, read when a picker opens;
-while it is off the picker neither records nor reads picks.
+`mentionPickRanking.ts`). It is off by default, and the replay gate keeps it off (see "Mention
+ranker replay gate"): it passes the gates against MRU, but lowers hit@1 of queries of 7 or more code
+points by 0.72 pp against the same ranking without it, more than the 0.5 pp the plan allows a
+ranking change. Turning it on waits for a ranker change or a product decision on that, and for
+product sign-off. A browser opts in with `localStorage.__mention_pick_memory = 'true'`, read when a
+picker opens; while it is off the picker neither records nor reads picks.
 
 - Only inserting a person, page, database or row records a pick. Showing, highlighting or hovering
   an item never does, and neither do dates, reminders, links or a page created from the picker.
@@ -401,17 +403,28 @@ substring filter. Its files are in `mention-panel/__fixtures__/mention-eval/`, w
 the sessions, the replay rules and the gates. Desktop keeps a byte-identical copy and replays it
 through its Dart ranker.
 
-- `mentionTypeaheadV2` and pick memory may default on only when the gates pass: MRR@8 at least
-  MRU's in every prefix bucket, a unique exact title always first, no T0 or T1 title below a T3 or
-  T4 title, and the same rankings in Dart and TypeScript.
+- Each switch is graded in the configuration its default ships, and may default on only while that
+  configuration passes: `mentionTypeaheadV2` alone by the ranking without pick memory (pick memory
+  is off by default), pick memory by the ranking with it. The gates: MRR@8 at least MRU's in every
+  prefix bucket, a unique exact title always first, no T0 or T1 title below a T3 or T4 title, the
+  same rankings in Dart and TypeScript, and for pick memory, no prefix bucket's hit@1 more than
+  0.5 pp below the ranking without it (MEN-X-04's ship-gate rule for a ranking change).
 - The replay ranks the local lane alone, as the picker does before an answer arrives, offline, or for
   a one-letter query that stays local: no server answer, presence or page being edited. It is a
   regression guard on synthetic data, not a measure of quality, which online session reports decide.
 - CI (`.github/workflows/mention_eval.yaml`) fails when the committed rankings or verdict are stale,
-  and on a failing gate while `MENTION_TYPEAHEAD_V2_DEFAULT` or `MENTION_PICK_MEMORY_DEFAULT` is on,
-  as `mention-eval-fixtures.test.ts` does. A change to the ranker, pick memory or normalizer reruns
+  and when `MENTION_TYPEAHEAD_V2_DEFAULT` or `MENTION_PICK_MEMORY_DEFAULT` is on while the
+  configuration it ships fails a gate, as `mention-eval-fixtures.test.ts` does
+  (`scripts/mention-eval/guard.ts`). A change to the ranker, pick memory or normalizer reruns
   `node scripts/mention-eval/run-eval.mjs --write` and copies the folder to Desktop.
-- On the committed sessions every gate the replay decides passes (`verdict.json`). Both switches
-  stay off by default until product sign-off and the rollout stages.
+- On the committed sessions (`verdict.json`), `mentionTypeaheadV2` alone passes every gate. Pick
+  memory passes the gates against MRU but fails against the ranking without it: in the `7+` bucket
+  hit@1 drops from 652 to 646 of 834 cases (78.18% to 77.46%, -0.72 pp) and MRR@8 from 0.841 to
+  0.830, while it raises the other buckets' hit@1 by 4.9 to 11.0 pp. Of the 16 `7+` cases it loses
+  (it wins 10), each is a sibling the user picked earlier, after typing something that starts with
+  the query, staying ahead of the page they opened more recently (11 are an older
+  `Weekly sync 2026-10-30` ahead of `Weekly sync 2026-11-02`), because pick memory's score comes
+  before recency inside a tier. Both switches stay off by default until product sign-off and the
+  rollout stages; pick memory also needs that decision or a ranker change.
 
 The replay is test tooling: it sends nothing, and the picker and its requests do not change.

@@ -1,8 +1,11 @@
 /**
  * @jest-environment node
  */
+import * as ranker from '@/components/editor/components/panels/mention-panel/mentionLocalRanker';
 import {
+  MentionQuery,
   MentionRankCandidate,
+  MentionRankLane,
   prepareMentionQuery,
   rankSection,
 } from '@/components/editor/components/panels/mention-panel/mentionLocalRanker';
@@ -119,10 +122,15 @@ describe('mention eval replay', () => {
       substring: ['v0', 'v1', 'v2', 'v4', 'v5'],
     });
     expect(find(cases, 1, 'road').exactTitle).toBeUndefined();
+    // The tier check reads each ranker arm's whole order.
+    expect(find(cases, 1, 'r').tierOrderViolations).toEqual({ ranker: 0, ranker_no_picks: 0 });
 
     // People: classes, then length, then key; the requester (C1 here) last. Nobody was mentioned
     // yet, and the blank-named address does not match.
-    expect(find(cases, 2, 'r')).toMatchObject({ section: 'people', tierOrderViolations: 0 });
+    expect(find(cases, 2, 'r')).toMatchObject({
+      section: 'people',
+      tierOrderViolations: { ranker: 0, ranker_no_picks: 0 },
+    });
     expect(find(cases, 2, 'r').top).toEqual({
       ranker: ['p1', 'p2', 'p0'],
       ranker_no_picks: ['p1', 'p2', 'p0'],
@@ -236,6 +244,43 @@ describe('mention eval replay', () => {
       rankSection(prepareMentionQuery('roadmap'), 'objects', candidates, T0 + 2 * MINUTE, 8).map((found) => found.id)
     );
     expect(testCase.top.ranker).toEqual(['v0', 'v1', 'v2']);
+  });
+
+  it("checks the tiers of each ranker arm's own whole order", () => {
+    // A ranker that reverses its order whenever pick memory scores a candidate: 'Map' (T0 for
+    // 'map') then follows 'Roadmap' and 'Sitemap' (T3) only in the ranking with pick memory.
+    const actual = ranker.rankSection;
+    const reversedWithPicks = <C extends MentionRankCandidate>(
+      query: MentionQuery | string,
+      lane: MentionRankLane,
+      candidates: readonly C[],
+      nowMs: number,
+      limit?: number
+    ): C[] => {
+      const ranked = actual(query, lane, candidates, nowMs, limit);
+
+      return candidates.some((candidate) => candidate.adaptive !== undefined) ? [...ranked].reverse() : ranked;
+    };
+
+    const spy = jest.spyOn(ranker, 'rankSection').mockImplementation(reversedWithPicks);
+
+    try {
+      const cases = replayMentionEvalSessions({
+        ...sessionsOf([
+          [T0, 'pick', 'v0', 'map'],
+          [T0 + MINUTE, 'pick', 'v0', 'map'],
+        ]),
+        views: [page('v0', 1, 'Map'), page('v1', 2, 'Roadmap'), page('v2', 3, 'Sitemap')],
+      });
+
+      expect(spy).toHaveBeenCalled();
+      // Before any pick nothing is scored, so neither order is reversed.
+      expect(find(cases, 0, 'map').tierOrderViolations).toEqual({ ranker: 0, ranker_no_picks: 0 });
+      expect(find(cases, 1, 'ma').tierOrderViolations).toEqual({ ranker: 1, ranker_no_picks: 0 });
+      expect(find(cases, 1, 'map').tierOrderViolations).toEqual({ ranker: 1, ranker_no_picks: 0 });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('refuses a pick of a view before it exists', () => {

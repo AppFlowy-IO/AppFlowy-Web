@@ -2,8 +2,13 @@
 
 The client ranker replay and TypeScript/Dart parity gate of the @-mention plan (MEN-X-07): seeded
 sessions of one synthetic workspace, the rankings the client ranker with pick memory gives for every
-prefix the user typed, and the verdict of the gates that decide whether `mentionTypeaheadV2` and pick
-memory may default on.
+prefix the user typed, and the verdicts of the gates that decide whether `mentionTypeaheadV2` and
+pick memory may default on, each graded in the configuration its default ships: `mentionTypeaheadV2`
+alone ranks without pick memory, and pick memory ranks with it and must hold its own against the
+ranking without it. On these sessions `mentionTypeaheadV2` alone passes every gate; pick memory
+passes MRU's gates but lowers the `7+` bucket's hit@1 by 0.72 pp against the ranking without it,
+more than the 0.5 pp the plan allows, so it fails and stays off pending a product decision
+(`verdict.json`).
 
 AppFlowy-Web keeps the canonical copy in
 `src/components/editor/components/panels/mention-panel/__fixtures__/mention-eval/` and writes it with
@@ -18,7 +23,7 @@ typeahead contract's vectors, canonical in AppFlowy-Cloud-Premium), whose manife
 | --- | --- |
 | `sessions.json` | The generator's parameters, the workspace (`views`, `people`, `requester`) and two event lists, `events` and `probes`. Generated: do not edit. |
 | `expected-rankings.json` | `sessions_sha256`, `top` (8) and `cases`: `[pick, prefix, ids]` for every replayed prefix of every pick of `events`, then of `probes`, with the client ranker's best ids. Generated. |
-| `verdict.json` | The gates over the `events` cases and the integer counts of every arm, by prefix bucket, lane and script; the probes' counts apart. Generated. |
+| `verdict.json` | Each configuration's gates over the `events` cases (`configurations`) and the integer counts of every arm, by prefix bucket, lane and script; the probes' counts apart. Generated. |
 | `README.md` | This file. |
 | `FIXTURES.sha256` | The manifest. Never edit it by hand. |
 
@@ -31,10 +36,10 @@ node scripts/mention-eval/run-eval.mjs --write --copy-to <AppFlowy-Premium>/fron
 node scripts/mention-eval/run-eval.mjs --report /tmp/mention-eval-report.json   # examples where arms disagree
 ```
 
-`--check` fails on a stale file, and on a failing gate only while `MENTION_TYPEAHEAD_V2_DEFAULT` or
-`MENTION_PICK_MEMORY_DEFAULT` is on (or with `--require-gate`). A change to the ranker, the pick
-memory, the normalizer or the generator changes these files: run `--write`, commit the folder, and
-copy it byte for byte to Desktop in the same change, whose Dart test must then pass.
+`--check` fails on a stale file, and on a configuration's failing gate only while the switch that
+ships it defaults on (with `--require-gate`, on any configuration's). A change to the ranker, the
+pick memory, the normalizer or the generator changes these files: run `--write`, commit the folder,
+and copy it byte for byte to Desktop in the same change, whose Dart test must then pass.
 
 ## Sessions
 
@@ -94,9 +99,9 @@ each with its client's production ranker and pick memory, never a copy.
 6. Then the pick memory records `typed` for the target's key at `t`, and a person's last use becomes
    `t`. A page's or database's last use comes only from opens and creations, as on Web.
 
-The TypeScript replay also ranks three baselines, graded but not recorded:
+The TypeScript replay also ranks, without recording them, the same ranking without pick memory
+(what `mentionTypeaheadV2` ranks while pick memory is off, as it defaults) and two baselines:
 
-- the same ranking without pick memory (pick memory is off by default);
 - MRU: the candidates used before (opened, created, or for people mentioned) whose title matches at
   T0 to T2, or people of class C0, the most recent first, then by key in code point order, as
   MEN-X-04's server baseline orders them;
@@ -113,19 +118,39 @@ normalized prefix holds a Han, kana or Hangul code point, else `latin`). Recipro
 in units of 1/840, the least common multiple of 1 to 8, so `verdict.json` holds integers and every
 comparison is exact. Only the `events` cases are graded.
 
-The gates (the plan's Done-when):
+Each ranking switch is graded in the configuration its default ships, one entry of `configurations`
+in `verdict.json`:
 
-1. `mrr_at_least_mru`: in every prefix bucket, the ranker's MRR@8 is at least MRU's.
+- `typeahead_v2`: `mentionTypeaheadV2` with pick memory off, as it defaults: the ranking without
+  pick memory. It guards Web's `MENTION_TYPEAHEAD_V2_DEFAULT`, and Desktop's v2 switch once it
+  exists (MEN-DESK-07, -08).
+- `pick_memory`: the ranking with pick memory, the one `expected-rankings.json` records. It guards
+  Web's `MENTION_PICK_MEMORY_DEFAULT` and Desktop's `FeatureFlag.mentionPickMemory`. With v2 off,
+  pick memory re-tiers the server's answers, which this local-lane replay does not model.
+
+A switch may default on only while its configuration passes; with both on, both must pass.
+`run-eval.mjs`, `mention-eval-fixtures.test.ts` (through `scripts/mention-eval/guard.ts`) and
+Desktop's `mention_eval_parity_test.dart` fail otherwise. A configuration passes when all its gates
+do (the plan's Done-when, then MEN-X-04's ship-gate rule for a ranking change):
+
+1. `mrr_at_least_mru`: in every prefix bucket, its MRR@8 is at least MRU's.
 2. `unique_exact_title_hit_at_1`: a page or database whose title the prefix matches exactly (T0),
-   when no other candidate's title does, is the ranker's first (MEN-X-04's ship gate; 30
-   `Meeting notes` pages cannot all be first, so a shared exact title is reported apart).
-3. `no_t0_t1_title_below_t3_t4`: over the ranker's whole order, no title of tier T0 or T1 comes after
-   a T3 or T4 title. The local lane has no T4 item (an unmatched server item), so T3 decides here.
-4. Identical rankings in Dart and TypeScript: Desktop's `mention_eval_parity_test.dart` replays the
-   sessions and asserts every case of `expected-rankings.json`.
+   when no other candidate's title does, is its first (MEN-X-04's ship gate; 30 `Meeting notes`
+   pages cannot all be first, so a shared exact title is reported apart).
+3. `no_t0_t1_title_below_t3_t4`: over its whole order, no title of tier T0 or T1 comes after a T3 or
+   T4 title. The local lane has no T4 item (an unmatched server item), so T3 decides here.
+4. `hit_at_1_within_0_5_pp_of_control`, `pick_memory` only: in every prefix bucket, its hit@1 is at
+   most 0.5 percentage points below the ranking without pick memory, its control: `(control_hit1 -
+   hit1) x 200 <= cases`.
+
+Identical rankings in Dart and TypeScript are the fifth gate: Desktop's
+`mention_eval_parity_test.dart` replays the sessions and asserts every case of
+`expected-rankings.json`, the ranking with pick memory. That checks the ranking without it too: an
+item no pick scores enters the ranking as it would without pick memory, and such items keep, among
+themselves, the order they would have without it.
 
 If a gate fails, the ranker, the generator and the gates are not tuned to pass it: the failure, its
-cases and its likely cause are reported, and the switches stay off.
+cases and its likely cause are reported, and the switch that ships the configuration stays off.
 
 ## Determinism
 

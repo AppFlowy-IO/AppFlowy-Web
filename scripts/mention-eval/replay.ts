@@ -5,7 +5,8 @@
  * - `ranker`: the production client ranking (`rankSection`, MEN-WEB-06) with production pick memory
  *   (`MentionPickMemory`, MEN-WEB-10) as the picker keeps it: the local lane as the picker ranks it
  *   before an answer arrives, offline, or for a one-letter query that stays local.
- * - `ranker_no_picks`: the same ranking without pick memory, which is off by default.
+ * - `ranker_no_picks`: the same ranking without pick memory, which is off by default: what the
+ *   picker ranks with `mentionTypeaheadV2` alone.
  * - `mru`: the candidates whose title matches at a word start or better (T0 to T2), or people of
  *   the prefix class C0, that the user used, most recently used first, as MEN-X-04's server
  *   baseline orders them.
@@ -38,6 +39,8 @@ export const MENTION_EVAL_TOP = 8;
 
 export const MENTION_EVAL_ARMS = ['ranker', 'ranker_no_picks', 'mru', 'substring'] as const;
 export type MentionEvalArm = (typeof MENTION_EVAL_ARMS)[number];
+/** The arms of the production client ranking, with and without pick memory: the ones graded. */
+export type MentionEvalRankerArm = Extract<MentionEvalArm, 'ranker' | 'ranker_no_picks'>;
 
 /** The picker section a target is ranked in: people, or pages and databases apart. */
 export type MentionEvalSection = 'people' | 'pages' | 'databases';
@@ -67,10 +70,10 @@ export interface MentionEvalCase {
   /** Each arm's best ids, best first, at most {@link MENTION_EVAL_TOP}. */
   readonly top: Readonly<Record<MentionEvalArm, readonly string[]>>;
   /**
-   * Pages and databases: how many T0 or T1 titles the ranker's whole order puts after a T3 or T4
-   * title. Always 0 for people.
+   * Pages and databases: how many T0 or T1 titles each ranker arm's whole order puts after a T3 or
+   * T4 title. Always 0 for people.
    */
-  readonly tierOrderViolations: number;
+  readonly tierOrderViolations: Readonly<Record<MentionEvalRankerArm, number>>;
 }
 
 /** A candidate as every arm reads it. */
@@ -280,7 +283,7 @@ function replayEvents(
       const withPicks = candidates.map((candidate) => rankCandidate(candidate, scores.get(candidate.key)));
       const withoutPicks = candidates.map((candidate) => rankCandidate(candidate));
       let exactTitle: MentionEvalCase['exactTitle'];
-      let violations = 0;
+      let violations = { ranker: 0, ranker_no_picks: 0 };
 
       if (lane === 'objects') {
         if (objectTier(query, target.title) === 0) {
@@ -289,7 +292,10 @@ function replayEvents(
           exactTitle = exact === 1 ? 'unique' : 'duplicate';
         }
 
-        violations = tierOrderViolations(query, rankSection(query, lane, withPicks, t));
+        violations = {
+          ranker: tierOrderViolations(query, rankSection(query, lane, withPicks, t)),
+          ranker_no_picks: tierOrderViolations(query, rankSection(query, lane, withoutPicks, t)),
+        };
       }
 
       cases.push({

@@ -1,5 +1,5 @@
 # mention-eval v1: sha256 of every file here except this one, LC_ALL=C path order. Regenerate: see README.md
-f0f986dd5afaaa2f220698cc891794a448f1a5c81fece37ea2b00b1f8cbde187  README.md
+bf79e969c299913c17f6d5045404f9906aaf6b90639a65a6d9089c2e1a0bb484  README.md
 a832ae2ca9dde13c623195725739dc6c03e15da7232859c7fef900e34667dab6  expected-rankings.json
 41d9b5ff44080d463a05c45a5bd2a62912d0c83b781b95b6c22c392ea98f2c85  sessions.json
-ad3adb9640d833c0f6c30cb71ed5680b3558801d111da37a98dc6d464801ff53  verdict.json
+e2c7f8812534cc8f8b241d57d92716f7eae5979c7865d2755800ceece1e0c579  verdict.json

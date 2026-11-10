@@ -1,70 +1,182 @@
 {
   "version": 1,
-  "about": "The replay gates and metrics of every arm (MEN-X-07). Written by AppFlowy-Web scripts/mention-eval (run-eval.mjs --write); do not edit. Counts are integers; rr sums reciprocal ranks in units of 1/rr_unit. See README.md.",
+  "about": "The replay gates of each configuration a ranking switch ships, and the metrics of every arm (MEN-X-07). Written by AppFlowy-Web scripts/mention-eval (run-eval.mjs --write); do not edit. Counts are integers; rr sums reciprocal ranks in units of 1/rr_unit. See README.md.",
   "sessions_sha256": "41d9b5ff44080d463a05c45a5bd2a62912d0c83b781b95b6c22c392ea98f2c85",
   "rankings_sha256": "a832ae2ca9dde13c623195725739dc6c03e15da7232859c7fef900e34667dab6",
-  "passed": true,
-  "gates": {
-    "mrr_at_least_mru": {
+  "configurations": {
+    "typeahead_v2": {
+      "about": "mentionTypeaheadV2 on, pick memory off: the ranker without pick memory. Web MENTION_TYPEAHEAD_V2_DEFAULT, and Desktop's v2 switch once it exists (MEN-DESK-07, -08), may default on only while it passes.",
+      "arm": "ranker_no_picks",
       "passed": true,
-      "buckets": [
-        {
-          "bucket": "1",
-          "cases": 591,
-          "ranker_rr": 217262,
-          "mru_rr": 152518,
-          "passed": true
+      "gates": {
+        "mrr_at_least_mru": {
+          "passed": true,
+          "buckets": [
+            {
+              "bucket": "1",
+              "cases": 591,
+              "ranker_rr": 168701,
+              "mru_rr": 152518,
+              "passed": true
+            },
+            {
+              "bucket": "2",
+              "cases": 581,
+              "ranker_rr": 259693,
+              "mru_rr": 224442,
+              "passed": true
+            },
+            {
+              "bucket": "3",
+              "cases": 488,
+              "ranker_rr": 255278,
+              "mru_rr": 215469,
+              "passed": true
+            },
+            {
+              "bucket": "4-6",
+              "cases": 818,
+              "ranker_rr": 446952,
+              "mru_rr": 380751,
+              "passed": true
+            },
+            {
+              "bucket": "7+",
+              "cases": 834,
+              "ranker_rr": 589059,
+              "mru_rr": 433848,
+              "passed": true
+            }
+          ]
         },
-        {
-          "bucket": "2",
-          "cases": 581,
-          "ranker_rr": 279863,
-          "mru_rr": 224442,
-          "passed": true
+        "unique_exact_title_hit_at_1": {
+          "passed": true,
+          "cases": 58,
+          "hits": 58,
+          "failures": []
         },
-        {
-          "bucket": "3",
-          "cases": 488,
-          "ranker_rr": 267071,
-          "mru_rr": 215469,
-          "passed": true
-        },
-        {
-          "bucket": "4-6",
-          "cases": 818,
-          "ranker_rr": 465731,
-          "mru_rr": 380751,
-          "passed": true
-        },
-        {
-          "bucket": "7+",
-          "cases": 834,
-          "ranker_rr": 581694,
-          "mru_rr": 433848,
-          "passed": true
+        "no_t0_t1_title_below_t3_t4": {
+          "passed": true,
+          "cases": 2082,
+          "violations": 0,
+          "failures": []
         }
-      ]
+      },
+      "informational": {
+        "duplicate_exact_title_hit_at_1": {
+          "cases": 7,
+          "hits": 5
+        }
+      }
     },
-    "unique_exact_title_hit_at_1": {
-      "passed": true,
-      "cases": 58,
-      "hits": 58,
-      "failures": []
-    },
-    "no_t0_t1_title_below_t3_t4": {
-      "passed": true,
-      "cases": 2082,
-      "violations": 0,
-      "failures": []
-    },
-    "dart_typescript_parity": "AppFlowy-Premium frontend/appflowy_flutter/test/unit_test/mention_person/mention_eval_parity_test.dart"
-  },
-  "informational": {
-    "duplicate_exact_title_hit_at_1": {
-      "cases": 7,
-      "hits": 3
+    "pick_memory": {
+      "about": "Pick memory on: the ranker with pick memory, whose rankings expected-rankings.json records, also against the ranker without it. Web MENTION_PICK_MEMORY_DEFAULT and Desktop FeatureFlag.mentionPickMemory may default on only while it passes.",
+      "arm": "ranker",
+      "passed": false,
+      "gates": {
+        "mrr_at_least_mru": {
+          "passed": true,
+          "buckets": [
+            {
+              "bucket": "1",
+              "cases": 591,
+              "ranker_rr": 217262,
+              "mru_rr": 152518,
+              "passed": true
+            },
+            {
+              "bucket": "2",
+              "cases": 581,
+              "ranker_rr": 279863,
+              "mru_rr": 224442,
+              "passed": true
+            },
+            {
+              "bucket": "3",
+              "cases": 488,
+              "ranker_rr": 267071,
+              "mru_rr": 215469,
+              "passed": true
+            },
+            {
+              "bucket": "4-6",
+              "cases": 818,
+              "ranker_rr": 465731,
+              "mru_rr": 380751,
+              "passed": true
+            },
+            {
+              "bucket": "7+",
+              "cases": 834,
+              "ranker_rr": 581694,
+              "mru_rr": 433848,
+              "passed": true
+            }
+          ]
+        },
+        "unique_exact_title_hit_at_1": {
+          "passed": true,
+          "cases": 58,
+          "hits": 58,
+          "failures": []
+        },
+        "no_t0_t1_title_below_t3_t4": {
+          "passed": true,
+          "cases": 2082,
+          "violations": 0,
+          "failures": []
+        },
+        "hit_at_1_within_0_5_pp_of_control": {
+          "passed": false,
+          "control": "ranker_no_picks",
+          "buckets": [
+            {
+              "bucket": "1",
+              "cases": 591,
+              "hit1": 202,
+              "control_hit1": 137,
+              "passed": true
+            },
+            {
+              "bucket": "2",
+              "cases": 581,
+              "hit1": 275,
+              "control_hit1": 239,
+              "passed": true
+            },
+            {
+              "bucket": "3",
+              "cases": 488,
+              "hit1": 268,
+              "control_hit1": 244,
+              "passed": true
+            },
+            {
+              "bucket": "4-6",
+              "cases": 818,
+              "hit1": 475,
+              "control_hit1": 431,
+              "passed": true
+            },
+            {
+              "bucket": "7+",
+              "cases": 834,
+              "hit1": 646,
+              "control_hit1": 652,
+              "passed": false
+            }
+          ]
+        }
+      },
+      "informational": {
+        "duplicate_exact_title_hit_at_1": {
+          "cases": 7,
+          "hits": 3
+        }
+      }
     }
   },
+  "dart_typescript_parity": "AppFlowy-Premium frontend/appflowy_flutter/test/unit_test/mention_person/mention_eval_parity_test.dart",
   "rr_unit": 840,
   "metrics": {
     "ranker": {

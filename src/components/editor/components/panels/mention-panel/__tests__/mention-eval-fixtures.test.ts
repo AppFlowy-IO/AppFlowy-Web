@@ -2,8 +2,7 @@ import { createHash } from 'crypto';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import { MENTION_PICK_MEMORY_DEFAULT } from '../mentionPickMemory';
-import { MENTION_TYPEAHEAD_V2_DEFAULT } from '../mentionTypeaheadFlag';
+import { mentionEvalBlockedDefaults, MENTION_EVAL_WEB_DEFAULTS } from '../../../../../../../scripts/mention-eval/guard';
 
 import { mentionParityByteRuleViolations } from './mention-parity-helpers';
 
@@ -12,7 +11,7 @@ import { mentionParityByteRuleViolations } from './mention-parity-helpers';
  * CI job checks the rankings are current, and copied byte for byte to Desktop's
  * `frontend/resources/mention-eval/`, whose Dart test replays them. This checks the folder itself:
  * its manifest, its byte rules, that its files agree with each other, and that no ranking switch
- * defaults on while the replay's gates fail.
+ * defaults on while the configuration it ships fails the replay's gates.
  */
 const DIR = join(__dirname, '..', '__fixtures__', 'mention-eval');
 const MANIFEST = 'FIXTURES.sha256';
@@ -33,8 +32,7 @@ interface Verdict {
   version: number;
   sessions_sha256: string;
   rankings_sha256: string;
-  passed: boolean;
-  gates: Record<string, { passed?: boolean } | string>;
+  configurations: Record<string, { arm: string; passed: boolean; gates: Record<string, { passed: boolean }> }>;
 }
 
 interface Sessions {
@@ -97,24 +95,25 @@ describe('mention-eval fixtures', () => {
     });
   });
 
-  it('give the verdict of those rankings', () => {
-    const gates = ['mrr_at_least_mru', 'unique_exact_title_hit_at_1', 'no_t0_t1_title_below_t3_t4'].map(
-      (gate) => (verdict.gates[gate] as { passed: boolean }).passed
-    );
+  it('give the verdict of those rankings for each configuration a switch ships', () => {
+    const gates = ['mrr_at_least_mru', 'unique_exact_title_hit_at_1', 'no_t0_t1_title_below_t3_t4'];
+    const configurations = Object.entries(verdict.configurations).map(([name, configuration]) => [
+      name,
+      configuration.arm,
+      Object.keys(configuration.gates),
+      configuration.passed === Object.values(configuration.gates).every((gate) => gate.passed === true),
+    ]);
 
     expect(verdict.version).toBe(1);
     expect(verdict.sessions_sha256).toBe(rankings.sessions_sha256);
     expect(verdict.rankings_sha256).toBe(sha256(read('expected-rankings.json')));
-    expect(verdict.passed).toBe(gates.every(Boolean));
+    expect(configurations).toEqual([
+      ['typeahead_v2', 'ranker_no_picks', gates, true],
+      ['pick_memory', 'ranker', [...gates, 'hit_at_1_within_0_5_pp_of_control'], true],
+    ]);
   });
 
-  it('let mentionTypeaheadV2 and pick memory default on only while every replay gate passes', () => {
-    expect({
-      v2: MENTION_TYPEAHEAD_V2_DEFAULT && !verdict.passed,
-      pickMemory: MENTION_PICK_MEMORY_DEFAULT && !verdict.passed,
-    }).toEqual({
-      v2: false,
-      pickMemory: false,
-    });
+  it('let mentionTypeaheadV2 and pick memory default on only while the configuration each ships passes', () => {
+    expect(mentionEvalBlockedDefaults(verdict, MENTION_EVAL_WEB_DEFAULTS)).toEqual([]);
   });
 });
