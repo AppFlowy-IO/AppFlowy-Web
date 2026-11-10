@@ -192,3 +192,32 @@ local lane until the server lists `short_prefix_v1` in `mention_features`
 picker has no local lane yet (MEN-WEB-09), so a one-letter query would only keep the list already
 on screen. Web reads the feature from the server-info snapshot. Loading, failed or older server info
 lists no features, so the rule then holds.
+
+## Comment @ pickers
+
+The @ pickers of row comments, Feed cards and document comments suggest people from the workspace
+roster (`GET /api/workspace/{workspace_id}/mentionable-person`), not from the mention search.
+`comment-mention-ranking.ts` decides who is listed and in what order, and
+`useCommentMentionPicker` shares it between the two composers; each keeps its own trigger, keys
+and insertion. The default, `legacy`, keeps the order these pickers have always had: everyone
+whose name or address contains the typed text, in roster order, at most eight. A browser opts in
+to the `ranked` order with `localStorage.__comment_mention_ranking = 'ranked'`, read when a
+composer mounts:
+
+- People match by the typeahead contract's people classes (C0 a name word, the address's local
+  part or one of its words starts with the query; C1 the name contains it; C2 the local part
+  does; C3 a query with `@` or `.` that the full address contains), so a shared domain matches no
+  one.
+- Inside a class: the commenter last; then the discussion's participants, the most recent first
+  (a reply's thread, then, on a row, the row's other commenters; a new row or Feed comment ranks
+  everyone who commented on the row); then people on the page, for document comments, from the
+  page's awareness while the picker is open; then the commenter's latest mention of the person
+  (`last_mentioned_at`); then Cloud's own tie-breaks for people (the shorter name on a typed
+  query, the lowercased name, the person id). A bare `@` uses the same keys without the class.
+- The highlighted person stays highlighted when the list changes without a keystroke, so Enter
+  inserts the person the user chose.
+
+Both orders read the roster fields every released server sends (`person_id`, `uid`, `name`,
+`email`). `last_mentioned_at` is optional: a person without it, or with a value that does not
+parse, counts as never mentioned. Neither order sends a request or changes the stored comment
+format (`@[name](person_id)`).

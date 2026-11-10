@@ -1,11 +1,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
+import { COMMENT_MENTION_RANKING_OVERRIDE_KEY } from '@/application/comment-mention-ranking';
 import { InlineComment } from '@/application/inline-comment';
+import { MentionablePerson, MentionPersonRole } from '@/application/types';
 
 import { InlineCommentSidebar } from '../InlineCommentSidebar';
 
+let mockMentionableUsers: MentionablePerson[] = [];
+
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
-  useMentionableUsersWithAutoFetch: () => ({ users: [], loading: false }),
+  useMentionableUsersWithAutoFetch: () => ({ users: mockMentionableUsers, loading: false }),
 }));
 
 jest.mock('react-i18next', () => ({
@@ -208,6 +212,69 @@ describe('InlineCommentSidebar', () => {
       fireEvent.keyDown(input, { key: 'Enter' });
     });
     expect(createReply).toHaveBeenCalledWith('open-comment', 'Sounds good');
+  });
+
+  it("ranks the thread's participants first in the reply's @ picker, the commenter last", () => {
+    const member = (uuid: string, name: string): MentionablePerson => ({
+      uid: uuid.length,
+      person_id: uuid,
+      name,
+      email: `${name.toLowerCase()}@appflowy.io`,
+      role: MentionPersonRole.Member,
+      avatar_url: null,
+      cover_image_url: null,
+      custom_image_url: null,
+      description: null,
+      invited: false,
+      last_mentioned_at: null,
+    });
+
+    const resizeObserver = globalThis.ResizeObserver;
+
+    // The suggestions popover measures its anchor.
+    globalThis.ResizeObserver = class {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    } as unknown as typeof ResizeObserver;
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    mockMentionableUsers = [
+      member('user-1', 'Ada'),
+      member('user-2', 'Bea'),
+      member('user-3', 'Cal'),
+      member('user-4', 'Dan'),
+    ];
+    setContext({
+      comments: [
+        comment({ user: { uuid: 'user-2', name: 'Bea', avatarUrl: null } }),
+        comment({
+          commentId: 'reply-comment',
+          content: 'Chronological reply',
+          replyCommentId: 'open-comment',
+          createdAt: '2026-08-09T00:01:00Z',
+          user: { uuid: 'user-3', name: 'Cal', avatarUrl: null },
+        }),
+      ],
+    });
+
+    try {
+      render(<InlineCommentSidebar />);
+      fireEvent.click(screen.getByTestId('inline-comment-reply-button'));
+
+      const input = screen.getByTestId('inline-comment-reply-input');
+
+      fireEvent.change(input, { target: { value: '@', selectionStart: 1, selectionEnd: 1 } });
+      expect(screen.getAllByRole('option').map((option) => option.getAttribute('data-person-name'))).toEqual([
+        'Cal',
+        'Bea',
+        'Dan',
+        'Ada',
+      ]);
+    } finally {
+      globalThis.ResizeObserver = resizeObserver;
+      window.localStorage.clear();
+      mockMentionableUsers = [];
+    }
   });
 
   it('shows a loading indicator while a reply is being submitted', () => {

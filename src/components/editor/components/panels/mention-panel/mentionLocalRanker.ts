@@ -19,8 +19,9 @@
  * Matching reads prepared text: each title, name and address is normalized and split into words
  * once and kept by its own string, so re-ranking on every keystroke only compares, however the
  * candidates are split into sections ({@link PreparedCache}). Nothing here depends on React, the
- * DOM or the network, and nothing calls it yet: the picker keeps the server's order until
- * MEN-WEB-08 and MEN-WEB-09 use it behind their flag.
+ * DOM or the network. The editor's picker does not call it yet: it keeps the server's order until
+ * MEN-WEB-08 and MEN-WEB-09 use it behind their flag. The comment @ pickers match people with
+ * {@link personTier} when their own `ranked` order is on (`@/application/comment-mention-ranking`).
  */
 import {
   MentionSearchResultItem,
