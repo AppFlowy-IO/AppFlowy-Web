@@ -8,8 +8,9 @@
  *   out (shed for load, or not resolved) shows nothing, and so does an item from a server that sends
  *   none. The `subtitle` servers send for these items (the same path joined, or "Database") is never
  *   shown: it is English, and Web has always hidden it.
- * - A person's avatar from the roster the tab loaded, by person id. No server sets a person's
- *   `icon`, and the picker loads no roster: a tab that has none shows initials, as before.
+ * - A person's avatar from the roster, by person id: a picker that lists people loads it once per
+ *   opening through the roster cache (`useMentionRosterOnOpen`). No server sets a person's `icon`:
+ *   until the roster arrives, or when it cannot load, the person shows initials, as before.
  * - A page's or database's icon from the local index (the outline's view icons and layouts,
  *   MEN-WEB-07). A server's `icon` is never drawn: servers type it as an object whose `ty` is a
  *   string, where the outline numbers its icon types, and none sets it.

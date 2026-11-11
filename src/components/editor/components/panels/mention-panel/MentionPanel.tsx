@@ -128,6 +128,7 @@ import {
 import { MENTION_TYPEAHEAD_LEGACY, readMentionTypeaheadSettings } from './mentionTypeaheadFlag';
 import { useMentionLocalSnapshot } from './useMentionLocalSnapshot';
 import { useMentionPickerSession } from './useMentionPickerSession';
+import { useMentionRosterOnOpen } from './useMentionRosterOnOpen';
 import { useNotifyPersonMention } from './useNotifyPersonMention';
 
 enum MentionTag {
@@ -798,8 +799,15 @@ export function MentionPanel({
     [hasSearchMentions, open, pickMemoryKey]
   );
   // Breadcrumbs, roster avatars, view icons and reason chips (MEN-WEB-13), off by default and read
-  // once per opening. They read what the tab holds and who is on the page, never the network.
+  // once per opening. They read what the tab holds and who is on the page; an uploaded view icon
+  // loads as it does in the sidebar.
   const itemDetails = useMemo(() => open && readMentionItemDetailsEnabled(), [open]);
+
+  // Avatars, and collaborators whom awareness names by uid, need the roster: a picker that lists
+  // people loads it once per opening, through the roster cache.
+  useMentionRosterOnOpen(
+    itemDetails && hasSearchMentions && mentionInclude.includes(MentionTargetKind.Person) ? workspaceId : undefined
+  );
   // What this tab holds (MEN-WEB-07), read while pick memory, the lane or the item details use it.
   const localSnapshot = useMentionLocalSnapshot(pickMemory || localLane || itemDetails ? workspaceId : undefined);
   // The views the user lost access to in this session. The local index lists one, and the pages

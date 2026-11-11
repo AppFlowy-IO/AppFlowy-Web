@@ -35,6 +35,12 @@ import { MENTION_TYPEAHEAD_V2_OVERRIDE_KEY } from '../mentionTypeaheadFlag';
 const mockAddMark = jest.fn();
 /** Every `src` the picker handed an avatar image, as it was passed. */
 const mockAvatarSources: unknown[] = [];
+/** The roster endpoint (`mentionable-person`); it fails unless a test answers it. */
+const mockGetMentionableUsers = jest.fn<Promise<MentionablePerson[]>, [string]>();
+/** The member profiles the roster cache finds in IndexedDB, by workspace. */
+const mockDiskRosters = new Map<string, MentionablePerson[]>();
+/** Every workspace the picker asked the roster cache for, in order. */
+const mockRosterLoads: (string | undefined)[] = [];
 const WORKSPACE = 'workspace';
 const MINUTE = 60_000;
 
@@ -69,7 +75,37 @@ jest.mock('react-i18next', () => {
 
   return { useTranslation: () => ({ t, i18n }) };
 });
-jest.mock('@/application/services/domains', () => ({ WorkspaceService: {} }));
+jest.mock('@/application/services/domains', () => ({
+  WorkspaceService: { getMentionableUsers: (workspaceId: string) => mockGetMentionableUsers(workspaceId) },
+}));
+// The roster cache's table, holding `mockDiskRosters`.
+jest.mock('@/application/db', () => ({
+  db: {
+    workspace_member_profiles: {
+      where: () => ({
+        equals: (workspaceId: string) => ({
+          toArray: () => Promise.resolve(mockDiskRosters.get(workspaceId) ?? []),
+          delete: () => Promise.resolve(0),
+        }),
+      }),
+      bulkPut: () => Promise.resolve(),
+    },
+  },
+}));
+// The real roster cache, counting what the picker asks it for.
+jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => {
+  const actual = jest.requireActual<typeof import('@/components/database/components/cell/person/useMentionableUsers')>(
+    '@/components/database/components/cell/person/useMentionableUsers'
+  );
+
+  return {
+    ...actual,
+    loadMentionableUsers: (workspaceId: string | undefined) => {
+      mockRosterLoads.push(workspaceId);
+      return actual.loadMentionableUsers(workspaceId);
+    },
+  };
+});
 jest.mock('../useNotifyPersonMention', () => ({ useNotifyPersonMention: () => jest.fn() }));
 jest.mock('@/application/slate-yjs/command', () => ({
   CustomEditor: { addMark: (...args: unknown[]) => mockAddMark(...args) },
@@ -187,14 +223,21 @@ function outlineView(id: string, name: string, fields: Partial<View> = {}): View
   };
 }
 
-/** The awareness of a page with these people on it, as Web writes its state (`user_uuid`). */
-function awarenessOf(present: { name: string; uuid: string }[]) {
+/**
+ * The awareness of a page with these people on it: Web writes a person id (`user_uuid`), Desktop
+ * only its uid (`metadata.id`).
+ */
+function awarenessOf(present: ({ name: string; uuid: string } | { name: string; uid: string })[]) {
   const states = new Map(
-    present.map(({ name, uuid: id }, index) => [
+    present.map((person, index) => [
       index + 1,
       {
-        user: { uid: index + 1, device_id: `${name}-device` },
-        metadata: JSON.stringify({ user_name: name, user_uuid: id }),
+        user: { uid: index + 1, device_id: `${person.name}-device` },
+        metadata: JSON.stringify(
+          'uuid' in person
+            ? { user_name: person.name, user_uuid: person.uuid }
+            : { user_name: person.name, id: person.uid }
+        ),
       },
     ])
   );
@@ -279,6 +322,13 @@ describe('MentionPanel item details (MEN-WEB-13)', () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     mockAvatarSources.length = 0;
+    mockRosterLoads.length = 0;
+    mockDiskRosters.clear();
+    // Offline unless a test answers: a roster a test records stays the one the picker reads.
+    mockGetMentionableUsers.mockReset().mockRejectedValue(new Error('offline'));
+    mockPanelContext.activePanel = PanelType.Mention;
+    mockPanelContext.activeTrigger = '@';
+    mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
     clearMentionSearchCacheForTests();
     clearMentionLocalIndex();
     clearMentionSessionPersonPicks();
@@ -334,6 +384,9 @@ describe('MentionPanel item details (MEN-WEB-13)', () => {
     expect(screen.queryByTestId('avatar-image')).toBeNull();
     expect(mockAvatarSources).toContain(undefined);
     expectOnlyStringImageSources();
+    // Nor loaded: the picker asks for nothing more than before.
+    expect(mockRosterLoads).toEqual([]);
+    expect(mockGetMentionableUsers).not.toHaveBeenCalled();
   });
 
   describe('breadcrumbs', () => {
@@ -403,6 +456,92 @@ describe('MentionPanel item details (MEN-WEB-13)', () => {
 
       expect(within(row('Ada')).getByTestId('avatar-image').getAttribute('src')).toBe('https://cdn.appflowy.io/ada.png');
       expectOnlyStringImageSources();
+    });
+
+    it('load the roster once per opening, for its avatars and Desktop collaborators', async () => {
+      const workspace = 'workspace-roster-api';
+      const ada = rosterEntry(1, 'Ada', 'https://cdn.appflowy.io/ada.png');
+      const bob = rosterEntry(2, 'Bob');
+      let answerRoster: (people: MentionablePerson[]) => void = () => undefined;
+
+      // Nothing else in the tab loaded the roster, and nothing is on disk.
+      mockGetMentionableUsers.mockReturnValueOnce(
+        new Promise((resolve) => {
+          answerRoster = resolve;
+        })
+      );
+      mockEditorContext.workspaceId = workspace;
+      setMentionIndexSources(workspace, { outline: [] });
+      // Bob is on the page from Desktop, whose awareness names him by uid only.
+      mockEditorContext.awareness = awarenessOf([{ name: 'Bob', uid: String(bob.uid) }]);
+
+      const view = await openPanel(
+        createSearch(() => answerOf(section(MentionSearchSectionKind.People, [personItem(ada), personItem(bob)])))
+      );
+
+      // Until it arrives: initials, and no one known to be on the page.
+      expect(within(row('Ada')).queryByTestId('avatar-image')).toBeNull();
+      expect(chipOf(row('Bob'))).toBeNull();
+
+      for (const query of ['a', 'ad']) {
+        mockPanelContext.searchText = query;
+        view.rerender();
+        await advance(1_000);
+      }
+
+      await act(async () => {
+        answerRoster([ada, bob]);
+      });
+      await advance(10);
+
+      expect(within(row('Ada')).getByTestId('avatar-image').getAttribute('src')).toBe('https://cdn.appflowy.io/ada.png');
+      expect(chipOf(row('Bob'))).toBe('On this page');
+      // One load for the opening, whatever was typed, and one request.
+      expect(mockRosterLoads).toEqual([workspace]);
+      expect(mockGetMentionableUsers.mock.calls).toEqual([[workspace]]);
+      expectOnlyStringImageSources();
+
+      // The next opening loads it again, and the roster cache answers without a request.
+      mockPanelContext.isPanelOpen = () => false;
+      view.rerender();
+      await advance(10);
+      mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.Mention;
+      view.rerender();
+      await advance(1_000);
+
+      expect(within(row('Ada')).getByTestId('avatar-image').getAttribute('src')).toBe('https://cdn.appflowy.io/ada.png');
+      expect(mockRosterLoads).toEqual([workspace, workspace]);
+      expect(mockGetMentionableUsers).toHaveBeenCalledTimes(1);
+    });
+
+    it('read a fresh roster from the disk cache without a request', async () => {
+      const workspace = 'workspace-roster-disk';
+      const ada = rosterEntry(1, 'Ada', 'https://cdn.appflowy.io/ada.png');
+
+      mockDiskRosters.set(workspace, [ada]);
+      localStorage.setItem(`af_mentionable_users_synced_at:${workspace}`, String(Date.now()));
+      mockEditorContext.workspaceId = workspace;
+      setMentionIndexSources(workspace, { outline: [] });
+
+      await openPanel(createSearch(() => answerOf(section(MentionSearchSectionKind.People, [personItem(ada)]))));
+
+      expect(within(row('Ada')).getByTestId('avatar-image').getAttribute('src')).toBe('https://cdn.appflowy.io/ada.png');
+      expect(mockRosterLoads).toEqual([workspace]);
+      expect(mockGetMentionableUsers).not.toHaveBeenCalled();
+    });
+
+    it('load no roster for a page reference picker, which lists no people', async () => {
+      mockPanelContext.activePanel = PanelType.PageReference;
+      mockPanelContext.activeTrigger = '[[';
+      mockPanelContext.isPanelOpen = (panel: PanelType) => panel === PanelType.PageReference;
+
+      await openPanel(
+        createSearch(() => answerOf(section(MentionSearchSectionKind.Pages, [page('notes', 'Meeting notes')])))
+      );
+
+      expect(row('Meeting notes')).toBeTruthy();
+      expect(mockRosterLoads).toEqual([]);
+      expect(mockGetMentionableUsers).not.toHaveBeenCalled();
     });
 
     it('never pass an icon object to an image, and never save one into the mention', async () => {

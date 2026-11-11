@@ -444,8 +444,14 @@ opens, with or without the picker's v2. While it is off the picker shows what it
   nothing, and so does an item without one: Search sends none for databases, and the local lane's
   items have none. The `subtitle` servers send for these items (the same path joined, or
   "Database") is English and stays hidden.
-- **Avatars.** A person shows the avatar of the roster the tab loaded, found by person id, else
-  initials. No server sets a person's `icon`, and the picker loads no roster for it.
+- **Avatars.** A person shows the avatar of the workspace roster, found by person id, else
+  initials; no server sets a person's `icon`. A picker that lists people loads the roster once per
+  opening through the roster cache the person cells use: memory for 30 seconds, then IndexedDB for
+  30 minutes, then one `GET /api/workspace/{workspace_id}/mentionable-person`, which every server
+  with mention search serves. Until it arrives, or when it cannot load, the person shows initials.
+  The same roster resolves a Desktop collaborator on the page, whom awareness names only by uid
+  (servers before 0.18.2 send no `uid`, so such a collaborator gets no chip), and the local lane
+  reads it too.
 - **Icons.** A page or database the local index holds shows its outline icon (emoji, image or icon
   set), else its layout's icon (board, calendar, list...); anything else keeps the kind's icon. A
   server's `icon` is never drawn: servers type it as an object whose `ty` is a string, where the
@@ -467,5 +473,7 @@ opens, with or without the picker's v2. While it is off the picker shows what it
 
 Whatever the switch, an `icon` that is not a string never reaches an image (a person's icon object
 used to throw while rendering) or a saved mention's `data`. The details read only fields every
-released server sends (`path`, `path_status`) and the optional `reason`; requests, cache keys and
-inserted payloads are unchanged.
+released server sends (`path`, `path_status`) and the optional `reason`. With the switch on, a
+picker that lists people loads the roster once per opening (see Avatars), and a view icon that is
+an uploaded image loads as it does in the sidebar; the search requests, their cache keys and
+inserted payloads are unchanged. With it off, the picker sends and loads what it did before.
