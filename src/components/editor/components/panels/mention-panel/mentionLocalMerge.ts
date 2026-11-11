@@ -94,8 +94,8 @@ export interface MentionMergedItem<Icon = unknown> {
   readonly key: string;
   /** What the picker shows: the title, a person's name, or their address when the name is blank. */
   readonly title: string;
-  /** The local icon, else the server's. */
-  readonly icon: Icon | string | null;
+  /** The local icon, else the server's (an object as servers type it; no server sets one yet). */
+  readonly icon: Icon | NonNullable<MentionSearchResultItem['icon']> | null;
   readonly source: MentionItemSource;
   /** A local-only item created or renamed in the last 15 minutes, which the index may not hold yet. */
   readonly fresh: boolean;

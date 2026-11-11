@@ -132,6 +132,16 @@ function keysOf(snapshot: MentionLocalSnapshot): LocalIndexKeys {
   return keys;
 }
 
+/** The local index's view under navigation key `key`, from the maps built once per snapshot. */
+export function mentionLocalViewOfKey(snapshot: MentionLocalSnapshot, key: string): MentionLocalView | undefined {
+  return keysOf(snapshot).views.get(key);
+}
+
+/** The local index's roster member with `personId`, from the maps built once per snapshot. */
+export function mentionLocalPersonOfId(snapshot: MentionLocalSnapshot, personId: string): MentionablePerson | undefined {
+  return keysOf(snapshot).people.get(personId);
+}
+
 /**
  * A local index view as the server would list it: a page, or a database by its database and the
  * view Search answers for it. A database whose answered view the index does not know yet (one this

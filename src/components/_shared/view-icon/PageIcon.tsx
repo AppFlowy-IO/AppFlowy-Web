@@ -46,10 +46,22 @@ function PageIcon({
 
   useEffect(() => {
     let currentBlobUrl: string | undefined;
+    // Set once the icon changes or the component unmounts: an image that loads later is not shown.
+    let stale = false;
 
     if (view.icon && view.icon.ty === ViewIconType.URL && view.icon.value) {
-      void getImageUrl(view.icon.value).then((url) => {
-        currentBlobUrl = url;
+      const value = view.icon.value;
+
+      void getImageUrl(value).then((url) => {
+        // Only a blob fetched here is this icon's to revoke; a URL the icon names itself is borrowed.
+        const ownedUrl = url !== value ? url : undefined;
+
+        if (stale) {
+          if (ownedUrl) revokeBlobUrl(ownedUrl);
+          return;
+        }
+
+        currentBlobUrl = ownedUrl;
         setImgSrc(url);
       });
     } else {
@@ -57,6 +69,7 @@ function PageIcon({
     }
 
     return () => {
+      stale = true;
       if (currentBlobUrl) {
         revokeBlobUrl(currentBlobUrl);
       }
