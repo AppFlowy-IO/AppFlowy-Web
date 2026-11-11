@@ -19,9 +19,10 @@
  * - At most one reason chip ({@link mentionReasonChip}): "Opened 3 min ago", "Created just now" or
  *   "On this page", from what the tab knows (its opens and creations, the recent views, the
  *   outline's creation times and who is on the page) and from the reasons a server sends to a
- *   request that opted into them (Cloud MEN-X-09, `reasons_v1`; the picker does not send it yet).
- *   A signal the picker has no copy for shows nothing. Nothing ever says "Edited": the Folder's
- *   edit times, the server's `changed` signal among them, reflect only metadata changes.
+ *   request that opted into them (Cloud MEN-X-09, `reasons_v1`, which the picker sends while the
+ *   item details are on and the server lists it, `mentionClientFeatures.ts`). A signal the picker has
+ *   no copy for shows nothing. Nothing ever says "Edited": the Folder's edit times, the server's
+ *   `changed` signal among them, reflect only metadata changes.
  *
  * Whatever the switch, a value that is not a string never reaches an image source
  * ({@link mentionImageSource}) or a saved mention (`mentionUtils.ts`). Nothing here depends on

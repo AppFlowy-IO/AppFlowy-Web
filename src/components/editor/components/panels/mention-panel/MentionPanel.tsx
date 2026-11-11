@@ -16,6 +16,7 @@ import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slat
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { APP_EVENTS } from '@/application/constants';
+import { reportMentionPick } from '@/application/services/js-services/http/mention-pick-feedback';
 import type { MentionSessionSource } from '@/application/services/js-services/http/mention-presentation-metrics';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -51,7 +52,12 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
-import { mentionClientFeatures } from './mentionClientFeatures';
+import {
+  mentionPickerClientFeatures,
+  NO_MENTION_PICKER_CLIENT_FEATURES,
+  readMentionSuggestedEnabled,
+  withMentionClientFeatures,
+} from './mentionClientFeatures';
 import { MentionItemDetails, readMentionItemDetailsEnabled } from './mentionItemDetails';
 import {
   buildMentionLocalLane,
@@ -136,6 +142,7 @@ import {
   MentionSectionLayout,
   mentionSectionTitle,
   reconcileMentionOptionSelection,
+  withSuggestedItemsOnce,
 } from './mentionUtils';
 import { MENTION_TYPEAHEAD_LEGACY, readMentionSectionsV2, readMentionTypeaheadSettings } from './mentionTypeaheadFlag';
 import { useMentionLocalSnapshot } from './useMentionLocalSnapshot';
@@ -200,7 +207,6 @@ const NO_MENTION_SECTIONS: MentionSearchSection[] = [];
 const NO_MISSING_KINDS: ReadonlySet<MentionTargetKind> = new Set();
 const NO_NAV_KEYS: ReadonlySet<string> = new Set();
 const NO_PICK_SCORES: ReadonlyMap<string, MentionPickScore> = new Map();
-const NO_CLIENT_FEATURES: readonly string[] = [];
 const NO_LANE_ITEMS: readonly MentionLaneItem[] = [];
 const NO_PERSON_PICKS: ReadonlyMap<string, number> = new Map();
 const NO_ROW_LANE_ITEMS: readonly MentionLocalRowLaneItem[] = [];
@@ -826,10 +832,25 @@ export function MentionPanel({
     typeaheadSettings.skipServerRows &&
     localRowsSnapshot.complete &&
     (!mentionContext?.database_id || mentionContext.database_id === localRowsSnapshot.databaseId);
-  // The opt-ins the server advertises and the picker's v2 handles, read once per opening.
+  // Breadcrumbs, roster avatars, view icons and reason chips (MEN-WEB-13), off by default and read
+  // once per opening. They read what the tab holds and who is on the page; a row downloads an
+  // uploaded avatar or view icon again each time it mounts (no shared image cache yet).
+  const itemDetails = useMemo(() => open && readMentionItemDetailsEnabled(), [open]);
+  // The Suggested section (MEN-X-10), off by default and read once per opening.
+  const suggestedSwitch = useMemo(() => open && readMentionSuggestedEnabled(), [open]);
+  // The opt-ins the server advertises and the picker can use, read once per opening: the degradation
+  // ones with the v2, reasons with the item details, which show them, Suggested on the `@` picker's
+  // bare `@`, and selection memory on typed queries (mentionClientFeatures.ts).
   const clientFeatures = useMemo(
-    () => (open && typeaheadV2 ? mentionClientFeatures() : NO_CLIENT_FEATURES),
-    [open, typeaheadV2]
+    () =>
+      open && hasSearchMentions
+        ? mentionPickerClientFeatures({
+            degradedAnswers: typeaheadV2,
+            reasons: itemDetails,
+            suggested: suggestedSwitch && activePanel === PanelType.Mention,
+          })
+        : NO_MENTION_PICKER_CLIENT_FEATURES,
+    [activePanel, hasSearchMentions, itemDetails, open, suggestedSwitch, typeaheadV2]
   );
   // The first option is highlighted unless an arrow key holds the highlight (off by default).
   const defaultHighlight = typeaheadV2 && typeaheadSettings.defaultHighlight;
@@ -844,17 +865,18 @@ export function MentionPanel({
   const mentionInclude = activePanel === PanelType.PageReference
     ? PAGE_REFERENCE_INCLUDE
     : enableReminderMentions === false ? MENTION_INCLUDE_WITHOUT_REMINDERS : DEFAULT_MENTION_INCLUDE;
-  const mentionSearchRequest = useMemo(
-    () => ({
-      query: searchText ?? '',
-      limit: MENTION_SEARCH_LIMIT,
-      include: mentionInclude,
-      context: mentionContext,
-      // Only what the server advertises, so a server that advertises nothing gets today's request.
-      ...(clientFeatures.length > 0 ? { client_features: [...clientFeatures] } : {}),
-    }),
-    [clientFeatures, mentionContext, mentionInclude, searchText]
+  // The picker's request for `query`, with the opt-ins its lane carries: only what the server
+  // advertises, so a server that advertises nothing gets today's request. Every request and cache
+  // key the picker builds for a query comes from it, so a bare `@` answer is found again by its key.
+  const pickerSearchRequest = useCallback(
+    (query: string) =>
+      withMentionClientFeatures(
+        { query, limit: MENTION_SEARCH_LIMIT, include: mentionInclude, context: mentionContext },
+        clientFeatures
+      ),
+    [clientFeatures, mentionContext, mentionInclude]
   );
+  const mentionSearchRequest = useMemo(() => pickerSearchRequest(searchText ?? ''), [pickerSearchRequest, searchText]);
   // Only a typed query sends rows, and whether it leaves them out is decided when it is typed, then
   // kept while it shows: the database completing, or losing a row's title, changes only the next
   // keystroke's requests. Deciding again for the query on screen would give it another cache key,
@@ -949,10 +971,6 @@ export function MentionPanel({
         : undefined,
     [hasSearchMentions, open, pickMemoryKey]
   );
-  // Breadcrumbs, roster avatars, view icons and reason chips (MEN-WEB-13), off by default and read
-  // once per opening. They read what the tab holds and who is on the page; a row downloads an
-  // uploaded avatar or view icon again each time it mounts (no shared image cache yet).
-  const itemDetails = useMemo(() => open && readMentionItemDetailsEnabled(), [open]);
 
   // Avatars, and collaborators whom awareness names by uid, need the roster: a picker that lists
   // people loads it once per opening, through the roster cache.
@@ -1167,12 +1185,12 @@ export function MentionPanel({
   const bareMentionSearchCacheKey = useMemo(
     () =>
       typeaheadV2
-        ? buildMentionSearchRequestsCacheKey(buildMentionSearchRequests({ ...mentionSearchRequest, query: '' }), {
+        ? buildMentionSearchRequestsCacheKey(buildMentionSearchRequests(pickerSearchRequest('')), {
             workspaceId,
             userId: currentUser?.uuid,
           })
         : '',
-    [currentUser?.uuid, mentionSearchRequest, typeaheadV2, workspaceId]
+    [currentUser?.uuid, pickerSearchRequest, typeaheadV2, workspaceId]
   );
   // A typed query's provisional sections: what still matches it in the list on screen, the cached
   // answer of its longest typed prefix and the cached bare answer. Date and reminder quick picks come
@@ -1188,7 +1206,7 @@ export function MentionPanel({
     const prefixKey = (prefix: string) =>
       prefix.trim()
         ? buildMentionSearchRequestsCacheKey(
-            buildMentionSearchRequests({ ...mentionSearchRequest, query: prefix }, { skipRows: skipTypedRows }),
+            buildMentionSearchRequests(pickerSearchRequest(prefix), { skipRows: skipTypedRows }),
             { workspaceId, userId: currentUser?.uuid }
           )
         : undefined;
@@ -1225,7 +1243,7 @@ export function MentionPanel({
     localSnapshot,
     mentionCacheView,
     mentionInclude,
-    mentionSearchRequest,
+    pickerSearchRequest,
     revokedViews,
     searchText,
     skipTypedRows,
@@ -1370,15 +1388,18 @@ export function MentionPanel({
   // The sections as the picker lays them out (MentionSectionLayout). A server's are titled by kind,
   // in the user's language, never with the English titles servers send (MEN-WEB-12), and Dates by
   // the items it shows: "Date & Reminder" while it lists a reminder, as servers title it. The local
-  // fallback titles its own ("Recent pages").
+  // fallback titles its own ("Recent pages"). An item a Suggested section lists shows there alone
+  // (MEN-X-10), and Suggested comes first, as every layout keeps it.
   const pickerMentionSections = useMemo(() => {
     const sections = layoutMentionSectionsForPicker(
-      enableReminderMentions === false
-        ? sourceMentionSections.map((section) => ({
-            ...section,
-            items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
-          }))
-        : sourceMentionSections,
+      withSuggestedItemsOnce(
+        enableReminderMentions === false
+          ? sourceMentionSections.map((section) => ({
+              ...section,
+              items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
+            }))
+          : sourceMentionSections
+      ),
       sectionLayout,
       pagesSectionTitle
     );
@@ -1863,10 +1884,15 @@ export function MentionPanel({
     setSelection(null);
   }, [searchText, setSelection, useLocalMentionFallback]);
 
+  // A bare `@` shows no database row, except one Cloud suggests (MEN-X-10): it moved the row out of
+  // its section, so leaving it out would hide it.
   const rawMentionSearchResults = useMemo(
     () =>
       flattenMentionSearchSections(pickerMentionSections).filter(
-        (result) => hasMentionSearchQuery || result.item.kind !== MentionTargetKind.DatabaseRow
+        (result) =>
+          hasMentionSearchQuery ||
+          result.item.kind !== MentionTargetKind.DatabaseRow ||
+          result.sectionKind === MentionSearchSectionKind.Suggested
       ),
     [hasMentionSearchQuery, pickerMentionSections]
   );
@@ -2054,6 +2080,11 @@ export function MentionPanel({
   const showMentionSearchLoadingState =
     hasMentionPanelSource && searchStatus === 'loading' && rawMentionSearchResults.length === 0;
   const showMentionSearchProgress = typeaheadV2 && searchStatus === 'loading' && rawMentionSearchResults.length > 0;
+  // The "Send notification" switch heads the first section that lists a person: People, or Suggested
+  // when it lists one (MEN-X-10), so it shows once.
+  const notificationSectionKey = mentionResultSections.find(({ options }) =>
+    options.some((option) => option.kind === 'result' && option.result.mention.type === MentionType.Person)
+  )?.key;
   const busySeconds = busyUntil === undefined ? 0 : Math.max(0, Math.ceil((busyUntil - busyClock) / 1000));
   const selectedOptionKey = selection?.key;
   const selectedOptionIndex =
@@ -2175,15 +2206,14 @@ export function MentionPanel({
 
       if (!handleAddMention(mention)) return;
 
-      recordSelection({
-        rank: resultRanks.get(result.key),
-        section: result.sectionKind,
-        source: pickLocalKeys?.has(result.navKey)
-          ? 'local'
-          : mentionV2View?.carriedKeys?.has(result.navKey)
-          ? 'cache'
-          : shownSource,
-      });
+      const rank = resultRanks.get(result.key);
+      const source = pickLocalKeys?.has(result.navKey)
+        ? 'local'
+        : mentionV2View?.carriedKeys?.has(result.navKey)
+        ? 'cache'
+        : shownSource;
+
+      recordSelection({ rank, section: result.sectionKind, source });
       // Only an insertion reinforces pick memory, never what the picker shows or highlights.
       if (pickMemory && pickMemoryKey) recordMentionPick(pickMemoryKey, searchText ?? '', result.navKey);
       if (mention.type === MentionType.Person && mention.person_id) {
@@ -2192,11 +2222,19 @@ export function MentionPanel({
         if (onPersonPicked) onPersonPicked(mention.person_id, sendNotification);
         else if (notifyOnInsert) void notifyPersonMention(mention, sendNotification);
       }
+
+      // Selection memory learns from items a server listed (MEN-CLOUD-20): reported after the
+      // insertion, never awaited, and only to a server that advertises it. Cloud keeps a pick only
+      // when one of its answers served the item, so one that only this tab listed is not sent.
+      if (hasSearchMentions && source !== 'local') {
+        void reportMentionPick(workspaceId, { item: result.item, position: rank, query: searchText ?? '' });
+      }
     },
     [
       beginSelection,
       editor,
       handleAddMention,
+      hasSearchMentions,
       localLane,
       mentionContext?.row_id,
       mentionContext?.view_id,
@@ -2382,9 +2420,7 @@ export function MentionPanel({
                   <MentionSectionTitle
                     section={section}
                     trailing={
-                      options.some(
-                        (option) => option.kind === 'result' && option.result.mention.type === MentionType.Person
-                      ) ? (
+                      key === notificationSectionKey ? (
                         <label className='ml-auto flex items-center gap-2 text-xs font-normal'>
                           {t('document.mentionMenu.sendNotification')}
                           <Switch

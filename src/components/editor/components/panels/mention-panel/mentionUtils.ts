@@ -499,6 +499,36 @@ export function mentionItemNavKey(item: MentionSearchResultItem): string {
 }
 
 /**
+ * `sections` with each item a Suggested section lists left out of every other section, so it shows
+ * once, in Suggested, which the picker shows first. Cloud moves the items it suggests out of their
+ * sections (MEN-X-10); this keeps them out wherever else one comes from, such as this tab's activity
+ * or a server that copied it. A section left without items shows nothing. The same array when no
+ * other section lists a suggested item, as for every answer without a Suggested section.
+ */
+export function withSuggestedItemsOnce(sections: MentionSearchSection[]): MentionSearchSection[] {
+  const suggested = new Set<string>();
+
+  sections.forEach((section) => {
+    if (section.kind !== MentionSearchSectionKind.Suggested) return;
+    section.items.forEach((item) => suggested.add(mentionItemNavKey(item)));
+  });
+
+  if (suggested.size === 0) return sections;
+
+  const repeats = (section: MentionSearchSection) =>
+    section.kind !== MentionSearchSectionKind.Suggested &&
+    section.items.some((item) => suggested.has(mentionItemNavKey(item)));
+
+  if (!sections.some(repeats)) return sections;
+
+  return sections.map((section) =>
+    repeats(section)
+      ? { ...section, items: section.items.filter((item) => !suggested.has(mentionItemNavKey(item))) }
+      : section
+  );
+}
+
+/**
  * Flattens picker sections into selectable results. A key holds the section kind and the item's
  * navKey but no position, so results that merge in later (typed rows, a cache refresh) never
  * re-key the options already on screen. Only a real duplicate inside one section gets an
@@ -704,6 +734,32 @@ export const MENTION_SECTION_STATUS_FAILED = 'failed';
 /** The section status of an incomplete keyword result, or of People whose access lookup degraded. */
 export const MENTION_SECTION_STATUS_PARTIAL = 'partial';
 
+/**
+ * The opt-in to failed or `partial` sections instead of a RetryLater for the whole answer (Cloud
+ * MEN-CLOUD-12). `mentionClientFeatures.ts` decides which requests carry it.
+ */
+export const MENTION_FEATURE_SECTION_DEGRADATION_V1 = 'section_degradation_v1';
+/**
+ * The opt-in to short per-source deadlines on typed queries: a late source answers a failed
+ * section, and the answer is `partial` (Cloud MEN-CLOUD-13).
+ */
+export const MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1 = 'typeahead_deadline_v1';
+
+/**
+ * The opt-ins with which a server answers a source it left out or cut short as a `partial` answer
+ * or section rather than failing the request. The other opt-ins (`reasons_v1`, `suggested_v1`,
+ * `selection_memory_v1`) add to an answer, or order it, and change nothing about how complete it is.
+ */
+const MENTION_DEGRADED_ANSWER_FEATURES: ReadonlySet<string> = new Set([
+  MENTION_FEATURE_SECTION_DEGRADATION_V1,
+  MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
+]);
+
+/** Whether `request` opted in to degraded answers ({@link MENTION_DEGRADED_ANSWER_FEATURES}). */
+function acceptsDegradedAnswers(request: MentionSearchRequest) {
+  return request.client_features?.some((feature) => MENTION_DEGRADED_ANSWER_FEATURES.has(feature)) ?? false;
+}
+
 /** Whether the server reports that one of the response's sections failed. */
 export function hasFailedMentionSection(response: MentionSearchResponse) {
   return response.sections.some((section) => section.status === MENTION_SECTION_STATUS_FAILED);
@@ -762,13 +818,14 @@ export function isCompleteMentionResponse(request: MentionSearchRequest, respons
 /**
  * Whether a response may be cached: no section failed, and it does not have the superseded shape,
  * whatever the request. A primary or bare answer of that shape is shown, but sent again next time,
- * so that an answer that may lack its objects is never kept. A request that sent `client_features`
- * opted in to degraded answers, which Cloud marks `partial`, so neither a `partial` answer nor one
- * with a `partial` section is kept for it (Cloud's client opt-ins, MEN-CLOUD-12).
+ * so that an answer that may lack its objects is never kept. A request that opted in to degraded
+ * answers (`section_degradation_v1`, `typeahead_deadline_v1`), which Cloud marks `partial`, keeps
+ * neither a `partial` answer nor one with a `partial` section (Cloud's client opt-ins,
+ * MEN-CLOUD-12). Any other opt-in caches as a request without one does.
  */
 export function isCacheableMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
   if (hasFailedMentionSection(response) || isSupersededMentionResponse(request, response)) return false;
-  if (!request.client_features?.length) return true;
+  if (!acceptsDegradedAnswers(request)) return true;
 
   return (
     response.partial !== true && !response.sections.some((section) => section.status === MENTION_SECTION_STATUS_PARTIAL)

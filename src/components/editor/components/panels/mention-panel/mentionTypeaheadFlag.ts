@@ -10,9 +10,10 @@
  * - With v2 on, the local lane (MEN-WEB-09) is on too: the pages, databases and people this tab
  *   holds join the list in the keystroke's own render and stay after the server answers, merged by
  *   the typeahead contract's rules (`mentionLocalLane.ts`, `mentionLocalMerge.ts`), the bare `@`
- *   lists this tab's recent opens and picks first, and requests carry the opt-ins the server
- *   advertises (`mentionClientFeatures.ts`). `localStorage.__mention_local_lane = 'false'` keeps
- *   MEN-WEB-08's lists without the local lane, to compare them.
+ *   lists this tab's recent opens and picks first, and requests carry the degradation opt-ins the
+ *   server advertises (`mentionClientFeatures.ts`, which lists the opt-ins other switches send).
+ *   `localStorage.__mention_local_lane = 'false'` keeps MEN-WEB-08's lists without the local lane,
+ *   to compare them.
  * - With the local lane on, a Text cell's or row page's picker matches the rows of its database by
  *   title too (MEN-WEB-15, `mentionLocalRows.ts`), so a row created seconds ago is listed before
  *   Search indexes it; `localStorage.__mention_local_rows = 'false'` turns that off. A separate

@@ -21,7 +21,8 @@
  *   lifted database leads the databases, which the picker lists after the pages. Then come the
  *   people this tab picked, the most recent first, then up to three people on the page whom the
  *   answer or the roster lists, then the server's order. The requester stays where the server puts
- *   them, last.
+ *   them, last. An item the answer's Suggested section lists (Cloud MEN-X-10, which moves it there
+ *   from its own section) is never lifted: the picker shows it there, first.
  * - This tab's person picks ({@link recordMentionSessionPersonPick}), kept in memory per workspace
  *   until the session ends.
  *
@@ -352,11 +353,17 @@ export function patchMentionBareSections({
   const laneByKey = new Map(lane.map((entry) => [entry.key, entry]));
   const requesterKey = requesterPersonId ? `person:${requesterPersonId.toLowerCase()}` : undefined;
   const isRequester = (key: string) => requesterKey !== undefined && key.toLowerCase() === requesterKey;
+  // Cloud moved these out of their own sections (MEN-X-10); the picker shows them in Suggested.
+  const suggestedKeys = new Set(
+    sections.flatMap((section) =>
+      section.kind === MentionSearchSectionKind.Suggested ? section.items.map(mentionItemNavKey) : []
+    )
+  );
   const lifted = new Map<MentionSearchSectionKind, string[]>();
   const lift = (key: string) => {
     const kind = mentionLocalItemSection(request, key);
 
-    if (!kind || isRequester(key)) return;
+    if (!kind || isRequester(key) || suggestedKeys.has(key)) return;
 
     const keys = lifted.get(kind) ?? [];
 
@@ -384,7 +391,7 @@ export function patchMentionBareSections({
   const picked = new Set(lifted.get(MentionSearchSectionKind.People) ?? []);
 
   presentOrder(sections, laneByKey, presentPersonIds)
-    .filter((key) => !picked.has(key) && !isRequester(key))
+    .filter((key) => !picked.has(key) && !isRequester(key) && !suggestedKeys.has(key))
     .slice(0, MENTION_BARE_PRESENT_LIFT)
     .forEach(lift);
 

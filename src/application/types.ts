@@ -422,8 +422,11 @@ export interface MentionSearchRequest {
   filter?: MentionSearchFilter;
   /**
    * Opt-ins the server advertises in `ServerInfo.mention_features` and the client handles, such as
-   * `section_degradation_v1` (Cloud MEN-CLOUD-12). Omitted when there are none, so the request is the
-   * one released clients send; servers ignore values they do not know, and older ones the field.
+   * `section_degradation_v1` (Cloud MEN-CLOUD-12), `reasons_v1` (MEN-X-09), `suggested_v1` on a bare
+   * `@` (MEN-X-10) and `selection_memory_v1` on typed queries (MEN-CLOUD-20); the picker decides
+   * which request carries which (`mentionClientFeatures.ts`). Omitted when there are none, so the
+   * request is the one released clients send; servers ignore values they do not know, and older ones
+   * the field.
    */
   client_features?: string[];
 }

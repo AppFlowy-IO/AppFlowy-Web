@@ -598,6 +598,52 @@ describe('mentionLocalLane (MEN-WEB-09)', () => {
       expect(patched.sections[0].items).toHaveLength(22);
       expect(patched.sections[0].items.slice(0, 5).map(mentionItemNavKey)).toEqual(lane.map((entry) => entry.key));
     });
+
+    it('never lifts what the Suggested section lists, which Cloud moved out of its own section (MEN-WEB-11)', () => {
+      const [anna, bob, cy, dee, eve] = [1, 2, 3, 4, 5].map((n) =>
+        person(n, ['Anna', 'Bob', 'Cy', 'Dee', 'Eve'][n - 1])
+      );
+      const people = [anna, bob, cy, dee, eve];
+      const suggested = section(MentionSearchSectionKind.Suggested, [page('a', 'Alpha'), personItem(anna)]);
+      const sections = [
+        suggested,
+        section(MentionSearchSectionKind.People, [personItem(bob)]),
+        section(MentionSearchSectionKind.Pages, [page('b', 'Beta')]),
+      ];
+      const lane = [
+        // This tab opened Alpha just now, and created Gamma: only Gamma is lifted.
+        laneEntry('page:a', 'Alpha', { tabOpenedMs: NOW - 1_000 }),
+        laneEntry('page:c', 'Gamma', { tabCreatedMs: NOW - 2_000, changedMs: NOW - 2_000 }),
+        ...people.map((entry) => ({
+          key: `person:${entry.person_id}`,
+          title: entry.name,
+          email: entry.email,
+          item: personItem(entry),
+        })),
+      ];
+      const patched = patchMentionBareSections({
+        ...base,
+        sections,
+        lane,
+        liftAfterMs: NOW - MINUTE,
+        // Anna was picked in this tab and is on the page: she stays in Suggested.
+        personPicks: new Map([[anna.person_id, NOW - 3_000]]),
+        // So three others on the page are lifted, not two.
+        presentPersonIds: new Set([anna.person_id, cy.person_id, dee.person_id, eve.person_id]),
+      });
+
+      expect(patched.sections[0]).toBe(suggested);
+      expect(keysOf(patched.sections)).toEqual([
+        ['suggested', ['page:a', `person:${anna.person_id}`]],
+        ['people', [cy, dee, eve, bob].map((entry) => `person:${entry.person_id}`)],
+        ['pages', ['page:c', 'page:b']],
+      ]);
+      // Neither of the suggested items counts as one only this tab listed.
+      expect([...patched.localKeys].sort()).toEqual(
+        ['page:c', ...[cy, dee, eve].map((entry) => `person:${entry.person_id}`)].sort()
+      );
+      expect([...patched.freshKeys]).toEqual(['page:c']);
+    });
   });
 
   // The plan's budget for a large workspace: the lane is built once per snapshot, and every keystroke

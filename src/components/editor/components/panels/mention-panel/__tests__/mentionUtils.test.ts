@@ -34,6 +34,7 @@ import {
   reconcileMentionOptionSelection,
   separateMentionSections,
   shouldRetryMentionRowsResponse,
+  withSuggestedItemsOnce,
 } from '../mentionUtils';
 
 import { loadMentionParityFixture } from './mention-parity-helpers';
@@ -1217,6 +1218,53 @@ describe('mention picker sections', () => {
       MentionSearchSectionKind.DatabaseRows,
     ]);
     expect(mentionSectionCollapses(UNKNOWN_KIND, 'separate')).toBe(false);
+  });
+
+  describe('withSuggestedItemsOnce (MEN-WEB-11)', () => {
+    it('shows each suggested item in Suggested alone, wherever else it is listed', () => {
+      const suggested = sectionOf(MentionSearchSectionKind.Suggested, [
+        person('ada'),
+        page('roadmap'),
+        database('db1', 'grid'),
+        row('db2', 'r1', 'grid2'),
+      ]);
+      const sections = withSuggestedItemsOnce([
+        suggested,
+        sectionOf(MentionSearchSectionKind.People, [person('ada'), person('bob')]),
+        sectionOf(MentionSearchSectionKind.Pages, [page('roadmap'), page('budget'), row('db2', 'r1', 'grid2')]),
+        // Only the suggested database's view: another view of it is another object.
+        sectionOf(MentionSearchSectionKind.Databases, [database('db1', 'grid'), database('db1', 'board')]),
+      ]);
+
+      expect(sections[0]).toBe(suggested);
+      expect(sections.map((section) => [section.kind, section.items.map(mentionItemNavKey)])).toEqual([
+        ['suggested', ['person:ada', 'page:roadmap', 'database:db1:grid', 'row:db2:r1']],
+        ['people', ['person:bob']],
+        ['pages', ['page:budget']],
+        ['databases', ['database:db1:board']],
+      ]);
+      // In the folded layout too, and every option key holds its navKey once.
+      const navKeys = flattenMentionSearchSections(layoutMentionSectionsForPicker(sections, 'folded', 'Pages')).map(
+        (result) => result.navKey
+      );
+
+      expect(new Set(navKeys).size).toBe(navKeys.length);
+    });
+
+    it('returns the sections themselves when nothing repeats a suggested item, or nothing is suggested', () => {
+      const moved = [
+        sectionOf(MentionSearchSectionKind.Suggested, [page('roadmap')]),
+        sectionOf(MentionSearchSectionKind.Pages, [page('budget')]),
+      ];
+      const legacy = [
+        sectionOf(MentionSearchSectionKind.People, [person('ada')]),
+        sectionOf(MentionSearchSectionKind.Pages, [page('budget'), page('budget')]),
+      ];
+
+      expect(withSuggestedItemsOnce(moved)).toBe(moved);
+      expect(withSuggestedItemsOnce(legacy)).toBe(legacy);
+      expect(withSuggestedItemsOnce([])).toEqual([]);
+    });
   });
 });
 

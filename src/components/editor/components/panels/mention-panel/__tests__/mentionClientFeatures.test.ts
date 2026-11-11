@@ -9,14 +9,25 @@ import { getConfigValue } from '@/utils/runtime-config';
 import { SERVER_INFO_LOADING, ServerInfoState, updateServerInfo } from '@/utils/server-info';
 
 import {
+  MENTION_FEATURE_REASONS_V1,
   MENTION_FEATURE_SECTION_DEGRADATION_V1,
+  MENTION_FEATURE_SELECTION_MEMORY_V1,
+  MENTION_FEATURE_SUGGESTED_V1,
   MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
+  MENTION_SUGGESTED_DEFAULT,
+  MENTION_SUGGESTED_OVERRIDE_KEY,
   mentionClientFeatures,
+  MentionPickerClientFeatures,
+  mentionPickerClientFeatures,
+  NO_MENTION_PICKER_CLIENT_FEATURES,
+  readMentionSuggestedEnabled,
   WEB_MENTION_CLIENT_FEATURES,
+  withMentionClientFeatures,
 } from '../mentionClientFeatures';
 import {
   buildMentionSearchCacheKey,
   buildMentionSearchRequests,
+  buildMentionSearchRequestsCacheKey,
   isCacheableMentionResponse,
   isCompleteMentionResponse,
 } from '../mentionUtils';
@@ -141,6 +152,163 @@ describe('mentionClientFeatures (MEN-WEB-09)', () => {
     it('still shows a partial answer as complete', () => {
       expect(isCompleteMentionResponse(optedIn, response(['partial', 'ok'], true))).toBe(true);
       expect(isCompleteMentionResponse(optedIn, response(['ok', 'failed'], true))).toBe(false);
+    });
+
+    it('caches as without opt-ins for the opt-ins that change nothing about how complete an answer is', () => {
+      [MENTION_FEATURE_REASONS_V1, MENTION_FEATURE_SUGGESTED_V1, MENTION_FEATURE_SELECTION_MEMORY_V1].forEach(
+        (feature) => {
+          const request = { ...REQUEST, client_features: [feature] };
+
+          expect(isCacheableMentionResponse(request, response(['ok', 'ok'], true))).toBe(true);
+          expect(isCacheableMentionResponse(request, response(['partial', 'ok']))).toBe(true);
+          expect(isCacheableMentionResponse(request, response(['ok', 'failed']))).toBe(false);
+          // With a degradation opt-in beside it, the degradation rule holds.
+          expect(
+            isCacheableMentionResponse(
+              { ...REQUEST, client_features: [feature, MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1] },
+              response(['ok', 'ok'], true)
+            )
+          ).toBe(false);
+        }
+      );
+    });
+  });
+});
+
+describe('the opt-ins of a picker opening (MEN-WEB-11)', () => {
+  const EVERY_FEATURE = [
+    MENTION_FEATURE_REASONS_V1,
+    MENTION_FEATURE_SECTION_DEGRADATION_V1,
+    MENTION_FEATURE_SELECTION_MEMORY_V1,
+    MENTION_FEATURE_SUGGESTED_V1,
+    MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
+  ];
+  const ALL_ON = { degradedAnswers: true, reasons: true, suggested: true };
+  const ALL_OFF = { degradedAnswers: false, reasons: false, suggested: false };
+
+  afterEach(() => {
+    localStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  it("uses Cloud's wire names", () => {
+    expect([MENTION_FEATURE_REASONS_V1, MENTION_FEATURE_SUGGESTED_V1, MENTION_FEATURE_SELECTION_MEMORY_V1]).toEqual([
+      'reasons_v1',
+      'suggested_v1',
+      'selection_memory_v1',
+    ]);
+  });
+
+  it('sends each opt-in only while the server advertises it and the picker can use it, on its lanes', () => {
+    expect(mentionPickerClientFeatures(ALL_ON, available(EVERY_FEATURE))).toEqual({
+      every: [MENTION_FEATURE_SECTION_DEGRADATION_V1, MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1, MENTION_FEATURE_REASONS_V1],
+      bare: [MENTION_FEATURE_SUGGESTED_V1],
+      typed: [MENTION_FEATURE_SELECTION_MEMORY_V1],
+    });
+    // Each switch keeps its own opt-ins out; selection memory follows the server alone.
+    expect(mentionPickerClientFeatures(ALL_OFF, available(EVERY_FEATURE))).toEqual({
+      every: [],
+      bare: [],
+      typed: [MENTION_FEATURE_SELECTION_MEMORY_V1],
+    });
+    expect(mentionPickerClientFeatures({ ...ALL_ON, reasons: false }, available(EVERY_FEATURE)).every).toEqual([
+      MENTION_FEATURE_SECTION_DEGRADATION_V1,
+      MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
+    ]);
+    expect(mentionPickerClientFeatures({ ...ALL_ON, suggested: false }, available(EVERY_FEATURE)).bare).toEqual([]);
+    expect(mentionPickerClientFeatures({ ...ALL_ON, degradedAnswers: false }, available(EVERY_FEATURE)).every).toEqual([
+      MENTION_FEATURE_REASONS_V1,
+    ]);
+    // A server that advertises some of them gets those alone.
+    expect(mentionPickerClientFeatures(ALL_ON, available([MENTION_FEATURE_SUGGESTED_V1, 'unknown_v9']))).toEqual({
+      every: [],
+      bare: [MENTION_FEATURE_SUGGESTED_V1],
+      typed: [],
+    });
+  });
+
+  it('sends none to a server that advertises none, nor while server info is loading or failed', () => {
+    [
+      SERVER_INFO_LOADING,
+      { status: 'unavailable' } as ServerInfoState,
+      { status: 'unsupported' } as ServerInfoState,
+      available(undefined),
+      available(['session_metrics_v1', 'section_degradation_v1x']),
+    ].forEach((serverInfo) => {
+      expect(mentionPickerClientFeatures(ALL_ON, serverInfo)).toBe(NO_MENTION_PICKER_CLIENT_FEATURES);
+    });
+  });
+
+  describe('withMentionClientFeatures', () => {
+    const features: MentionPickerClientFeatures = {
+      every: [MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1, MENTION_FEATURE_REASONS_V1],
+      bare: [MENTION_FEATURE_SUGGESTED_V1],
+      typed: [MENTION_FEATURE_SELECTION_MEMORY_V1],
+    };
+
+    it("gives the bare `@` its own opt-ins and a typed query's requests theirs, sorted", () => {
+      const bare = withMentionClientFeatures({ ...REQUEST, query: ' ' }, features);
+      const typed = withMentionClientFeatures(REQUEST, features);
+
+      expect(bare.client_features).toEqual(['reasons_v1', 'suggested_v1', 'typeahead_deadline_v1']);
+      expect(typed.client_features).toEqual(['reasons_v1', 'selection_memory_v1', 'typeahead_deadline_v1']);
+      // Both of a typed query's requests carry them; the bare `@` is one request.
+      expect(buildMentionSearchRequests({ ...typed, include: undefined }).map((r) => r.client_features)).toEqual([
+        typed.client_features,
+        typed.client_features,
+      ]);
+      expect(buildMentionSearchRequests(bare).map((r) => r.client_features)).toEqual([bare.client_features]);
+    });
+
+    it('leaves the field out when its lane carries none, and replaces what the request held', () => {
+      const typedOnly = { ...NO_MENTION_PICKER_CLIENT_FEATURES, typed: [MENTION_FEATURE_SELECTION_MEMORY_V1] };
+      const bare = withMentionClientFeatures({ ...REQUEST, query: '', client_features: ['stale_v0'] }, typedOnly);
+
+      expect(bare).not.toHaveProperty('client_features');
+      expect(bare).toEqual({ ...REQUEST, query: '' });
+      expect(withMentionClientFeatures(REQUEST, NO_MENTION_PICKER_CLIENT_FEATURES)).toEqual(REQUEST);
+    });
+
+    it('keys answers to different opt-ins apart, and a lane by its own opt-ins only', () => {
+      const bareKey = (lane: MentionPickerClientFeatures) =>
+        buildMentionSearchRequestsCacheKey(
+          buildMentionSearchRequests(withMentionClientFeatures({ ...REQUEST, query: '' }, lane))
+        );
+      const typedKey = (lane: MentionPickerClientFeatures) =>
+        buildMentionSearchRequestsCacheKey(buildMentionSearchRequests(withMentionClientFeatures(REQUEST, lane)));
+      const none = NO_MENTION_PICKER_CLIENT_FEATURES;
+      const suggested = { ...none, bare: [MENTION_FEATURE_SUGGESTED_V1] };
+      const memory = { ...none, typed: [MENTION_FEATURE_SELECTION_MEMORY_V1] };
+      const reasons = { ...none, every: [MENTION_FEATURE_REASONS_V1] };
+
+      expect(bareKey(suggested)).not.toBe(bareKey(none));
+      expect(bareKey(reasons)).not.toBe(bareKey(none));
+      expect(bareKey(reasons)).not.toBe(bareKey(suggested));
+      expect(typedKey(memory)).not.toBe(typedKey(none));
+      expect(typedKey(reasons)).not.toBe(typedKey(none));
+      // An opt-in another lane carries leaves a lane's key as it was.
+      expect(bareKey(memory)).toBe(bareKey(none));
+      expect(typedKey(suggested)).toBe(typedKey(none));
+    });
+  });
+
+  describe('the Suggested switch', () => {
+    it('is off by default, and a browser turns it on or off', () => {
+      expect(MENTION_SUGGESTED_DEFAULT).toBe(false);
+      expect(readMentionSuggestedEnabled()).toBe(false);
+      localStorage.setItem(MENTION_SUGGESTED_OVERRIDE_KEY, 'true');
+      expect(readMentionSuggestedEnabled()).toBe(true);
+      localStorage.setItem(MENTION_SUGGESTED_OVERRIDE_KEY, 'false');
+      expect(readMentionSuggestedEnabled()).toBe(false);
+      localStorage.setItem(MENTION_SUGGESTED_OVERRIDE_KEY, 'yes');
+      expect(readMentionSuggestedEnabled()).toBe(false);
+    });
+
+    it('gives the default when storage cannot be read', () => {
+      jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      expect(readMentionSuggestedEnabled()).toBe(MENTION_SUGGESTED_DEFAULT);
     });
   });
 });

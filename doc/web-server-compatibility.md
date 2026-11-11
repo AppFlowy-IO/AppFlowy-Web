@@ -144,7 +144,8 @@ reports for the rest of the tab. A picker opened from a menu (the slash menu's "
 - `selected_rank`: the 1-based position among the result options on screen, across sections.
   "N more", Retry and "Create" rows hold none, and an expanded section ranks what it reveals. A
   created page has no rank, section or source.
-- `selected_section`: the rendered section; databases and rows render inside Pages.
+- `selected_section`: the rendered section; databases and rows render inside Pages, and a pick
+  from the Suggested section reports `suggested` (see "Mention opt-ins").
 - `selected_source`: `cache` while a stored answer is on screen, `server` once an answer arrived,
   `local` for the picker's local fallback without server search. `selected_tier` is not sent:
   Web does not compute match tiers yet.
@@ -394,7 +395,8 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   The page being edited is never lifted; it stays where the server puts it. People follow the
   same rule: the people this tab picked in the session come first, then up to three people on the
   page whom the answer or the roster lists, then the server's order, with the requester last as
-  the server puts them.
+  the server puts them. Nothing the answer's Suggested section lists is lifted: it shows there,
+  first (see "Mention opt-ins").
 - When a search fails or times out, the "Suggestions unavailable · Retry" row shows under the
   tab's matches, never "No result". A bare `@` that fails lists this tab's opens and creations,
   the page being edited excepted.
@@ -407,12 +409,12 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   page whose children the outline has not loaded), until one of them lists it.
 
 The picker loads nothing for the local lane: it reads the outline, recent views and roster the app
-already loaded. Requests carry `client_features` with the opt-ins the server lists in
-`mention_features` and the picker handles, `section_degradation_v1` and `typeahead_deadline_v1`
-(Cloud MEN-CLOUD-12 and -13), and only with the v2 on; to a server that lists none they are the
-requests released Web sends. Answers to a request that carried opt-ins are kept apart in the cache,
-and one that is `partial` or has a `partial` or failed section is never cached, as those opt-ins
-require. An item the tab adds is inserted with the payload the server would send for it, so
+already loaded. With the v2 on, every request carries `section_degradation_v1` and
+`typeahead_deadline_v1` (Cloud MEN-CLOUD-12 and -13) in `client_features` when the server lists them
+in `mention_features`; to a server that lists none they are the requests released Web sends. Other
+opt-ins follow their own switches (see "Mention opt-ins"). Answers to requests that carried
+different opt-ins are kept apart in the cache, and an answer to a request that carried one of these
+two is never cached when it is `partial` or has a `partial` or failed section, as they require. An item the tab adds is inserted with the payload the server would send for it, so
 documents read the same in every client. The one exception is a database whose view the tab does
 not know yet (one it just created, or a container whose children the outline has not loaded): it
 is inserted as a page reference to the view the tab lists it by, which every client opens, where
@@ -575,9 +577,10 @@ picker's v2. While it is off the picker shows what it showed before.
   last 7 days and a creation in the last day. A person on the page (its awareness, as the comment
   pickers read it) is "On this page". The page or database view being edited shows none. A server
   that explains its items (Cloud MEN-X-09: `reason`, sent only to a request with
-  `client_features: ['reasons_v1']`, which the picker does not send yet) adds `viewed` and `created`
-  with their times, for rows too, and `participant`; every other signal shows nothing, a value this
-  client does not know included. Nothing ever says "Edited": the Folder's edit times, and the
+  `client_features: ['reasons_v1']`, which the picker sends while the switch is on and the server
+  lists `reasons_v1`, see "Mention opt-ins") adds `viewed` and `created` with their times, for rows
+  too, and `participant`; every other signal shows nothing, a value this client does not know
+  included. Nothing ever says "Edited": the Folder's edit times, and the
   server's `changed` signal, reflect only metadata changes. The server's `mentioned` (the user's own
   mention) and `interaction` (a mention, comment, reply, share or assignment from that person, or a
   page the user was notified about) have no copy yet; "Mentioned you" would mislabel most
@@ -587,8 +590,8 @@ Whatever the switch, an `icon` that is not a string never reaches an image (a pe
 used to throw while rendering) or a saved mention's `data`. The details read `path` and
 `path_status`, which servers since 0.17.6 send (an older server sends no path, and no breadcrumb
 shows), and the optional `reason`. With the switch on, a picker that lists people loads the roster
-once per opening (see Avatars), and the search requests, their cache keys and inserted payloads are
-unchanged. The picker also downloads images it did not before: a row whose avatar or view icon was
+once per opening (see Avatars), and the search requests carry `reasons_v1` (and their cache keys hold
+it) only to a server that lists it; inserted payloads are unchanged. The picker also downloads images it did not before: a row whose avatar or view icon was
 uploaded to AppFlowy's file storage fetches it, with one authenticated GET, every time the row
 mounts. That is each opening and, with the picker's v2 off, each keystroke whose query has no
 cached answer, as the list empties while the answer loads. The server sends these files
@@ -596,3 +599,62 @@ cached answer, as the list empties while the answer loads. The server sends thes
 image cache yet (one is needed before the switch's default goes on); an image that finishes after
 its row left is revoked, not kept. Avatars and icons hosted elsewhere load as plain images, cached
 as their hosts allow. With it off, the picker sends and loads what it did before.
+
+## Mention opt-ins: Suggested, reasons and pick feedback
+
+The editor's @ picker sends a mention search opt-in in the request's `client_features` only while
+the web server-info snapshot lists it in `mention_features`, and only on the requests that can use
+what it changes (`mentionClientFeatures.ts`; MEN-WEB-11). Cloud serves an opt-in only when its
+rollout flag is on for the workspace and otherwise answers as if the request named nothing, and
+released servers list none, so to them the picker sends the requests released Web sends. Loading or
+failed server info lists nothing either.
+
+| Opt-in | Requests | Client switch | What the picker does with it |
+| --- | --- | --- | --- |
+| `section_degradation_v1`, `typeahead_deadline_v1` (MEN-CLOUD-12, -13) | every request | the picker's v2 | see "Mention local lane" |
+| `reasons_v1` (MEN-X-09) | every request | the item details | shows a known reason as the item's chip (see "Mention item details") |
+| `suggested_v1` (MEN-X-10) | the bare `@` of the `@` picker only | `localStorage.__mention_suggested = 'true'`, off by default | shows the Suggested section first |
+| `selection_memory_v1` (MEN-CLOUD-20) | typed queries only, primary and rows requests | none: the server's advertisement | reports each pick (below) |
+
+- **Cache keys.** Each request's cache key holds the opt-ins it carries, sorted, so an answer shaped
+  for one set never answers a request with another: opening the `@` picker with the Suggested switch
+  on sends the bare `@` again even while an answer without Suggested is fresh, and each keeps its
+  own entry. A lane's key holds only its own opt-ins: selection memory never splits the bare `@`
+  entry, nor Suggested a typed one. Only the two degradation opt-ins keep `partial` answers out of
+  the cache; the others cache as a request without opt-ins does.
+- **Suggested.** Cloud's Suggested section holds at most three people, pages or databases, each
+  moved out of the section it would be in. The picker shows it first in either layout, under the
+  translated "Suggested" title, and lists each of its items once: an item another section lists too,
+  from a server that copied it or from this tab's activity, shows in Suggested alone, and with the
+  local lane on a bare `@` never lifts an item Suggested lists. A database row in Suggested is kept,
+  though a bare `@` shows no other row. The "Send notification" switch heads the first section that
+  lists a person, so it shows once. A pick from it reports `selected_section: suggested`. A `+` or
+  `[[` picker never asks for it. The switch stays off until Suggested's precision reaches 25% (picks
+  from it over the openings that showed it), and Cloud's `mention_flag_suggested` is off too.
+- **Reasons.** The picker shows reasons only through the item details' chip, so it asks for them
+  only while the item details are on. A signal the chip has no copy for, a value this client does not
+  know included, shows nothing, and no reason ever shows with the item details off.
+- **Pick feedback.** While the server lists `selection_memory_v1`, inserting a person, page,
+  database or row from a server's answer sends one
+  `POST /api/workspace/{workspace_id}/mentions/feedback` (`mention-pick-feedback.ts`, Cloud
+  `MentionPickFeedback`): `target_kind` and `target_id` (the item's `kind` and `object_id`),
+  `position` (its 1-based place among the results on screen, across sections) and `query_len`
+  (the characters typed after the trigger, counted after the typeahead contract's normalization, as
+  Cloud counts the query of the answer it joins the pick to; 0 for a bare `@`). It is sent after
+  the insertion and never awaited: one attempt with a 3-second timeout, no transport retry, no
+  authentication recovery and no signal shared with a search; every error is swallowed, and a 404
+  (a server that lists the feature without the route, as after a rollback) stops reports for the
+  rest of the tab. Dates, reminders, links, a page created from the picker, an item only this tab
+  listed (the local lane, a picked target joined from the local index) and the local fallback send
+  nothing, since Cloud keeps a pick only when one of its own answers of the last minute served the
+  item. The body carries no query text, title or name. Cloud's optional `request_id` (the search
+  response's `x-request-id`) is not sent: neither Cloud's CORS layer (`expose_headers`) nor its
+  bundled nginx (`Access-Control-Expose-Headers`) exposes that header, so a web app on another
+  origin than the API cannot read it; Cloud joins the pick to its answer by `query_len` and recency
+  instead. Cloud lists `selection_memory_v1` only where it keeps selection
+  memory and its rollout flag is past `off`, never in a self-hosted build, so self-hosted servers
+  receive no feedback and no selection memory opt-in.
+
+Everything above reads only fields released servers send, plus the optional `reason` and the
+existing Suggested section kind, which no server sends without the opt-in. Servers before
+MEN-CLOUD-05 send no `mention_features`, so they receive exactly what released Web sends.
