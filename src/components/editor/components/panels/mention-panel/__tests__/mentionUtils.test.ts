@@ -1281,6 +1281,12 @@ describe('mention response completeness', () => {
     context: { view_id: 'document-1' },
   });
   const bare = buildMentionSearchRequests({ query: '', include: [MentionTargetKind.Person, MentionTargetKind.Page] })[0];
+  // The `@` picker's bare `@` with the Suggested switch on.
+  const bareSuggested = buildMentionSearchRequests({
+    query: '',
+    include: [MentionTargetKind.Person, MentionTargetKind.Page, MentionTargetKind.Database, MentionTargetKind.Date],
+    client_features: ['suggested_v1'],
+  })[0];
 
   function section(kind: MentionSearchSectionKind, status = 'ok', items: MentionSearchResultItem[] = []) {
     return { kind, title: kind, items, has_more: false, status } as MentionSearchSection;
@@ -1289,6 +1295,7 @@ describe('mention response completeness', () => {
   const people = section(MentionSearchSectionKind.People, 'ok', [person('ada')]);
   const dates = section(MentionSearchSectionKind.Dates);
   const pagesWithItem = section(MentionSearchSectionKind.Pages, 'ok', [page('hr-page')]);
+  const suggested = (...items: MentionSearchResultItem[]) => section(MentionSearchSectionKind.Suggested, 'ok', items);
 
   it('finds a failed section, and only one with status failed', () => {
     expect(
@@ -1328,6 +1335,20 @@ describe('mention response completeness', () => {
       { sections: [section(MentionSearchSectionKind.Databases, 'ok')], partial: true },
       false,
     ],
+    // Cloud leaves out a Pages or Databases section whose last item it moved into Suggested (MEN-X-10).
+    [
+      'a bare answer whose objects all moved into Suggested',
+      bareSuggested,
+      { sections: [suggested(page('hr-page'), database('hr-db')), people], partial: true },
+      false,
+    ],
+    // Cloud picks the people it suggests without Search, so they say nothing about the objects.
+    [
+      'a bare answer with people alone in Suggested',
+      bareSuggested,
+      { sections: [suggested(person('bob')), people], partial: true },
+      true,
+    ],
   ])('recognizes %s', (_name, request, response, superseded) => {
     expect(isSupersededMentionResponse(request, response)).toBe(superseded);
   });
@@ -1363,6 +1384,23 @@ describe('mention response completeness', () => {
         sections: [people, section(MentionSearchSectionKind.Pages, 'failed')],
         partial: true,
       })
+    ).toBe(false);
+  });
+
+  it('caches a partial bare answer whose objects all moved into Suggested, as it caches them in their sections', () => {
+    const databases = section(MentionSearchSectionKind.Databases, 'ok', [database('hr-db')]);
+
+    expect(isCacheableMentionResponse(bareSuggested, { sections: [people, pagesWithItem], partial: true })).toBe(true);
+    expect(isCacheableMentionResponse(bareSuggested, { sections: [people, databases], partial: true })).toBe(true);
+    expect(
+      isCacheableMentionResponse(bareSuggested, { sections: [suggested(page('hr-page')), people], partial: true })
+    ).toBe(true);
+    expect(
+      isCacheableMentionResponse(bareSuggested, { sections: [suggested(database('hr-db')), people], partial: true })
+    ).toBe(true);
+    // People in Suggested leave a People-only answer as uncacheable as it was.
+    expect(
+      isCacheableMentionResponse(bareSuggested, { sections: [suggested(person('bob')), people], partial: true })
     ).toBe(false);
   });
 

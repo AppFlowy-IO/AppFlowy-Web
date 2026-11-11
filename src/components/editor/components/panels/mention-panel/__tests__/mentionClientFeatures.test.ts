@@ -2,6 +2,8 @@ import type { ServerInfo } from '@/application/services/js-services/http/auth-ap
 import {
   MentionSearchRequest,
   MentionSearchResponse,
+  MentionSearchResultItem,
+  MentionSearchSection,
   MentionSearchSectionKind,
   MentionTargetKind,
 } from '@/application/types';
@@ -174,6 +176,44 @@ describe('mentionClientFeatures (MEN-WEB-09)', () => {
           ).toBe(false);
         }
       );
+    });
+
+    it('caches a partial bare answer whose pages all moved into Suggested, as the same answer without Suggested', () => {
+      const bare = { ...REQUEST, query: '', client_features: [MENTION_FEATURE_SUGGESTED_V1] };
+      const roadmap: MentionSearchResultItem = {
+        kind: MentionTargetKind.Page,
+        object_id: 'roadmap',
+        title: 'Roadmap',
+        mention: { type: MentionTargetKind.Page, page_id: 'roadmap' },
+      };
+      const bob: MentionSearchResultItem = {
+        kind: MentionTargetKind.Person,
+        object_id: 'bob',
+        title: 'Bob',
+        mention: { type: MentionTargetKind.Person, person_id: 'bob', person_name: 'Bob', page_id: 'doc' },
+      };
+      const sectionOf = (kind: MentionSearchSectionKind, items: MentionSearchResultItem[]): MentionSearchSection => ({
+        kind,
+        title: kind,
+        items,
+        has_more: false,
+        status: 'ok',
+      });
+      const people = sectionOf(MentionSearchSectionKind.People, [bob]);
+
+      expect(
+        isCacheableMentionResponse(bare, {
+          sections: [people, sectionOf(MentionSearchSectionKind.Pages, [roadmap])],
+          partial: true,
+        })
+      ).toBe(true);
+      // Cloud leaves out a Pages section whose last page it moved into Suggested (MEN-X-10).
+      expect(
+        isCacheableMentionResponse(bare, {
+          sections: [sectionOf(MentionSearchSectionKind.Suggested, [roadmap]), people],
+          partial: true,
+        })
+      ).toBe(true);
     });
   });
 });

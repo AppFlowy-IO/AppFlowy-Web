@@ -774,14 +774,23 @@ function requestIncludes(request: MentionSearchRequest, kind: MentionTargetKind)
   return mentionIncludesKind(request.include, kind);
 }
 
+/** The kinds of the objects Search finds, as opposed to the people, dates and links Cloud adds. */
+const MENTION_OBJECT_TARGET_KINDS: ReadonlySet<MentionTargetKind> = new Set([
+  MentionTargetKind.Page,
+  MentionTargetKind.Database,
+  MentionTargetKind.DatabaseRow,
+]);
+
 /**
  * Whether `response` has the shape of an answer to a request that Search superseded: partial, and
  * without any section of an object kind the request asked for. Search answers a superseded request
- * with no sections, and Cloud adds only its own People, Dates and Links sections. A partial answer
- * usually has such a section: a degraded or failed object search adds a failed one, and load-shed
- * paths come with items. A primary or bare answer can still have the shape without being
- * superseded: Cloud marks it partial when the People annotation degrades, and Search leaves out an
- * empty Pages section when no object matched.
+ * with no sections, and Cloud adds only its own: People, Dates, Links, and a Suggested section of
+ * the people it picks without Search. A partial answer usually has such a section: a degraded or
+ * failed object search adds a failed one, and load-shed paths come with items. Cloud moves the
+ * objects it suggests into Suggested and leaves out a Pages or Databases section that lost its last
+ * item (MEN-X-10), so an object in Suggested counts as its section. A primary or bare answer can
+ * still have the shape without being superseded: Cloud marks it partial when the People annotation
+ * degrades, and Search leaves out an empty Pages section when no object matched.
  */
 export function isSupersededMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
   if (response.partial !== true) return false;
@@ -798,7 +807,12 @@ export function isSupersededMentionResponse(request: MentionSearchRequest, respo
     objectKinds.add(MentionSearchSectionKind.Databases);
   }
 
-  return objectKinds.size > 0 && !response.sections.some((section) => objectKinds.has(section.kind));
+  const hasObjects = (section: MentionSearchSection) =>
+    objectKinds.has(section.kind) ||
+    (section.kind === MentionSearchSectionKind.Suggested &&
+      section.items.some((item) => MENTION_OBJECT_TARGET_KINDS.has(item.kind)));
+
+  return objectKinds.size > 0 && !response.sections.some(hasObjects);
 }
 
 /**

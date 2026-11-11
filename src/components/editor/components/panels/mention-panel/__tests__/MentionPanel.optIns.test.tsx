@@ -693,6 +693,31 @@ describe('MentionPanel opt-ins: Suggested, reasons and pick feedback (MEN-WEB-11
         selected_source: 'server',
       });
     });
+
+    it('leaves a partial answer cacheable when it took every page, so an opening soon after asks nothing', async () => {
+      // Shed paths or a degraded People annotation make the answer partial, and Cloud leaves out a
+      // Pages section whose last page moved into Suggested (MEN-X-10).
+      const search = createSearch(() => ({
+        partial: true,
+        sections: [
+          section(MentionSearchSectionKind.Suggested, [ROADMAP]),
+          section(MentionSearchSectionKind.People, [BOB]),
+          section(MentionSearchSectionKind.Dates, [TODAY]),
+        ],
+      }));
+
+      await openPanel(search);
+      cleanup();
+      await advance(1_000);
+
+      renderPanel();
+      await advance(0);
+      // Within the cache's fresh window: the answer at once, no skeleton.
+      expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+      expect(optionKeys()).toEqual([suggestedKey(ROADMAP_KEY), `people|${BOB_KEY}`, 'dates|date:Today']);
+      await advance(100);
+      expect(search).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('reasons', () => {
