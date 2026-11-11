@@ -1,3 +1,4 @@
 src/application/database-yjs/__fixtures__/dashboard-parity/** text eol=lf
 playwright/fixtures/pdfs/*.pdf binary
 src/components/editor/components/panels/mention-panel/__fixtures__/mention-parity/** text eol=lf
+src/components/editor/components/panels/mention-panel/__fixtures__/mention-eval/** text eol=lf
