@@ -144,8 +144,7 @@ function refreshMutationAuthority(scope: FormShareMutationScope) {
   if (scope.owners.size === 0) return;
 
   const canPersistMutations =
-    !scope.authorityDenied &&
-    Array.from(scope.owners).some((owner) => scope.ownerCanUpdateSettings.get(owner) === true);
+    !scope.authorityDenied && Array.from(scope.owners).some((owner) => scope.ownerCanUpdateSettings.get(owner) === true);
 
   if (scope.canPersistMutations === canPersistMutations) return;
   scope.canPersistMutations = canPersistMutations;
@@ -342,6 +341,8 @@ export interface FormShareState {
   canUpdateSettings: boolean;
   info: FormShareInfo | null;
   isLoading: boolean;
+  /** An existing share link has settings waiting for server acceptance. */
+  isSaving?: boolean;
   error: string | null;
   /** Re-runs bootstrap for the current form after a terminal load failure. */
   retryBootstrap: () => void;
@@ -377,6 +378,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
 
   const [info, setInfo] = useState<FormShareInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authorityDenied, setAuthorityDenied] = useState(false);
   const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
@@ -402,6 +404,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
       setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
       setAuthorityDenied(scope.authorityDenied);
+      setIsSaving(Boolean(scope.draining));
       if (bootstrapSettled) setIsLoading(false);
     },
     [canUpdateSettings]
@@ -434,12 +437,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       // a revoke loop cannot spin forever.
       let recoveredMissingToken = false;
 
-      while (
-        scope.canPersistMutations &&
-        scope.confirmed &&
-        scope.desired &&
-        hasFormShareDelta(scope.pendingRequest)
-      ) {
+      while (scope.canPersistMutations && scope.confirmed && scope.desired && hasFormShareDelta(scope.pendingRequest)) {
         const revision = scope.revision;
         const request = scope.pendingRequest;
         const optimistic = scope.pendingOptimistic;
@@ -551,8 +549,10 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
     })();
 
     scope.draining = drainPromise;
+    notifyFormShareMutationScope(scope);
     void drainPromise.finally(() => {
       if (scope.draining === drainPromise) scope.draining = null;
+      notifyFormShareMutationScope(scope);
       releaseFormShareMutationScope(scope);
     });
     return drainPromise;
@@ -919,6 +919,7 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       canUpdateSettings: canUpdateSettings && !scopedAuthorityDenied,
       info: scopedInfo,
       isLoading: scopedIsLoading,
+      isSaving: stateMatchesScope && isSaving,
       error: scopedError,
       retryBootstrap,
       retryMutation,
@@ -932,6 +933,8 @@ export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?:
       scopedAuthorityDenied,
       scopedInfo,
       scopedIsLoading,
+      stateMatchesScope,
+      isSaving,
       scopedError,
       retryBootstrap,
       retryMutation,

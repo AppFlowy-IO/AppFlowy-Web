@@ -24,6 +24,7 @@ export { DatabaseSearchAction } from '@/components/database/components/condition
 
 // Only dashboards render it, so its global filter editor stays out of every
 // other view's bundle.
+const FormActions = lazy(() => import('@/components/database/form/FormActions'));
 const DashboardActions = lazy(() => import('@/components/database/dashboard/DashboardActions'));
 
 /** Layouts that search cards (not rows); their toolbar keeps its compact size. */
@@ -44,7 +45,7 @@ export function DatabaseActions() {
   const layout = useDatabaseViewLayout();
   const readOnly = useReadOnly();
   const conditionsReadOnly = useConditionsReadOnly();
-  const { activeViewId, isDocumentBlock, databasePageId } = useDatabaseContext();
+  const { activeViewId, isDocumentBlock, databasePageId, dataSource } = useDatabaseContext();
   const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
 
   // The dashboard's own toolbar (`DashboardActions`): global filters, Open as
@@ -96,7 +97,7 @@ export function DatabaseActions() {
     </Button>
   );
 
-  if (tools.length === 0 && !isDocumentBlock) return null;
+  if (tools.length === 0 && !isDocumentBlock && layout !== DatabaseViewLayout.Form) return null;
 
   return (
     <div
@@ -138,6 +139,11 @@ export function DatabaseActions() {
           </Settings>
         )
       ) : null}
+      {layout === DatabaseViewLayout.Form && dataSource?.type !== 'history' && (
+        <Suspense fallback={null}>
+          <FormActions key={activeViewId} />
+        </Suspense>
+      )}
       {has('new') ? (
         <div className={compact ? 'ml-1' : undefined}>
           <DatabaseTemplateButton variant={compact ? 'compact' : 'default'} />

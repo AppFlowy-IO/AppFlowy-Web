@@ -22,8 +22,12 @@ export function FormShareProvider({
   return <FormShareContext.Provider value={share}>{children}</FormShareContext.Provider>;
 }
 
+export function useFormShareContextOptional(): FormShareState | null {
+  return useContext(FormShareContext);
+}
+
 export function useFormShareContext(): FormShareState {
-  const ctx = useContext(FormShareContext);
+  const ctx = useFormShareContextOptional();
 
   if (!ctx) {
     throw new Error('useFormShareContext must be used within FormShareProvider');

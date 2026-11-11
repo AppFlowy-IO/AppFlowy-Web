@@ -1,5 +1,5 @@
 import { resolveFormDisplayTitle } from '@/application/types/form';
-import { Input } from '@/components/ui/input';
+import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 
 import { useFormMetadataDraft } from './useFormMetadataDraft';
 
@@ -20,25 +20,24 @@ export function FormRespondentTitle({
   });
 
   if (readOnly) {
-    return <h2 className='min-h-9 text-3xl font-bold'>{resolveFormDisplayTitle(title)}</h2>;
+    return (
+      <h2 className='min-h-9 whitespace-pre-wrap break-words text-2xl font-bold leading-9'>
+        {resolveFormDisplayTitle(title)}
+      </h2>
+    );
   }
 
   return (
-    <Input
+    <TextareaAutosize
       aria-label='Form title'
       variant='ghost'
       value={draft}
       onFocus={handleFocus}
       onChange={(event) => handleValueChange(event.target.value)}
       onBlur={handleBlur}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          event.currentTarget.blur();
-        }
-      }}
       placeholder='Form title'
-      className='!h-auto !px-0 !text-3xl !font-bold'
+      minRows={1}
+      className='w-full !px-0 !py-0 !text-2xl !font-bold !leading-9'
     />
   );
 }

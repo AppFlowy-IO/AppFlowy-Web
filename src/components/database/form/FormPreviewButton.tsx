@@ -1,6 +1,7 @@
 import { Dialog } from '@mui/material';
-import { Eye } from 'lucide-react';
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { lazy, Suspense, useCallback, useState } from 'react';
+import { toast } from 'sonner';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -14,6 +15,8 @@ import {
   type PublicQuestion,
   type PublicQuestionKind,
 } from '@/application/types/form';
+import { previewFieldType } from './form-preview-field-type';
+import { FormQuestionTitle } from './FormQuestionTitle';
 import { Button } from '@/components/ui/button';
 
 const FormBody = lazy(() =>
@@ -24,7 +27,7 @@ const FormBody = lazy(() =>
 
 // Hoisted so MUI's Paper doesn't see a fresh props object every render.
 const DIALOG_PAPER_PROPS = {
-  className: 'max-h-[85vh] w-[90vw] max-w-2xl overflow-auto',
+  className: 'max-h-[85vh] w-[90vw] !max-w-[840px] overflow-auto !rounded-xl',
   'aria-label': 'Form preview',
 } as const;
 
@@ -43,45 +46,60 @@ const DIALOG_PAPER_PROPS = {
 export function FormPreviewButton({
   snapshot,
   fieldsMap,
-  fieldsVersion,
 }: {
   snapshot: FormLayoutSnapshot;
   fieldsMap: YDatabaseFields | undefined;
   fieldsVersion: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [schema, setSchema] = useState<PublicFormSchema | null>(null);
 
-  // Gate the heavy compute (JSON.parse per select field, O(N) over the
-  // question list) on `open`. The form builder updates the snapshot on
-  // every keystroke in question titles / descriptions; without this
-  // gate we'd compute a preview schema the user never sees on every
-  // one of those updates. The one-time recompute when the user opens
-  // the dialog is acceptable.
-  const schema = useMemo<PublicFormSchema | null>(() => {
-    if (!open) return null;
-    if (!fieldsMap) return null;
-    return buildFormPreviewSchema(snapshot, fieldsMap);
-    // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, snapshot, fieldsMap, fieldsVersion]);
-
-  const handleOpen = useCallback(() => setOpen(true), []);
+  // Desktop captures the projection on open. Collaborator changes must not
+  // replace a question underneath an answer being tried in this preview.
+  const handleOpen = useCallback(() => {
+    if (!fieldsMap) return;
+    setSchema(buildFormPreviewSchema(snapshot, fieldsMap));
+    setOpen(true);
+  }, [fieldsMap, snapshot]);
   const handleClose = useCallback(() => setOpen(false), []);
 
   return (
     <>
-      <Button data-testid='form-preview-button' variant='ghost' size='sm' className='gap-1' onClick={handleOpen}>
-        <Eye size={14} />
+      <Button
+        data-testid='form-preview-button'
+        variant='outline'
+        size='sm'
+        className='h-7 px-2 font-medium'
+        onClick={handleOpen}
+        disabled={!fieldsMap}
+      >
         Preview
       </Button>
       <Dialog open={open} onClose={handleClose} PaperProps={DIALOG_PAPER_PROPS}>
         {open && schema && (
           <div data-testid='form-preview-dialog'>
+            <div className='flex h-[52px] items-end justify-end pr-6 pt-4'>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='h-9 w-9'
+                aria-label='Close preview dialog'
+                onClick={handleClose}
+              >
+                <CloseIcon className='h-5 w-5' />
+              </Button>
+            </div>
             <ErrorBoundary fallback={<PreviewLoadError onClose={handleClose} />}>
               <Suspense
                 fallback={<div className='px-6 py-10 text-center text-sm text-text-caption'>Loading preview…</div>}
               >
-                <FormBody token='preview' schema={schema} previewMode />
+                <FormBody
+                  token='preview'
+                  schema={schema}
+                  previewMode
+                  onPreviewSubmit={notifyPreviewValid}
+                  renderQuestionTitle={renderPreviewQuestionTitle}
+                />
               </Suspense>
             </ErrorBoundary>
           </div>
@@ -206,4 +224,14 @@ function extractOptions(field: YDatabaseField): PublicOption[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+function renderPreviewQuestionTitle(question: PublicQuestion) {
+  return (
+    <FormQuestionTitle name={question.label} fieldType={previewFieldType(question.kind)} required={question.required} />
+  );
+}
+
+function notifyPreviewValid() {
+  toast.success('Submission valid — looks good!');
 }
