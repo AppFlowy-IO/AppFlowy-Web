@@ -472,8 +472,9 @@ opens, with or without the picker's v2. While it is off the picker shows what it
   interactions.
 
 Whatever the switch, an `icon` that is not a string never reaches an image (a person's icon object
-used to throw while rendering) or a saved mention's `data`. The details read only fields every
-released server sends (`path`, `path_status`) and the optional `reason`. With the switch on, a
-picker that lists people loads the roster once per opening (see Avatars), and a view icon that is
-an uploaded image loads as it does in the sidebar; the search requests, their cache keys and
-inserted payloads are unchanged. With it off, the picker sends and loads what it did before.
+used to throw while rendering) or a saved mention's `data`. The details read `path` and
+`path_status`, which servers since 0.17.6 send (an older server sends no path, and no breadcrumb
+shows), and the optional `reason`. With the switch on, a picker that lists people loads the roster
+once per opening (see Avatars), and a view icon that is an uploaded image loads as it does in the
+sidebar; the search requests, their cache keys and inserted payloads are unchanged. With it off,
+the picker sends and loads what it did before.

@@ -521,8 +521,9 @@ export interface MentionSearchResultItem {
   title: string;
   subtitle?: string;
   /**
-   * A page's ancestors, or a row's database view, root first; databases have none. Every released
-   * server sends it, with `path_status`; only a `complete` path is shown.
+   * A page's ancestors, or a row's database view, root first; databases have none. Servers since
+   * Cloud 0.17.6 send it with `path_status`; older ones send neither, and no breadcrumb shows. Only a
+   * `complete` path is shown.
    */
   path?: MentionPathSegment[];
   path_status?: MentionPathStatus;

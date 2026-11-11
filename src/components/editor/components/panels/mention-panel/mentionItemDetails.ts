@@ -3,11 +3,11 @@
  * details switch, off by default until design signs off on the treatment
  * (`localStorage.__mention_item_details = 'true'`, read when a picker opens):
  *
- * - A muted breadcrumb under a page, database or row: the item's `path`, which every released
- *   server sends with `path_status`, shown only when that status is `complete`. A path Search left
- *   out (shed for load, or not resolved) shows nothing, and so does an item from a server that sends
- *   none. The `subtitle` servers send for these items (the same path joined, or "Database") is never
- *   shown: it is English, and Web has always hidden it.
+ * - A muted breadcrumb under a page, database or row: the item's `path`, which servers since Cloud
+ *   0.17.6 send with `path_status`, shown only when that status is `complete`. A path Search left
+ *   out (shed for load, or not resolved) shows nothing, and so does an item from an older server,
+ *   which sends neither. The `subtitle` servers send for these items (the same path joined, or
+ *   "Database") is never shown: it is English, and Web has always hidden it.
  * - A person's avatar from the roster, by person id: a picker that lists people loads it once per
  *   opening through the roster cache (`useMentionRosterOnOpen`). No server sets a person's `icon`:
  *   until the roster arrives, or when it cannot load, the person shows initials, as before.
