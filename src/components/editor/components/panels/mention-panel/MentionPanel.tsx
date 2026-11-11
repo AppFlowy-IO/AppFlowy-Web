@@ -799,8 +799,8 @@ export function MentionPanel({
     [hasSearchMentions, open, pickMemoryKey]
   );
   // Breadcrumbs, roster avatars, view icons and reason chips (MEN-WEB-13), off by default and read
-  // once per opening. They read what the tab holds and who is on the page; an uploaded view icon
-  // loads as it does in the sidebar.
+  // once per opening. They read what the tab holds and who is on the page; a row downloads an
+  // uploaded avatar or view icon again each time it mounts (no shared image cache yet).
   const itemDetails = useMemo(() => open && readMentionItemDetailsEnabled(), [open]);
 
   // Avatars, and collaborators whom awareness names by uid, need the roster: a picker that lists

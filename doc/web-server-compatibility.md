@@ -475,6 +475,12 @@ Whatever the switch, an `icon` that is not a string never reaches an image (a pe
 used to throw while rendering) or a saved mention's `data`. The details read `path` and
 `path_status`, which servers since 0.17.6 send (an older server sends no path, and no breadcrumb
 shows), and the optional `reason`. With the switch on, a picker that lists people loads the roster
-once per opening (see Avatars), and a view icon that is an uploaded image loads as it does in the
-sidebar; the search requests, their cache keys and inserted payloads are unchanged. With it off,
-the picker sends and loads what it did before.
+once per opening (see Avatars), and the search requests, their cache keys and inserted payloads are
+unchanged. The picker also downloads images it did not before: a row whose avatar or view icon was
+uploaded to AppFlowy's file storage fetches it, with one authenticated GET, every time the row
+mounts. That is each opening and, with the picker's v2 off, each keystroke whose query has no
+cached answer, as the list empties while the answer loads. The server sends these files
+`Cache-Control: private, no-store`, so the browser keeps none of them, and the picker has no shared
+image cache yet (one is needed before the switch's default goes on); an image that finishes after
+its row left is revoked, not kept. Avatars and icons hosted elsewhere load as plain images, cached
+as their hosts allow. With it off, the picker sends and loads what it did before.
