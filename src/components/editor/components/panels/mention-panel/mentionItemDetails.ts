@@ -1,7 +1,8 @@
 /**
  * What the editor's @ picker shows about a result besides its title (MEN-WEB-13), behind the item
- * details switch, off by default until design signs off on the treatment
- * (`localStorage.__mention_item_details = 'true'`, read when a picker opens):
+ * details switch (`localStorage.__mention_item_details = 'true'`, read when a picker opens), which
+ * is off by default until design signs off on the treatment and the picker has a shared image
+ * cache ({@link MENTION_ITEM_DETAILS_DEFAULT}):
  *
  * - A muted breadcrumb under a page, database or row: the item's `path`, which servers since Cloud
  *   0.17.6 send with `path_status`, shown only when that status is `complete`. A path Search left
@@ -34,7 +35,12 @@ import { mentionDatabaseNavKey, mentionItemNavKey, mentionPageNavKey } from './m
 
 import type { MentionLocalSnapshot, MentionLocalView } from './mentionLocalIndex';
 
-/** Whether a picker that opens now shows breadcrumbs, roster avatars, view icons and reason chips. */
+/**
+ * Whether a picker that opens now shows breadcrumbs, roster avatars, view icons and reason chips.
+ * Keep it false until design signs off and the picker has a shared image cache: without one, each
+ * row downloads an uploaded avatar or view icon again whenever it mounts (see "Mention item
+ * details" in doc/web-server-compatibility.md).
+ */
 export const MENTION_ITEM_DETAILS_DEFAULT = false;
 /** `localStorage` key that turns the item details on (`true`) or off (`false`). */
 export const MENTION_ITEM_DETAILS_OVERRIDE_KEY = '__mention_item_details';

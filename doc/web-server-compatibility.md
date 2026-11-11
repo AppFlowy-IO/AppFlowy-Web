@@ -434,8 +434,10 @@ The replay is test tooling: it sends nothing, and the picker and its requests do
 
 The editor's @ picker can show more about each result than its title (`mentionItemDetails.ts`,
 `MentionResultDetails.tsx`; MEN-WEB-13). It is off by default until design signs off on the
-treatment: a browser opts in with `localStorage.__mention_item_details = 'true'`, read when a picker
-opens, with or without the picker's v2. While it is off the picker shows what it showed before.
+treatment and the picker has a shared image cache: without one, each row downloads an uploaded
+avatar or view icon again whenever it mounts (see the end of this section). A browser opts in with
+`localStorage.__mention_item_details = 'true'`, read when a picker opens, with or without the
+picker's v2. While it is off the picker shows what it showed before.
 
 - **Breadcrumbs.** A page, database or row shows its `path` as a muted line under the title, root
   first and joined by " / " ("Engineering / Specs"), with the whole path as its tooltip, so two
