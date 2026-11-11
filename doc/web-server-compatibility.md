@@ -435,7 +435,9 @@ subscribes and lets everything go once the last one closes:
 - A typed query adds the rows whose primary-field text matches at T3 or better to Pages, where
   Search returns rows, ranked by the typeahead contract's rules with the other Pages items. A row
   created at most 15 minutes ago (its `created_at`) carries `data-fresh="true"`, as a page this tab
-  created does. A row the server lists too keeps the server's payload and shows once: with its own
+  created does, but with the item details on it shows no "Created" chip: chips read the local
+  index, which holds no rows, so a row gets one only from a server's reason (see "Mention item
+  details"). A row the server lists too keeps the server's payload and shows once: with its own
   title when the tab read it from the row's live document while syncing it (a rename typed or
   received here shows at once), with the server's when it came from the seed or a cached document
   the tab no longer syncs, either of which may be older than Search's. The lane never lists the row
