@@ -393,6 +393,55 @@ describe('mentionLocalIndex access changes', () => {
     expect(local('fresh')).toEqual(expect.objectContaining({ source: 'outline', sessionCreatedAt: expect.any(Number) }));
   });
 
+  it('keeps out a creation no source listed yet when the access changed', () => {
+    // A page created below `notes`, whose children the outline has not loaded: a page made from a
+    // block opens in the page modal, which adds nothing to the outline.
+    refreshOutline(fixtureOutline(), { trash: TRASH, recent: [] });
+    recordMentionViewCreated(WS, {
+      viewId: 'secret',
+      name: 'Secret',
+      layout: ViewLayout.Document,
+      parentViewId: 'notes',
+    });
+    expect(local('secret')?.source).toBe('session');
+
+    recordMentionAccessChanged(WS);
+    expect(listedOf(['secret'])).toEqual([]);
+
+    const changed = getMentionLocalSnapshot(WS);
+
+    recordMentionAccessChanged(WS);
+    expect(getMentionLocalSnapshot(WS)).toBe(changed);
+
+    // The user lost `roadmap`: the reloaded outline drops it with `notes`, and recent views loaded
+    // since list none of them.
+    refreshOutline(outlineWithoutRoadmap(), { trash: TRASH, recent: [] });
+    expect(listedOf(['roadmap', 'notes', 'secret'])).toEqual([]);
+
+    // A page created since the change is one the user can read.
+    recordMentionViewCreated(WS, { viewId: 'later', name: 'Later', layout: ViewLayout.Document, parentViewId: 'plan' });
+    expect(local('later')?.source).toBe('session');
+  });
+
+  it('lists such a creation again once a source lists it', () => {
+    refreshOutline(fixtureOutline(), { trash: TRASH, recent: [] });
+    recordMentionViewCreated(WS, {
+      viewId: 'secret',
+      name: 'Secret',
+      layout: ViewLayout.Document,
+      parentViewId: 'notes',
+    });
+    recordMentionAccessChanged(WS);
+    expect(listedOf(['secret'])).toEqual([]);
+
+    // Recent views loaded since the change list it: the user opened it, so can read it.
+    refreshOutline(fixtureOutline(), {
+      trash: TRASH,
+      recent: [view('secret', { name: 'Secret', parent_view_id: 'notes' })],
+    });
+    expect(local('secret')).toEqual(expect.objectContaining({ source: 'recent', sessionCreatedAt: expect.any(Number) }));
+  });
+
   it('changes nothing without recent views, for another workspace, or twice for the same ones', () => {
     recordMentionAccessChanged(WS);
     expect(getMentionLocalSnapshot(WS)).toBe(EMPTY_MENTION_LOCAL_SNAPSHOT);

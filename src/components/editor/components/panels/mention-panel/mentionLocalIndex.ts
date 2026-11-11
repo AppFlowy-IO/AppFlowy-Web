@@ -24,7 +24,8 @@
  * After an access change that names no view (a space's access or members, a member's role, a
  * group), the outline reloads what it shows and decides for the views it lists, while the recent
  * views loaded before may still list a page the user can no longer read: until they reload, a view
- * only they list is no candidate.
+ * only they list is no candidate. Nor is a creation of this tab that no source listed yet, which
+ * may sit below such a page, until a source lists it.
  *
  * This tab's events show at once and give way to the sources once they catch up: a creation is
  * listed until the outline, the recent views or the trash list it; a rename shows until they show
@@ -139,6 +140,11 @@ interface SessionCreation {
   layout: ViewLayout;
   parentViewId?: string;
   databaseId?: string;
+  /**
+   * The user's access changed in a way that names no view while no source listed the creation:
+   * it may sit below a page the user can no longer read, so only a source lists it from then on.
+   */
+  beforeAccessChange?: boolean;
 }
 
 /** What this tab did to one view. */
@@ -593,16 +599,30 @@ export function recordMentionViewOpened(workspaceId: string, viewId: string, at 
  * The user's access changed in a way that names no view they lost (`PERMISSION_CHANGED`: a space's
  * access or members, a member's role, a group). The outline reloads with it and decides for the
  * views it lists; the recent views loaded before may still list a page the user can no longer
- * read, so until they reload, a view only they list is no candidate.
+ * read, so until they reload, a view only they list is no candidate. Neither is a creation of this
+ * tab that no source listed yet, such as a page below one whose children the outline has not
+ * loaded: it may sit below a page the user lost, so from then on only a source lists it.
  */
 export function recordMentionAccessChanged(workspaceId: string) {
   const index = indexes.get(workspaceId);
-  const recent = index?.sources.recent;
 
-  if (!index || !recent || index.untrustedRecent === recent) return;
+  if (!index) return;
 
-  index.untrustedRecent = recent;
-  markChanged(index, true);
+  const recent = index.sources.recent;
+  let changed = false;
+
+  if (recent && index.untrustedRecent !== recent) {
+    index.untrustedRecent = recent;
+    changed = true;
+  }
+
+  index.session.forEach(({ created, listed }) => {
+    if (!created || listed || created.beforeAccessChange) return;
+
+    created.beforeAccessChange = true;
+    changed = true;
+  });
+  if (changed) markChanged(index, true);
 }
 
 /** The roster the app loaded for a workspace. Kept for workspaces the app has not given the index yet. */
@@ -969,6 +989,8 @@ function buildViews(index: WorkspaceIndex): Omit<BuiltViews, 'version'> {
     const parent = parentViewId === undefined ? undefined : sourceView(parentViewId);
 
     if (foldsIntoDatabase(parent, undefined, entry)) return;
+    // No source listed it when the user's access changed: only a source lists it now.
+    if (created.beforeAccessChange) return;
 
     // The server embeds a database created in a document or a row page, and only the outline tells
     // which: until it lists the database, list only one created in a space.

@@ -267,6 +267,8 @@ while it is off the picker neither records nor reads picks.
 - Access can also change without the app naming a page: a space's access or members, a member's
   role or a group (`PERMISSION_CHANGED`). The outline reloads with it and decides for the pages it
   lists, so from then until the recent views reload, a picked page only they list never joins.
+  Neither does a page this tab created before the change that neither the outline nor the recent
+  views listed yet, until one of them lists it.
 - The memory stays on the device, under `af.mention.pick-memory.v1:<workspace_id>:<uid>`: normalized
   inputs of at most 32 code points, navigation keys, counts and times, no title, name or address.
   An explicit sign-out removes the user's memories in every workspace; a session that expires keeps
@@ -392,7 +394,9 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   below it, as far as the local index knows the pages above it; a provisional list leaves out a
   server item below it too. After an access change that names no page (`PERMISSION_CHANGED`), the
   outline reloads and decides for the pages it lists, and until the recent views reload, no page
-  comes from them alone, as they may list one the user lost.
+  comes from them alone, as they may list one the user lost. Nor does a page this tab created
+  before the change that neither the outline nor the recent views listed yet (such as one below a
+  page whose children the outline has not loaded), until one of them lists it.
 
 The picker loads nothing for the local lane: it reads the outline, recent views and roster the app
 already loaded. Requests carry `client_features` with the opt-ins the server lists in
