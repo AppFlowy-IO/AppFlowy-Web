@@ -414,11 +414,12 @@ already loaded. With the v2 on, every request carries `section_degradation_v1` a
 in `mention_features`; to a server that lists none they are the requests released Web sends. Other
 opt-ins follow their own switches (see "Mention opt-ins"). Answers to requests that carried
 different opt-ins are kept apart in the cache, and an answer to a request that carried one of these
-two is never cached when it is `partial` or has a `partial` or failed section, as they require. An item the tab adds is inserted with the payload the server would send for it, so
-documents read the same in every client. The one exception is a database whose view the tab does
-not know yet (one it just created, or a container whose children the outline has not loaded): it
-is inserted as a page reference to the view the tab lists it by, which every client opens, where
-the server's item would name the database's first view. A database id there would open nothing.
+two is never cached when it is `partial` or has a `partial` or failed section, as they require. An
+item the tab adds is inserted with the payload the server would send for it, so documents read the
+same in every client. The one exception is a database whose view the tab does not know yet (one it
+just created, or a container whose children the outline has not loaded): it is inserted as a page
+reference to the view the tab lists it by, which every client opens, where the server's item would
+name the database's first view. A database id there would open nothing.
 
 ## Mention local rows lane
 
@@ -580,25 +581,25 @@ picker's v2. While it is off the picker shows what it showed before.
   `client_features: ['reasons_v1']`, which the picker sends while the switch is on and the server
   lists `reasons_v1`, see "Mention opt-ins") adds `viewed` and `created` with their times, for rows
   too, and `participant`; every other signal shows nothing, a value this client does not know
-  included. Nothing ever says "Edited": the Folder's edit times, and the
-  server's `changed` signal, reflect only metadata changes. The server's `mentioned` (the user's own
-  mention) and `interaction` (a mention, comment, reply, share or assignment from that person, or a
-  page the user was notified about) have no copy yet; "Mentioned you" would mislabel most
-  interactions.
+  included. Nothing ever says "Edited": the Folder's edit times, and the server's `changed` signal,
+  reflect only metadata changes. The server's `mentioned` (the user's own mention) and `interaction`
+  (a mention, comment, reply, share or assignment from that person, or a page the user was notified
+  about) have no copy yet; "Mentioned you" would mislabel most interactions.
 
 Whatever the switch, an `icon` that is not a string never reaches an image (a person's icon object
 used to throw while rendering) or a saved mention's `data`. The details read `path` and
 `path_status`, which servers since 0.17.6 send (an older server sends no path, and no breadcrumb
 shows), and the optional `reason`. With the switch on, a picker that lists people loads the roster
-once per opening (see Avatars), and the search requests carry `reasons_v1` (and their cache keys hold
-it) only to a server that lists it; inserted payloads are unchanged. The picker also downloads images it did not before: a row whose avatar or view icon was
-uploaded to AppFlowy's file storage fetches it, with one authenticated GET, every time the row
-mounts. That is each opening and, with the picker's v2 off, each keystroke whose query has no
-cached answer, as the list empties while the answer loads. The server sends these files
-`Cache-Control: private, no-store`, so the browser keeps none of them, and the picker has no shared
-image cache yet (one is needed before the switch's default goes on); an image that finishes after
-its row left is revoked, not kept. Avatars and icons hosted elsewhere load as plain images, cached
-as their hosts allow. With it off, the picker sends and loads what it did before.
+once per opening (see Avatars), and the search requests carry `reasons_v1` (and their cache keys
+hold it) only to a server that lists it; inserted payloads are unchanged. The picker also downloads
+images it did not before: a row whose avatar or view icon was uploaded to AppFlowy's file storage
+fetches it, with one authenticated GET, every time the row mounts. That is each opening and, with
+the picker's v2 off, each keystroke whose query has no cached answer, as the list empties while the
+answer loads. The server sends these files `Cache-Control: private, no-store`, so the browser keeps
+none of them, and the picker has no shared image cache yet (one is needed before the switch's
+default goes on); an image that finishes after its row left is revoked, not kept. Avatars and icons
+hosted elsewhere load as plain images, cached as their hosts allow. With it off, the picker sends
+and loads what it did before.
 
 ## Mention opt-ins: Suggested, reasons and pick feedback
 
@@ -632,8 +633,8 @@ failed server info lists nothing either.
   `[[` picker never asks for it. The switch stays off until Suggested's precision reaches 25% (picks
   from it over the openings that showed it), and Cloud's `mention_flag_suggested` is off too.
 - **Reasons.** The picker shows reasons only through the item details' chip, so it asks for them
-  only while the item details are on. A signal the chip has no copy for, a value this client does not
-  know included, shows nothing, and no reason ever shows with the item details off.
+  only while the item details are on. A signal the chip has no copy for, a value this client does
+  not know included, shows nothing, and no reason ever shows with the item details off.
 - **Selection memory switch.** Cloud keeps no opt-out of its own: a user declines through the
   client, which then sends neither `selection_memory_v1` nor pick reports (MEN-CLOUD-20). The
   switch, read when the picker opens, is that choice for the browser: on by default, so the server's
