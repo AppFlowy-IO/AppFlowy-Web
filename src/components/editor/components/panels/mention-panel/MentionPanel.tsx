@@ -48,11 +48,11 @@ import { usePanelContext } from '@/components/editor/components/panels/Panels.ho
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
 import { mentionClientFeatures } from './mentionClientFeatures';
+import { MentionItemDetails, readMentionItemDetailsEnabled } from './mentionItemDetails';
 import {
   buildMentionLocalLane,
   getMentionSessionPersonPicks,
@@ -87,6 +87,7 @@ import {
   withProvisionalItems,
 } from './mentionProvisional';
 import { mentionRequestLane, MentionRequestLanes } from './mentionRequestLanes';
+import { MentionPersonAvatar, MentionResultDetailsIcon, MentionResultDetailsLabel } from './MentionResultDetails';
 import {
   ensureMentionSearchCacheScope,
   getCachedMentionSearch,
@@ -352,25 +353,6 @@ function getSelectedBlockId(editor: YjsEditor): string | undefined {
   return (entry?.[0] as { blockId?: string } | undefined)?.blockId;
 }
 
-function isImageSource(value?: string) {
-  if (!value) return false;
-
-  return /^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:') || value.startsWith('/');
-}
-
-function MentionPersonAvatar({ item, title }: { item: MentionSearchResultItem; title: string }) {
-  const displayName = title || item.title || item.subtitle || item.object_id || '?';
-
-  return (
-    <Avatar size={'sm'} shape={'circle'} className={'h-6 w-6 min-w-6'}>
-      <AvatarImage src={isImageSource(item.icon) ? item.icon : undefined} alt={displayName} />
-      <AvatarFallback name={displayName} className={'text-xs font-medium'}>
-        {displayName}
-      </AvatarFallback>
-    </Avatar>
-  );
-}
-
 function MentionResultIcon({ item, title }: { item: MentionSearchResultItem; title: string }) {
   const className = 'h-5 w-5 min-w-5 text-icon-primary';
   const { kind } = item;
@@ -401,6 +383,7 @@ function MentionResultButton({
   index,
   selected,
   fresh,
+  details,
   onClick,
 }: {
   result: MentionPanelSearchResult;
@@ -409,6 +392,8 @@ function MentionResultButton({
   selected: boolean;
   /** Only the local lane lists it, and this tab created or renamed it in the last 15 minutes. */
   fresh?: boolean;
+  /** Breadcrumb, avatar, icon and chip (MEN-WEB-13); unset while the item details are off. */
+  details?: MentionItemDetails;
   onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -420,6 +405,7 @@ function MentionResultButton({
       ? undefined
       : item.subtitle;
   const title = getMentionSearchResultDisplayTitle(item, t('menuAppHeader.defaultNewPageName'));
+  const icon = <MentionResultIcon item={item} title={title} />;
 
   return (
     <Button
@@ -430,16 +416,26 @@ function MentionResultButton({
       data-selected={selected || undefined}
       data-option-kind={item.kind}
       data-fresh={fresh || undefined}
-      startIcon={<MentionResultIcon item={item} title={title} />}
+      startIcon={
+        details ? (
+          <MentionResultDetailsIcon item={item} navKey={result.navKey} title={title} details={details} fallback={icon} />
+        ) : (
+          icon
+        )
+      }
       className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-primary hover:bg-fill-content-hover ${
         selected ? 'bg-fill-content-hover' : ''
       }`}
       onClick={onClick}
     >
-      <span className={'flex min-w-0 flex-col items-start'}>
-        <span className={'max-w-[280px] truncate'}>{title}</span>
-        {subtitle && <span className={'max-w-[280px] truncate text-xs text-text-secondary'}>{subtitle}</span>}
-      </span>
+      {details ? (
+        <MentionResultDetailsLabel item={item} navKey={result.navKey} title={title} details={details} />
+      ) : (
+        <span className={'flex min-w-0 flex-col items-start'}>
+          <span className={'max-w-[280px] truncate'}>{title}</span>
+          {subtitle && <span className={'max-w-[280px] truncate text-xs text-text-secondary'}>{subtitle}</span>}
+        </span>
+      )}
     </Button>
   );
 }
@@ -801,16 +797,19 @@ export function MentionPanel({
         : undefined,
     [hasSearchMentions, open, pickMemoryKey]
   );
-  // What this tab holds (MEN-WEB-07), read while pick memory or the local lane uses it.
-  const localSnapshot = useMentionLocalSnapshot(pickMemory || localLane ? workspaceId : undefined);
+  // Breadcrumbs, roster avatars, view icons and reason chips (MEN-WEB-13), off by default and read
+  // once per opening. They read what the tab holds and who is on the page, never the network.
+  const itemDetails = useMemo(() => open && readMentionItemDetailsEnabled(), [open]);
+  // What this tab holds (MEN-WEB-07), read while pick memory, the lane or the item details use it.
+  const localSnapshot = useMentionLocalSnapshot(pickMemory || localLane || itemDetails ? workspaceId : undefined);
   // The views the user lost access to in this session. The local index lists one, and the pages
   // below it, until its sources catch up, so a picked one never joins from it, and an earlier
   // answer may list one, so a provisional list never shows it.
   const getRevokedViews = pickMemory || typeaheadV2 ? getRevokedMentionViews : noRevokedViews;
   const revokedViews = useSyncExternalStore(subscribeRevokedMentionViews, getRevokedViews, getRevokedViews);
   // The local lane's people on the page (awareness), without the requester. Read only with the lane
-  // on, and changed only when someone arrives or leaves.
-  const presentIds = usePresentPersonIds(localLane ? awareness : undefined);
+  // or the item details on, and changed only when someone arrives or leaves.
+  const presentIds = usePresentPersonIds(localLane || itemDetails ? awareness : undefined);
   const presentPersonIds = useMemo(
     () => mentionPresentPersonIds(localSnapshot.people, presentIds, { uuid: currentUser?.uuid, uid: currentUser?.uid }),
     [currentUser?.uid, currentUser?.uuid, localSnapshot.people, presentIds]
@@ -834,6 +833,11 @@ export function MentionPanel({
         ? buildMentionLocalLane({ snapshot: localSnapshot, presentPersonIds, revokedViews, personPicks, contextViewId })
         : NO_LANE_ITEMS,
     [contextViewId, localLane, localSnapshot, personPicks, presentPersonIds, revokedViews]
+  );
+  // What the item details read besides each result (MEN-WEB-13); unset while they are off.
+  const itemDetailsView = useMemo<MentionItemDetails | undefined>(
+    () => (itemDetails ? { snapshot: localSnapshot, presentPersonIds, contextViewId } : undefined),
+    [contextViewId, itemDetails, localSnapshot, presentPersonIds]
   );
 
   // A database this tab just created, whose view the outline has not listed yet, merges with the
@@ -2124,6 +2128,7 @@ export function MentionPanel({
                         index={index}
                         selected={selected}
                         fresh={mentionV2View?.freshKeys?.has(option.navKey)}
+                        details={itemDetailsView}
                         onClick={() => handleSelectedSearchResult(option.result)}
                       />
                     );

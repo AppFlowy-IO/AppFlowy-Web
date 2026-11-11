@@ -153,7 +153,8 @@ function withDisplayData(mention: Mention, item: MentionSearchResultItem): Menti
     data: {
       title: item.title,
       subtitle: item.subtitle,
-      icon: item.icon,
+      // Servers type `icon` as an object, which a saved mention must never carry (MEN-WEB-13).
+      icon: typeof item.icon === 'string' ? item.icon : undefined,
     },
   };
 }

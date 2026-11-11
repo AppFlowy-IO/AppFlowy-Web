@@ -352,8 +352,9 @@ loaded. `localStorage.__mention_local_lane = 'false'` keeps the v2 lists without
   its domain; pages and databases at T3 or better) join in the keystroke's own render, also before
   any answer, and stay once the server answers. They join only pickers that ask for their kind and
   pass the request's filter, so a page-reference picker never lists people. One that this tab
-  created or renamed in the last 15 minutes carries `data-fresh="true"` on its option; the picker
-  shows no chip for it yet. A database this tab just created, whose view the outline has not listed
+  created or renamed in the last 15 minutes carries `data-fresh="true"` on its option; with the item
+  details on, its chip says when the tab created it (see "Mention item details"), as a rename gets
+  none. A database this tab just created, whose view the outline has not listed
   yet, merges with the server's item for that database, and the highlight stays on it when an
   answer brings that item.
 - Inside a tier, the client's signals order the items, as the contract's in-tier keys say: pick
@@ -428,3 +429,43 @@ through its Dart ranker.
   rollout stages; pick memory also needs that decision or a ranker change.
 
 The replay is test tooling: it sends nothing, and the picker and its requests do not change.
+
+## Mention item details
+
+The editor's @ picker can show more about each result than its title (`mentionItemDetails.ts`,
+`MentionResultDetails.tsx`; MEN-WEB-13). It is off by default until design signs off on the
+treatment: a browser opts in with `localStorage.__mention_item_details = 'true'`, read when a picker
+opens, with or without the picker's v2. While it is off the picker shows what it showed before.
+
+- **Breadcrumbs.** A page, database or row shows its `path` as a muted line under the title, root
+  first and joined by " / " ("Engineering / Specs"), with the whole path as its tooltip, so two
+  "Meeting notes" pages read apart. Only a path whose `path_status` is `complete` shows. A path
+  Search shed for load (`omitted_due_to_load`) or could not resolve (`omitted_unavailable`) shows
+  nothing, and so does an item without one: Search sends none for databases, and the local lane's
+  items have none. The `subtitle` servers send for these items (the same path joined, or
+  "Database") is English and stays hidden.
+- **Avatars.** A person shows the avatar of the roster the tab loaded, found by person id, else
+  initials. No server sets a person's `icon`, and the picker loads no roster for it.
+- **Icons.** A page or database the local index holds shows its outline icon (emoji, image or icon
+  set), else its layout's icon (board, calendar, list...); anything else keeps the kind's icon. A
+  server's `icon` is never drawn: servers type it as an object whose `ty` is a string, where the
+  outline numbers its icon types, and none sets it yet.
+- **Reason chips.** At most one muted chip at the end of the row: "Opened 3 min ago", "Created just
+  now" or "On this page". A page or database says when it was opened (this tab's open, the recent
+  views' last view) or created (this tab's creation, else the outline's creation time): a creation
+  in the last 15 minutes wins, as it is why the item is new, otherwise the newer of an open in the
+  last 7 days and a creation in the last day. A person on the page (its awareness, as the comment
+  pickers read it) is "On this page". The page or database view being edited shows none. A server
+  that explains its items (Cloud MEN-X-09: `reason`, sent only to a request with
+  `client_features: ['reasons_v1']`, which the picker does not send yet) adds `viewed` and `created`
+  with their times, for rows too, and `participant`; every other signal shows nothing, a value this
+  client does not know included. Nothing ever says "Edited": the Folder's edit times, and the
+  server's `changed` signal, reflect only metadata changes. The server's `mentioned` (the user's own
+  mention) and `interaction` (a mention, comment, reply, share or assignment from that person, or a
+  page the user was notified about) have no copy yet; "Mentioned you" would mislabel most
+  interactions.
+
+Whatever the switch, an `icon` that is not a string never reaches an image (a person's icon object
+used to throw while rendering) or a saved mention's `data`. The details read only fields every
+released server sends (`path`, `path_status`) and the optional `reason`; requests, cache keys and
+inserted payloads are unchanged.
