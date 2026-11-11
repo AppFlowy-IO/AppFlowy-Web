@@ -25,7 +25,7 @@ import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getConfigValue } from '@/utils/runtime-config';
 import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
-import { MENTION_SUGGESTED_OVERRIDE_KEY } from '../mentionClientFeatures';
+import { MENTION_SELECTION_MEMORY_OVERRIDE_KEY, MENTION_SUGGESTED_OVERRIDE_KEY } from '../mentionClientFeatures';
 import { MENTION_ITEM_DETAILS_OVERRIDE_KEY } from '../mentionItemDetails';
 import {
   clearMentionLocalIndex,
@@ -556,6 +556,19 @@ describe('MentionPanel opt-ins: Suggested, reasons and pick feedback (MEN-WEB-11
           ['rows', ['reasons_v1']],
         ],
       ],
+      [
+        'the user declined selection memory',
+        () => {
+          localStorage.setItem(MENTION_ITEM_DETAILS_OVERRIDE_KEY, 'true');
+          localStorage.setItem(MENTION_SELECTION_MEMORY_OVERRIDE_KEY, 'false');
+        },
+        ['reasons_v1', 'selection_memory_v1'],
+        [
+          ['bare', ['reasons_v1']],
+          ['primary', ['reasons_v1']],
+          ['rows', ['reasons_v1']],
+        ],
+      ],
     ])('leave out what the picker cannot use: %s', async (_name, arrange, advertised, expected) => {
       arrange();
       advertise(advertised);
@@ -769,6 +782,26 @@ describe('MentionPanel opt-ins: Suggested, reasons and pick feedback (MEN-WEB-11
       expect(mockAddMark).toHaveBeenCalledTimes(2);
       expect(feedbackBodies()).toHaveLength(1);
       expect(consoleError).not.toHaveBeenCalled();
+    });
+
+    it('sends neither the opt-in nor a report when the user declined selection memory', async () => {
+      localStorage.setItem(MENTION_SELECTION_MEMORY_OVERRIDE_KEY, 'false');
+
+      const search = createSearch(answering(RELEASED_BARE));
+      let view = await openPanel(search, 'ro');
+
+      expect(sentFeatures(search)).toEqual([
+        ['bare', undefined],
+        ['primary', undefined],
+        ['rows', undefined],
+      ]);
+      await pick(view, `pages|${ROADMAP_KEY}`);
+      cleanup();
+      view = await openPanel(search);
+      await pick(view, `people|${BOB_KEY}`);
+      await advance(0);
+      expect(mockAddMark).toHaveBeenCalledTimes(2);
+      expect(mockPost).not.toHaveBeenCalled();
     });
 
     it('reports a person by person id, and nothing for a date or a page only this tab listed', async () => {

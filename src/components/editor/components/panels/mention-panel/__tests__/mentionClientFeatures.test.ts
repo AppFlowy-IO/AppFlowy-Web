@@ -14,12 +14,15 @@ import {
   MENTION_FEATURE_SELECTION_MEMORY_V1,
   MENTION_FEATURE_SUGGESTED_V1,
   MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
+  MENTION_SELECTION_MEMORY_DEFAULT,
+  MENTION_SELECTION_MEMORY_OVERRIDE_KEY,
   MENTION_SUGGESTED_DEFAULT,
   MENTION_SUGGESTED_OVERRIDE_KEY,
   mentionClientFeatures,
   MentionPickerClientFeatures,
   mentionPickerClientFeatures,
   NO_MENTION_PICKER_CLIENT_FEATURES,
+  readMentionSelectionMemoryEnabled,
   readMentionSuggestedEnabled,
   WEB_MENTION_CLIENT_FEATURES,
   withMentionClientFeatures,
@@ -183,8 +186,8 @@ describe('the opt-ins of a picker opening (MEN-WEB-11)', () => {
     MENTION_FEATURE_SUGGESTED_V1,
     MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
   ];
-  const ALL_ON = { degradedAnswers: true, reasons: true, suggested: true };
-  const ALL_OFF = { degradedAnswers: false, reasons: false, suggested: false };
+  const ALL_ON = { degradedAnswers: true, reasons: true, suggested: true, selectionMemory: true };
+  const ALL_OFF = { degradedAnswers: false, reasons: false, suggested: false, selectionMemory: false };
 
   afterEach(() => {
     localStorage.clear();
@@ -205,8 +208,14 @@ describe('the opt-ins of a picker opening (MEN-WEB-11)', () => {
       bare: [MENTION_FEATURE_SUGGESTED_V1],
       typed: [MENTION_FEATURE_SELECTION_MEMORY_V1],
     });
-    // Each switch keeps its own opt-ins out; selection memory follows the server alone.
-    expect(mentionPickerClientFeatures(ALL_OFF, available(EVERY_FEATURE))).toEqual({
+    // Each switch keeps its own opt-ins out, and the others in.
+    expect(mentionPickerClientFeatures(ALL_OFF, available(EVERY_FEATURE))).toBe(NO_MENTION_PICKER_CLIENT_FEATURES);
+    expect(mentionPickerClientFeatures({ ...ALL_ON, selectionMemory: false }, available(EVERY_FEATURE))).toEqual({
+      every: [MENTION_FEATURE_SECTION_DEGRADATION_V1, MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1, MENTION_FEATURE_REASONS_V1],
+      bare: [MENTION_FEATURE_SUGGESTED_V1],
+      typed: [],
+    });
+    expect(mentionPickerClientFeatures({ ...ALL_OFF, selectionMemory: true }, available(EVERY_FEATURE))).toEqual({
       every: [],
       bare: [],
       typed: [MENTION_FEATURE_SELECTION_MEMORY_V1],
@@ -309,6 +318,27 @@ describe('the opt-ins of a picker opening (MEN-WEB-11)', () => {
         throw new Error('denied');
       });
       expect(readMentionSuggestedEnabled()).toBe(MENTION_SUGGESTED_DEFAULT);
+    });
+  });
+
+  describe('the selection memory switch', () => {
+    it("is on by default, so the server's advertisement decides, and a browser turns it off or on", () => {
+      expect(MENTION_SELECTION_MEMORY_DEFAULT).toBe(true);
+      expect(MENTION_SELECTION_MEMORY_OVERRIDE_KEY).toBe('__mention_selection_memory');
+      expect(readMentionSelectionMemoryEnabled()).toBe(true);
+      localStorage.setItem(MENTION_SELECTION_MEMORY_OVERRIDE_KEY, 'false');
+      expect(readMentionSelectionMemoryEnabled()).toBe(false);
+      localStorage.setItem(MENTION_SELECTION_MEMORY_OVERRIDE_KEY, 'true');
+      expect(readMentionSelectionMemoryEnabled()).toBe(true);
+      localStorage.setItem(MENTION_SELECTION_MEMORY_OVERRIDE_KEY, 'no');
+      expect(readMentionSelectionMemoryEnabled()).toBe(true);
+    });
+
+    it('gives the default when storage cannot be read', () => {
+      jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      expect(readMentionSelectionMemoryEnabled()).toBe(MENTION_SELECTION_MEMORY_DEFAULT);
     });
   });
 });

@@ -614,7 +614,7 @@ failed server info lists nothing either.
 | `section_degradation_v1`, `typeahead_deadline_v1` (MEN-CLOUD-12, -13) | every request | the picker's v2 | see "Mention local lane" |
 | `reasons_v1` (MEN-X-09) | every request | the item details | shows a known reason as the item's chip (see "Mention item details") |
 | `suggested_v1` (MEN-X-10) | the bare `@` of the `@` picker only | `localStorage.__mention_suggested = 'true'`, off by default | shows the Suggested section first |
-| `selection_memory_v1` (MEN-CLOUD-20) | typed queries only, primary and rows requests | none: the server's advertisement | reports each pick (below) |
+| `selection_memory_v1` (MEN-CLOUD-20) | typed queries only, primary and rows requests | the selection memory switch: on by default, so the server's advertisement decides; `localStorage.__mention_selection_memory = 'false'` turns it off | reports each pick (below) |
 
 - **Cache keys.** Each request's cache key holds the opt-ins it carries, sorted, so an answer shaped
   for one set never answers a request with another: opening the `@` picker with the Suggested switch
@@ -634,26 +634,32 @@ failed server info lists nothing either.
 - **Reasons.** The picker shows reasons only through the item details' chip, so it asks for them
   only while the item details are on. A signal the chip has no copy for, a value this client does not
   know included, shows nothing, and no reason ever shows with the item details off.
-- **Pick feedback.** While the server lists `selection_memory_v1`, inserting a person, page,
-  database or row from a server's answer sends one
+- **Selection memory switch.** Cloud keeps no opt-out of its own: a user declines through the
+  client, which then sends neither `selection_memory_v1` nor pick reports (MEN-CLOUD-20). The
+  switch, read when the picker opens, is that choice for the browser: on by default, so the server's
+  advertisement decides, and `localStorage.__mention_selection_memory = 'false'` turns both off. No
+  user-facing setting writes it yet: MEN-CLOUD-20's privacy review decides one, and Cloud keeps
+  `mention_flag_selection_memory` `off` until that review.
+- **Pick feedback.** While the server lists `selection_memory_v1` and the selection memory switch is
+  on, inserting a person, page, database or row from a server's answer sends one
   `POST /api/workspace/{workspace_id}/mentions/feedback` (`mention-pick-feedback.ts`, Cloud
   `MentionPickFeedback`): `target_kind` and `target_id` (the item's `kind` and `object_id`),
-  `position` (its 1-based place among the results on screen, across sections) and `query_len`
-  (the characters typed after the trigger, counted after the typeahead contract's normalization, as
-  Cloud counts the query of the answer it joins the pick to; 0 for a bare `@`). It is sent after
-  the insertion and never awaited: one attempt with a 3-second timeout, no transport retry, no
-  authentication recovery and no signal shared with a search; every error is swallowed, and a 404
-  (a server that lists the feature without the route, as after a rollback) stops reports for the
-  rest of the tab. Dates, reminders, links, a page created from the picker, an item only this tab
-  listed (the local lane, a picked target joined from the local index) and the local fallback send
-  nothing, since Cloud keeps a pick only when one of its own answers of the last minute served the
-  item. The body carries no query text, title or name. Cloud's optional `request_id` (the search
-  response's `x-request-id`) is not sent: neither Cloud's CORS layer (`expose_headers`) nor its
-  bundled nginx (`Access-Control-Expose-Headers`) exposes that header, so a web app on another
-  origin than the API cannot read it; Cloud joins the pick to its answer by `query_len` and recency
-  instead. Cloud lists `selection_memory_v1` only where it keeps selection
-  memory and its rollout flag is past `off`, never in a self-hosted build, so self-hosted servers
-  receive no feedback and no selection memory opt-in.
+  `position` (its 1-based place among the results on screen, across sections) and `query_len` (the
+  characters typed after the trigger, counted after the typeahead contract's normalization, as Cloud
+  counts the query of the answer it joins the pick to; 0 for a bare `@`). It is sent after the
+  insertion and never awaited: one attempt with a 3-second timeout, no transport retry, no
+  authentication recovery and no signal shared with a search; every error is swallowed, and a 404 (a
+  server that lists the feature without the route, as after a rollback) stops reports for the rest
+  of the tab. Dates, reminders, links, a page created from the picker, an item only this tab listed
+  (the local lane, a picked target joined from the local index) and the local fallback send nothing,
+  since Cloud keeps a pick only when one of its own answers of the last minute served the item. The
+  body carries no query text, title or name. Cloud's optional `request_id` (the search response's
+  `x-request-id`) is not sent: neither Cloud's CORS layer (`expose_headers`) nor its bundled nginx
+  (`Access-Control-Expose-Headers`) exposes that header, so a web app on another origin than the API
+  cannot read it; Cloud joins the pick to its answer by `query_len` and recency instead. Cloud lists
+  `selection_memory_v1` only where it keeps selection memory and its rollout flag is past `off`,
+  never in a self-hosted build, so self-hosted servers receive no feedback and no selection memory
+  opt-in.
 
 Everything above reads only fields released servers send, plus the optional `reason` and the
 existing Suggested section kind, which no server sends without the opt-in. Servers before

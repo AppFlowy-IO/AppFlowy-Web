@@ -55,6 +55,7 @@ import { useSendMentionNotification } from './mention-notification-preference';
 import {
   mentionPickerClientFeatures,
   NO_MENTION_PICKER_CLIENT_FEATURES,
+  readMentionSelectionMemoryEnabled,
   readMentionSuggestedEnabled,
   withMentionClientFeatures,
 } from './mentionClientFeatures';
@@ -838,6 +839,9 @@ export function MentionPanel({
   const itemDetails = useMemo(() => open && readMentionItemDetailsEnabled(), [open]);
   // The Suggested section (MEN-X-10), off by default and read once per opening.
   const suggestedSwitch = useMemo(() => open && readMentionSuggestedEnabled(), [open]);
+  // Selection memory (MEN-CLOUD-20), on by default so the server's advertisement decides, and read
+  // once per opening. Off, the user has declined: no typed query names it and no pick is reported.
+  const selectionMemorySwitch = useMemo(() => open && readMentionSelectionMemoryEnabled(), [open]);
   // The opt-ins the server advertises and the picker can use, read once per opening: the degradation
   // ones with the v2, reasons with the item details, which show them, Suggested on the `@` picker's
   // bare `@`, and selection memory on typed queries (mentionClientFeatures.ts).
@@ -848,9 +852,10 @@ export function MentionPanel({
             degradedAnswers: typeaheadV2,
             reasons: itemDetails,
             suggested: suggestedSwitch && activePanel === PanelType.Mention,
+            selectionMemory: selectionMemorySwitch,
           })
         : NO_MENTION_PICKER_CLIENT_FEATURES,
-    [activePanel, hasSearchMentions, itemDetails, open, suggestedSwitch, typeaheadV2]
+    [activePanel, hasSearchMentions, itemDetails, open, selectionMemorySwitch, suggestedSwitch, typeaheadV2]
   );
   // The first option is highlighted unless an arrow key holds the highlight (off by default).
   const defaultHighlight = typeaheadV2 && typeaheadSettings.defaultHighlight;
@@ -2224,9 +2229,10 @@ export function MentionPanel({
       }
 
       // Selection memory learns from items a server listed (MEN-CLOUD-20): reported after the
-      // insertion, never awaited, and only to a server that advertises it. Cloud keeps a pick only
-      // when one of its answers served the item, so one that only this tab listed is not sent.
-      if (hasSearchMentions && source !== 'local') {
+      // insertion, never awaited, only to a server that advertises it, and never once the user has
+      // declined it. Cloud keeps a pick only when one of its answers served the item, so one that
+      // only this tab listed is not sent.
+      if (selectionMemorySwitch && hasSearchMentions && source !== 'local') {
         void reportMentionPick(workspaceId, { item: result.item, position: rank, query: searchText ?? '' });
       }
     },
@@ -2247,6 +2253,7 @@ export function MentionPanel({
       pickMemoryKey,
       resultRanks,
       searchText,
+      selectionMemorySwitch,
       sendNotification,
       shownSource,
       viewId,

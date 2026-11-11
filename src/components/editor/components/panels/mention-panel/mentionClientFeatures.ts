@@ -21,11 +21,12 @@
  *   {@link MENTION_SUGGESTED_DEFAULT}): the answer may start with a Suggested section of at most
  *   three items, each moved out of its own section. The picker shows it first and each item once
  *   (`withSuggestedItemsOnce`), rows included. Typed queries are never served it.
- * - `selection_memory_v1` (MEN-CLOUD-20, only typed queries, whenever the server lists it): the
- *   user's past picks for the query order each tier on the server. Cloud lists it only where it keeps
- *   selection memory and its rollout flag is past `off`, never in a self-hosted build, so the flag is
- *   its switch. The picker also reports each item it inserts (`mention-pick-feedback.ts`). A bare `@`
- *   is never served it.
+ * - `selection_memory_v1` (MEN-CLOUD-20, only typed queries, behind the selection memory switch,
+ *   {@link MENTION_SELECTION_MEMORY_DEFAULT}): the user's past picks for the query order each tier
+ *   on the server. Cloud lists it only where it keeps selection memory and its rollout flag is past
+ *   `off`, never in a self-hosted build. The switch is on by default, so that flag decides; off, the
+ *   user has declined, and the picker neither names it nor reports picks. With it on, the picker
+ *   also reports each item it inserts (`mention-pick-feedback.ts`). A bare `@` is never served it.
  *
  * The degradation opt-ins oblige the client to keep handling RetryLater and never to cache a
  * `partial` answer or one with a `failed` or `partial` section (`isCacheableMentionResponse`). The
@@ -68,7 +69,29 @@ export const MENTION_SUGGESTED_DEFAULT = false;
 /** `localStorage` key that turns the Suggested opt-in on (`true`) or off (`false`). */
 export const MENTION_SUGGESTED_OVERRIDE_KEY = '__mention_suggested';
 
+/**
+ * Whether a picker that opens now takes part in selection memory where the server keeps it: names
+ * `selection_memory_v1` on typed queries and reports each pick. On, so the server's advertisement,
+ * which follows its rollout flag, decides, as MEN-CLOUD-20 plans for hosted. Cloud keeps no opt-out
+ * of its own: a user who declines is one whose client sends neither. No user-facing setting writes
+ * this switch yet; MEN-CLOUD-20's privacy review decides one.
+ */
+export const MENTION_SELECTION_MEMORY_DEFAULT = true;
+/** `localStorage` key that turns selection memory off (`false`) or on (`true`) for this browser. */
+export const MENTION_SELECTION_MEMORY_OVERRIDE_KEY = '__mention_selection_memory';
+
 const NO_FEATURES: readonly string[] = Object.freeze([]);
+
+/** The browser's `true` or `false` for `key`, else `fallback`, also when storage cannot be read. */
+function readSwitch(key: string, fallback: boolean): boolean {
+  try {
+    const value = typeof window === 'undefined' ? null : window.localStorage?.getItem(key) ?? null;
+
+    return value === 'true' ? true : value === 'false' ? false : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * Whether a picker that opens now asks for the Suggested section: {@link MENTION_SUGGESTED_DEFAULT}
@@ -76,14 +99,17 @@ const NO_FEATURES: readonly string[] = Object.freeze([]);
  * gives the default.
  */
 export function readMentionSuggestedEnabled(): boolean {
-  try {
-    const value =
-      typeof window === 'undefined' ? null : window.localStorage?.getItem(MENTION_SUGGESTED_OVERRIDE_KEY) ?? null;
+  return readSwitch(MENTION_SUGGESTED_OVERRIDE_KEY, MENTION_SUGGESTED_DEFAULT);
+}
 
-    return value === 'true' ? true : value === 'false' ? false : MENTION_SUGGESTED_DEFAULT;
-  } catch {
-    return MENTION_SUGGESTED_DEFAULT;
-  }
+/**
+ * Whether a picker that opens now takes part in selection memory:
+ * {@link MENTION_SELECTION_MEMORY_DEFAULT} unless the browser overrides it, with or without the
+ * picker's v2. Storage that cannot be read gives the default. Off, typed queries do not name
+ * `selection_memory_v1` and no pick is reported, whatever the server advertises.
+ */
+export function readMentionSelectionMemoryEnabled(): boolean {
+  return readSwitch(MENTION_SELECTION_MEMORY_OVERRIDE_KEY, MENTION_SELECTION_MEMORY_DEFAULT);
 }
 
 /**
@@ -105,6 +131,11 @@ export interface MentionPickerFeatureSettings {
   reasons: boolean;
   /** The Suggested switch is on, and the picker is the `@` one (`suggested_v1` on its bare `@`). */
   suggested: boolean;
+  /**
+   * The selection memory switch is on (`selection_memory_v1` on typed queries). The picker reports
+   * picks only with it on, so a user who declines sends neither.
+   */
+  selectionMemory: boolean;
 }
 
 /** The opt-ins of one picker opening, by the requests that carry them. */
@@ -128,8 +159,8 @@ export const NO_MENTION_PICKER_CLIENT_FEATURES: MentionPickerClientFeatures = Ob
  * The opt-ins a picker opening sends to this server, by request (see the module header): each only
  * while the server advertises it, the degradation opt-ins with the picker's v2, `reasons_v1` with
  * the item details, `suggested_v1` on the bare `@` with the Suggested switch, and
- * `selection_memory_v1` on typed queries. Loading or failed server info, and a server that
- * advertises nothing, give none.
+ * `selection_memory_v1` on typed queries with the selection memory switch. Loading or failed server
+ * info, and a server that advertises nothing, give none.
  */
 export function mentionPickerClientFeatures(
   settings: MentionPickerFeatureSettings,
@@ -145,7 +176,10 @@ export function mentionPickerClientFeatures(
     settings.suggested && isMentionFeatureAdvertised(MENTION_FEATURE_SUGGESTED_V1, serverInfo)
       ? [MENTION_FEATURE_SUGGESTED_V1]
       : NO_FEATURES;
-  const typed = isMentionSelectionMemoryAdvertised(serverInfo) ? [MENTION_FEATURE_SELECTION_MEMORY_V1] : NO_FEATURES;
+  const typed =
+    settings.selectionMemory && isMentionSelectionMemoryAdvertised(serverInfo)
+      ? [MENTION_FEATURE_SELECTION_MEMORY_V1]
+      : NO_FEATURES;
 
   if (every.length === 0 && bare.length === 0 && typed.length === 0) return NO_MENTION_PICKER_CLIENT_FEATURES;
   return { every, bare, typed };

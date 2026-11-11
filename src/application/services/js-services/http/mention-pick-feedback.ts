@@ -10,8 +10,9 @@ import { getAxios } from './core';
  * The `ServerInfo.mention_features` value of a server that keeps selection memory (Cloud
  * `MENTION_FEATURE_SELECTION_MEMORY_V1`, MEN-CLOUD-20). Cloud lists it only where it keeps the
  * memory and its rollout flag is past `off`, never in a self-hosted build. Picks are reported only
- * to a server that lists it, and the @ picker names it in typed queries' `client_features`
- * (`mentionClientFeatures.ts`).
+ * to a server that lists it. The @ picker names it in typed queries' `client_features`, and reports
+ * picks, only while its selection memory switch is on (`mentionClientFeatures.ts`): a user who
+ * declines sends neither.
  */
 export const MENTION_FEATURE_SELECTION_MEMORY_V1 = 'selection_memory_v1';
 
