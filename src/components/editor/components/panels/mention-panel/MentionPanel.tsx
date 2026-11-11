@@ -176,6 +176,12 @@ interface MentionSectionsAnswer {
    * patch of the local lane lifts this tab's activity since shortly before (MEN-WEB-09).
    */
   at: number;
+  /**
+   * The cache generation the server's answer was asked for in ({@link MentionSearchCacheStamp});
+   * unset for a cached answer. Only the picker's v2 reads it: an answer asked for before an access
+   * change that names no view feeds no provisional list.
+   */
+  generation?: number;
 }
 
 const NO_REVOKED_VIEWS: ReadonlySet<string> = new Set();
@@ -241,8 +247,26 @@ interface MentionV2View {
   freshKeys?: ReadonlySet<string>;
 }
 
+/** A search's answer, with the stamp its requests were sent with. */
+type MentionPanelAnswer = MentionSectionsFetchResult & { stamp: MentionSearchCacheStamp };
+
+/** Sections that arrive while the rest of a search's answer is pending, with its requests' stamp. */
+interface MentionInterimSections {
+  sections: MentionSearchSection[];
+  stamp: MentionSearchCacheStamp;
+}
+
 /** One search's requests in flight, as the panel hands them to its scheduler. */
-type MentionPanelFlight = MentionSearchFlight<MentionSectionsFetchResult, MentionSearchSection[]>;
+type MentionPanelFlight = MentionSearchFlight<MentionPanelAnswer, MentionInterimSections>;
+
+/** What the list showed at a commit, and the latest access change the cache had seen then. */
+interface MentionShownSections {
+  sections: MentionSearchSection[];
+  /** The cache view's `accessChangeGeneration` at that commit. */
+  accessChangeGeneration: number;
+}
+
+const NO_SHOWN_SECTIONS: MentionShownSections = { sections: NO_MENTION_SECTIONS, accessChangeGeneration: 0 };
 
 type MentionPanelOption =
   | {
@@ -1044,7 +1068,7 @@ export function MentionPanel({
     getMentionSearchCacheView
   );
   // What the list showed at the last commit, the first source of a keystroke's provisional sections.
-  const shownSectionsRef = useRef<MentionSearchSection[]>(NO_MENTION_SECTIONS);
+  const shownSectionsRef = useRef<MentionShownSections>(NO_SHOWN_SECTIONS);
   const v2PickScores = useMemo(
     () =>
       typeaheadV2 && pickMemory && hasMentionSearchQuery
@@ -1143,7 +1167,8 @@ export function MentionPanel({
   // from the newer of the two cached answers, never from the screen. With the local lane, a view
   // below a view the user lost access to is left out too, as far as the local index knows parents.
   // A cached answer asked for before an access change that names no view (`PERMISSION_CHANGED`)
-  // may list a page the user can no longer read, so neither it nor the list it shows feeds them.
+  // may list a page the user can no longer read, so neither it nor a list on screen built from one
+  // feeds them: the list on screen counts only while no such change came since it was shown.
   const provisionalNarrowed = useMemo(() => {
     if (!typeaheadV2 || !hasMentionSearchQuery) return NO_MENTION_SECTIONS;
 
@@ -1163,6 +1188,9 @@ export function MentionPanel({
 
     const prefix = longestCachedMentionPrefix(query, prefixKey, answerSinceAccessChange);
     const bare = answerSinceAccessChange(bareMentionSearchCacheKey);
+    const shown = shownSectionsRef.current;
+    const shownSinceAccessChange =
+      shown.accessChangeGeneration === mentionCacheView.accessChangeGeneration ? shown.sections : undefined;
     const belowRevoked = (item: MentionSearchResultItem) =>
       localLane &&
       revokedViews.size > 0 &&
@@ -1170,7 +1198,7 @@ export function MentionPanel({
 
     return buildMentionProvisionalSections({
       query,
-      sources: [shownSectionsRef.current, prefix?.sections, bare?.sections],
+      sources: [shownSinceAccessChange, prefix?.sections, bare?.sections],
       quickPickSources: [prefix, bare],
       include: mentionInclude,
       hides: (item) => mentionItemShowsAnyView(item, revokedViews) || belowRevoked(item),
@@ -1304,21 +1332,29 @@ export function MentionPanel({
   const sourceMentionSections = mentionV2View ? mentionV2View.sections : sectionsByPicks.sections;
   // The items the local index added, which a session report counts as the local lane's.
   const pickLocalKeys = mentionV2View ? mentionV2View.localKeys : sectionsByPicks.localKeys;
-  // The list shows an answer asked for before an access change that names no view: the cached one,
-  // which the picker shows while it asks again, or one whose request was in flight then. It feeds no
-  // provisional list.
+  // The list shows an answer asked for before an access change that names no view: the server's to
+  // a request sent before it, such as one lane's answer while the other is pending, or the cached
+  // one, which the picker shows while it asks again. It feeds no provisional list.
+  const shownAnswerGeneration = showsCurrentAnswer ? mentionSectionsAnswer?.generation : undefined;
+  const accessChangeGeneration = mentionCacheView.accessChangeGeneration;
   const showsAnswerBeforeAccessChange =
-    typeaheadV2 && mentionCacheView.answer(mentionSearchCacheKey)?.beforeAccessChange === true;
+    typeaheadV2 &&
+    (shownAnswerGeneration === undefined
+      ? mentionCacheView.answer(mentionSearchCacheKey)?.beforeAccessChange === true
+      : shownAnswerGeneration < accessChangeGeneration);
 
-  // After each commit, remember what the list shows for the next keystroke, without the items the
-  // local index added: picked targets join only an answer to what is typed (MEN-WEB-10), and the
-  // local lane adds its own items to every keystroke again (MEN-WEB-09).
+  // After each commit, remember what the list shows for the next keystroke, and after which access
+  // change, without the items the local index added: picked targets join only an answer to what is
+  // typed (MEN-WEB-10), and the local lane adds its own items to every keystroke again (MEN-WEB-09).
   useLayoutEffect(() => {
-    shownSectionsRef.current =
-      mentionV2View && !showsAnswerBeforeAccessChange
-        ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
-        : NO_MENTION_SECTIONS;
-  }, [mentionV2View, showsAnswerBeforeAccessChange]);
+    shownSectionsRef.current = {
+      sections:
+        mentionV2View && !showsAnswerBeforeAccessChange
+          ? withoutMentionKeys(mentionV2View.sections, mentionV2View.localKeys ?? NO_NAV_KEYS)
+          : NO_MENTION_SECTIONS,
+      accessChangeGeneration,
+    };
+  }, [accessChangeGeneration, mentionV2View, showsAnswerBeforeAccessChange]);
   // The sections as the picker lays them out (MentionSectionLayout). A server's are titled by kind,
   // in the user's language, never with the English titles servers send (MEN-WEB-12), and Dates by
   // the items it shows: "Date & Reminder" while it lists a reminder, as servers title it. The local
@@ -1447,8 +1483,9 @@ export function MentionPanel({
     }
 
     // `stamp` is taken as the requests are sent. A view revoked after it is left out of what they
-    // answer, on screen and in the cache. The flight serves every search that asks the same, so it
-    // goes on (its rows retry, its early sections) while one of them is the panel's.
+    // answer, on screen and in the cache, and the answer carries it. The flight serves every search
+    // that asks the same, so it goes on (its rows retry, its early sections) while one of them is
+    // the panel's.
     function fetchMentionSections({
       flight,
       refresh,
@@ -1457,7 +1494,7 @@ export function MentionPanel({
       flight: MentionPanelFlight;
       refresh: boolean;
       stamp: MentionSearchCacheStamp;
-    }) {
+    }): Promise<MentionPanelAnswer> {
       const visible = (sections: MentionSearchSection[]) => withoutRevokedMentionViews(sections, stamp);
 
       return fetchMentionSearchSections({
@@ -1466,34 +1503,48 @@ export function MentionPanel({
         cacheKey,
         isCurrent: () => flight.wanted(),
         issueTicket: (request) => flight.track(lanes.issue(mentionRequestLane(request, refresh))),
-        onSections: refresh ? undefined : (sections) => flight.showInterim(visible(sections)),
-      }).then((result) => ({ ...result, sections: visible(result.sections) }));
+        onSections: refresh ? undefined : (sections) => flight.showInterim({ sections: visible(sections), stamp }),
+      }).then((result) => ({ ...result, sections: visible(result.sections), stamp }));
     }
 
     // Shows `sections`, the answer to this search from `source`, or no answer without one.
-    // `missingKinds` are the kinds a pending or failed request did not answer (the picker's v2), and
-    // `at` when the answer arrived, or was stored for a cached one.
+    // `missingKinds` are the kinds a pending or failed request did not answer (the picker's v2), `at`
+    // when the answer arrived, or was stored for a cached one, and `generation` the one the server's
+    // was asked for in.
     function showSections(
       sections: MentionSearchSection[],
       source?: MentionSectionsSource,
       missingKinds?: ReadonlySet<MentionTargetKind>,
-      at = Date.now()
+      at = Date.now(),
+      generation?: number
     ) {
       shownItemsKeyRef.current = source && hasMentionItems(sections) ? cacheKey : undefined;
       setMentionSections(sections);
+      // Another answer for the same key, source and missing kinds keeps the first one's `at` and
+      // `generation`: its request was not sent earlier, so at worst it counts as asked for before an
+      // access change that it followed.
       setMentionSectionsAnswer((shown) => {
         if (!source) return undefined;
         return shown?.key === cacheKey && shown.source === source && shown.missingKinds === missingKinds
           ? shown
-          : { key: cacheKey, source, missingKinds, at };
+          : { key: cacheKey, source, missingKinds, at, generation };
       });
+    }
+
+    // Shows the server's answer to this search, asked for with `stamp`.
+    function showServerSections(
+      sections: MentionSearchSection[],
+      stamp: MentionSearchCacheStamp,
+      missingKinds?: ReadonlySet<MentionTargetKind>
+    ) {
+      showSections(sections, 'server', missingKinds, Date.now(), stamp.generation);
     }
 
     // Sections that arrive while the rest of the answer is pending. Without items they would only
     // blank what is on screen, such as the previous attempt of a retry, so they are not shown.
-    function showInterimSections(sections: MentionSearchSection[]) {
+    function showInterimSections({ sections, stamp }: MentionInterimSections) {
       if (hasMentionItems(sections)) {
-        showSections(sections, 'server', typeaheadV2 ? mentionInterimMissingKinds(sections) : undefined);
+        showServerSections(sections, stamp, typeaheadV2 ? mentionInterimMissingKinds(sections) : undefined);
       }
     }
 
@@ -1517,11 +1568,11 @@ export function MentionPanel({
     }
 
     // Shows a search's answer: its own, or that of the flight it joined.
-    function showSearchAnswer(result: MentionSectionsFetchResult) {
+    function showSearchAnswer(result: MentionPanelAnswer) {
       if (!isCurrentRequest()) return;
 
       if (result.state === 'complete') {
-        showSections(result.sections, 'server');
+        showServerSections(result.sections, result.stamp);
         settle('ok');
         return;
       }
@@ -1532,7 +1583,11 @@ export function MentionPanel({
       // of its provisional list only the kinds that the answer lacks stay. When none answered, every
       // kind is missing and the provisional list stays as it is.
       if (hasMentionItems(result.sections)) {
-        showSections(result.sections, 'server', typeaheadV2 ? mentionAnswerMissingKinds(result.outcomes) : undefined);
+        showServerSections(
+          result.sections,
+          result.stamp,
+          typeaheadV2 ? mentionAnswerMissingKinds(result.outcomes) : undefined
+        );
       } else {
         const cachedAnswer = getCachedMentionSearch(cacheKey);
 
@@ -1543,7 +1598,7 @@ export function MentionPanel({
           shownItemsKeyRef.current !== cacheKey &&
           result.outcomes.some(({ status }) => status === 'ok')
         ) {
-          showSections(result.sections, 'server', mentionAnswerMissingKinds(result.outcomes));
+          showServerSections(result.sections, result.stamp, mentionAnswerMissingKinds(result.outcomes));
         }
       }
 
@@ -1559,11 +1614,11 @@ export function MentionPanel({
     }
 
     // The cached answer on screen stays there unless the refresh answers completely.
-    function showRefreshAnswer(result: MentionSectionsFetchResult) {
+    function showRefreshAnswer(result: MentionPanelAnswer) {
       if (!isCurrentRequest()) return;
 
       if (result.state === 'complete') {
-        showSections(result.sections, 'server');
+        showServerSections(result.sections, result.stamp);
         settle('ok');
       } else if (result.state === 'busy') {
         sendAfterCooldown(mentionSearchRetryLaterRemainingMs(cacheKey), resubmit);
@@ -1577,7 +1632,7 @@ export function MentionPanel({
       if (isCurrentRequest()) settle('unavailable');
     }
 
-    const watcher: MentionFlightWatcher<MentionSearchSection[]> = {
+    const watcher: MentionFlightWatcher<MentionInterimSections> = {
       isCurrent: isCurrentRequest,
       showInterim: showInterimSections,
     };

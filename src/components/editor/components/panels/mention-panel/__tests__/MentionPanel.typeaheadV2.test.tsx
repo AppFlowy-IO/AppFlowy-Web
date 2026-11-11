@@ -890,6 +890,101 @@ describe.each([
     expect(titles()).toEqual([]);
   });
 
+  // Lists on screen that no cached answer of what is typed backs: a provisional list, the items
+  // kept next to Retry, and the answer of one lane while the other is pending.
+  describe('a list on screen from before an access change that names no view', () => {
+    // The bare answer comes at once; typed searches fail.
+    const failingTypedSearch = () =>
+      createSearch((lane) => {
+        if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, BUDGET) };
+        if (lane === 'rows') return { delayMs: 50, response: EMPTY };
+        return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+      });
+
+    async function changeAccess(eventEmitter: EventEmitter) {
+      await act(async () => {
+        eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+      });
+    }
+
+    it('leaves the provisional list, which narrows into no later keystroke', async () => {
+      const eventEmitter = new EventEmitter();
+
+      mockEditorContext.eventEmitter = eventEmitter;
+
+      const view = await openPanel(failingTypedSearch());
+
+      type(view, 'r');
+      expect(titles()).toEqual(['Roadmap']);
+
+      await changeAccess(eventEmitter);
+      expect(titles()).toEqual([]);
+
+      type(view, 'ro');
+      expect(titles()).toEqual([]);
+      await advance(300);
+      expect(retryRow()).not.toBeNull();
+      expect(titles()).toEqual([]);
+    });
+
+    it('keeps no item next to Retry', async () => {
+      const eventEmitter = new EventEmitter();
+
+      mockEditorContext.eventEmitter = eventEmitter;
+
+      const view = await openPanel(failingTypedSearch());
+
+      type(view, 'ro');
+      await advance(300);
+      expect(retryRow()).not.toBeNull();
+      expect(titles()).toEqual(['Roadmap']);
+
+      await changeAccess(eventEmitter);
+      expect(retryRow()).not.toBeNull();
+      expect(titles()).toEqual([]);
+
+      type(view, 'roa');
+      expect(titles()).toEqual([]);
+      await advance(300);
+      expect(retryRow()).not.toBeNull();
+      expect(titles()).toEqual([]);
+    });
+
+    it('shows the answer of a lane asked for before it, which narrows into no later keystroke', async () => {
+      const eventEmitter = new EventEmitter();
+      let changed = false;
+      // Before the change, the rows lane answers `ro` slowly; after it, typed searches fail.
+      const search = createSearch((lane, query) => {
+        if (lane === 'bare') return { delayMs: 50, response: pages(ROADMAP, BUDGET) };
+        if (changed) return { delayMs: 80, error: { code: 500, message: 'Internal Server Error' } };
+        if (lane === 'rows') return { delayMs: 2_000, response: EMPTY };
+        return query === 'ro' ? { delayMs: 100, response: pages(ROADMAP, ROAD_TRIP) } : NEVER;
+      });
+
+      mockEditorContext.eventEmitter = eventEmitter;
+
+      const view = await openPanel(search);
+
+      type(view, 'ro');
+      await advance(130);
+      expect(typedQueries(search)).toEqual(['ro', 'ro']);
+      // Not answered yet: the bare answer, narrowed.
+      expect(titles()).toEqual(['Roadmap']);
+
+      changed = true;
+      await changeAccess(eventEmitter);
+      await advance(110);
+      // The primary lane's answer, shown as any answer is, while the rows lane is pending.
+      expect(titles()).toEqual(['Roadmap', 'Road trip']);
+
+      type(view, 'roa');
+      expect(titles()).toEqual([]);
+      await advance(300);
+      expect(retryRow()).not.toBeNull();
+      expect(titles()).toEqual([]);
+    });
+  });
+
   it('reports a pick from the provisional list as a cached one, and the first paint with it', async () => {
     const search = createSearch((lane) => (lane === 'bare' ? { delayMs: 50, response: pages(ROADMAP, BUDGET) } : NEVER));
     const view = await openPanel(search);

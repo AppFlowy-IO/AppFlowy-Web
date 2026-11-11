@@ -111,6 +111,13 @@ export interface CachedMentionAnswer {
 export interface MentionSearchCacheView {
   /** Counts the changes to the cached answers. */
   readonly version: number;
+  /**
+   * The cache generation of the user's latest access change that names no view
+   * ({@link markMentionSearchAccessChanged}): a request stamped in an earlier generation
+   * ({@link MentionSearchCacheStamp}) was sent before it, and its answer may list a page the user
+   * can no longer read. It changes only with such a change.
+   */
+  readonly accessChangeGeneration: number;
   /** The cached answer of `key`, fresh or stale, with when its request was sent. */
   answer(key: string): CachedMentionAnswer | undefined;
 }
@@ -131,7 +138,7 @@ function cachedMentionAnswer(key: string): CachedMentionAnswer | undefined {
 }
 
 function createMentionSearchCacheView(version: number): MentionSearchCacheView {
-  return { version, answer: cachedMentionAnswer };
+  return { version, accessChangeGeneration, answer: cachedMentionAnswer };
 }
 
 let cacheView = createMentionSearchCacheView(0);
@@ -247,8 +254,9 @@ export function markMentionSearchCacheStale() {
  * read, and no view can be dropped from them.
  */
 export function markMentionSearchAccessChanged() {
+  // The generation the stale mark below moves to, set first so the view it publishes carries it.
+  accessChangeGeneration = cacheGeneration + 1;
   markMentionSearchCacheStale();
-  accessChangeGeneration = cacheGeneration;
 }
 
 /** The ids an item shows a view by: the page, the database view, or the view a row is shown through. */

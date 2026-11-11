@@ -404,6 +404,37 @@ describe('mentionSearchCache', () => {
       expect(beforeAccessChange()).toEqual([true, true, false]);
     });
 
+    // The picker's v2 tells the answers it shows apart by their stamps, and the lists it showed by
+    // the change they were shown after.
+    it('gives the generation of the latest PERMISSION_CHANGED in the view its subscribers read', () => {
+      const eventEmitter = new EventEmitter();
+      const generations: number[] = [];
+      const unsubscribe = subscribeMentionSearchCache(() =>
+        generations.push(getMentionSearchCacheView().accessChangeGeneration)
+      );
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+
+      const sentBefore = mentionSearchCacheStamp();
+      const before = getMentionSearchCacheView().accessChangeGeneration;
+
+      expect(sentBefore.generation).toBeGreaterThanOrEqual(before);
+
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+
+      const { accessChangeGeneration } = getMentionSearchCacheView();
+
+      expect(generations).toEqual([accessChangeGeneration]);
+      expect(sentBefore.generation).toBeLessThan(accessChangeGeneration);
+      expect(mentionSearchCacheStamp().generation).toBe(accessChangeGeneration);
+
+      // Other events change the view, never the generation.
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {});
+      forgetMentionSearchView('gone');
+      expect(generations).toEqual([accessChangeGeneration, accessChangeGeneration, accessChangeGeneration]);
+      unsubscribe();
+    });
+
     it('drops a revoked view on VIEW_ACCESS_REVOKED', () => {
       const eventEmitter = new EventEmitter();
 

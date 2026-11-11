@@ -311,8 +311,12 @@ behaves as before.
   and neither does a picked target that pick memory joined from the local index: those join only
   an answer to what is typed (see "Mention pick memory"). After an access change that names no
   page (`PERMISSION_CHANGED`: a space's access or members, a member's role, a group), an answer
-  asked for before it narrows into no provisional list, and neither does the list it shows while
-  the picker asks again: it may list a page the user lost.
+  asked for before it may list a page the user lost. Cached or not (one lane's answer can arrive
+  after the change), it narrows into no provisional list, and neither does a list on screen built
+  from such answers: a provisional list on screen and the items kept next to "Suggestions
+  unavailable · Retry" are dropped at the change. The answer to what is typed still shows, as with
+  the v2 off, until a newer answer replaces it, also next to Retry when the request fails, but it
+  narrows into no later keystroke.
 - The skeleton shows only while that list is empty and a request is pending. Over results, a 2 px
   progress bar shows instead (`role="progressbar"`, "Updating suggestions…"), and the list is not
   `aria-busy`.
