@@ -37,7 +37,6 @@ import {
   revokeMcpClientApproval,
   updateMcpWorkspaceSettings,
   getMcpServerStatus,
-  isMcpLicenseRequired,
 } from '../mcp-api';
 
 let mockConfig: Record<string, string> = {};
@@ -175,14 +174,11 @@ describe('MCP server status', () => {
     expect(getMcpServerStatus(info('enabled'))).toBe('enabled');
     expect(getMcpServerStatus(info('disabled'))).toBe('disabled');
     expect(getMcpServerStatus(info('license_required'))).toBe('license_required');
-    expect(isMcpLicenseRequired(info('license_required'))).toBe(true);
-    expect(isMcpLicenseRequired(info('enabled'))).toBe(false);
   });
 
   it('claims nothing for an older server, a newer value, or server-info that has not loaded', () => {
     for (const state of [info(undefined), info(null), info('something_newer'), SERVER_INFO_LOADING]) {
       expect(getMcpServerStatus(state)).toBeUndefined();
-      expect(isMcpLicenseRequired(state)).toBe(false);
     }
   });
 });

@@ -477,9 +477,7 @@ export type McpConfigurationSource = 'config' | 'server_info';
  * Where the MCP service is. `loading` until server-info answers, with
  * `retrying` while its last request failed and the refresh loop tries again;
  * `configured` with the service's origin (`baseUrl`, without `/mcp`);
- * `not_configured` when neither source names one, which hides Settings > MCP
- * and makes the consent and setup pages say AI app connections are not
- * configured.
+ * `not_configured` when neither source names one.
  */
 export type McpConfiguration =
   | { status: 'loading'; retrying?: boolean }
@@ -647,14 +645,6 @@ export function getMcpServerStatus(serverInfo: ServerInfoState = getServerInfoSn
   const status = serverInfo.info.mcp_status;
 
   return MCP_SERVER_STATUSES.find((known) => known === status);
-}
-
-/**
- * Whether this self-hosted server's license does not include MCP, so Settings >
- * MCP asks for a license upgrade instead of offering setup.
- */
-export function isMcpLicenseRequired(serverInfo: ServerInfoState = getServerInfoSnapshot()): boolean {
-  return getMcpServerStatus(serverInfo) === 'license_required';
 }
 
 /** Forgets what server-info confirmed and which values were warned about; tests only. */
