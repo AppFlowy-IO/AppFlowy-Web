@@ -53,7 +53,6 @@
  * workspace, another account, unmount) or the session ends. Writes for any other workspace are
  * ignored, and its snapshot is the empty one.
  */
-import { EventType, on } from '@/application/session/event';
 import { MentionablePerson, View, ViewIcon, ViewLayout } from '@/application/types';
 import {
   getDatabaseIdFromExtra,
@@ -64,6 +63,7 @@ import {
   isSpaceView,
 } from '@/application/view-utils';
 
+import { onMentionSessionInvalid } from './mentionSessionInvalid';
 import { mentionDatabaseNavKey, mentionPageNavKey } from './mentionUtils';
 
 /**
@@ -667,7 +667,7 @@ export function getMentionLocalSnapshot(workspaceId: string | undefined): Mentio
 }
 
 // The index holds the signed-in account's pages and people. Sign-out emits this too.
-on(EventType.SESSION_INVALID, () => clearMentionLocalIndex());
+onMentionSessionInvalid(() => clearMentionLocalIndex());
 
 function parseTime(value: string | undefined): number | undefined {
   if (!value) return undefined;

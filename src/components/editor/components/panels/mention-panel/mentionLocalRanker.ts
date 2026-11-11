@@ -28,7 +28,6 @@
  * pickers match people with {@link personTier} when their own `ranked` order is on
  * (`@/application/comment-mention-ranking`).
  */
-import { EventType, on } from '@/application/session/event';
 import { MentionSearchResultItem, MentionSearchSection, MentionSearchSectionKind } from '@/application/types';
 import {
   boundMentionText,
@@ -41,6 +40,7 @@ import {
 } from '@/utils/normalize-text';
 
 import { MENTION_PICK_SCALE } from './mentionPickMemory';
+import { onMentionSessionInvalid } from './mentionSessionInvalid';
 import { mentionItemNavKey, mentionServerItemText } from './mentionUtils';
 
 /** The navigation key of a server item (MEN-WEB-02), which ranking ties break on and merges key by. */
@@ -434,7 +434,7 @@ export function clearMentionRankerCache(): void {
 }
 
 // The prepared texts are the signed-in account's titles, names and addresses. Sign-out emits this too.
-on(EventType.SESSION_INVALID, clearMentionRankerCache);
+onMentionSessionInvalid(clearMentionRankerCache);
 
 function titleTier(query: MentionQuery, title: PreparedText): MentionTier | undefined {
   const text = title.normalized;

@@ -28,7 +28,6 @@
  * Nothing here depends on React or the network.
  */
 import { resolveMentionablePersonIds } from '@/application/comment-mention-ranking';
-import { EventType, on } from '@/application/session/event';
 import {
   MentionablePerson,
   MentionSearchResultItem,
@@ -47,6 +46,7 @@ import {
   MentionPickRequest,
 } from './mentionPickRanking';
 import { mentionItemShowsAnyView } from './mentionSearchCache';
+import { onMentionSessionInvalid } from './mentionSessionInvalid';
 import { mentionItemNavKey, mentionSectionOrder } from './mentionUtils';
 
 import type { MentionLocalSnapshot } from './mentionLocalIndex';
@@ -240,7 +240,7 @@ export function clearMentionSessionPersonPicks() {
 }
 
 // The picks are the signed-in account's. Sign-out emits this too.
-on(EventType.SESSION_INVALID, clearMentionSessionPersonPicks);
+onMentionSessionInvalid(clearMentionSessionPersonPicks);
 
 export interface MentionBarePatchInput {
   /** The bare answer as the picker shows it, with the local titles merged in. */

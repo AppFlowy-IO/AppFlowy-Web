@@ -1,7 +1,8 @@
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import type { APIError } from '@/application/services/js-services/http/core';
-import { EventType, on } from '@/application/session/event';
 import { MentionSearchResultItem, MentionSearchSection, MentionTargetKind } from '@/application/types';
+
+import { onMentionSessionInvalid } from './mentionSessionInvalid';
 
 import type { EventEmitter } from 'events';
 
@@ -399,7 +400,7 @@ export function subscribeMentionSearchCacheInvalidation(eventEmitter: EventEmitt
 }
 
 // Cached answers belong to the account that asked.
-on(EventType.SESSION_INVALID, clearMentionSearchCache);
+onMentionSessionInvalid(clearMentionSearchCache);
 
 export function isMentionSearchRetryLater(error: unknown): error is APIError {
   return (
