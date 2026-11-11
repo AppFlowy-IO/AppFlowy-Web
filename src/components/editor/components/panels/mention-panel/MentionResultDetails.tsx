@@ -19,6 +19,7 @@ import {
   mentionItemPersonId,
   mentionItemRosterPerson,
   mentionImageSource,
+  mentionPersonAvatarEmoji,
   mentionPersonAvatarSource,
   MentionReasonChip,
   mentionReasonChip,
@@ -26,25 +27,29 @@ import {
 } from './mentionItemDetails';
 
 /**
- * A person result's avatar: `src`, else the item's `icon` when it is an image URL string, else the
- * initials. An object `icon`, as servers type it, never reaches the image.
+ * A person result's avatar: `emoji`, a roster avatar that is an emoji, drawn as text; else `src`;
+ * else the item's `icon` when it is an image URL string; else the initials. An object `icon`, as
+ * servers type it, never reaches the image.
  */
 export function MentionPersonAvatar({
   item,
   title,
   src,
+  emoji,
 }: {
   item: MentionSearchResultItem;
   title: string;
   src?: string;
+  emoji?: string;
 }) {
   const displayName = title || item.title || item.subtitle || item.object_id || '?';
 
   return (
     <Avatar size={'sm'} shape={'circle'} className={'h-6 w-6 min-w-6'}>
-      <AvatarImage src={src ?? mentionImageSource(item.icon)} alt={displayName} />
+      <AvatarImage src={emoji ? undefined : src ?? mentionImageSource(item.icon)} alt={displayName} />
       <AvatarFallback name={displayName} className={'text-xs font-medium'}>
-        {displayName}
+        {/* An element, as the fallback keeps only the first UTF-16 unit of a string. */}
+        {emoji ? <span data-testid={'mention-avatar-emoji'}>{emoji}</span> : displayName}
       </AvatarFallback>
     </Avatar>
   );
@@ -71,7 +76,14 @@ export function MentionResultDetailsIcon({
   if (item.kind === MentionTargetKind.Person) {
     const person = mentionItemRosterPerson(details.snapshot, item);
 
-    return <MentionPersonAvatar item={item} title={title} src={mentionPersonAvatarSource(item, person)} />;
+    return (
+      <MentionPersonAvatar
+        item={item}
+        title={title}
+        src={mentionPersonAvatarSource(item, person)}
+        emoji={mentionPersonAvatarEmoji(person)}
+      />
+    );
   }
 
   const view = mentionItemLocalView(details.snapshot, item, navKey);

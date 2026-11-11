@@ -9,8 +9,9 @@
  *   which sends neither. The `subtitle` servers send for these items (the same path joined, or
  *   "Database") is never shown: it is English, and Web has always hidden it.
  * - A person's avatar from the roster, by person id: a picker that lists people loads it once per
- *   opening through the roster cache (`useMentionRosterOnOpen`). No server sets a person's `icon`:
- *   until the roster arrives, or when it cannot load, the person shows initials, as before.
+ *   opening through the roster cache (`useMentionRosterOnOpen`). An emoji avatar is drawn as text.
+ *   No server sets a person's `icon`: until the roster arrives, or when it cannot load, the person
+ *   shows initials, as before.
  * - A page's or database's icon from the local index (the outline's view icons and layouts,
  *   MEN-WEB-07). A server's `icon` is never drawn: servers type it as an object whose `ty` is a
  *   string, where the outline numbers its icon types, and none sets it.
@@ -152,6 +153,18 @@ export function mentionPersonAvatarSource(
   person: MentionablePerson | undefined
 ): string | undefined {
   return mentionImageSource(person?.avatar_url) ?? mentionImageSource(item.icon);
+}
+
+/**
+ * The emoji a person's roster avatar is. `avatar_url` holds an image URL or a bare emoji, which the
+ * profile's emoji tab saves (`isInlineAvatar` in `ProfileAvatar.tsx`), so a value that is no image
+ * source is drawn as text, as Desktop draws any avatar that is not a URL. `undefined` for an image
+ * source, a blank avatar or no roster member.
+ */
+export function mentionPersonAvatarEmoji(person: MentionablePerson | undefined): string | undefined {
+  const avatar = typeof person?.avatar_url === 'string' ? person.avatar_url.trim() : '';
+
+  return avatar && !mentionImageSource(avatar) ? avatar : undefined;
 }
 
 /**

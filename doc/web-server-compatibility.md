@@ -444,14 +444,15 @@ opens, with or without the picker's v2. While it is off the picker shows what it
   nothing, and so does an item without one: Search sends none for databases, and the local lane's
   items have none. The `subtitle` servers send for these items (the same path joined, or
   "Database") is English and stays hidden.
-- **Avatars.** A person shows the avatar of the workspace roster, found by person id, else
-  initials; no server sets a person's `icon`. A picker that lists people loads the roster once per
-  opening through the roster cache the person cells use: memory for 30 seconds, then IndexedDB for
-  30 minutes, then one `GET /api/workspace/{workspace_id}/mentionable-person`, which every server
-  with mention search serves. Until it arrives, or when it cannot load, the person shows initials.
-  The same roster resolves a Desktop collaborator on the page, whom awareness names only by uid
-  (servers before 0.18.2 send no `uid`, so such a collaborator gets no chip), and the local lane
-  reads it too.
+- **Avatars.** A person shows the avatar of the workspace roster, found by person id: its image,
+  or, for an avatar that is an emoji (the profile's emoji tab saves one), the emoji drawn as text;
+  else initials. No server sets a person's `icon`. A picker that lists people loads the roster once
+  per opening through the roster cache the person cells use: memory for 30 seconds, then IndexedDB
+  for 30 minutes, then one `GET /api/workspace/{workspace_id}/mentionable-person`, which every
+  server with mention search serves. Until it arrives, or when it cannot load, the person shows
+  initials. The same roster resolves a Desktop collaborator on the page, whom awareness names only
+  by uid (servers before 0.18.2 send no `uid`, so such a collaborator gets no chip), and the local
+  lane reads it too.
 - **Icons.** A page or database the local index holds shows its outline icon (emoji, image or icon
   set), else its layout's icon (board, calendar, list...); anything else keeps the kind's icon. A
   server's `icon` is never drawn: servers type it as an object whose `ty` is a string, where the

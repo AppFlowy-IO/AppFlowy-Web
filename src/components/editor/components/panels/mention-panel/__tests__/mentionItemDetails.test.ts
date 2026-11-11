@@ -22,6 +22,7 @@ import {
   mentionItemIsContext,
   mentionItemLocalView,
   mentionItemRosterPerson,
+  mentionPersonAvatarEmoji,
   mentionPersonAvatarSource,
   mentionReasonChip,
   mentionReasonChipLabel,
@@ -247,6 +248,22 @@ describe('mention item details (MEN-WEB-13)', () => {
       expect(
         mentionPersonAvatarSource(person('eve', 'Eve', { icon: 'https://cdn.appflowy.io/eve.png' }), undefined)
       ).toBe('https://cdn.appflowy.io/eve.png');
+    });
+
+    it('takes a roster avatar that is no image source as an emoji', () => {
+      expect(mentionPersonAvatarEmoji(roster('eve', 'Eve', '🧑‍🚀'))).toBe('🧑‍🚀');
+      expect(mentionPersonAvatarEmoji(roster('eve', 'Eve', ' 🐻 '))).toBe('🐻');
+      [
+        'https://cdn.appflowy.io/eve.png',
+        'HTTPS://cdn.appflowy.io/eve.png',
+        '/api/file_storage/eve.png',
+        'data:image/png;base64,AA==',
+        'blob:https://appflowy.io/1',
+        ' ',
+        '',
+        null,
+      ].forEach((avatar) => expect(mentionPersonAvatarEmoji(roster('eve', 'Eve', avatar))).toBe(undefined));
+      expect(mentionPersonAvatarEmoji(undefined)).toBe(undefined);
     });
 
     it('never saves an object icon into an inserted mention', () => {

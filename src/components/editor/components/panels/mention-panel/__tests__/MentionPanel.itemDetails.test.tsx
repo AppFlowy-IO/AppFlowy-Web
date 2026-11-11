@@ -458,6 +458,22 @@ describe('MentionPanel item details (MEN-WEB-13)', () => {
       expectOnlyStringImageSources();
     });
 
+    it("draw a person's emoji avatar as text, never as an image", async () => {
+      const eve = rosterEntry(3, 'Eve', '🧑‍🚀');
+
+      recordMentionRoster(WORKSPACE, [eve]);
+      // The roster's emoji wins over a string icon, as the roster's image does.
+      const item = personItem(eve, { icon: 'https://cdn.appflowy.io/eve-old.png' });
+
+      await openPanel(createSearch(() => answerOf(section(MentionSearchSectionKind.People, [item]))));
+
+      // The whole emoji, as an element: the fallback keeps only the first UTF-16 unit of a string.
+      expect(within(row('Eve')).getByTestId('mention-avatar-emoji').textContent).toBe('🧑‍🚀');
+      expect(within(row('Eve')).queryByTestId('avatar-image')).toBeNull();
+      expect(mockAvatarSources).not.toContain('🧑‍🚀');
+      expectOnlyStringImageSources();
+    });
+
     it('load the roster once per opening, for its avatars and Desktop collaborators', async () => {
       const workspace = 'workspace-roster-api';
       const ada = rosterEntry(1, 'Ada', 'https://cdn.appflowy.io/ada.png');
