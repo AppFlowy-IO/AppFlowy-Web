@@ -49,6 +49,8 @@ export function FormBody({
   token,
   schema,
   previewMode = false,
+  renderQuestionTitle,
+  onPreviewSubmit,
 }: {
   token: string;
   schema: PublicFormSchema;
@@ -62,6 +64,8 @@ export function FormBody({
    * just shows a "Submission valid — looks good!" toast.
    */
   previewMode?: boolean;
+  renderQuestionTitle?: (question: PublicQuestion) => React.ReactNode;
+  onPreviewSubmit?: () => void;
 }) {
   const [answers, setAnswers] = useState<Record<string, FormAnswerValue>>(() => seedAnswers(schema.questions));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -184,6 +188,11 @@ export function FormBody({
     // submit endpoint — see the prop docstring for the bug report
     // this guards against.
     if (previewMode) {
+      if (onPreviewSubmit) {
+        onPreviewSubmit();
+        return;
+      }
+
       submittingRef.current = true;
       setSubmitState({ kind: 'submitted' });
       return;
@@ -257,7 +266,7 @@ export function FormBody({
       submittingRef.current = false;
       setSubmitState({ kind: 'error', message, loginUrl: publicError.loginUrl });
     }
-  }, [answers, previewMode, reportFieldErrors, retryBlocked, schema.questions, token]);
+  }, [answers, onPreviewSubmit, previewMode, reportFieldErrors, retryBlocked, schema.questions, token]);
 
   const handleSubmitAnother = useCallback(() => {
     submittingRef.current = false;
@@ -286,14 +295,25 @@ export function FormBody({
   }
 
   return (
-    <div data-testid='public-form-body' className='mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10'>
+    <div
+      data-testid='public-form-body'
+      className={
+        previewMode
+          ? 'mx-auto flex w-full max-w-[632px] flex-col gap-3 px-4 py-6'
+          : 'mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10'
+      }
+    >
       <header className='flex flex-col gap-2'>
         {schema.icon && (
           <div className='text-3xl' aria-hidden>
             {schema.icon}
           </div>
         )}
-        <h1 className='text-3xl font-bold'>{resolveFormDisplayTitle(schema.title)}</h1>
+        <h1
+          className={previewMode ? 'whitespace-pre-wrap break-words text-2xl font-bold leading-9' : 'text-3xl font-bold'}
+        >
+          {resolveFormDisplayTitle(schema.title)}
+        </h1>
         {schema.description && <p className='whitespace-pre-wrap break-words text-text-caption'>{schema.description}</p>}
       </header>
 
@@ -306,9 +326,10 @@ export function FormBody({
         aria-busy={submitState.kind === 'submitting'}
         className='m-0 min-w-0 border-0 p-0'
       >
-        <div className='flex flex-col gap-6'>
+        <div className={previewMode ? 'flex flex-col gap-3' : 'flex flex-col gap-6'}>
           {schema.questions.map((q) => (
             <FormQuestion
+              renderTitle={renderQuestionTitle}
               key={q.id}
               question={q}
               value={answers[q.id]}
@@ -334,15 +355,25 @@ export function FormBody({
           <Button
             data-testid='public-form-submit'
             onClick={handleSubmit}
-            disabled={submitState.kind === 'submitting' || retryBlocked}
+            disabled={
+              submitState.kind === 'submitting' || retryBlocked || (previewMode && schema.questions.length === 0)
+            }
           >
             {submitState.kind === 'submitting' ? 'Submitting…' : schema.submit_label}
           </Button>
         )}
       </div>
 
-      <p className='pt-6 text-xs text-text-caption'>
+      <p className={previewMode ? 'text-sm leading-5 text-text-tertiary' : 'pt-6 text-xs text-text-caption'}>
         Never submit sensitive personal information, like passwords, through AppFlowy Forms.
+        {previewMode && (
+          <>
+            {' '}
+            <a href='https://appflowy.com/report-abuse' target='_blank' rel='noopener noreferrer' className='underline'>
+              Report abuse
+            </a>
+          </>
+        )}
       </p>
 
       {!previewMode && !schema.hide_branding ? (

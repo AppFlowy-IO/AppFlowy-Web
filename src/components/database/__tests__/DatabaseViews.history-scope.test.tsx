@@ -202,12 +202,15 @@ describe('DatabaseViews history scope', () => {
     const { databaseDoc, unmount } = renderDatabaseViews(layout);
     const layoutSurface = await screen.findByTestId(testId);
     const tabs = screen.getByTestId('database-tabs');
-    const conditions = screen.getByTestId('database-conditions');
     const historyScope = layoutSurface.closest('[data-database-history-scope]');
 
     expect(historyScope).not.toBeNull();
     expect(tabs.closest('[data-database-history-scope]')).toBe(historyScope);
-    expect(conditions.closest('[data-database-history-scope]')).toBe(historyScope);
+    if (layout === DatabaseViewLayout.Form) {
+      expect(screen.queryByTestId('database-conditions')).toBeNull();
+    } else {
+      expect(screen.getByTestId('database-conditions').closest('[data-database-history-scope]')).toBe(historyScope);
+    }
 
     fireEvent.pointerDown(layoutSurface);
     dispatchHistoryHotkey(layoutSurface);

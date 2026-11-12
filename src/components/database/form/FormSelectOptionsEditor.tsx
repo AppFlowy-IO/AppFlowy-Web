@@ -1,3 +1,6 @@
+import { FieldType } from '@/application/database-yjs/database.type';
+import { YjsDatabaseKey } from '@/application/types';
+import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -5,19 +8,16 @@ import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/
 import type { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import type { YDatabaseField } from '@/application/types';
-import { Tag } from '@/components/_shared/tag';
-import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
 /**
  * Editable option list shown inside the form-builder card for
  * Single-/Multi-select questions. Mirror of the desktop's
  * `_MultiChoiceBody` widget (`form_question_body.dart`): the creator
- * sees existing options as chips and a "+ Add option" affordance that
+ * sees existing options as radio/checkbox rows and a "+ Add option" affordance that
  * expands inline into a text input.
  *
  * Persistence goes through the parent's shared select-option dispatcher, the
- * same write path the grid header's type-option editor uses — so chip colors /
- * IDs stay consistent across the form-builder and Grid view, and a desktop
+ * same write path the grid header's type-option editor uses — so option IDs stay consistent across the form-builder and Grid view, and a desktop
  * client editing the same field sees the new option immediately.
  *
  * F1 scope: add only. Rename / reorder / delete still happen via the
@@ -105,10 +105,12 @@ export function FormSelectOptionsEditor({
   fieldId,
   field,
   addOption,
+  readOnly = false,
 }: {
   fieldId: string;
   field: YDatabaseField;
   addOption: AddFormSelectOption;
+  readOnly?: boolean;
 }) {
   const options = useSelectOptions(field);
 
@@ -121,6 +123,7 @@ export function FormSelectOptionsEditor({
   }, [editing]);
 
   const submit = () => {
+    if (readOnly) return;
     const value = draft.trim();
 
     if (!value) {
@@ -157,62 +160,73 @@ export function FormSelectOptionsEditor({
   // diverged from the desktop layout (see screenshot in the design
   // spec). Just stack the chip list (if any) and the affordance.
   return (
-    <div className='flex flex-col items-start gap-1.5'>
+    <div className='flex w-full flex-col items-start gap-4'>
       {options.length > 0 && (
-        <div className='flex flex-wrap gap-1.5'>
+        <div className='flex w-full flex-col gap-2'>
           {options.map((opt) => (
-            <Tag
-              key={opt.id}
-              label={opt.name}
-              bgColor={SelectOptionColorMap[opt.color]}
-              textColor={SelectOptionFgColorMap[opt.color]}
-            />
+            <div key={opt.id} className='flex min-h-6 items-center gap-1'>
+              <span aria-hidden className='flex h-5 w-5 shrink-0 items-center justify-center'>
+                <span
+                  className={cn(
+                    'h-3.5 w-3.5 border border-border-primary',
+                    Number(field.get(YjsDatabaseKey.type)) === FieldType.MultiSelect ? 'rounded' : 'rounded-full'
+                  )}
+                />
+              </span>
+              <span className='min-w-0 break-words text-sm leading-5'>{opt.name}</span>
+            </div>
           ))}
         </div>
       )}
-      {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              submit();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              setEditing(false);
-              setDraft('');
-            }
-          }}
-          onBlur={() => {
-            // Commit on blur if there's pending text; otherwise close
-            // the inline input. Matches the desktop affordance where
-            // tabbing away saves any in-flight value.
-            if (draft.trim()) {
-              submit();
-            }
+      <div data-testid='form-add-option-row' className='flex w-full'>
+        {editing && !readOnly ? (
+          <div className='flex min-h-6 items-center gap-1 py-0.5'>
+            <Plus size={20} className='shrink-0 text-text-tertiary' />
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  submit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setEditing(false);
+                  setDraft('');
+                }
+              }}
+              onBlur={() => {
+                // Commit on blur if there's pending text; otherwise close
+                // the inline input. Matches the desktop affordance where
+                // tabbing away saves any in-flight value.
+                if (draft.trim()) {
+                  submit();
+                }
 
-            setEditing(false);
-          }}
-          // Stop mouse-down so RBD's drag sensor (bound to the
-          // enclosing card in `DraggableQuestionList`) doesn't start
-          // a reorder when the creator clicks into the input or
-          // selects text inside it.
-          onMouseDownCapture={(e) => e.stopPropagation()}
-          placeholder='Option name'
-          className='w-full rounded border border-line-divider bg-transparent px-2 py-1 text-sm outline-none focus:border-fill-default'
-        />
-      ) : (
-        <button
-          type='button'
-          onClick={() => setEditing(true)}
-          className='inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium text-text-tertiary hover:text-text-primary'
-        >
-          <Plus size={12} />
-          Add option
-        </button>
-      )}
+                setEditing(false);
+              }}
+              // Stop mouse-down so RBD's drag sensor (bound to the
+              // enclosing card in `DraggableQuestionList`) doesn't start
+              // a reorder when the creator clicks into the input or
+              // selects text inside it.
+              onMouseDownCapture={(e) => e.stopPropagation()}
+              placeholder='Option name'
+              className='h-5 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-5 text-text-primary outline-none placeholder:text-text-tertiary'
+            />
+          </div>
+        ) : (
+          <button
+            disabled={readOnly}
+            type='button'
+            onClick={() => setEditing(true)}
+            className='inline-flex min-h-6 items-center gap-1 rounded py-0.5 text-sm text-text-tertiary hover:text-text-action disabled:pointer-events-none disabled:opacity-50'
+          >
+            <Plus size={20} />
+            Add option
+          </button>
+        )}
+      </div>
     </div>
   );
 }

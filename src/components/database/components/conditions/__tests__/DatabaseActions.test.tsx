@@ -120,6 +120,11 @@ jest.mock('@/components/database/components/template', () => ({
   ),
 }));
 
+jest.mock('@/components/database/form/FormActions', () => ({
+  __esModule: true,
+  default: () => <div data-testid='form-actions' />,
+}));
+
 // The dashboard toolbar gets the host database as primitives (its memo compares them).
 jest.mock('@/components/database/dashboard/DashboardActions', () => {
   const DashboardToolbar = (props: Record<string, unknown>) => (
@@ -147,6 +152,14 @@ function SearchQueryProbe() {
 }
 
 describe('DatabaseActions template support', () => {
+  it('shows Form Settings instead of Filter/Sort and keeps preview/share actions', async () => {
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Form);
+    render(<DatabaseActions />);
+    expect(screen.getByTestId('database-actions-settings')).toBeTruthy();
+    expect(screen.queryByTestId('sorts-button')).toBeNull();
+    expect(screen.queryByTestId('filters-button')).toBeNull();
+    expect(await screen.findByTestId('form-actions')).toBeTruthy();
+  });
   afterEach(() => {
     jest.useRealTimers();
   });

@@ -1,8 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+import { toast } from 'sonner';
 
 import { FormSharePopover } from '../FormSharePopover';
 
 import type { ComponentProps, ReactNode } from 'react';
+
+jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
 
 jest.mock('@/components/ui/popover', () => ({
   Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -39,6 +43,12 @@ function renderPopover(overrides: Partial<ComponentProps<typeof FormSharePopover
 }
 
 describe('FormSharePopover', () => {
+  it('shows pending settings persistence without hiding the existing share link', () => {
+    renderPopover({ isSaving: true });
+    expect(screen.getByRole('progressbar', { name: 'Saving form settings' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Form share URL' }).value).toBe(activeInfo.share_url);
+  });
+
   it('exposes an explicit retry for a bootstrap failure', () => {
     const onRetry = jest.fn();
 
@@ -120,5 +130,25 @@ describe('FormSharePopover', () => {
     expect(screen.getByTestId('form-share-popover-no-active-link')).toBeTruthy();
     fireEvent.click(screen.getByTestId('form-share-popover-no-active-retry'));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+  it('copies the authoritative URL and only then displays copied feedback', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderPopover();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy form link' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Copied'));
+    expect(screen.getByRole('button', { name: 'Copy form link' })).toBeTruthy();
+    expect(writeText).toHaveBeenCalledWith(activeInfo.share_url);
+  });
+
+  it('shows an error instead of copied feedback when clipboard access fails', async () => {
+    const writeText = jest.fn().mockRejectedValue(new Error('Permission denied'));
+
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderPopover();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy form link' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Could not copy form link'));
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

@@ -1,4 +1,6 @@
-import { Check, ChevronRight, Link as LinkIcon, Lock, User, UserCheck } from 'lucide-react';
+import { ReactComponent as Check } from '@/assets/icons/tick.svg';
+import { ReactComponent as ChevronRight } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { useContext, useEffect, useRef, useState } from 'react';
 
 import { FormShareInfo, FormShareTier } from '@/application/services/js-services/http';
@@ -6,6 +8,8 @@ import { AuthInternalContext } from '@/components/app/contexts/AuthInternalConte
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 /**
@@ -22,6 +26,7 @@ export function FormSharePopover({
   trigger,
   info,
   isLoading,
+  isSaving = false,
   errorMessage,
   onRetry,
   onRetryMutation,
@@ -35,6 +40,7 @@ export function FormSharePopover({
   /// Bootstrap pending — shows the skeleton. Distinct from `info === null
   /// && !isLoading` (which is an error state).
   isLoading: boolean;
+  isSaving?: boolean;
   /// Raw error message from the failed bootstrap. Surfaced in the
   /// generic-failure UI so a user-reported screenshot carries the
   /// underlying cause (cloud error code / network failure / etc.) —
@@ -78,7 +84,13 @@ export function FormSharePopover({
   const copy = async () => {
     if (!url) return;
 
-    await navigator.clipboard.writeText(url);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      toast.error('Could not copy form link');
+      return;
+    }
+
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 2000);
@@ -87,7 +99,10 @@ export function FormSharePopover({
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align='end' className='w-[420px] p-1 pb-3'>
+      <PopoverContent
+        align='end'
+        className='max-h-[var(--radix-popover-content-available-height)] w-[400px] max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-2'
+      >
         {info === null ? (
           // Bootstrap not complete (or failed). Keep loading, read-only empty,
           // and terminal failure states distinct so each has an actionable UI.
@@ -101,22 +116,23 @@ export function FormSharePopover({
         ) : (
           <>
             <SubMenuRow
-              icon={<User size={14} />}
+              icon={<DuplicateIcon className='h-5 w-5' />}
               label='Who can fill out'
               value={tierLabel(tier, workspaceName)}
               badge={tierBadge(tier)}
-              submenu={
+              submenu={(dismiss) => (
                 <TierSubmenu
+                  onDismiss={dismiss}
                   current={tier}
                   workspaceName={workspaceName}
                   canUpdateSettings={canUpdateSettings}
                   onSelect={setTier}
                 />
-              }
+              )}
             />
             <ToggleRow
               testId='form-share-anonymous-toggle'
-              icon={<UserCheck size={14} />}
+              icon={<DuplicateIcon className='h-5 w-5' />}
               label='Anonymous responses'
               checked={anonymous}
               forcedOn={tier === 'public'}
@@ -125,6 +141,15 @@ export function FormSharePopover({
               disabledTooltip='View-only access can inspect and copy this link, but cannot change settings.'
               onChange={setAnonymous}
             />
+            {isSaving && (
+              <div
+                role='progressbar'
+                aria-label='Saving form settings'
+                className='mx-1 mt-1 h-0.5 overflow-hidden rounded bg-fill-theme-select'
+              >
+                <div className='h-full w-1/2 animate-pulse bg-fill-theme-thick' />
+              </div>
+            )}
             {canUpdateSettings && errorMessage && (
               <MutationFailure errorMessage={errorMessage} onRetry={onRetryMutation} />
             )}
@@ -139,32 +164,25 @@ export function FormSharePopover({
               restored without touching the controller layer.
             */}
             <div className='my-2 border-t border-line-divider' />
-            {/*
-              Notion-parity link row (matches desktop's `_LinkRow`):
-              ONE rounded container with a vertical hairline divider
-              between the URL field and the copy button. The previous
-              `gap-2` + individual borders produced two visually separate
-              pills with a gap — broke the unified-box look.
-              `overflow-hidden` clips the button's hover splash to the
-              rounded corners.
-            */}
             {url ? (
-              <div className='mx-1 flex items-stretch overflow-hidden rounded-md border border-line-divider'>
-                <input
+              <div className='relative flex min-w-0 items-center gap-2'>
+                <Input
                   readOnly
                   aria-label='Form share URL'
                   value={url}
-                  className='flex-1 bg-transparent px-2 py-1 text-xs outline-none'
+                  className='h-8 min-w-0 flex-1 text-sm text-text-tertiary'
                 />
-                <div className='w-px bg-line-divider' />
-                <button
-                  type='button'
-                  onClick={copy}
-                  className='flex shrink-0 items-center gap-1 px-3 py-1 text-xs hover:bg-fill-content'
-                >
-                  <LinkIcon size={12} />
-                  {copied ? 'Copied' : 'Copy form link'}
-                </button>
+                <Button type='button' variant='outline' onClick={copy} className='h-8 px-3 text-sm'>
+                  Copy form link
+                </Button>
+                {copied && (
+                  <span
+                    role='status'
+                    className='absolute -top-9 right-2 rounded-md bg-surface-inverse px-3 py-1 text-xs text-text-on-fill'
+                  >
+                    Copied
+                  </span>
+                )}
               </div>
             ) : (
               <ShareLinkUnavailable onRetry={onRetry} />
@@ -293,18 +311,20 @@ function SubMenuRow({
   label: string;
   value: string;
   badge?: React.ReactNode;
-  submenu: React.ReactNode;
+  submenu: (dismiss: () => void) => React.ReactNode;
   testId?: string;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           data-testid={testId}
           type='button'
-          className='flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-fill-content'
+          className='flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-fill-content'
         >
-          <span className='text-text-tertiary'>{icon}</span>
+          <span className='shrink-0 text-text-secondary'>{icon}</span>
           {/*
             `whitespace-nowrap` keeps "Who can fill out" / "Access to
             submission" on a single line even when the value+badge eats
@@ -317,11 +337,15 @@ function SubMenuRow({
             <span className='truncate'>{value}</span>
             {badge}
           </span>
-          <ChevronRight size={14} className='shrink-0 text-text-tertiary' />
+          <ChevronRight className='h-5 w-5 shrink-0 text-text-secondary' />
         </button>
       </PopoverTrigger>
-      <PopoverContent side='right' align='start' className='w-72 p-1'>
-        {submenu}
+      <PopoverContent
+        side='right'
+        align='start'
+        className='max-h-[var(--radix-popover-content-available-height)] w-[400px] max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-2'
+      >
+        {submenu(() => setOpen(false))}
       </PopoverContent>
     </Popover>
   );
@@ -359,9 +383,9 @@ function ToggleRow({
   return (
     <div
       title={forcedOn ? forcedTooltip : disabled ? disabledTooltip : undefined}
-      className={cn('flex items-center gap-2 rounded px-2 py-1 text-sm', (forcedOn || disabled) && 'opacity-70')}
+      className={cn('flex items-center gap-2 rounded px-2 py-1.5 text-sm', (forcedOn || disabled) && 'opacity-70')}
     >
-      <span className='text-text-tertiary'>{icon}</span>
+      <span className='shrink-0 text-text-secondary'>{icon}</span>
       <span className='flex-1 whitespace-nowrap'>{label}</span>
       <Switch
         data-testid={testId}
@@ -379,16 +403,18 @@ function TierSubmenu({
   workspaceName,
   canUpdateSettings,
   onSelect,
+  onDismiss,
 }: {
+  onDismiss: () => void;
   current: FormShareTier;
   workspaceName: string;
   canUpdateSettings: boolean;
   onSelect: (t: FormShareTier) => void;
 }) {
   const selectTier = (next: FormShareTier) => {
-    if (next === current) return;
     if (!canUpdateSettings) return;
-    onSelect(next);
+    onDismiss();
+    if (next !== current) onSelect(next);
   };
 
   return (
@@ -399,7 +425,6 @@ function TierSubmenu({
         title={`Anyone at ${workspaceName} with link`}
         subtitle='Only signed-in members can fill out.'
         onClick={() => selectTier('workspace')}
-        leadingIcon={<Lock size={14} />}
         disabled={!canUpdateSettings}
       />
       <Choice
@@ -430,7 +455,6 @@ function Choice({
   titleBadge,
   subtitle,
   onClick,
-  leadingIcon,
   testId,
   disabled = false,
 }: {
@@ -439,7 +463,6 @@ function Choice({
   titleBadge?: React.ReactNode;
   subtitle: string;
   onClick: () => void;
-  leadingIcon?: React.ReactNode;
   testId?: string;
   disabled?: boolean;
 }) {
@@ -452,13 +475,6 @@ function Choice({
       disabled={disabled}
       className='flex items-start gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content disabled:cursor-not-allowed disabled:opacity-60'
     >
-      <span className='mt-0.5 text-text-tertiary'>
-        {selected ? (
-          <Check size={14} className='text-fill-default' />
-        ) : (
-          leadingIcon ?? <span className='inline-block h-3.5 w-3.5' />
-        )}
-      </span>
       <span className='flex-1'>
         <div className='flex items-center gap-1.5 font-medium'>
           {title}
@@ -466,6 +482,7 @@ function Choice({
         </div>
         <div className='text-xs text-text-caption'>{subtitle}</div>
       </span>
+      {selected && <Check className='h-5 w-5 shrink-0 text-icon-info-thick' />}
     </button>
   );
 }
@@ -484,13 +501,13 @@ function TierBadge({ kind }: { kind: 'public' | 'closed' }) {
   // `bg-fill-warning/15 text-fill-warning` tokens don't exist in
   // `tailwind/new-colors.cjs` and rendered as transparent.
   const palette =
-    kind === 'public' ? 'bg-fill-warning-light text-text-warning-on-fill' : 'bg-fill-secondary text-text-caption';
+    kind === 'public' ? 'bg-tag-fill-05-light text-tag-text-05-light' : 'bg-tag-fill-10-light text-tag-text-10-light';
   const label = kind === 'public' ? 'Public' : 'Closed';
 
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-sm px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
+        'inline-flex items-center rounded-sm px-1.5 py-px text-[10px] font-normal tracking-[0.1px]',
         palette
       )}
     >

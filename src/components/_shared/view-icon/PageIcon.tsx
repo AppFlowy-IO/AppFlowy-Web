@@ -11,7 +11,7 @@ import { ReactComponent as FeedSvg } from '@/assets/icons/feed.svg';
 import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
-import { ReactComponent as FormSvg } from '@/assets/icons/edit.svg';
+import FormSvg from './FormViewIcon';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 import { cn } from '@/lib/utils';
