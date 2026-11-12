@@ -23,3 +23,10 @@ IndexedDB is intentionally not part of this implementation. Its [asynchronous AP
 Read-time validation also avoids relying on [Yjs observer delivery order](https://docs.yjs.dev/api/y.doc): observers run after a transaction's edits, whereas formula reads can occur during the transaction itself. The cache adds one destroy listener per database and no row listeners, preserving the existing [React subscription cleanup](https://react.dev/reference/react/useSyncExternalStore) ownership.
 
 Regression tests cover cache hits, local and remote edits, transitive/schema changes, conversion and formatting, transaction-time reads, copied schemas, result mutation, eviction, excluded dependencies, first-render freshness after reopen, filtered/sorted footer recovery, and rapid database switching without computation for closed consumers.
+
+## Date arithmetic precision
+
+`dateAdd` and `dateSubtract` preserve the input's time setting for calendar units (days through
+years). Explicit hour, minute, or second shifts produce time-enabled values, even from `today()`
+or another date-only input. This keeps the calculated time meaningful in comparisons, list
+deduplication, formatting, and subsequent date arithmetic. Both range endpoints retain that precision.
