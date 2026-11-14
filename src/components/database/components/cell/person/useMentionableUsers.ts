@@ -5,6 +5,7 @@ import { WorkspaceService } from '@/application/services/domains';
 import { MentionablePerson } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { recordMentionRoster } from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
 
 interface CacheEntry {
   users: MentionablePerson[];
@@ -45,6 +46,12 @@ function writeMemberListSyncedAt(workspaceId: string, syncedAt: number): void {
   }
 }
 
+/** Caches a member list in memory, and gives it to the mention picker's local candidates. */
+function cacheUsers(workspaceId: string, users: MentionablePerson[]): void {
+  cache.set(workspaceId, { users, timestamp: Date.now() });
+  recordMentionRoster(workspaceId, users);
+}
+
 function isMemoryCacheValid(entry: CacheEntry | undefined): entry is CacheEntry {
   if (!entry) return false;
   return Date.now() - entry.timestamp < MEMORY_CACHE_TTL_MS;
@@ -74,7 +81,7 @@ export async function loadMentionableUsers(workspaceId: string | undefined): Pro
   const { users, fresh } = await loadFromDiskDeduplicated(workspaceId);
 
   if (fresh) {
-    cache.set(workspaceId, { users, timestamp: Date.now() });
+    cacheUsers(workspaceId, users);
     return users;
   }
 
@@ -180,7 +187,7 @@ function refreshFromApi(workspaceId: string): Promise<MentionablePerson[]> {
 
   const refresh: Promise<MentionablePerson[]> = WorkspaceService.getMentionableUsers(workspaceId)
     .then((users) => {
-      cache.set(workspaceId, { users, timestamp: Date.now() });
+      cacheUsers(workspaceId, users);
       // The request and its persistence are shared by every mounted cell.
       void saveToDisk(workspaceId, users);
       return users;
@@ -229,7 +236,7 @@ export function useMentionableUsers() {
 
     if (diskUsers.length > 0) {
       // Populate in-memory cache from disk
-      cache.set(workspaceId, { users: diskUsers, timestamp: Date.now() });
+      cacheUsers(workspaceId, diskUsers);
       setUsers(diskUsers);
 
       // If disk cache is still fresh, no need to fetch from API

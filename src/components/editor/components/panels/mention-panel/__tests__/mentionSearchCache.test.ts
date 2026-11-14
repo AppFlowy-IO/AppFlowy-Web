@@ -1,18 +1,60 @@
-import { ERROR_CODE } from '@/application/constants';
-import { MentionSearchSectionKind } from '@/application/types';
+import { EventEmitter } from 'events';
+
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { emit, EventType } from '@/application/session/event';
+import {
+  MentionSearchResultItem,
+  MentionSearchSection,
+  MentionSearchSectionKind,
+  MentionTargetKind,
+} from '@/application/types';
 
 import {
+  clearMentionSearchCache,
   clearMentionSearchCacheForTests,
+  ensureMentionSearchCacheScope,
+  forgetMentionSearchView,
+  getCachedMentionSearch,
   getCachedMentionSections,
+  getMentionSearchCacheView,
+  getRevokedMentionViews,
+  markMentionSearchCacheStale,
   markMentionSearchRetryLater,
+  MENTION_SEARCH_CACHE_FRESH_MS,
+  mentionItemShowsAnyView,
+  mentionSearchCacheStamp,
   mentionSearchRetryLaterRemainingMs,
+  restoreMentionSearchView,
   setCachedMentionSections,
   startMentionSearchRefresh,
+  subscribeMentionSearchCache,
+  subscribeMentionSearchCacheInvalidation,
+  subscribeRevokedMentionViews,
+  withoutMentionView,
+  withoutRevokedMentionViews,
 } from '../mentionSearchCache';
+
+function pages(...items: MentionSearchResultItem[]): MentionSearchSection[] {
+  return [{ kind: MentionSearchSectionKind.Pages, title: 'Pages', status: 'ok', has_more: false, items }];
+}
+
+function page(id: string): MentionSearchResultItem {
+  return {
+    kind: MentionTargetKind.Page,
+    object_id: id,
+    title: id,
+    mention: { type: MentionTargetKind.Page, page_id: id },
+  };
+}
 
 describe('mentionSearchCache', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     clearMentionSearchCacheForTests();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('does not treat a retry-later cooldown as cached mention data', () => {
@@ -26,15 +68,7 @@ describe('mentionSearchCache', () => {
   });
 
   it('keeps cached mention data available while retry-later cooldown is active', () => {
-    const sections = [
-      {
-        kind: MentionSearchSectionKind.Pages,
-        title: 'Pages',
-        status: 'ready',
-        has_more: false,
-        items: [],
-      },
-    ];
+    const sections = pages();
 
     setCachedMentionSections('page-query', sections);
     markMentionSearchRetryLater('page-query', {
@@ -46,18 +80,492 @@ describe('mentionSearchCache', () => {
     expect(getCachedMentionSections('page-query')).toBe(sections);
   });
 
-  it('deduplicates in-flight refreshes for the same cache key', async () => {
+  it('deduplicates in-flight refreshes for the same cache key, and gives every caller its result', async () => {
     let requestCount = 0;
     const refresh = () => {
       requestCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(`answer ${requestCount}`);
     };
 
     const first = startMentionSearchRefresh('page-query', refresh);
     const second = startMentionSearchRefresh('page-query', refresh);
 
     expect(second).toBe(first);
-    await first;
+    await expect(second).resolves.toBe('answer 1');
     expect(requestCount).toBe(1);
+
+    // A settled refresh is not joined: the next one runs.
+    await expect(startMentionSearchRefresh('page-query', refresh)).resolves.toBe('answer 2');
+  });
+
+  describe('freshness', () => {
+    it('serves an answer as fresh for 10 s after it was cached', () => {
+      setCachedMentionSections('road', pages(page('Roadmap')));
+
+      jest.advanceTimersByTime(MENTION_SEARCH_CACHE_FRESH_MS - 1);
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: true, sections: pages(page('Roadmap')) });
+
+      jest.advanceTimersByTime(1);
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('Roadmap')) });
+    });
+
+    it('marks every answer stale, which keeps it but revalidates it on its next use', () => {
+      setCachedMentionSections('road', pages(page('Roadmap')));
+      setCachedMentionSections('', pages(page('Recent')));
+
+      markMentionSearchCacheStale();
+
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('Roadmap')) });
+      expect(getCachedMentionSearch('')).toMatchObject({ fresh: false, sections: pages(page('Recent')) });
+
+      // A newer answer is fresh again.
+      setCachedMentionSections('road', pages(page('Roadmap 2')), mentionSearchCacheStamp());
+      expect(getCachedMentionSearch('road')?.fresh).toBe(true);
+    });
+
+    it('stores an answer to a request sent before a stale mark as stale', () => {
+      const stamp = mentionSearchCacheStamp();
+
+      markMentionSearchCacheStale();
+      setCachedMentionSections('road', pages(page('Roadmap')), stamp);
+
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('Roadmap')) });
+    });
+
+    it('keeps the stale mark across a cooldown and a refresh bookkeeping write', async () => {
+      setCachedMentionSections('road', pages(page('Roadmap')));
+      markMentionSearchCacheStale();
+      markMentionSearchRetryLater('road');
+      await startMentionSearchRefresh('road', () => Promise.resolve());
+
+      expect(getCachedMentionSearch('road')?.fresh).toBe(false);
+    });
+  });
+
+  describe('clearing', () => {
+    it('drops every answer when the session ends, and an answer to a request sent before', () => {
+      const stamp = mentionSearchCacheStamp();
+
+      setCachedMentionSections('road', pages(page('Roadmap')));
+      emit(EventType.SESSION_INVALID);
+
+      expect(getCachedMentionSections('road')).toBeUndefined();
+
+      setCachedMentionSections('road', pages(page('Roadmap')), stamp);
+      expect(getCachedMentionSections('road')).toBeUndefined();
+
+      setCachedMentionSections('road', pages(page('Roadmap')), mentionSearchCacheStamp());
+      expect(getCachedMentionSections('road')).toEqual(pages(page('Roadmap')));
+    });
+
+    it('drops every answer when a panel opens on another workspace or account', () => {
+      ensureMentionSearchCacheScope('workspace-a');
+      setCachedMentionSections('a-road', pages(page('Roadmap')));
+
+      ensureMentionSearchCacheScope('workspace-a');
+      expect(getCachedMentionSections('a-road')).toBeDefined();
+
+      const stamp = mentionSearchCacheStamp();
+
+      ensureMentionSearchCacheScope('workspace-b');
+      expect(getCachedMentionSections('a-road')).toBeUndefined();
+
+      // A late answer from the previous workspace is not stored either.
+      setCachedMentionSections('a-road', pages(page('Roadmap')), stamp);
+      expect(getCachedMentionSections('a-road')).toBeUndefined();
+    });
+  });
+
+  describe('a revoked view', () => {
+    const revoked = 'view-revoked';
+
+    it('is dropped from every answer, as a page, a database view or a row of it, and every answer turns stale', () => {
+      const database: MentionSearchResultItem = {
+        kind: MentionTargetKind.Database,
+        object_id: 'database-1',
+        title: 'Tasks',
+        database_view_id: revoked,
+        mention: { type: MentionTargetKind.Database, database_id: 'database-1', database_view_id: revoked },
+      };
+      const row: MentionSearchResultItem = {
+        kind: MentionTargetKind.DatabaseRow,
+        object_id: 'row-1',
+        title: 'Row',
+        mention: {
+          type: MentionTargetKind.DatabaseRow,
+          database_id: 'database-1',
+          database_view_id: revoked,
+          row_id: 'row-1',
+        },
+      };
+      // A person's payload names the page the person would be mentioned on.
+      const person: MentionSearchResultItem = {
+        kind: MentionTargetKind.Person,
+        object_id: 'ada',
+        title: 'Ada',
+        mention: { type: MentionTargetKind.Person, person_id: 'ada', person_name: 'Ada', page_id: revoked },
+      };
+      const people: MentionSearchSection = {
+        kind: MentionSearchSectionKind.People,
+        title: 'People',
+        status: 'ok',
+        has_more: false,
+        items: [person],
+      };
+
+      setCachedMentionSections('road', [people, ...pages(page(revoked), page('kept'), database, row)]);
+      setCachedMentionSections('other', pages(page('other')));
+
+      forgetMentionSearchView(revoked);
+
+      expect(getCachedMentionSearch('road')).toEqual({
+        sections: [people, ...pages(page('kept'))],
+        cachedAt: expect.any(Number),
+        fresh: false,
+      });
+      expect(getCachedMentionSearch('other')).toMatchObject({ fresh: false, sections: pages(page('other')) });
+    });
+
+    it('is left out of an answer to a request sent before the revoke that arrives after it', () => {
+      const stamp = mentionSearchCacheStamp();
+
+      forgetMentionSearchView(revoked);
+      setCachedMentionSections('road', pages(page(revoked), page('kept')), stamp);
+
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('kept')) });
+      expect(withoutRevokedMentionViews(pages(page(revoked), page('kept')), stamp)).toEqual(pages(page('kept')));
+
+      // Access may be granted again: an answer to a request sent after the revoke keeps the view.
+      const later = mentionSearchCacheStamp();
+      const answer = pages(page(revoked), page('kept'));
+
+      setCachedMentionSections('road', answer, later);
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: true, sections: answer });
+      expect(withoutRevokedMentionViews(answer, later)).toBe(answer);
+    });
+
+    it('leaves sections without the view as they are', () => {
+      const sections = pages(page('kept'));
+
+      expect(withoutMentionView(sections, revoked)).toBe(sections);
+      expect(withoutMentionView(pages(page(revoked), page('kept')), revoked)).toEqual(sections);
+    });
+
+    it('counts as revoked until access returns, telling the subscribers of each change', () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeRevokedMentionViews(listener);
+
+      forgetMentionSearchView(revoked);
+      const revokedViews = getRevokedMentionViews();
+
+      expect([...revokedViews]).toEqual([revoked]);
+      // The same set until it changes, as useSyncExternalStore needs.
+      expect(getRevokedMentionViews()).toBe(revokedViews);
+      restoreMentionSearchView('never-revoked');
+      expect(getRevokedMentionViews()).toBe(revokedViews);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      restoreMentionSearchView(revoked);
+      expect(getRevokedMentionViews().size).toBe(0);
+      expect(listener).toHaveBeenCalledTimes(2);
+
+      // A clear (sign-out, another workspace or account) forgets every revoke.
+      forgetMentionSearchView(revoked);
+      clearMentionSearchCacheForTests();
+      expect(getRevokedMentionViews().size).toBe(0);
+      expect(listener).toHaveBeenCalledTimes(4);
+
+      unsubscribe();
+      forgetMentionSearchView(revoked);
+      expect(listener).toHaveBeenCalledTimes(4);
+    });
+
+    it('keeps only the last 100 revokes', () => {
+      for (let n = 0; n <= 100; n += 1) forgetMentionSearchView(`view-${n}`);
+
+      expect(getRevokedMentionViews().size).toBe(100);
+      expect(getRevokedMentionViews().has('view-0')).toBe(false);
+      expect(getRevokedMentionViews().has('view-100')).toBe(true);
+    });
+
+    it('no longer leaves a view out of a late answer once access to it returns', () => {
+      const stamp = mentionSearchCacheStamp();
+      const answer = pages(page(revoked), page('kept'));
+
+      forgetMentionSearchView(revoked);
+      restoreMentionSearchView(revoked);
+
+      expect(withoutRevokedMentionViews(answer, stamp)).toBe(answer);
+    });
+
+    it('tells the items that show a view: the page, the database view or a row of it, never a person', () => {
+      const viewIds = new Set([revoked]);
+      const database: MentionSearchResultItem = {
+        kind: MentionTargetKind.Database,
+        object_id: 'database-1',
+        title: 'Tasks',
+        database_view_id: revoked,
+        mention: { type: MentionTargetKind.Database, database_id: 'database-1', database_view_id: revoked },
+      };
+      const row: MentionSearchResultItem = {
+        kind: MentionTargetKind.DatabaseRow,
+        object_id: 'row-1',
+        title: 'Row',
+        mention: {
+          type: MentionTargetKind.DatabaseRow,
+          database_id: 'database-1',
+          database_view_id: revoked,
+          row_id: 'row-1',
+        },
+      };
+      const person: MentionSearchResultItem = {
+        kind: MentionTargetKind.Person,
+        object_id: 'ada',
+        title: 'Ada',
+        mention: { type: MentionTargetKind.Person, person_id: 'ada', person_name: 'Ada', page_id: revoked },
+      };
+
+      expect(
+        [page(revoked), database, row, person, page('kept')].map((item) => mentionItemShowsAnyView(item, viewIds))
+      ).toEqual([true, true, true, false, false]);
+      expect(mentionItemShowsAnyView(page(revoked), new Set())).toBe(false);
+    });
+  });
+
+  describe('send order', () => {
+    it('never lets an answer replace the stored answer to a request sent after it', () => {
+      const older = mentionSearchCacheStamp();
+      const newer = mentionSearchCacheStamp();
+
+      setCachedMentionSections('', pages(page('New page')), newer);
+      setCachedMentionSections('', pages(page('Old page')), older);
+
+      expect(getCachedMentionSearch('')).toMatchObject({ fresh: true, sections: pages(page('New page')) });
+
+      // The answer to a newer request still replaces it.
+      setCachedMentionSections('', pages(page('Newest page')), mentionSearchCacheStamp());
+      expect(getCachedMentionSections('')).toEqual(pages(page('Newest page')));
+    });
+
+    it('keeps the send order across a cooldown, a refresh and a stale mark', async () => {
+      const older = mentionSearchCacheStamp();
+
+      setCachedMentionSections('road', pages(page('New page')), mentionSearchCacheStamp());
+      markMentionSearchRetryLater('road');
+      await startMentionSearchRefresh('road', () => Promise.resolve());
+      markMentionSearchCacheStale();
+      setCachedMentionSections('road', pages(page('Old page')), older);
+
+      expect(getCachedMentionSections('road')).toEqual(pages(page('New page')));
+    });
+  });
+
+  describe('workspace events', () => {
+    it.each([
+      APP_EVENTS.SECTION_CHANGED,
+      APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED,
+      APP_EVENTS.FOLDER_OUTLINE_CHANGED,
+      APP_EVENTS.FOLDER_VIEW_CHANGED,
+      APP_EVENTS.PERMISSION_CHANGED,
+    ])('marks every answer stale on %s', (event) => {
+      const eventEmitter = new EventEmitter();
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      setCachedMentionSections('road', pages(page('Roadmap')));
+
+      eventEmitter.emit(event, { any: 'payload' });
+
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('Roadmap')) });
+    });
+
+    // PERMISSION_CHANGED names no view the user lost, so none can be dropped: the picker's v2 keeps
+    // such answers out of its provisional lists (MEN-WEB-08).
+    it('tells the answers to requests sent before PERMISSION_CHANGED apart, cached then or later', () => {
+      const eventEmitter = new EventEmitter();
+      const beforeAccessChange = () =>
+        ['road', 'ro', 'r'].map((key) => getMentionSearchCacheView().answer(key)?.beforeAccessChange);
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      setCachedMentionSections('road', pages(page('Roadmap')));
+
+      const sentBefore = mentionSearchCacheStamp();
+
+      expect(beforeAccessChange()).toEqual([false, undefined, undefined]);
+
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+      setCachedMentionSections('ro', pages(page('Roadmap')), sentBefore);
+      setCachedMentionSections('r', pages(page('Roadmap')), mentionSearchCacheStamp());
+
+      expect(beforeAccessChange()).toEqual([true, true, false]);
+      expect(getCachedMentionSearch('ro')).toMatchObject({ fresh: false });
+
+      // Other workspace events only make answers stale.
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {});
+      expect(beforeAccessChange()).toEqual([true, true, false]);
+    });
+
+    // The picker's v2 tells the answers it shows apart by their stamps, and the lists it showed by
+    // the change they were shown after.
+    it('gives the generation of the latest PERMISSION_CHANGED in the view its subscribers read', () => {
+      const eventEmitter = new EventEmitter();
+      const generations: number[] = [];
+      const unsubscribe = subscribeMentionSearchCache(() =>
+        generations.push(getMentionSearchCacheView().accessChangeGeneration)
+      );
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+
+      const sentBefore = mentionSearchCacheStamp();
+      const before = getMentionSearchCacheView().accessChangeGeneration;
+
+      expect(sentBefore.generation).toBeGreaterThanOrEqual(before);
+
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space', reason: 0 });
+
+      const { accessChangeGeneration } = getMentionSearchCacheView();
+
+      expect(generations).toEqual([accessChangeGeneration]);
+      expect(sentBefore.generation).toBeLessThan(accessChangeGeneration);
+      expect(mentionSearchCacheStamp().generation).toBe(accessChangeGeneration);
+
+      // Other events change the view, never the generation.
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {});
+      forgetMentionSearchView('gone');
+      expect(generations).toEqual([accessChangeGeneration, accessChangeGeneration, accessChangeGeneration]);
+      unsubscribe();
+    });
+
+    it('drops a revoked view on VIEW_ACCESS_REVOKED', () => {
+      const eventEmitter = new EventEmitter();
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      setCachedMentionSections('road', pages(page('gone'), page('kept')));
+
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'gone' });
+
+      expect(getCachedMentionSearch('road')).toMatchObject({ fresh: false, sections: pages(page('kept')) });
+    });
+
+    it('counts a view as revoked from VIEW_ACCESS_REVOKED until VIEW_ACCESS_RESTORED', () => {
+      const eventEmitter = new EventEmitter();
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'gone' });
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'back' });
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'back' });
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, {});
+
+      expect([...getRevokedMentionViews()]).toEqual(['gone']);
+    });
+
+    it('subscribes once per emitter, however many panels mount', () => {
+      const eventEmitter = new EventEmitter();
+
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      subscribeMentionSearchCacheInvalidation(eventEmitter);
+      subscribeMentionSearchCacheInvalidation(undefined);
+
+      expect(eventEmitter.listenerCount(APP_EVENTS.FOLDER_VIEW_CHANGED)).toBe(1);
+      expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(1);
+      expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(1);
+    });
+  });
+
+  // MEN-WEB-08 reads the cached answers in render, and renders again when they change.
+  describe('the cache view', () => {
+    it('is replaced, and tells its subscribers, whenever a cached answer changes', () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeMentionSearchCache(listener);
+      const views = [getMentionSearchCacheView()];
+      const changed = () => {
+        const view = getMentionSearchCacheView();
+        const isNew = view !== views[views.length - 1];
+
+        views.push(view);
+        return isNew;
+      };
+
+      setCachedMentionSections('road', pages(page('Roadmap')));
+      expect(changed()).toBe(true);
+      expect(getMentionSearchCacheView().answer('road')?.sections).toEqual(pages(page('Roadmap')));
+
+      markMentionSearchCacheStale();
+      expect(changed()).toBe(true);
+      // A stale answer is still read: the picker narrows stale answers too.
+      expect(getMentionSearchCacheView().answer('road')?.sections).toBeDefined();
+
+      forgetMentionSearchView('Roadmap');
+      expect(changed()).toBe(true);
+      expect(getMentionSearchCacheView().answer('road')?.sections).toEqual(pages());
+
+      clearMentionSearchCache();
+      expect(changed()).toBe(true);
+      expect(getMentionSearchCacheView().answer('road')?.sections).toBeUndefined();
+      expect(listener).toHaveBeenCalledTimes(4);
+      expect(views.map(({ version }) => version)).toEqual(
+        Array.from({ length: 5 }, (_, index) => views[0].version + index)
+      );
+
+      unsubscribe();
+      setCachedMentionSections('road', pages());
+      expect(listener).toHaveBeenCalledTimes(4);
+    });
+
+    it('stays the same for cooldowns, refresh bookkeeping and answers it drops', async () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeMentionSearchCache(listener);
+      const sentFirst = mentionSearchCacheStamp();
+
+      setCachedMentionSections('road', pages(page('New')));
+
+      const view = getMentionSearchCacheView();
+
+      listener.mockClear();
+      markMentionSearchRetryLater('road', { code: ERROR_CODE.RETRY_LATER, message: 'retry later' });
+      await startMentionSearchRefresh('road', async () => 'refreshed');
+      // Sent before the answer stored under its key, so it is ignored.
+      setCachedMentionSections('road', pages(page('Old')), sentFirst);
+      expect(getMentionSearchCacheView()).toBe(view);
+      expect(getMentionSearchCacheView().answer('road')?.sections).toEqual(pages(page('New')));
+      expect(listener).not.toHaveBeenCalled();
+
+      const sentBeforeClear = mentionSearchCacheStamp();
+
+      clearMentionSearchCache();
+
+      const cleared = getMentionSearchCacheView();
+
+      listener.mockClear();
+      // Sent before the clear, so it is dropped.
+      setCachedMentionSections('road', pages(page('Late')), sentBeforeClear);
+      expect(getMentionSearchCacheView()).toBe(cleared);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    // The provisional list takes each date and reminder quick pick from the newest cached answer.
+    it('gives each cached answer with when its request was sent, never a cooldown alone', () => {
+      const sentFirst = mentionSearchCacheStamp();
+      const sentLater = mentionSearchCacheStamp();
+
+      // The later request answered first.
+      setCachedMentionSections('roa', pages(page('Road trip')), sentLater);
+      setCachedMentionSections('ro', pages(page('Roadmap')), sentFirst);
+      markMentionSearchRetryLater('busy', { code: ERROR_CODE.RETRY_LATER, message: 'retry later' });
+
+      const view = getMentionSearchCacheView();
+      const ro = view.answer('ro');
+      const roa = view.answer('roa');
+
+      expect(ro?.sections).toEqual(pages(page('Roadmap')));
+      expect(roa?.sections).toEqual(pages(page('Road trip')));
+      expect(ro && roa && roa.sequence > ro.sequence).toBe(true);
+      expect(view.answer('busy')).toBeUndefined();
+      expect(view.answer('missing')).toBeUndefined();
+
+      // An answer stored without a stamp counts as asked for when it is stored.
+      setCachedMentionSections('r', pages());
+      expect((getMentionSearchCacheView().answer('r')?.sequence ?? 0) > (roa?.sequence ?? 0)).toBe(true);
+    });
   });
 });

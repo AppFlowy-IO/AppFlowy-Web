@@ -63,6 +63,13 @@
     "shard": ""
   },
   {
+    "name": "mention-search-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/mention-search.feature.spec.js",
+    "description": "Mention panel search: defaults, typed sections, keep-and-narrow and the local lane",
+    "bdd": "true",
+    "shard": ""
+  },
+  {
     "name": "rich-text-bdd",
     "spec": "playwright/.features-gen/playwright/bdd/features/database/text-cell-rich-text.feature.spec.js",
     "description": "Rich text in database Text cells and row titles: formatting, storage contract, mentions, clipboard",

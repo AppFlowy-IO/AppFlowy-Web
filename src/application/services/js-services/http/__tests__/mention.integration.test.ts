@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
+    BlockType,
     MentionSearchRequest,
     MentionSearchResponse,
     MentionSearchResultItem,
@@ -15,6 +16,11 @@ import {
     ViewLayout,
 } from '@/application/types';
 import {
+    MENTION_UNMATCHED_SERVER_TIER,
+    objectTier,
+    retierServerSection,
+} from '@/components/editor/components/panels/mention-panel/mentionLocalRanker';
+import {
     APIService,
     AuthHelper,
     FeatureFixtureAccount,
@@ -23,6 +29,12 @@ import {
     initAPIService,
     setActiveTestToken,
 } from './setup';
+import {
+    isMentionSessionMetricsAdvertised,
+    MentionPickerSession,
+    reportMentionPickerSession,
+} from '../mention-presentation-metrics';
+import type { ServerInfoState } from '@/utils/server-info';
 import { v4 as uuidv4 } from 'uuid';
 
 const FEATURE_NAME = 'mention-api';
@@ -96,6 +108,8 @@ describe('HTTP API - Mention Search', () => {
     let debugSpy: jest.SpiedFunction<typeof console.debug>;
     let owner: FeatureFixtureAccount;
     let member: FeatureFixtureAccount;
+    // Not a member of the owner's workspace.
+    let outsider: FeatureFixtureAccount;
     let workspaceId: string;
     let contextPageId: string;
     let searchablePageName: string;
@@ -122,6 +136,7 @@ describe('HTTP API - Mention Search', () => {
 
         owner = await getFeatureFixtureAccount(authHelper, FEATURE_NAME, 'owner');
         member = await getFeatureFixtureAccount(authHelper, FEATURE_NAME, 'member');
+        outsider = await getFeatureFixtureAccount(authHelper, FEATURE_NAME, 'outsider');
         workspaceId = owner.workspaceId;
 
         await ensureMemberJoinedWorkspace(owner, member, workspaceId);
@@ -239,4 +254,157 @@ describe('HTTP API - Mention Search', () => {
         });
         expect(section(response, MentionSearchSectionKind.Dates)).toBeUndefined();
     }, 30000);
+
+    // The server tiers typed Pages by their current title (MEN-SEARCH-08) with the matcher the Web
+    // ranker ports (MEN-WEB-06), so re-tiering the server's own answer on the client moves nothing,
+    // and a page found only through its body sits below every title match.
+    it('agrees with the client ranker on the title tiers of a typed Pages answer', async () => {
+        const token = `retier${uuidv4().replace(/-/g, '').slice(0, 10)}`;
+        const { outline } = await APIService.getAppOutline(workspaceId);
+        const rootViewId = outline[0]?.view_id || workspaceId;
+        // Exact, prefix, word start and substring: T0 to T3.
+        const titles = [token, `${token} 2026`, `Notes ${token}`, `x${token}`];
+        const titledIds: string[] = [];
+
+        for (const name of titles) {
+            const { view_id } = await APIService.addAppPage(workspaceId, rootViewId, {
+                layout: ViewLayout.Document,
+                name,
+            });
+
+            titledIds.push(view_id);
+        }
+
+        const { view_id: bodyPageId } = await APIService.addAppPage(workspaceId, rootViewId, {
+            layout: ViewLayout.Document,
+            name: `Weekly sync ${uuidv4().slice(0, 8)}`,
+            page_data: {
+                type: BlockType.Page,
+                children: [
+                    {
+                        type: BlockType.Paragraph,
+                        data: { delta: [{ insert: `Agenda: ${token} review` }] },
+                        children: [],
+                    },
+                ],
+            },
+        });
+
+        // Recent views reach the recent lane before the keyword index has the new titles.
+        await APIService.addRecentPages(workspaceId, titledIds);
+
+        const { response } = await waitForMentionItem(
+            workspaceId,
+            {
+                query: token,
+                limit: 8,
+                include: [MentionTargetKind.Page],
+                context: { view_id: contextPageId },
+            },
+            (item) => item.object_id === bodyPageId
+        );
+        const pages = section(response, MentionSearchSectionKind.Pages);
+
+        expect(pages).toBeDefined();
+        if (!pages) return;
+
+        const tiers = pages.items.map((item) => objectTier(token, item.title) ?? MENTION_UNMATCHED_SERVER_TIER);
+
+        expect(tiers).toEqual([...tiers].sort((left, right) => left - right));
+        expect(retierServerSection(token, pages)).toBe(pages);
+        expect(tiers[pages.items.findIndex((item) => item.object_id === bodyPageId)]).toBe(MENTION_UNMATCHED_SERVER_TIER);
+
+        const seeded = pages.items
+            .map((item) => titledIds.indexOf(item.object_id ?? ''))
+            .filter((index) => index !== -1);
+
+        expect(seeded[0]).toBe(0);
+        expect(seeded).toEqual([...seeded].sort((left, right) => left - right));
+    }, 120000);
+
+    // The picker's separate layout (MEN-WEB-12) shows each section where the server puts it, so a
+    // database viewed a minute ago is listed beside the pages instead of behind them. That needs the
+    // server to answer a matching database in a Databases section of its own, never inside Pages.
+    it('answers a typed query with a matching database in its own Databases section', async () => {
+        const token = `sections${uuidv4().replace(/-/g, '').slice(0, 10)}`;
+        const { outline } = await APIService.getAppOutline(workspaceId);
+        const rootViewId = outline[0]?.view_id || workspaceId;
+        const { view_id: databaseViewId, database_id: databaseId } = await APIService.addAppPage(
+            workspaceId,
+            rootViewId,
+            { layout: ViewLayout.Grid, name: `Tracker ${token}` }
+        );
+
+        expect(databaseId).toBeTruthy();
+        // Viewed a moment ago: the recent views reach the answer before the keyword index does.
+        await APIService.addRecentPages(workspaceId, [databaseViewId]);
+
+        const isTheDatabase = (item: MentionSearchResultItem) =>
+            item.kind === MentionTargetKind.Database && (item.database_id ?? item.object_id) === databaseId;
+        const { response } = await waitForMentionItem(
+            workspaceId,
+            {
+                query: token,
+                limit: 8,
+                include: [MentionTargetKind.Page, MentionTargetKind.Database],
+                context: { view_id: contextPageId },
+            },
+            isTheDatabase
+        );
+
+        expect(section(response, MentionSearchSectionKind.Databases)?.items.some(isTheDatabase)).toBe(true);
+        expect(section(response, MentionSearchSectionKind.Pages)?.items.some(isTheDatabase) ?? false).toBe(false);
+    }, 120000);
+
+    describe('picker session reports (MEN-CLOUD-05)', () => {
+        const session: MentionPickerSession = {
+            trigger: 'at',
+            outcome: 'selected',
+            query_len: 4,
+            selected_rank: 3,
+            selected_section: 'pages',
+            selected_source: 'server',
+            time_to_first_paint_ms: 40,
+            time_to_select_ms: 1_200,
+            server_ms: 160,
+            requests_sent: 3,
+            requests_aborted: 0,
+            zero_result_shown: false,
+        };
+        let serverInfo: ServerInfoState;
+
+        beforeAll(async () => {
+            serverInfo = { status: 'available', info: await APIService.getServerInfo() };
+        });
+
+        // Servers without MEN-CLOUD-05, and self-hosted ones without
+        // APPFLOWY_MENTION_SESSION_METRICS=true, advertise nothing, and the Web never calls them.
+        function advertised() {
+            const offered = isMentionSessionMetricsAdvertised(serverInfo);
+
+            if (!offered) console.warn('Skipped: this server does not advertise session_metrics_v1');
+            return offered;
+        }
+
+        it('takes a member report as the Web builds it, and a dismissed one without selection fields', async () => {
+            if (!advertised()) return;
+
+            setActiveTestToken(member.token);
+            await expect(reportMentionPickerSession(workspaceId, session, serverInfo)).resolves.toBe('sent');
+            await expect(
+                reportMentionPickerSession(
+                    workspaceId,
+                    { ...session, outcome: 'dismissed', trigger: 'page_link', zero_result_shown: true },
+                    serverInfo
+                )
+            ).resolves.toBe('sent');
+        }, 30000);
+
+        it("refuses a report to a workspace the user is not a member of, inside HTTP 200", async () => {
+            if (!advertised()) return;
+
+            setActiveTestToken(outsider.token);
+            await expect(reportMentionPickerSession(workspaceId, session, serverInfo)).resolves.toBe('refused');
+        }, 30000);
+    });
 });

@@ -1,0 +1,1561 @@
+{
+  "version": 1,
+  "about": "The replay gates of each configuration a ranking switch ships, and the metrics of every arm (MEN-X-07). Written by AppFlowy-Web scripts/mention-eval (run-eval.mjs --write); do not edit. Counts are integers; rr sums reciprocal ranks in units of 1/rr_unit. See README.md.",
+  "sessions_sha256": "41d9b5ff44080d463a05c45a5bd2a62912d0c83b781b95b6c22c392ea98f2c85",
+  "rankings_sha256": "a832ae2ca9dde13c623195725739dc6c03e15da7232859c7fef900e34667dab6",
+  "configurations": {
+    "typeahead_v2": {
+      "about": "mentionTypeaheadV2 on, pick memory off: the ranker without pick memory. Web MENTION_TYPEAHEAD_V2_DEFAULT, and Desktop's v2 switch once it exists (MEN-DESK-07, -08), may default on only while it passes.",
+      "arm": "ranker_no_picks",
+      "passed": true,
+      "gates": {
+        "mrr_at_least_mru": {
+          "passed": true,
+          "buckets": [
+            {
+              "bucket": "1",
+              "cases": 591,
+              "ranker_rr": 168701,
+              "mru_rr": 152518,
+              "passed": true
+            },
+            {
+              "bucket": "2",
+              "cases": 581,
+              "ranker_rr": 259693,
+              "mru_rr": 224442,
+              "passed": true
+            },
+            {
+              "bucket": "3",
+              "cases": 488,
+              "ranker_rr": 255278,
+              "mru_rr": 215469,
+              "passed": true
+            },
+            {
+              "bucket": "4-6",
+              "cases": 818,
+              "ranker_rr": 446952,
+              "mru_rr": 380751,
+              "passed": true
+            },
+            {
+              "bucket": "7+",
+              "cases": 834,
+              "ranker_rr": 589059,
+              "mru_rr": 433848,
+              "passed": true
+            }
+          ]
+        },
+        "unique_exact_title_hit_at_1": {
+          "passed": true,
+          "cases": 58,
+          "hits": 58,
+          "failures": []
+        },
+        "no_t0_t1_title_below_t3_t4": {
+          "passed": true,
+          "cases": 2082,
+          "violations": 0,
+          "failures": []
+        }
+      },
+      "informational": {
+        "duplicate_exact_title_hit_at_1": {
+          "cases": 7,
+          "hits": 5
+        }
+      }
+    },
+    "pick_memory": {
+      "about": "Pick memory on: the ranker with pick memory, whose rankings expected-rankings.json records, also against the ranker without it. Web MENTION_PICK_MEMORY_DEFAULT and Desktop FeatureFlag.mentionPickMemory may default on only while it passes.",
+      "arm": "ranker",
+      "passed": false,
+      "gates": {
+        "mrr_at_least_mru": {
+          "passed": true,
+          "buckets": [
+            {
+              "bucket": "1",
+              "cases": 591,
+              "ranker_rr": 217262,
+              "mru_rr": 152518,
+              "passed": true
+            },
+            {
+              "bucket": "2",
+              "cases": 581,
+              "ranker_rr": 279863,
+              "mru_rr": 224442,
+              "passed": true
+            },
+            {
+              "bucket": "3",
+              "cases": 488,
+              "ranker_rr": 267071,
+              "mru_rr": 215469,
+              "passed": true
+            },
+            {
+              "bucket": "4-6",
+              "cases": 818,
+              "ranker_rr": 465731,
+              "mru_rr": 380751,
+              "passed": true
+            },
+            {
+              "bucket": "7+",
+              "cases": 834,
+              "ranker_rr": 581694,
+              "mru_rr": 433848,
+              "passed": true
+            }
+          ]
+        },
+        "unique_exact_title_hit_at_1": {
+          "passed": true,
+          "cases": 58,
+          "hits": 58,
+          "failures": []
+        },
+        "no_t0_t1_title_below_t3_t4": {
+          "passed": true,
+          "cases": 2082,
+          "violations": 0,
+          "failures": []
+        },
+        "hit_at_1_within_0_5_pp_of_control": {
+          "passed": false,
+          "control": "ranker_no_picks",
+          "buckets": [
+            {
+              "bucket": "1",
+              "cases": 591,
+              "hit1": 202,
+              "control_hit1": 137,
+              "passed": true
+            },
+            {
+              "bucket": "2",
+              "cases": 581,
+              "hit1": 275,
+              "control_hit1": 239,
+              "passed": true
+            },
+            {
+              "bucket": "3",
+              "cases": 488,
+              "hit1": 268,
+              "control_hit1": 244,
+              "passed": true
+            },
+            {
+              "bucket": "4-6",
+              "cases": 818,
+              "hit1": 475,
+              "control_hit1": 431,
+              "passed": true
+            },
+            {
+              "bucket": "7+",
+              "cases": 834,
+              "hit1": 646,
+              "control_hit1": 652,
+              "passed": false
+            }
+          ]
+        }
+      },
+      "informational": {
+        "duplicate_exact_title_hit_at_1": {
+          "cases": 7,
+          "hits": 3
+        }
+      }
+    }
+  },
+  "dart_typescript_parity": "AppFlowy-Premium frontend/appflowy_flutter/test/unit_test/mention_person/mention_eval_parity_test.dart",
+  "rr_unit": 840,
+  "metrics": {
+    "ranker": {
+      "all": {
+        "cases": 3312,
+        "hit1": 1866,
+        "hit3": 2358,
+        "rr": 1811621
+      },
+      "buckets": {
+        "1": {
+          "cases": 591,
+          "hit1": 202,
+          "hit3": 300,
+          "rr": 217262
+        },
+        "2": {
+          "cases": 581,
+          "hit1": 275,
+          "hit3": 369,
+          "rr": 279863
+        },
+        "3": {
+          "cases": 488,
+          "hit1": 268,
+          "hit3": 353,
+          "rr": 267071
+        },
+        "4-6": {
+          "cases": 818,
+          "hit1": 475,
+          "hit3": 612,
+          "rr": 465731
+        },
+        "7+": {
+          "cases": 834,
+          "hit1": 646,
+          "hit3": 724,
+          "rr": 581694
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 287,
+            "hit1": 125,
+            "hit3": 191,
+            "rr": 134304
+          },
+          "2": {
+            "cases": 286,
+            "hit1": 176,
+            "hit3": 232,
+            "rr": 175715
+          },
+          "3": {
+            "cases": 245,
+            "hit1": 168,
+            "hit3": 216,
+            "rr": 163998
+          },
+          "4-6": {
+            "cases": 306,
+            "hit1": 207,
+            "hit3": 279,
+            "rr": 205200
+          },
+          "7+": {
+            "cases": 106,
+            "hit1": 99,
+            "hit3": 104,
+            "rr": 85190
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 304,
+            "hit1": 77,
+            "hit3": 109,
+            "rr": 82958
+          },
+          "2": {
+            "cases": 295,
+            "hit1": 99,
+            "hit3": 137,
+            "rr": 104148
+          },
+          "3": {
+            "cases": 243,
+            "hit1": 100,
+            "hit3": 137,
+            "rr": 103073
+          },
+          "4-6": {
+            "cases": 512,
+            "hit1": 268,
+            "hit3": 333,
+            "rr": 260531
+          },
+          "7+": {
+            "cases": 728,
+            "hit1": 547,
+            "hit3": 620,
+            "rr": 496504
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 576,
+            "hit1": 189,
+            "hit3": 287,
+            "rr": 205964
+          },
+          "2": {
+            "cases": 564,
+            "hit1": 261,
+            "hit3": 354,
+            "rr": 267305
+          },
+          "3": {
+            "cases": 480,
+            "hit1": 261,
+            "hit3": 346,
+            "rr": 261023
+          },
+          "4-6": {
+            "cases": 807,
+            "hit1": 465,
+            "hit3": 602,
+            "rr": 457163
+          },
+          "7+": {
+            "cases": 832,
+            "hit1": 644,
+            "hit3": 722,
+            "rr": 580014
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 15,
+            "hit1": 13,
+            "hit3": 13,
+            "rr": 11298
+          },
+          "2": {
+            "cases": 17,
+            "hit1": 14,
+            "hit3": 15,
+            "rr": 12558
+          },
+          "3": {
+            "cases": 8,
+            "hit1": 7,
+            "hit3": 7,
+            "rr": 6048
+          },
+          "4-6": {
+            "cases": 11,
+            "hit1": 10,
+            "hit3": 10,
+            "rr": 8568
+          },
+          "7+": {
+            "cases": 2,
+            "hit1": 2,
+            "hit3": 2,
+            "rr": 1680
+          }
+        }
+      }
+    },
+    "ranker_no_picks": {
+      "all": {
+        "cases": 3312,
+        "hit1": 1703,
+        "hit3": 2281,
+        "rr": 1719683
+      },
+      "buckets": {
+        "1": {
+          "cases": 591,
+          "hit1": 137,
+          "hit3": 243,
+          "rr": 168701
+        },
+        "2": {
+          "cases": 581,
+          "hit1": 239,
+          "hit3": 355,
+          "rr": 259693
+        },
+        "3": {
+          "cases": 488,
+          "hit1": 244,
+          "hit3": 350,
+          "rr": 255278
+        },
+        "4-6": {
+          "cases": 818,
+          "hit1": 431,
+          "hit3": 607,
+          "rr": 446952
+        },
+        "7+": {
+          "cases": 834,
+          "hit1": 652,
+          "hit3": 726,
+          "rr": 589059
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 287,
+            "hit1": 88,
+            "hit3": 143,
+            "rr": 102587
+          },
+          "2": {
+            "cases": 286,
+            "hit1": 155,
+            "hit3": 220,
+            "rr": 162961
+          },
+          "3": {
+            "cases": 245,
+            "hit1": 161,
+            "hit3": 218,
+            "rr": 160540
+          },
+          "4-6": {
+            "cases": 306,
+            "hit1": 193,
+            "hit3": 277,
+            "rr": 198480
+          },
+          "7+": {
+            "cases": 106,
+            "hit1": 99,
+            "hit3": 104,
+            "rr": 85190
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 304,
+            "hit1": 49,
+            "hit3": 100,
+            "rr": 66114
+          },
+          "2": {
+            "cases": 295,
+            "hit1": 84,
+            "hit3": 135,
+            "rr": 96732
+          },
+          "3": {
+            "cases": 243,
+            "hit1": 83,
+            "hit3": 132,
+            "rr": 94738
+          },
+          "4-6": {
+            "cases": 512,
+            "hit1": 238,
+            "hit3": 330,
+            "rr": 248472
+          },
+          "7+": {
+            "cases": 728,
+            "hit1": 553,
+            "hit3": 622,
+            "rr": 503869
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 576,
+            "hit1": 124,
+            "hit3": 230,
+            "rr": 157403
+          },
+          "2": {
+            "cases": 564,
+            "hit1": 225,
+            "hit3": 340,
+            "rr": 247135
+          },
+          "3": {
+            "cases": 480,
+            "hit1": 237,
+            "hit3": 343,
+            "rr": 249230
+          },
+          "4-6": {
+            "cases": 807,
+            "hit1": 421,
+            "hit3": 597,
+            "rr": 438384
+          },
+          "7+": {
+            "cases": 832,
+            "hit1": 650,
+            "hit3": 724,
+            "rr": 587379
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 15,
+            "hit1": 13,
+            "hit3": 13,
+            "rr": 11298
+          },
+          "2": {
+            "cases": 17,
+            "hit1": 14,
+            "hit3": 15,
+            "rr": 12558
+          },
+          "3": {
+            "cases": 8,
+            "hit1": 7,
+            "hit3": 7,
+            "rr": 6048
+          },
+          "4-6": {
+            "cases": 11,
+            "hit1": 10,
+            "hit3": 10,
+            "rr": 8568
+          },
+          "7+": {
+            "cases": 2,
+            "hit1": 2,
+            "hit3": 2,
+            "rr": 1680
+          }
+        }
+      }
+    },
+    "mru": {
+      "all": {
+        "cases": 3312,
+        "hit1": 1409,
+        "hit3": 1875,
+        "rr": 1407028
+      },
+      "buckets": {
+        "1": {
+          "cases": 591,
+          "hit1": 118,
+          "hit3": 218,
+          "rr": 152518
+        },
+        "2": {
+          "cases": 581,
+          "hit1": 217,
+          "hit3": 306,
+          "rr": 224442
+        },
+        "3": {
+          "cases": 488,
+          "hit1": 216,
+          "hit3": 291,
+          "rr": 215469
+        },
+        "4-6": {
+          "cases": 818,
+          "hit1": 379,
+          "hit3": 513,
+          "rr": 380751
+        },
+        "7+": {
+          "cases": 834,
+          "hit1": 479,
+          "hit3": 547,
+          "rr": 433848
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 287,
+            "hit1": 76,
+            "hit3": 135,
+            "rr": 95419
+          },
+          "2": {
+            "cases": 286,
+            "hit1": 139,
+            "hit3": 179,
+            "rr": 134996
+          },
+          "3": {
+            "cases": 245,
+            "hit1": 142,
+            "hit3": 169,
+            "rr": 130488
+          },
+          "4-6": {
+            "cases": 306,
+            "hit1": 162,
+            "hit3": 196,
+            "rr": 149940
+          },
+          "7+": {
+            "cases": 106,
+            "hit1": 85,
+            "hit3": 85,
+            "rr": 71400
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 304,
+            "hit1": 42,
+            "hit3": 83,
+            "rr": 57099
+          },
+          "2": {
+            "cases": 295,
+            "hit1": 78,
+            "hit3": 127,
+            "rr": 89446
+          },
+          "3": {
+            "cases": 243,
+            "hit1": 74,
+            "hit3": 122,
+            "rr": 84981
+          },
+          "4-6": {
+            "cases": 512,
+            "hit1": 217,
+            "hit3": 317,
+            "rr": 230811
+          },
+          "7+": {
+            "cases": 728,
+            "hit1": 394,
+            "hit3": 462,
+            "rr": 362448
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 576,
+            "hit1": 109,
+            "hit3": 209,
+            "rr": 144748
+          },
+          "2": {
+            "cases": 564,
+            "hit1": 207,
+            "hit3": 296,
+            "rr": 215832
+          },
+          "3": {
+            "cases": 480,
+            "hit1": 211,
+            "hit3": 286,
+            "rr": 211059
+          },
+          "4-6": {
+            "cases": 807,
+            "hit1": 373,
+            "hit3": 507,
+            "rr": 375501
+          },
+          "7+": {
+            "cases": 832,
+            "hit1": 478,
+            "hit3": 546,
+            "rr": 433008
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 15,
+            "hit1": 9,
+            "hit3": 9,
+            "rr": 7770
+          },
+          "2": {
+            "cases": 17,
+            "hit1": 10,
+            "hit3": 10,
+            "rr": 8610
+          },
+          "3": {
+            "cases": 8,
+            "hit1": 5,
+            "hit3": 5,
+            "rr": 4410
+          },
+          "4-6": {
+            "cases": 11,
+            "hit1": 6,
+            "hit3": 6,
+            "rr": 5250
+          },
+          "7+": {
+            "cases": 2,
+            "hit1": 1,
+            "hit3": 1,
+            "rr": 840
+          }
+        }
+      }
+    },
+    "substring": {
+      "all": {
+        "cases": 3312,
+        "hit1": 879,
+        "hit3": 1302,
+        "rr": 951834
+      },
+      "buckets": {
+        "1": {
+          "cases": 591,
+          "hit1": 14,
+          "hit3": 14,
+          "rr": 14099
+        },
+        "2": {
+          "cases": 581,
+          "hit1": 53,
+          "hit3": 86,
+          "rr": 72825
+        },
+        "3": {
+          "cases": 488,
+          "hit1": 91,
+          "hit3": 166,
+          "rr": 127212
+        },
+        "4-6": {
+          "cases": 818,
+          "hit1": 172,
+          "hit3": 415,
+          "rr": 243020
+        },
+        "7+": {
+          "cases": 834,
+          "hit1": 549,
+          "hit3": 621,
+          "rr": 494678
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 287,
+            "hit1": 12,
+            "hit3": 12,
+            "rr": 11711
+          },
+          "2": {
+            "cases": 286,
+            "hit1": 44,
+            "hit3": 64,
+            "rr": 57808
+          },
+          "3": {
+            "cases": 245,
+            "hit1": 84,
+            "hit3": 139,
+            "rr": 103718
+          },
+          "4-6": {
+            "cases": 306,
+            "hit1": 147,
+            "hit3": 246,
+            "rr": 169171
+          },
+          "7+": {
+            "cases": 106,
+            "hit1": 75,
+            "hit3": 86,
+            "rr": 70336
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 304,
+            "hit1": 2,
+            "hit3": 2,
+            "rr": 2388
+          },
+          "2": {
+            "cases": 295,
+            "hit1": 9,
+            "hit3": 22,
+            "rr": 15017
+          },
+          "3": {
+            "cases": 243,
+            "hit1": 7,
+            "hit3": 27,
+            "rr": 23494
+          },
+          "4-6": {
+            "cases": 512,
+            "hit1": 25,
+            "hit3": 169,
+            "rr": 73849
+          },
+          "7+": {
+            "cases": 728,
+            "hit1": 474,
+            "hit3": 535,
+            "rr": 424342
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 576,
+            "hit1": 2,
+            "hit3": 2,
+            "rr": 3626
+          },
+          "2": {
+            "cases": 564,
+            "hit1": 40,
+            "hit3": 72,
+            "rr": 61035
+          },
+          "3": {
+            "cases": 480,
+            "hit1": 85,
+            "hit3": 160,
+            "rr": 121752
+          },
+          "4-6": {
+            "cases": 807,
+            "hit1": 163,
+            "hit3": 406,
+            "rr": 235040
+          },
+          "7+": {
+            "cases": 832,
+            "hit1": 547,
+            "hit3": 619,
+            "rr": 492998
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 15,
+            "hit1": 12,
+            "hit3": 12,
+            "rr": 10473
+          },
+          "2": {
+            "cases": 17,
+            "hit1": 13,
+            "hit3": 14,
+            "rr": 11790
+          },
+          "3": {
+            "cases": 8,
+            "hit1": 6,
+            "hit3": 6,
+            "rr": 5460
+          },
+          "4-6": {
+            "cases": 11,
+            "hit1": 9,
+            "hit3": 9,
+            "rr": 7980
+          },
+          "7+": {
+            "cases": 2,
+            "hit1": 2,
+            "hit3": 2,
+            "rr": 1680
+          }
+        }
+      }
+    }
+  },
+  "probe_metrics": {
+    "ranker": {
+      "all": {
+        "cases": 3069,
+        "hit1": 2392,
+        "hit3": 2776,
+        "rr": 2174138
+      },
+      "buckets": {
+        "1": {
+          "cases": 684,
+          "hit1": 412,
+          "hit3": 569,
+          "rr": 412686
+        },
+        "2": {
+          "cases": 703,
+          "hit1": 539,
+          "hit3": 626,
+          "rr": 493556
+        },
+        "3": {
+          "cases": 499,
+          "hit1": 415,
+          "hit3": 479,
+          "rr": 374038
+        },
+        "4-6": {
+          "cases": 898,
+          "hit1": 781,
+          "hit3": 852,
+          "rr": 686238
+        },
+        "7+": {
+          "cases": 285,
+          "hit1": 245,
+          "hit3": 250,
+          "rr": 207620
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 131,
+            "hit1": 113,
+            "hit3": 126,
+            "rr": 100170
+          },
+          "2": {
+            "cases": 123,
+            "hit1": 117,
+            "hit3": 121,
+            "rr": 100030
+          },
+          "3": {
+            "cases": 68,
+            "hit1": 66,
+            "hit3": 68,
+            "rr": 56280
+          },
+          "4-6": {
+            "cases": 119,
+            "hit1": 119,
+            "hit3": 119,
+            "rr": 99960
+          },
+          "7+": {
+            "cases": 26,
+            "hit1": 26,
+            "hit3": 26,
+            "rr": 21840
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 553,
+            "hit1": 299,
+            "hit3": 443,
+            "rr": 312516
+          },
+          "2": {
+            "cases": 580,
+            "hit1": 422,
+            "hit3": 505,
+            "rr": 393526
+          },
+          "3": {
+            "cases": 431,
+            "hit1": 349,
+            "hit3": 411,
+            "rr": 317758
+          },
+          "4-6": {
+            "cases": 779,
+            "hit1": 662,
+            "hit3": 733,
+            "rr": 586278
+          },
+          "7+": {
+            "cases": 259,
+            "hit1": 219,
+            "hit3": 224,
+            "rr": 185780
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 377,
+            "hit1": 193,
+            "hit3": 277,
+            "rr": 198738
+          },
+          "2": {
+            "cases": 375,
+            "hit1": 271,
+            "hit3": 309,
+            "rr": 247408
+          },
+          "3": {
+            "cases": 362,
+            "hit1": 307,
+            "hit3": 343,
+            "rr": 272048
+          },
+          "4-6": {
+            "cases": 714,
+            "hit1": 620,
+            "hit3": 669,
+            "rr": 541548
+          },
+          "7+": {
+            "cases": 238,
+            "hit1": 198,
+            "hit3": 203,
+            "rr": 168140
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 307,
+            "hit1": 219,
+            "hit3": 292,
+            "rr": 213948
+          },
+          "2": {
+            "cases": 328,
+            "hit1": 268,
+            "hit3": 317,
+            "rr": 246148
+          },
+          "3": {
+            "cases": 137,
+            "hit1": 108,
+            "hit3": 136,
+            "rr": 101990
+          },
+          "4-6": {
+            "cases": 184,
+            "hit1": 161,
+            "hit3": 183,
+            "rr": 144690
+          },
+          "7+": {
+            "cases": 47,
+            "hit1": 47,
+            "hit3": 47,
+            "rr": 39480
+          }
+        }
+      }
+    },
+    "ranker_no_picks": {
+      "all": {
+        "cases": 3069,
+        "hit1": 2576,
+        "hit3": 2795,
+        "rr": 2259372
+      },
+      "buckets": {
+        "1": {
+          "cases": 684,
+          "hit1": 512,
+          "hit3": 583,
+          "rr": 460833
+        },
+        "2": {
+          "cases": 703,
+          "hit1": 584,
+          "hit3": 634,
+          "rr": 515103
+        },
+        "3": {
+          "cases": 499,
+          "hit1": 437,
+          "hit3": 479,
+          "rr": 383698
+        },
+        "4-6": {
+          "cases": 898,
+          "hit1": 798,
+          "hit3": 849,
+          "rr": 692118
+        },
+        "7+": {
+          "cases": 285,
+          "hit1": 245,
+          "hit3": 250,
+          "rr": 207620
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 131,
+            "hit1": 117,
+            "hit3": 127,
+            "rr": 102200
+          },
+          "2": {
+            "cases": 123,
+            "hit1": 117,
+            "hit3": 121,
+            "rr": 100170
+          },
+          "3": {
+            "cases": 68,
+            "hit1": 66,
+            "hit3": 68,
+            "rr": 56280
+          },
+          "4-6": {
+            "cases": 119,
+            "hit1": 119,
+            "hit3": 119,
+            "rr": 99960
+          },
+          "7+": {
+            "cases": 26,
+            "hit1": 26,
+            "hit3": 26,
+            "rr": 21840
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 553,
+            "hit1": 395,
+            "hit3": 456,
+            "rr": 358633
+          },
+          "2": {
+            "cases": 580,
+            "hit1": 467,
+            "hit3": 513,
+            "rr": 414933
+          },
+          "3": {
+            "cases": 431,
+            "hit1": 371,
+            "hit3": 411,
+            "rr": 327418
+          },
+          "4-6": {
+            "cases": 779,
+            "hit1": 679,
+            "hit3": 730,
+            "rr": 592158
+          },
+          "7+": {
+            "cases": 259,
+            "hit1": 219,
+            "hit3": 224,
+            "rr": 185780
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 377,
+            "hit1": 249,
+            "hit3": 289,
+            "rr": 226178
+          },
+          "2": {
+            "cases": 375,
+            "hit1": 293,
+            "hit3": 317,
+            "rr": 258468
+          },
+          "3": {
+            "cases": 362,
+            "hit1": 323,
+            "hit3": 343,
+            "rr": 279328
+          },
+          "4-6": {
+            "cases": 714,
+            "hit1": 639,
+            "hit3": 666,
+            "rr": 548268
+          },
+          "7+": {
+            "cases": 238,
+            "hit1": 198,
+            "hit3": 203,
+            "rr": 168140
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 307,
+            "hit1": 263,
+            "hit3": 294,
+            "rr": 234655
+          },
+          "2": {
+            "cases": 328,
+            "hit1": 291,
+            "hit3": 317,
+            "rr": 256635
+          },
+          "3": {
+            "cases": 137,
+            "hit1": 114,
+            "hit3": 136,
+            "rr": 104370
+          },
+          "4-6": {
+            "cases": 184,
+            "hit1": 159,
+            "hit3": 183,
+            "rr": 143850
+          },
+          "7+": {
+            "cases": 47,
+            "hit1": 47,
+            "hit3": 47,
+            "rr": 39480
+          }
+        }
+      }
+    },
+    "mru": {
+      "all": {
+        "cases": 3069,
+        "hit1": 2465,
+        "hit3": 2568,
+        "rr": 2112320
+      },
+      "buckets": {
+        "1": {
+          "cases": 684,
+          "hit1": 520,
+          "hit3": 577,
+          "rr": 459620
+        },
+        "2": {
+          "cases": 703,
+          "hit1": 566,
+          "hit3": 595,
+          "rr": 487200
+        },
+        "3": {
+          "cases": 499,
+          "hit1": 411,
+          "hit3": 422,
+          "rr": 349860
+        },
+        "4-6": {
+          "cases": 898,
+          "hit1": 750,
+          "hit3": 756,
+          "rr": 632520
+        },
+        "7+": {
+          "cases": 285,
+          "hit1": 218,
+          "hit3": 218,
+          "rr": 183120
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 131,
+            "hit1": 107,
+            "hit3": 113,
+            "rr": 92400
+          },
+          "2": {
+            "cases": 123,
+            "hit1": 102,
+            "hit3": 106,
+            "rr": 87360
+          },
+          "3": {
+            "cases": 68,
+            "hit1": 58,
+            "hit3": 60,
+            "rr": 49560
+          },
+          "4-6": {
+            "cases": 119,
+            "hit1": 105,
+            "hit3": 105,
+            "rr": 88200
+          },
+          "7+": {
+            "cases": 26,
+            "hit1": 22,
+            "hit3": 22,
+            "rr": 18480
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 553,
+            "hit1": 413,
+            "hit3": 464,
+            "rr": 367220
+          },
+          "2": {
+            "cases": 580,
+            "hit1": 464,
+            "hit3": 489,
+            "rr": 399840
+          },
+          "3": {
+            "cases": 431,
+            "hit1": 353,
+            "hit3": 362,
+            "rr": 300300
+          },
+          "4-6": {
+            "cases": 779,
+            "hit1": 645,
+            "hit3": 651,
+            "rr": 544320
+          },
+          "7+": {
+            "cases": 259,
+            "hit1": 196,
+            "hit3": 196,
+            "rr": 164640
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 377,
+            "hit1": 264,
+            "hit3": 315,
+            "rr": 242060
+          },
+          "2": {
+            "cases": 375,
+            "hit1": 292,
+            "hit3": 315,
+            "rr": 254520
+          },
+          "3": {
+            "cases": 362,
+            "hit1": 295,
+            "hit3": 305,
+            "rr": 252000
+          },
+          "4-6": {
+            "cases": 714,
+            "hit1": 593,
+            "hit3": 599,
+            "rr": 500640
+          },
+          "7+": {
+            "cases": 238,
+            "hit1": 178,
+            "hit3": 178,
+            "rr": 149520
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 307,
+            "hit1": 256,
+            "hit3": 262,
+            "rr": 217560
+          },
+          "2": {
+            "cases": 328,
+            "hit1": 274,
+            "hit3": 280,
+            "rr": 232680
+          },
+          "3": {
+            "cases": 137,
+            "hit1": 116,
+            "hit3": 117,
+            "rr": 97860
+          },
+          "4-6": {
+            "cases": 184,
+            "hit1": 157,
+            "hit3": 157,
+            "rr": 131880
+          },
+          "7+": {
+            "cases": 47,
+            "hit1": 40,
+            "hit3": 40,
+            "rr": 33600
+          }
+        }
+      }
+    },
+    "substring": {
+      "all": {
+        "cases": 3069,
+        "hit1": 1405,
+        "hit3": 1700,
+        "rr": 1316598
+      },
+      "buckets": {
+        "1": {
+          "cases": 684,
+          "hit1": 222,
+          "hit3": 342,
+          "rr": 238694
+        },
+        "2": {
+          "cases": 703,
+          "hit1": 325,
+          "hit3": 413,
+          "rr": 318621
+        },
+        "3": {
+          "cases": 499,
+          "hit1": 251,
+          "hit3": 307,
+          "rr": 234248
+        },
+        "4-6": {
+          "cases": 898,
+          "hit1": 461,
+          "hit3": 490,
+          "rr": 401310
+        },
+        "7+": {
+          "cases": 285,
+          "hit1": 146,
+          "hit3": 148,
+          "rr": 123725
+        }
+      },
+      "lanes": {
+        "people": {
+          "1": {
+            "cases": 131,
+            "hit1": 80,
+            "hit3": 92,
+            "rr": 72800
+          },
+          "2": {
+            "cases": 123,
+            "hit1": 83,
+            "hit3": 95,
+            "rr": 76812
+          },
+          "3": {
+            "cases": 68,
+            "hit1": 57,
+            "hit3": 62,
+            "rr": 49868
+          },
+          "4-6": {
+            "cases": 119,
+            "hit1": 118,
+            "hit3": 119,
+            "rr": 99540
+          },
+          "7+": {
+            "cases": 26,
+            "hit1": 26,
+            "hit3": 26,
+            "rr": 21840
+          }
+        },
+        "objects": {
+          "1": {
+            "cases": 553,
+            "hit1": 142,
+            "hit3": 250,
+            "rr": 165894
+          },
+          "2": {
+            "cases": 580,
+            "hit1": 242,
+            "hit3": 318,
+            "rr": 241809
+          },
+          "3": {
+            "cases": 431,
+            "hit1": 194,
+            "hit3": 245,
+            "rr": 184380
+          },
+          "4-6": {
+            "cases": 779,
+            "hit1": 343,
+            "hit3": 371,
+            "rr": 301770
+          },
+          "7+": {
+            "cases": 259,
+            "hit1": 120,
+            "hit3": 122,
+            "rr": 101885
+          }
+        }
+      },
+      "scripts": {
+        "latin": {
+          "1": {
+            "cases": 377,
+            "hit1": 29,
+            "hit3": 75,
+            "rr": 42476
+          },
+          "2": {
+            "cases": 375,
+            "hit1": 79,
+            "hit3": 113,
+            "rr": 85723
+          },
+          "3": {
+            "cases": 362,
+            "hit1": 137,
+            "hit3": 171,
+            "rr": 129878
+          },
+          "4-6": {
+            "cases": 714,
+            "hit1": 290,
+            "hit3": 307,
+            "rr": 252420
+          },
+          "7+": {
+            "cases": 238,
+            "hit1": 99,
+            "hit3": 101,
+            "rr": 84245
+          }
+        },
+        "cjk": {
+          "1": {
+            "cases": 307,
+            "hit1": 193,
+            "hit3": 267,
+            "rr": 196218
+          },
+          "2": {
+            "cases": 328,
+            "hit1": 246,
+            "hit3": 300,
+            "rr": 232898
+          },
+          "3": {
+            "cases": 137,
+            "hit1": 114,
+            "hit3": 136,
+            "rr": 104370
+          },
+          "4-6": {
+            "cases": 184,
+            "hit1": 171,
+            "hit3": 183,
+            "rr": 148890
+          },
+          "7+": {
+            "cases": 47,
+            "hit1": 47,
+            "hit3": 47,
+            "rr": 39480
+          }
+        }
+      }
+    }
+  }
+}

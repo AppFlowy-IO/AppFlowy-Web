@@ -4,6 +4,10 @@ import { useTranslation } from 'react-i18next';
 
 import { DraftMention, updateDraftMentions } from '@/application/comment-mentions';
 import { MentionablePerson } from '@/application/types';
+import {
+  CommentMentionAwareness,
+  useCommentMentionPicker,
+} from '@/components/_shared/comment-mention/useCommentMentionPicker';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
@@ -20,6 +24,12 @@ export const EMPTY_COMMENT_DRAFT: CommentDraft = { content: '', mentions: [] };
 interface InlineCommentInputProps extends Omit<ComponentProps<typeof TextareaAutosize>, 'value' | 'onChange'> {
   draft: CommentDraft;
   onDraftChange: Dispatch<SetStateAction<CommentDraft>>;
+  /** People who took part in the thread, the most recent first; a ranked picker lists them first. */
+  mentionParticipantIds?: readonly string[];
+  /** The page's collaborator awareness; a ranked picker lists who is on the page next. */
+  mentionAwareness?: CommentMentionAwareness;
+  /** The commenter's person id; a ranked picker lists them last. */
+  mentionRequesterId?: string | null;
 }
 
 interface MentionQuery {
@@ -30,28 +40,35 @@ interface MentionQuery {
 
 /** Both comment surfaces keep focus in the textarea while choosing a person. */
 export const InlineCommentInput = forwardRef<HTMLTextAreaElement, InlineCommentInputProps>(function InlineCommentInput(
-  { draft, onDraftChange, disabled, onKeyDown, onBlur, onSelect, ...props },
+  {
+    draft,
+    onDraftChange,
+    mentionParticipantIds,
+    mentionAwareness,
+    mentionRequesterId,
+    disabled,
+    onKeyDown,
+    onBlur,
+    onSelect,
+    ...props
+  },
   forwardedRef
 ) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [query, setQuery] = useState<MentionQuery | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const caretAfterRender = useRef<number | null>(null);
   const listId = useId();
   const open = query !== null && !disabled;
   const { users, loading } = useMentionableUsersWithAutoFetch(open);
-  const suggestions = query
-    ? users
-        .filter(
-          (person) =>
-            person.person_id &&
-            `${person.name} ${person.email}`.toLocaleLowerCase().includes(query.text.toLocaleLowerCase())
-        )
-        .slice(0, 8)
-    : [];
-  const activeIndex = Math.min(selectedIndex, Math.max(0, suggestions.length - 1));
+  const { suggestions, activeIndex, setActiveIndex, moveActive, resetActive } = useCommentMentionPicker({
+    query: open ? query.text : null,
+    people: users,
+    participantIds: mentionParticipantIds,
+    awareness: mentionAwareness,
+    requesterId: mentionRequesterId,
+  });
 
   const setInputRef = useCallback(
     (input: HTMLTextAreaElement | null) => {
@@ -96,7 +113,7 @@ export const InlineCommentInput = forwardRef<HTMLTextAreaElement, InlineCommentI
     }
 
     setQuery({ start, end: caret, text });
-    setSelectedIndex(0);
+    resetActive();
   };
 
   const selectPerson = (person: MentionablePerson) => {
@@ -171,10 +188,7 @@ export const InlineCommentInput = forwardRef<HTMLTextAreaElement, InlineCommentI
                 event.preventDefault();
                 event.stopPropagation();
                 if (event.key === 'Enter') selectPerson(suggestions[activeIndex]);
-                else
-                  setSelectedIndex(
-                    (activeIndex + (event.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length
-                  );
+                else moveActive(event.key === 'ArrowDown' ? 1 : -1);
                 return;
               }
 
@@ -222,7 +236,7 @@ export const InlineCommentInput = forwardRef<HTMLTextAreaElement, InlineCommentI
                 index === activeIndex && 'bg-fill-theme-select'
               )}
               onMouseDown={(event) => event.preventDefault()}
-              onMouseMove={() => setSelectedIndex(index)}
+              onMouseMove={() => setActiveIndex(index)}
               onClick={() => selectPerson(person)}
             >
               <Avatar className='h-6 w-6 shrink-0'>

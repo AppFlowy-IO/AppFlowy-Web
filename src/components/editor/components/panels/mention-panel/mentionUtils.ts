@@ -12,7 +12,10 @@ import {
 } from '@/application/types';
 
 export interface MentionPanelSearchResult {
+  /** The option key: the picker section kind plus `navKey`, holding no position. */
   key: string;
+  /** The item's section-free identity, from {@link mentionItemNavKey}. */
+  navKey: string;
   item: MentionSearchResultItem;
   mention: Mention;
   sectionKind: MentionSearchSectionKind;
@@ -64,23 +67,133 @@ function withDatabaseRowSearchFilter(request: MentionSearchRequest): MentionSear
   };
 }
 
-function mentionSectionOrder(kind: MentionSearchSectionKind) {
+/** A section kind's place in the canonical order servers send: Suggested, People, Pages, … Links. */
+export function mentionSectionOrder(kind: MentionSearchSectionKind) {
   const index = MENTION_SECTION_ORDER.indexOf(kind);
 
   return index === -1 ? MENTION_SECTION_ORDER.length : index;
 }
 
-export function normalizeMentionSearchSectionsForPicker(
+/** The translation key of each section kind's title (`document.mentionMenu` in `en.json`). */
+const MENTION_SECTION_TITLE_KEYS: Readonly<Record<MentionSearchSectionKind, string>> = {
+  [MentionSearchSectionKind.Suggested]: 'document.mentionMenu.suggested',
+  [MentionSearchSectionKind.People]: 'document.mentionMenu.people',
+  [MentionSearchSectionKind.Pages]: 'document.mentionMenu.pages',
+  [MentionSearchSectionKind.Databases]: 'document.mentionMenu.databases',
+  [MentionSearchSectionKind.DatabaseRows]: 'document.mentionMenu.databaseRows',
+  [MentionSearchSectionKind.Dates]: 'document.mentionMenu.dates',
+  [MentionSearchSectionKind.Links]: 'document.mentionMenu.links',
+};
+
+/** The translation key of a Dates section's title while it lists a reminder (Desktop's key too). */
+const MENTION_DATE_AND_REMINDER_TITLE_KEY = 'document.mentionMenu.dateAndReminder';
+
+/**
+ * The title the picker shows for a section of `kind` that lists `items`: the translation of its
+ * `document.mentionMenu` key, never the title a server sent, which is English whatever the user's
+ * language (MEN-WEB-12). A Dates section that lists a reminder is "Date & Reminder", as every
+ * released Cloud titles it (`build_date_section`), so pass the items the picker shows, after the
+ * reminders it does not offer are left out. A kind this client does not know keeps `serverTitle`,
+ * so such a section still has a heading.
+ */
+export function mentionSectionTitle(
+  kind: MentionSearchSectionKind,
+  t: (key: string) => string,
+  serverTitle = '',
+  items: readonly MentionSearchResultItem[] = []
+): string {
+  if (kind === MentionSearchSectionKind.Dates && items.some((item) => item.kind === MentionTargetKind.Reminder)) {
+    return t(MENTION_DATE_AND_REMINDER_TITLE_KEY);
+  }
+
+  const key = (MENTION_SECTION_TITLE_KEYS as Partial<Record<string, string>>)[kind];
+
+  return key ? t(key) : serverTitle;
+}
+
+/**
+ * How the picker lays its sections out:
+ * - `folded`, the default: Databases and Database rows show inside Pages, after its pages, or as a
+ *   Pages section in Pages' place when no page is listed; every other section keeps its place. Only
+ *   Pages collapses.
+ * - `separate` (MEN-WEB-12, behind the picker's sections switch, off by default until product signs
+ *   off): every kind is a section of its own, in the canonical order, as Desktop shows them, so a
+ *   database viewed a minute ago is never hidden behind the pages. Rows stay where the server put
+ *   them: Search sends typed rows inside Pages, and a server that sends a Database rows section
+ *   gets one. Every people and object section collapses.
+ */
+export type MentionSectionLayout = 'folded' | 'separate';
+
+/** How many results a collapsed section shows above its "N more" row. */
+export const MENTION_SECTION_COLLAPSE_LIMIT = 4;
+
+/**
+ * The kinds the separate layout collapses: those of people and objects, Suggested among them. Dates
+ * and Links list quick picks, at most five, which neither client collapses.
+ */
+const MENTION_SEPARATE_COLLAPSING_KINDS: ReadonlySet<MentionSearchSectionKind> = new Set([
+  MentionSearchSectionKind.Suggested,
+  MentionSearchSectionKind.People,
+  MentionSearchSectionKind.Pages,
+  MentionSearchSectionKind.Databases,
+  MentionSearchSectionKind.DatabaseRows,
+]);
+
+/**
+ * Whether a section of `kind` shows at most {@link MENTION_SECTION_COLLAPSE_LIMIT} results and a
+ * "N more" row until it is expanded, in `layout`.
+ */
+export function mentionSectionCollapses(kind: MentionSearchSectionKind, layout: MentionSectionLayout): boolean {
+  return layout === 'separate' ? MENTION_SEPARATE_COLLAPSING_KINDS.has(kind) : kind === MentionSearchSectionKind.Pages;
+}
+
+/**
+ * `sections` as the picker shows them in `layout` ({@link MentionSectionLayout}). `pagesTitle`
+ * titles the Pages section the folded layout makes when only databases or rows are listed.
+ */
+export function layoutMentionSectionsForPicker(
   sections: MentionSearchSection[],
-  pagesTitle = 'Pages'
+  layout: MentionSectionLayout,
+  pagesTitle: string
+): MentionSearchSection[] {
+  return layout === 'separate' ? separateMentionSections(sections) : foldMentionSectionsIntoPages(sections, pagesTitle);
+}
+
+/**
+ * The separate layout: `sections` in the canonical order (Suggested, People, Pages, Databases,
+ * Database rows, Dates, Links), each kept as it is, whatever order they came in. Sections of one
+ * kind, and kinds this client does not know (after Links), keep their order. The same array when
+ * it is in order already, as an answer is.
+ */
+export function separateMentionSections(sections: MentionSearchSection[]): MentionSearchSection[] {
+  const inOrder = sections.every(
+    (section, index) => index === 0 || mentionSectionOrder(sections[index - 1].kind) <= mentionSectionOrder(section.kind)
+  );
+
+  if (inOrder) return sections;
+
+  return sections
+    .map((section, index) => ({ section, index, order: mentionSectionOrder(section.kind) }))
+    .sort((left, right) => left.order - right.order || left.index - right.index)
+    .map(({ section }) => section);
+}
+
+/**
+ * The folded layout: the items of every Databases and Database rows section join Pages after its
+ * own items, or a Pages section titled `pagesTitle` in Pages' place when no Pages section is
+ * listed. Empty Databases and Database rows sections are left out, such as the failed one Cloud
+ * sends when its object source fails. Each item keeps its own kind, which gives its icon and what
+ * it inserts. This is how Web has shown sections; Desktop keeps a section per kind (the separate
+ * layout).
+ */
+export function foldMentionSectionsIntoPages(
+  sections: MentionSearchSection[],
+  pagesTitle: string
 ): MentionSearchSection[] {
   let databaseSection: MentionSearchSection | undefined;
   const normalizedSections: MentionSearchSection[] = [];
 
   sections.forEach((section) => {
-    // Databases AND database rows render inline in the Pages section (desktop
-    // parity: the separate "Database rows" heading was removed) — each item
-    // keeps its own kind, which drives its icon and insert behavior.
     if (
       section.kind === MentionSearchSectionKind.Databases ||
       section.kind === MentionSearchSectionKind.DatabaseRows
@@ -149,7 +262,8 @@ function withDisplayData(mention: Mention, item: MentionSearchResultItem): Menti
     data: {
       title: item.title,
       subtitle: item.subtitle,
-      icon: item.icon,
+      // Servers type `icon` as an object, which a saved mention must never carry (MEN-WEB-13).
+      icon: typeof item.icon === 'string' ? item.icon : undefined,
     },
   };
 }
@@ -309,16 +423,136 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
   }
 }
 
+function mentionPayloadString(item: MentionSearchResultItem, field: string): string | undefined {
+  const value = (item.mention as unknown as Record<string, unknown>)[field];
+
+  return typeof value === 'string' ? value : undefined;
+}
+
+function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
+  return values.find((value) => Boolean(value));
+}
+
+/** A page's navKey, as {@link mentionItemNavKey} gives it to the page's item. */
+export function mentionPageNavKey(pageId: string): string {
+  return `page:${pageId}`;
+}
+
+/**
+ * A database view's navKey, as {@link mentionItemNavKey} gives it to the database's item. `-` stands
+ * for an id that is not known.
+ */
+export function mentionDatabaseNavKey(databaseId: string | undefined, databaseViewId: string | undefined): string {
+  return `database:${databaseId || '-'}:${databaseViewId || '-'}`;
+}
+
+/**
+ * The title, or a person's name, and the person's address that a server item is matched and ranked
+ * by (the typeahead contract's D21). Cloud sends a person's address as the subtitle and titles a
+ * person whose name is blank by that address, so a title equal to the subtitle is a blank name: the
+ * domain then never matches as a name.
+ */
+export function mentionServerItemText(item: MentionSearchResultItem): [name: string, email: string] {
+  if (item.kind !== MentionTargetKind.Person) return [item.title, ''];
+
+  const email = item.subtitle ?? '';
+
+  return [item.title === email ? '' : item.title, email];
+}
+
+/**
+ * The section-free identity of a mention result. The same object gets the same key in every
+ * section, response and merge, so the picker can keep its highlight on it, and lanes that merge
+ * results later can deduplicate by it.
+ *
+ * Objects and links use the cross-client format proposed for MEN-X-02: `person:<person_id>`,
+ * `page:<page_id>`, `database:<database_id>:<database_view_id|->`, `row:<database_id>:<row_id>`
+ * and `link:<url>`. Date and reminder quick picks have no object id and a time computed per
+ * request ("Reminder 1 week"), so they use their kind and title, for example `date:Today`.
+ */
+export function mentionItemNavKey(item: MentionSearchResultItem): string {
+  const payload = (field: string) => mentionPayloadString(item, field);
+
+  switch (item.kind) {
+    case MentionTargetKind.Person:
+      return `person:${firstNonEmpty(payload('person_id'), item.object_id) ?? item.title}`;
+    case MentionTargetKind.Page:
+      return mentionPageNavKey(firstNonEmpty(payload('page_id'), item.object_id) ?? item.title);
+    case MentionTargetKind.Database:
+      return mentionDatabaseNavKey(
+        firstNonEmpty(payload('database_id'), item.database_id, item.object_id),
+        firstNonEmpty(payload('database_view_id'), item.database_view_id)
+      );
+
+    case MentionTargetKind.DatabaseRow: {
+      const databaseId = firstNonEmpty(payload('database_id'), item.database_id) ?? '-';
+      const rowId = firstNonEmpty(payload('row_id'), item.database_row_id, item.object_id) ?? '-';
+
+      return `row:${databaseId}:${rowId}`;
+    }
+
+    case MentionTargetKind.ExternalLink:
+      return `link:${firstNonEmpty(payload('url')) ?? item.title}`;
+    default:
+      return `${item.kind}:${item.title}`;
+  }
+}
+
+/**
+ * `sections` with each item a Suggested section lists left out of every other section, so it shows
+ * once, in Suggested, which the picker shows first. Cloud moves the items it suggests out of their
+ * sections (MEN-X-10); this keeps them out wherever else one comes from, such as this tab's activity
+ * or a server that copied it. A section left without items shows nothing. The same array when no
+ * other section lists a suggested item, as for every answer without a Suggested section.
+ */
+export function withSuggestedItemsOnce(sections: MentionSearchSection[]): MentionSearchSection[] {
+  const suggested = new Set<string>();
+
+  sections.forEach((section) => {
+    if (section.kind !== MentionSearchSectionKind.Suggested) return;
+    section.items.forEach((item) => suggested.add(mentionItemNavKey(item)));
+  });
+
+  if (suggested.size === 0) return sections;
+
+  const repeats = (section: MentionSearchSection) =>
+    section.kind !== MentionSearchSectionKind.Suggested &&
+    section.items.some((item) => suggested.has(mentionItemNavKey(item)));
+
+  if (!sections.some(repeats)) return sections;
+
+  return sections.map((section) =>
+    repeats(section)
+      ? { ...section, items: section.items.filter((item) => !suggested.has(mentionItemNavKey(item))) }
+      : section
+  );
+}
+
+/**
+ * Flattens picker sections into selectable results. A key holds the section kind and the item's
+ * navKey but no position, so results that merge in later (typed rows, a cache refresh) never
+ * re-key the options already on screen. Only a real duplicate inside one section gets an
+ * occurrence suffix (`#2`, `#3`, …).
+ */
 export function flattenMentionSearchSections(sections: MentionSearchSection[]): MentionPanelSearchResult[] {
+  const occurrences = new Map<string, number>();
+
   return sections.flatMap((section, sectionIndex) =>
-    section.items.flatMap((item, itemIndex) => {
+    section.items.flatMap((item) => {
       const mention = mentionSearchItemToMention(item);
 
       if (!mention) return [];
 
+      const navKey = mentionItemNavKey(item);
+      const baseKey = `${section.kind}|${navKey}`;
+      const occurrence = (occurrences.get(baseKey) ?? 0) + 1;
+
+      occurrences.set(baseKey, occurrence);
+
       return [
         {
-          key: `${section.kind}:${sectionIndex}:${item.kind}:${item.object_id ?? item.title}:${itemIndex}`,
+          key: occurrence === 1 ? baseKey : `${baseKey}#${occurrence}`,
+          navKey,
           item,
           mention,
           sectionKind: section.kind,
@@ -327,6 +561,56 @@ export function flattenMentionSearchSections(sections: MentionSearchSection[]): 
       ];
     })
   );
+}
+
+/** The highlighted picker option, held by key so that a merge cannot move it onto another item. */
+export interface MentionOptionSelection {
+  key: string;
+  /** The highlighted item's navKey, used to find the same object again in another section. */
+  navKey?: string;
+}
+
+const DATABASE_NAV_KEY = /^database:([^:]+):([^:]+)$/;
+
+/**
+ * Whether two navKeys name one database and exactly one of them lacks its view
+ * (`database:<id>:-`): a database the client knows only by its id, as one this tab just created
+ * until the outline lists its views, and an item that names a view of it, as the server's item that
+ * the local lane merges it with. Two known views of a database are two objects.
+ */
+function isSameDatabaseOneViewUnknown(left: string, right: string): boolean {
+  const [, leftDatabase, leftView] = DATABASE_NAV_KEY.exec(left) ?? [];
+  const [, rightDatabase, rightView] = DATABASE_NAV_KEY.exec(right) ?? [];
+
+  return (
+    leftDatabase !== undefined &&
+    leftDatabase !== '-' &&
+    leftDatabase === rightDatabase &&
+    (leftView === '-') !== (rightView === '-')
+  );
+}
+
+/**
+ * Re-resolves the highlight after the option list changed. It stays on the same option while its
+ * key is listed, else moves to the same object in another section, or to the same database once
+ * its view is known (or no longer), else to the first option. Returns `selection` itself when
+ * nothing changed.
+ */
+export function reconcileMentionOptionSelection(
+  selection: MentionOptionSelection | null,
+  options: readonly MentionOptionSelection[]
+): MentionOptionSelection | null {
+  if (!selection || options.some((option) => option.key === selection.key)) return selection;
+
+  const { navKey } = selection;
+  const sameObject =
+    navKey === undefined
+      ? undefined
+      : options.find((option) => option.navKey === navKey) ??
+        options.find((option) => option.navKey !== undefined && isSameDatabaseOneViewUnknown(navKey, option.navKey));
+  const next = sameObject ?? options[0];
+
+  return next ? { key: next.key, navKey: next.navKey } : null;
 }
 
 function normalizeOptionalString(value?: string | null) {
@@ -339,7 +623,13 @@ function normalizeStringList(values?: string[]) {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean))).sort();
 }
 
+/**
+ * The cache key of one request. The opt-ins it sends are part of it, so an answer a server shaped
+ * for them never answers a request without them; a request that sends none keys as before.
+ */
 export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
+  const clientFeatures = normalizeStringList(request.client_features);
+
   return JSON.stringify({
     query: request.query?.trim().toLowerCase() ?? '',
     limit: request.limit && request.limit > 0 ? request.limit : null,
@@ -356,6 +646,7 @@ export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
       database_view_ids: normalizeStringList(request.filter?.database_view_ids),
       database_row_ids: normalizeStringList(request.filter?.database_row_ids),
     },
+    ...(clientFeatures.length > 0 ? { client_features: clientFeatures } : {}),
   });
 }
 
@@ -364,12 +655,52 @@ interface MentionSearchCacheScope {
   userId?: string | null;
 }
 
-export function buildMentionSearchRequests(request: MentionSearchRequest): MentionSearchRequest[] {
+/** The workspace and user a cache entry belongs to, as the first line of its cache key. */
+export function buildMentionSearchCacheScopeKey(scope: MentionSearchCacheScope = {}) {
+  return JSON.stringify({
+    workspace_id: normalizeOptionalString(scope.workspaceId),
+    user_id: normalizeOptionalString(scope.userId),
+  });
+}
+
+/** Whether the request asks for database rows only, as the typed rows request does. */
+export function isDatabaseRowOnlyMentionRequest(request: MentionSearchRequest) {
+  const include = request.include ?? [];
+
+  return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
+}
+
+export interface MentionSearchRequestsOptions {
+  /**
+   * Leave the typed rows request out, as when the picker matches every row of the database it is in
+   * itself (MEN-WEB-15). The primary request still asks for no rows, so the server sends none.
+   */
+  skipRows?: boolean;
+}
+
+/**
+ * The requests a picker request is sent as: a bare `@` as one request without database rows, a typed
+ * one as the primary request for every other kind and a rows-only request, filtered to the database
+ * of a database context, unless `options.skipRows` leaves that one out (and a primary one remains).
+ */
+export function buildMentionSearchRequests(
+  request: MentionSearchRequest,
+  options: MentionSearchRequestsOptions = {}
+): MentionSearchRequest[] {
   const query = request.query?.trim() ?? '';
   const include = request.include ?? [];
   const includesDatabaseRows = include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
 
-  if (!query || !includesDatabaseRows) {
+  if (!query) {
+    // The picker never shows database rows for an empty query, so it does not ask for them. An
+    // empty include means every kind, and is left to the server.
+    const bareInclude = include.filter((kind) => kind !== MentionTargetKind.DatabaseRow);
+    const dropsRows = bareInclude.length > 0 && bareInclude.length < include.length;
+
+    return [dropsRows ? { ...request, include: bareInclude } : request];
+  }
+
+  if (!includesDatabaseRows) {
     return [request];
   }
 
@@ -377,9 +708,13 @@ export function buildMentionSearchRequests(request: MentionSearchRequest): Menti
     include.length > 0
       ? include.filter((kind) => kind !== MentionTargetKind.DatabaseRow)
       : ALL_MENTION_TARGETS_EXCEPT_DATABASE_ROWS;
+  const primary = primaryInclude.length > 0 ? [{ ...request, include: primaryInclude }] : [];
+
+  // A picker that asks for rows alone keeps its request: without it, it would send nothing.
+  if (options.skipRows && primary.length > 0) return primary;
 
   return [
-    ...(primaryInclude.length > 0 ? [{ ...request, include: primaryInclude }] : []),
+    ...primary,
     withDatabaseRowSearchFilter({
       ...request,
       include: [MentionTargetKind.DatabaseRow],
@@ -391,33 +726,135 @@ export function buildMentionSearchRequestsCacheKey(
   requests: MentionSearchRequest[],
   scope: MentionSearchCacheScope = {}
 ) {
-  const scopeKey = JSON.stringify({
-    workspace_id: normalizeOptionalString(scope.workspaceId),
-    user_id: normalizeOptionalString(scope.userId),
-  });
-
-  return [scopeKey, ...requests.map(buildMentionSearchCacheKey)].join('\n');
+  return [buildMentionSearchCacheScopeKey(scope), ...requests.map(buildMentionSearchCacheKey)].join('\n');
 }
 
-function requestIncludesDatabaseRows(request: MentionSearchRequest): boolean {
-  const include = request.include ?? [];
+/** The section status a server sends when the section's source failed. Such a section has no items. */
+export const MENTION_SECTION_STATUS_FAILED = 'failed';
+/** The section status of an incomplete keyword result, or of People whose access lookup degraded. */
+export const MENTION_SECTION_STATUS_PARTIAL = 'partial';
 
-  return include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
+/**
+ * The opt-in to failed or `partial` sections instead of a RetryLater for the whole answer (Cloud
+ * MEN-CLOUD-12). `mentionClientFeatures.ts` decides which requests carry it.
+ */
+export const MENTION_FEATURE_SECTION_DEGRADATION_V1 = 'section_degradation_v1';
+/**
+ * The opt-in to short per-source deadlines on typed queries: a late source answers a failed
+ * section, and the answer is `partial` (Cloud MEN-CLOUD-13).
+ */
+export const MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1 = 'typeahead_deadline_v1';
+
+/**
+ * The opt-ins with which a server answers a source it left out or cut short as a `partial` answer
+ * or section rather than failing the request. The other opt-ins (`reasons_v1`, `suggested_v1`,
+ * `selection_memory_v1`) add to an answer, or order it, and change nothing about how complete it is.
+ */
+const MENTION_DEGRADED_ANSWER_FEATURES: ReadonlySet<string> = new Set([
+  MENTION_FEATURE_SECTION_DEGRADATION_V1,
+  MENTION_FEATURE_TYPEAHEAD_DEADLINE_V1,
+]);
+
+/** Whether `request` opted in to degraded answers ({@link MENTION_DEGRADED_ANSWER_FEATURES}). */
+function acceptsDegradedAnswers(request: MentionSearchRequest) {
+  return request.client_features?.some((feature) => MENTION_DEGRADED_ANSWER_FEATURES.has(feature)) ?? false;
 }
 
-export function shouldCacheMentionSearchSections(
-  requests: MentionSearchRequest[],
-  databaseRowResponse: MentionSearchResponse | undefined,
-  hasQuery: boolean
-) {
-  if (!hasQuery || !requests.some(requestIncludesDatabaseRows)) {
-    return true;
+/** Whether the server reports that one of the response's sections failed. */
+export function hasFailedMentionSection(response: MentionSearchResponse) {
+  return response.sections.some((section) => section.status === MENTION_SECTION_STATUS_FAILED);
+}
+
+/** Whether a request with this `include` asks for `kind`: one that names none asks for every kind. */
+export function mentionIncludesKind(include: readonly MentionTargetKind[] | undefined, kind: MentionTargetKind) {
+  return !include || include.length === 0 || include.includes(kind);
+}
+
+function requestIncludes(request: MentionSearchRequest, kind: MentionTargetKind) {
+  return mentionIncludesKind(request.include, kind);
+}
+
+/** The kinds of the objects Search finds, as opposed to the people, dates and links Cloud adds. */
+const MENTION_OBJECT_TARGET_KINDS: ReadonlySet<MentionTargetKind> = new Set([
+  MentionTargetKind.Page,
+  MentionTargetKind.Database,
+  MentionTargetKind.DatabaseRow,
+]);
+
+/**
+ * Whether `response` has the shape of an answer to a request that Search superseded: partial, and
+ * without any section of an object kind the request asked for. Search answers a superseded request
+ * with no sections, and Cloud adds only its own: People, Dates, Links, and a Suggested section of
+ * the people it picks without Search. A partial answer usually has such a section: a degraded or
+ * failed object search adds a failed one, and load-shed paths come with items. Cloud moves the
+ * objects it suggests into Suggested and leaves out a Pages or Databases section that lost its last
+ * item (MEN-X-10), so an object in Suggested counts as its section. A primary or bare answer can
+ * still have the shape without being superseded: Cloud marks it partial when the People annotation
+ * degrades, and Search leaves out an empty Pages section when no object matched.
+ */
+export function isSupersededMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  if (response.partial !== true) return false;
+
+  const objectKinds = new Set<MentionSearchSectionKind>();
+
+  // Search returns database rows inside the Pages section; Cloud fails them as a rows section.
+  if (requestIncludes(request, MentionTargetKind.Page) || requestIncludes(request, MentionTargetKind.DatabaseRow)) {
+    objectKinds.add(MentionSearchSectionKind.Pages);
+    objectKinds.add(MentionSearchSectionKind.DatabaseRows);
   }
 
-  // A fulfilled, non-partial row response is authoritative even when it has
-  // no items. Missing or partial responses must not overwrite a previously
-  // complete cache entry.
-  return databaseRowResponse !== undefined && databaseRowResponse.partial !== true;
+  if (requestIncludes(request, MentionTargetKind.Database)) {
+    objectKinds.add(MentionSearchSectionKind.Databases);
+  }
+
+  const hasObjects = (section: MentionSearchSection) =>
+    objectKinds.has(section.kind) ||
+    (section.kind === MentionSearchSectionKind.Suggested &&
+      section.items.some((item) => MENTION_OBJECT_TARGET_KINDS.has(item.kind)));
+
+  return objectKinds.size > 0 && !response.sections.some(hasObjects);
+}
+
+/**
+ * Whether a response is the server's complete answer, as far as showing it goes: no section failed,
+ * and a rows-only request was not superseded. `partial` alone, as when breadcrumb paths were
+ * load-shed or the People annotation degraded, still counts as complete. Only the rows-only shape is
+ * unambiguous, since Cloud adds no section of its own to that request. The panel aborts its own
+ * superseded primary and bare requests, so their shape almost always means a degraded People
+ * annotation over objects that matched nothing, which is shown as it is.
+ */
+export function isCompleteMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  if (hasFailedMentionSection(response)) return false;
+
+  return !isDatabaseRowOnlyMentionRequest(request) || !isSupersededMentionResponse(request, response);
+}
+
+/**
+ * Whether a response may be cached: no section failed, and it does not have the superseded shape,
+ * whatever the request. A primary or bare answer of that shape is shown, but sent again next time,
+ * so that an answer that may lack its objects is never kept. A request that opted in to degraded
+ * answers (`section_degradation_v1`, `typeahead_deadline_v1`), which Cloud marks `partial`, keeps
+ * neither a `partial` answer nor one with a `partial` section (Cloud's client opt-ins,
+ * MEN-CLOUD-12). Any other opt-in caches as a request without one does.
+ */
+export function isCacheableMentionResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  if (hasFailedMentionSection(response) || isSupersededMentionResponse(request, response)) return false;
+  if (!acceptsDegradedAnswers(request)) return true;
+
+  return (
+    response.partial !== true && !response.sections.some((section) => section.status === MENTION_SECTION_STATUS_PARTIAL)
+  );
+}
+
+/**
+ * Whether the rows-only request deserves its one retry: the server reported a failure it expects a
+ * retry to fix (a failed section with `partial`), or superseded the request. A failed section
+ * without `partial` is permanent, as when the keyword index is disabled, and is never retried.
+ */
+export function shouldRetryMentionRowsResponse(request: MentionSearchRequest, response: MentionSearchResponse) {
+  return (
+    (hasFailedMentionSection(response) && response.partial === true) || isSupersededMentionResponse(request, response)
+  );
 }
 
 export function mergeMentionSearchResponses(responses: MentionSearchResponse[]): MentionSearchResponse {

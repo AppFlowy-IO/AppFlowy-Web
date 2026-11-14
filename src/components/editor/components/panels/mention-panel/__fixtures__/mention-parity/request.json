@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Requests: query kinds, stream ids, request times, lane requests, refresh lanes, session streams and currency, the one-letter rule and deadlines.",
+  "deadlines_ms": {"typed": 2500, "bare": 5000},
+  "short_prefix_feature": "short_prefix_v1",
+  "query_kinds": [
+    {"query": "", "kind": "bare"},
+    {"query": " ", "kind": "bare"},
+    {"query": "\t\n\r", "kind": "bare"},
+    {"query": "\u00a0", "kind": "bare"},
+    {"query": "\u0085", "kind": "bare"},
+    {"query": "\u3000", "kind": "bare"},
+    {"query": "\u2028", "kind": "bare"},
+    {"query": "\ufeff", "kind": "typed"},
+    {"query": "\u200b", "kind": "typed"},
+    {"query": "r", "kind": "typed"},
+    {"query": " r ", "kind": "typed"},
+    {"query": "-", "kind": "typed"}
+  ],
+  "stream_ids": [
+    {"client": "web", "session": "s1", "lane": "primary", "stream_id": "web-mention-s1-primary"},
+    {"client": "web", "session": "s1", "lane": "bare", "stream_id": "web-mention-s1-bare"},
+    {
+      "client": "desktop",
+      "session": "AbC_9-x",
+      "lane": "rows",
+      "stream_id": "desktop-mention-AbC_9-x-rows"
+    },
+    {
+      "client": "desktop",
+      "session": "AbC_9-x",
+      "lane": "refresh-rows",
+      "stream_id": "desktop-mention-AbC_9-x-refresh-rows"
+    },
+    {
+      "client": "mobile",
+      "session": "0",
+      "lane": "refresh",
+      "stream_id": "mobile-mention-0-refresh"
+    },
+    {
+      "client": "web",
+      "session": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "lane": "primary",
+      "stream_id": "web-mention-ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-primary"
+    },
+    {
+      "client": "web",
+      "session": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "lane": "primary",
+      "stream_id": null
+    },
+    {"client": "web", "session": "", "lane": "primary", "stream_id": null},
+    {"client": "web", "session": "has space", "lane": "primary", "stream_id": null},
+    {"client": "web", "session": "s1:2", "lane": "primary", "stream_id": null},
+    {"client": "web", "session": "sé", "lane": "primary", "stream_id": null},
+    {"client": "Web", "session": "s1", "lane": "primary", "stream_id": null},
+    {"client": "", "session": "s1", "lane": "primary", "stream_id": null},
+    {"client": "web2", "session": "s1", "lane": "primary", "stream_id": null},
+    {"client": "abcdefghijklmnopq", "session": "s1", "lane": "primary", "stream_id": null}
+  ],
+  "request_times": [
+    {"id": "a-new-stream-takes-the-clock", "last": null, "now": [1000], "times": [1000]},
+    {
+      "id": "same-millisecond",
+      "last": null,
+      "now": [1000, 1000, 1000],
+      "times": [1000, 1001, 1002]
+    },
+    {
+      "id": "the-clock-steps-back",
+      "last": 5000,
+      "now": [4000, 4000, 7000],
+      "times": [5001, 5002, 7000]
+    },
+    {
+      "id": "a-slow-clock-catches-up",
+      "last": null,
+      "now": [10, 11, 11, 12, 13],
+      "times": [10, 11, 12, 13, 14]
+    }
+  ],
+  "lane_requests": [
+    {
+      "id": "every-kind-bare",
+      "picker": [],
+      "query": "",
+      "lanes": {"bare": ["person", "page", "database", "date", "reminder", "external_link"]}
+    },
+    {
+      "id": "every-kind-typed",
+      "picker": [],
+      "query": "road",
+      "lanes": {
+        "primary": ["person", "page", "database", "date", "reminder", "external_link"],
+        "rows": ["database_row"]
+      }
+    },
+    {
+      "id": "an-explicit-list-bare",
+      "picker": ["person", "page", "database", "database_row", "date", "reminder", "external_link"],
+      "query": "",
+      "lanes": {"bare": ["person", "page", "database", "date", "reminder", "external_link"]}
+    },
+    {
+      "id": "page-references-typed",
+      "picker": ["page", "database", "database_row"],
+      "query": "road",
+      "lanes": {"primary": ["page", "database"], "rows": ["database_row"]}
+    },
+    {
+      "id": "rows-only-typed",
+      "picker": ["database_row"],
+      "query": "road",
+      "lanes": {"rows": ["database_row"]}
+    },
+    {"id": "rows-only-bare-sends-nothing", "picker": ["database_row"], "query": " ", "lanes": {}},
+    {"id": "people-only", "picker": ["person"], "query": "an", "lanes": {"primary": ["person"]}},
+    {
+      "id": "order-and-duplicates",
+      "picker": ["database", "page", "page", "person"],
+      "query": "road",
+      "lanes": {"primary": ["person", "page", "database"]}
+    }
+  ],
+  "refresh_lanes": {
+    "bare": "bare",
+    "primary": "refresh",
+    "rows": "refresh-rows",
+    "refresh": "refresh",
+    "refresh-rows": "refresh-rows"
+  },
+  "sessions": [
+    {
+      "id": "a-late-bare-answer-stays-current-and-cacheable",
+      "client": "web",
+      "session": "s1",
+      "steps": [
+        {
+          "op": "send",
+          "lane": "bare",
+          "now_ms": 0,
+          "stream_id": "web-mention-s1-bare",
+          "request_time": 0
+        },
+        {
+          "op": "send",
+          "lane": "primary",
+          "now_ms": 140,
+          "stream_id": "web-mention-s1-primary",
+          "request_time": 140
+        },
+        {
+          "op": "send",
+          "lane": "rows",
+          "now_ms": 140,
+          "stream_id": "web-mention-s1-rows",
+          "request_time": 140
+        },
+        {"op": "current", "send": 0, "current": true},
+        {
+          "op": "cacheable",
+          "send": 0,
+          "request": {
+            "query": "",
+            "include": ["person", "page", "database", "date", "reminder", "external_link"]
+          },
+          "response": {
+            "sections": [
+              {
+                "kind": "pages",
+                "title": "Pages",
+                "items": [
+                  {
+                    "kind": "page",
+                    "object_id": "00000000-0000-4000-8000-000000000601",
+                    "title": "Roadmap",
+                    "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000601"}
+                  }
+                ],
+                "has_more": false,
+                "status": "ok"
+              }
+            ]
+          },
+          "aborted": false,
+          "cacheable": true
+        }
+      ]
+    },
+    {
+      "id": "a-newer-request-on-its-lane-ends-an-answers-currency",
+      "client": "desktop",
+      "session": "AbC_9-x",
+      "steps": [
+        {
+          "op": "send",
+          "lane": "primary",
+          "now_ms": 1000,
+          "stream_id": "desktop-mention-AbC_9-x-primary",
+          "request_time": 1000
+        },
+        {
+          "op": "send",
+          "lane": "rows",
+          "now_ms": 1000,
+          "stream_id": "desktop-mention-AbC_9-x-rows",
+          "request_time": 1000
+        },
+        {
+          "op": "send",
+          "lane": "primary",
+          "now_ms": 1000,
+          "stream_id": "desktop-mention-AbC_9-x-primary",
+          "request_time": 1001
+        },
+        {"op": "current", "send": 0, "current": false},
+        {"op": "current", "send": 1, "current": true},
+        {"op": "current", "send": 2, "current": true},
+        {
+          "op": "cacheable",
+          "send": 0,
+          "request": {
+            "query": "ro",
+            "include": ["person", "page", "database", "date", "reminder", "external_link"]
+          },
+          "response": {
+            "sections": [
+              {
+                "kind": "pages",
+                "title": "Pages",
+                "items": [
+                  {
+                    "kind": "page",
+                    "object_id": "00000000-0000-4000-8000-000000000601",
+                    "title": "Roadmap",
+                    "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000601"}
+                  }
+                ],
+                "has_more": false,
+                "status": "ok"
+              }
+            ]
+          },
+          "aborted": false,
+          "cacheable": false
+        }
+      ]
+    },
+    {
+      "id": "a-typed-refresh-sends-two-streams-and-never-supersedes-typing",
+      "client": "web",
+      "session": "s2",
+      "steps": [
+        {
+          "op": "send",
+          "lane": "primary",
+          "now_ms": 4990,
+          "stream_id": "web-mention-s2-primary",
+          "request_time": 4990
+        },
+        {
+          "op": "send",
+          "lane": "rows",
+          "now_ms": 4990,
+          "stream_id": "web-mention-s2-rows",
+          "request_time": 4990
+        },
+        {
+          "op": "send",
+          "lane": "refresh",
+          "now_ms": 5000,
+          "stream_id": "web-mention-s2-refresh",
+          "request_time": 5000
+        },
+        {
+          "op": "send",
+          "lane": "refresh-rows",
+          "now_ms": 5000,
+          "stream_id": "web-mention-s2-refresh-rows",
+          "request_time": 5000
+        },
+        {"op": "current", "send": 0, "current": true},
+        {"op": "current", "send": 1, "current": true},
+        {"op": "current", "send": 2, "current": true},
+        {"op": "current", "send": 3, "current": true}
+      ]
+    }
+  ],
+  "stays_local": [
+    {"query": "r", "short_prefix_v1": false, "local": true},
+    {"query": "r", "short_prefix_v1": true, "local": false},
+    {"query": "R", "short_prefix_v1": false, "local": true},
+    {"query": " r ", "short_prefix_v1": false, "local": true},
+    {"query": "é", "short_prefix_v1": false, "local": true},
+    {"query": "ｒ", "short_prefix_v1": false, "local": true},
+    {"query": "ro", "short_prefix_v1": false, "local": false},
+    {"query": "r ", "short_prefix_v1": false, "local": true},
+    {"query": "1", "short_prefix_v1": false, "local": false},
+    {"query": "ß", "short_prefix_v1": false, "local": false},
+    {"query": "ı", "short_prefix_v1": false, "local": false},
+    {"query": "路", "short_prefix_v1": false, "local": false},
+    {"query": "-", "short_prefix_v1": false, "local": false},
+    {"query": "", "short_prefix_v1": false, "local": false}
+  ]
+}

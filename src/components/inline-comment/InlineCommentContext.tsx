@@ -132,6 +132,8 @@ interface InlineCommentStatusContextValue {
 interface InlineCommentComposeContextValue {
   active: boolean;
   pendingComment: PendingInlineComment | null;
+  /** The document comments are scoped to: its collaborators rank early in the @ picker. */
+  viewId?: string;
   cancelPendingComment: () => void;
   isEditorRegistered: (editor: YjsEditor) => boolean;
   startComment: (editor: YjsEditor, at?: Range) => boolean;
@@ -1132,8 +1134,9 @@ export function InlineCommentProvider({
       pendingComment,
       startComment,
       submitPendingComment,
+      viewId,
     }),
-    [active, cancelPendingComment, isEditorRegistered, pendingComment, startComment, submitPendingComment]
+    [active, cancelPendingComment, isEditorRegistered, pendingComment, startComment, submitPendingComment, viewId]
   );
 
   return (

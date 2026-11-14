@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { serializeCommentMentions } from '@/application/comment-mentions';
 import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.svg';
+import { useAppAwareness } from '@/components/app/app.hooks';
 import { cn } from '@/lib/utils';
 
 import { useInlineCommentCompose, useInlineCommentStatus } from './InlineCommentContext';
@@ -16,8 +17,10 @@ const COMPOSER_ESTIMATED_HEIGHT = 56;
 
 export function InlineCommentComposer() {
   const { t } = useTranslation();
-  const { cancelPendingComment, pendingComment, submitPendingComment } = useInlineCommentCompose();
-  const { mutatingCommentIds } = useInlineCommentStatus();
+  const { cancelPendingComment, pendingComment, submitPendingComment, viewId } = useInlineCommentCompose();
+  const { currentUserUuid, mutatingCommentIds } = useInlineCommentStatus();
+  // A new thread has no participants yet: the @ picker ranks who is on the page instead.
+  const awareness = useAppAwareness(viewId);
   const [draft, setDraft] = useState<CommentDraft>(EMPTY_COMMENT_DRAFT);
   const { content } = draft;
   const composerRef = useRef<HTMLDivElement>(null);
@@ -88,6 +91,8 @@ export function InlineCommentComposer() {
           placeholder={t('inlineComment.writeComment')}
           draft={draft}
           onDraftChange={setDraft}
+          mentionAwareness={awareness}
+          mentionRequesterId={currentUserUuid}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault();

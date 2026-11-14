@@ -1,13 +1,15 @@
-import { APIRequestContext, expect, Page } from '@playwright/test';
+import { APIRequestContext, expect, Page, Request } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
+import { renameCurrentPage } from '../../support/duplicate-test-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { AuthTestUtils } from '../../support/auth-utils';
 import { BlockSelectors, DatabaseGridSelectors, EditorSelectors, SidebarSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
+import { grantWorkspaceProSubscription } from '../../support/subscription-test-helpers';
 
 const { Given, When, Then, Before } = createBdd();
 
@@ -68,7 +70,19 @@ type MentionSearchResponse = {
   sections: MentionSearchSection[];
 };
 
+type RecordedMentionRequest = {
+  body: { query?: string; include?: string[] } | null;
+  headers: Record<string, string>;
+  status: number;
+};
+
 type MentionFixtureState = {
+  /** Mention searches that got a response, in the order their responses finished. */
+  mentionRequests?: RecordedMentionRequest[];
+  /** Why mention searches failed without a response: aborts, and rejected CORS preflights. */
+  failedMentionRequests?: string[];
+  /** The panel session that the typed mention requests were sent in. */
+  mentionStreamSession?: string;
   ownerEmail: string;
   memberEmail: string;
   memberName: string;
@@ -83,7 +97,33 @@ type MentionFixtureState = {
   rowId?: string;
   rowKeyword?: string;
   rowSearchRequestBody?: unknown;
+  /** The pages a stubbed bare `@` answer lists, the first one the page the user types (MEN-WEB-08). */
+  recentPages?: { id: string; title: string }[];
+  /** Typed mention searches that got their answer after being held. */
+  heldTypedSearchesAnswered?: number;
+  /** A page this tab created and renamed a moment ago, which no mention answer lists yet (MEN-WEB-09). */
+  freshPage?: { id: string; title: string };
+  /** The typed query whose stubbed answer lists the member, five pages and a database (MEN-WEB-12). */
+  sectionsQuery?: string;
+  /** The title of the database in that answer. */
+  sectionsDatabaseTitle?: string;
 };
+
+/** When the first keystroke of a query came, and when an option showed a title (MEN-WEB-09). */
+type MentionShownProbe = {
+  keyAt?: number;
+  shownAt?: number;
+};
+
+/** When the first keystroke after the probe was installed came, and when the list narrowed. */
+type MentionNarrowProbe = {
+  keyAt?: number;
+  narrowedAt?: number;
+};
+
+// The switches MentionPanel reads when it opens (src/.../mention-panel/mentionTypeaheadFlag.ts).
+const MENTION_TYPEAHEAD_V2_OVERRIDE_KEY = '__mention_typeahead_v2';
+const MENTION_SECTIONS_V2_OVERRIDE_KEY = '__mention_sections_v2';
 
 const stateByPage = new WeakMap<Page, MentionFixtureState>();
 
@@ -132,6 +172,34 @@ Given('a blank mention search document page is open', async ({ page }) => {
   await focusEditor(page);
 });
 
+Given('mention search requests are recorded', async ({ page }) => {
+  const state = getState(page);
+  const answered: RecordedMentionRequest[] = [];
+  const failed: string[] = [];
+
+  state.mentionRequests = answered;
+  state.failedMentionRequests = failed;
+  // Only requests that got a response count. One whose CORS preflight was rejected was never sent,
+  // and the page sends it again without the stream headers.
+  page.on('requestfinished', async (request) => {
+    if (!isMentionSearchRequest(request)) return;
+
+    const status = await request.response().then(
+      (response) => response?.status() ?? 0,
+      () => 0
+    );
+
+    answered.push({
+      body: request.postDataJSON() as RecordedMentionRequest['body'],
+      headers: request.headers(),
+      status,
+    });
+  });
+  page.on('requestfailed', (request) => {
+    if (isMentionSearchRequest(request)) failed.push(request.failure()?.errorText ?? 'unknown error');
+  });
+});
+
 Given('database-row mention search retries later for {string}', async ({ page }, query: string) => {
   await page.route('**/mentions/search{,?**}', async (route) => {
     const request = route.request();
@@ -160,6 +228,193 @@ Given('database-row mention search retries later for {string}', async ({ page },
     });
   });
 });
+
+Given('mention search answers the empty query with two recent fixture pages', async ({ page }) => {
+  const state = getState(page);
+  const recentPages = [`Keep narrow ${state.runId}`, `Budget ${state.runId}`].map((title) => ({ id: uuidv4(), title }));
+
+  state.recentPages = recentPages;
+  await page.route('**/mentions/search{,?**}', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+
+    if (body?.query?.trim()) {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        message: 'success',
+        data: {
+          sections: [
+            {
+              kind: 'pages',
+              title: 'Pages',
+              has_more: false,
+              status: 'ok',
+              items: recentPages.map(({ id, title }) => ({
+                kind: 'page',
+                object_id: id,
+                title,
+                mention: { type: 'page', page_id: id },
+              })),
+            },
+          ],
+          partial: false,
+        },
+      }),
+    });
+  });
+});
+
+Given('a fresh fixture page was created and renamed in this tab', async ({ page }) => {
+  const state = getState(page);
+  const title = `Fresh ${state.runId}`;
+  const documentUrl = page.url();
+  // `addPage` and the title's rename feed the tab's local index (MEN-WEB-07).
+  const id = await createDocumentPageAndNavigate(page);
+
+  await renameCurrentPage(page, title);
+  state.freshPage = { id, title };
+
+  // Back to the first document without a reload, which would forget this tab's creation.
+  await page.goBack();
+  await page.waitForURL((url) => url.href === documentUrl);
+  await focusEditor(page);
+});
+
+Given('mention search answers the empty query with no pages', async ({ page }) => {
+  await page.route('**/mentions/search{,?**}', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+
+    if (body?.query?.trim()) {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, message: 'success', data: { sections: [], partial: false } }),
+    });
+  });
+});
+
+Given('typed mention searches are held for {int} ms', async ({ page }, holdMs: number) => {
+  const state = getState(page);
+
+  state.heldTypedSearchesAnswered = 0;
+  await page.route('**/mentions/search{,?**}', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+
+    if (!body?.query?.trim()) {
+      await route.fallback();
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, holdMs));
+    // The picker aborts a typed search it no longer needs; that one is never answered.
+    await route.continue().then(
+      () => {
+        state.heldTypedSearchesAnswered = (state.heldTypedSearchesAnswered ?? 0) + 1;
+      },
+      () => undefined
+    );
+  });
+});
+
+Given('the mention typeahead v2 is switched on', async ({ page }) => {
+  // The picker reads the switch each time it opens, so no reload is needed.
+  await page.evaluate((key) => localStorage.setItem(key, 'true'), MENTION_TYPEAHEAD_V2_OVERRIDE_KEY);
+});
+
+Given('the mention sections switch is on', async ({ page }) => {
+  // Read when the picker opens, as the v2 switch is.
+  await page.evaluate((key) => localStorage.setItem(key, 'true'), MENTION_SECTIONS_V2_OVERRIDE_KEY);
+});
+
+Given(
+  'mention search answers the sections fixture query with the member, five pages and a database',
+  async ({ page }) => {
+    const state = getState(page);
+    const query = `sections${state.runId}`;
+    const databaseTitle = `Database ${query}`;
+    const databaseId = uuidv4();
+    const databaseViewId = uuidv4();
+    const pages = [1, 2, 3, 4, 5].map((index) => ({ id: uuidv4(), title: `Page ${index} ${query}` }));
+    const memberUuid = state.memberUuid ?? uuidv4();
+
+    state.sectionsQuery = query;
+    state.sectionsDatabaseTitle = databaseTitle;
+    await page.route('**/mentions/search{,?**}', async (route) => {
+      const body = route.request().postDataJSON() as { query?: string; include?: string[] } | null;
+
+      if (body?.query?.trim() !== query) {
+        await route.fallback();
+        return;
+      }
+
+      const rowsOnly = Array.isArray(body.include) && body.include.length === 1 && body.include[0] === 'database_row';
+      // Out of the order servers send, so only the picker can put People, Pages and Databases in it.
+      const sections = rowsOnly
+        ? []
+        : [
+            {
+              kind: 'databases',
+              title: 'Databases',
+              has_more: false,
+              status: 'ok',
+              items: [
+                {
+                  kind: 'database',
+                  object_id: databaseId,
+                  title: databaseTitle,
+                  database_id: databaseId,
+                  database_view_id: databaseViewId,
+                  mention: { type: 'database', database_id: databaseId, database_view_id: databaseViewId },
+                },
+              ],
+            },
+            {
+              kind: 'pages',
+              title: 'Pages',
+              has_more: false,
+              status: 'ok',
+              items: pages.map(({ id, title }) => ({
+                kind: 'page',
+                object_id: id,
+                title,
+                mention: { type: 'page', page_id: id },
+              })),
+            },
+            {
+              kind: 'people',
+              title: 'People',
+              has_more: false,
+              status: 'ok',
+              items: [
+                {
+                  kind: 'person',
+                  object_id: memberUuid,
+                  title: state.memberName,
+                  subtitle: state.memberEmail,
+                  mention: { type: 'person', person_id: memberUuid, person_name: state.memberName, page_id: uuidv4() },
+                },
+              ],
+            },
+          ];
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, message: 'success', data: { sections, partial: false } }),
+      });
+    });
+  }
+);
 
 Given('a mention search document contains an indexed fixture database row', async ({ page, request }) => {
   const state = getState(page);
@@ -203,6 +458,78 @@ Given('a mention search document contains an indexed fixture database row', asyn
 
 When('I open the mention panel with an empty query', async ({ page }) => {
   await openMentionPanel(page);
+});
+
+When('I type the first letters of the first recent fixture page', async ({ page }) => {
+  const [first, second] = requireRecentPages(getState(page));
+
+  // Stamps the first keystroke, and the first commit after it that shows the first page without
+  // the second: the narrowed list, which no typed answer has reached yet.
+  await page.evaluate(
+    ({ shown, hidden }) => {
+      const probe: MentionNarrowProbe = {};
+      const optionTexts = () =>
+        Array.from(document.querySelectorAll('[data-testid="mention-panel"] [data-option-kind]')).map(
+          (option) => option.textContent ?? ''
+        );
+      const check = () => {
+        if (probe.keyAt === undefined || probe.narrowedAt !== undefined) return;
+
+        const texts = optionTexts();
+
+        if (texts.some((text) => text.includes(shown)) && !texts.some((text) => text.includes(hidden))) {
+          probe.narrowedAt = performance.now();
+        }
+      };
+
+      (window as Window & { __mentionNarrowProbe?: MentionNarrowProbe }).__mentionNarrowProbe = probe;
+      document.addEventListener(
+        'keydown',
+        () => {
+          probe.keyAt = performance.now();
+        },
+        { capture: true, once: true }
+      );
+      new MutationObserver(check).observe(document.body, { childList: true, subtree: true, characterData: true });
+    },
+    { shown: first.title, hidden: second.title }
+  );
+  await page.keyboard.type(first.title.slice(0, 2), { delay: 30 });
+});
+
+When('I search mentions for the first letters of the fresh fixture page', async ({ page }) => {
+  const { title } = requireFreshPage(getState(page));
+
+  await openMentionPanel(page);
+  // Stamps the query's first keystroke, and the first moment after it that an option shows the page.
+  await page.evaluate((shown) => {
+    const probe: MentionShownProbe = {};
+    const check = () => {
+      if (probe.keyAt === undefined || probe.shownAt !== undefined) return;
+
+      const options = Array.from(document.querySelectorAll('[data-testid="mention-panel"] [data-option-kind]'));
+
+      if (options.some((option) => option.textContent === shown)) probe.shownAt = performance.now();
+    };
+
+    (window as Window & { __mentionShownProbe?: MentionShownProbe }).__mentionShownProbe = probe;
+    document.addEventListener(
+      'keydown',
+      () => {
+        probe.keyAt = performance.now();
+        // The bare `@` may list the page already: it was opened and created seconds ago.
+        queueMicrotask(check);
+      },
+      { capture: true, once: true }
+    );
+    new MutationObserver(check).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }, title);
+  // The run id makes the page's first letters unique in the fixture workspace.
+  await page.keyboard.type(title.slice(0, 'Fresh '.length + 3), { delay: 30 });
+});
+
+When('I search mentions for the sections fixture query', async ({ page }) => {
+  await searchMentionsInEditor(page, requireSectionsQuery(getState(page)));
 });
 
 When('I search mentions for the fixture member', async ({ page }) => {
@@ -258,11 +585,108 @@ Then('the mention panel does not show a links section', async ({ page }) => {
 });
 
 Then('the mention panel does not show database rows', async ({ page }) => {
-  // Desktop parity: rows render inline in the Pages section (no "Database
-  // rows" heading exists anymore), so absence is asserted on row RESULT
-  // buttons via their data-option-kind.
+  // By default the picker folds a Database rows section into Pages (MEN-WEB-12's separate layout
+  // is behind its switch), so absence is asserted on row results by their data-option-kind too.
   await expect(mentionPanel(page).getByText('Database rows', { exact: true })).toHaveCount(0);
   await expect(mentionPanel(page).locator('[data-option-kind="database_row"]')).toHaveCount(0);
+});
+
+Then('the mention panel shows both recent fixture pages', async ({ page }) => {
+  const panel = mentionPanel(page);
+
+  for (const { title } of requireRecentPages(getState(page))) {
+    await expect(panel.getByText(title, { exact: true })).toBeVisible({ timeout: 15000 });
+  }
+});
+
+Then('the mention panel shows only the first recent fixture page while typed searches are held', async ({ page }) => {
+  const state = getState(page);
+  const [first, second] = requireRecentPages(state);
+  const panel = mentionPanel(page);
+
+  await expect(panel.getByText(first.title, { exact: true })).toBeVisible({ timeout: 1000 });
+  await expect(panel.getByText(second.title, { exact: true })).toHaveCount(0);
+  // No typed answer arrived: the list was narrowed from the bare answer on screen.
+  expect(state.heldTypedSearchesAnswered).toBe(0);
+
+  const probe = await page.evaluate(
+    () => (window as Window & { __mentionNarrowProbe?: MentionNarrowProbe }).__mentionNarrowProbe
+  );
+
+  expect(probe?.keyAt, 'the first keystroke').toBeDefined();
+  expect(probe?.narrowedAt, 'the narrowed list').toBeDefined();
+  // The plan's budget. React commits before the browser paints, so this is soft on loaded runners.
+  expect.soft((probe?.narrowedAt ?? 0) - (probe?.keyAt ?? 0), 'keystroke to narrowed list, ms').toBeLessThan(100);
+});
+
+Then(
+  'the mention panel shows the fresh fixture page, flagged fresh, while typed searches are held',
+  async ({ page }) => {
+    const state = getState(page);
+    const { title } = requireFreshPage(state);
+    const option = mentionPanel(page).locator('[data-option-kind="page"]').filter({ hasText: title });
+
+    await expect(option).toBeVisible({ timeout: 1000 });
+    await expect(option).toHaveAttribute('data-fresh', 'true');
+    // No typed answer arrived: the page came from the local lane.
+    expect(state.heldTypedSearchesAnswered).toBe(0);
+
+    const probe = await page.evaluate(
+      () => (window as Window & { __mentionShownProbe?: MentionShownProbe }).__mentionShownProbe
+    );
+
+    expect(probe?.keyAt, 'the first keystroke').toBeDefined();
+    expect(probe?.shownAt, 'the fresh page').toBeDefined();
+    // The plan's budget, measured to React's commit. Soft on loaded runners.
+    expect.soft((probe?.shownAt ?? 0) - (probe?.keyAt ?? 0), 'keystroke to the fresh page, ms').toBeLessThan(100);
+  }
+);
+
+Then('the mention panel shows the people, pages and databases sections in that order', async ({ page }) => {
+  const sections = mentionPanel(page).locator('[data-section-kind]');
+
+  await expect
+    .poll(() => sections.evaluateAll((shown) => shown.map((section) => section.getAttribute('data-section-kind'))), {
+      timeout: 15000,
+    })
+    .toEqual(['people', 'pages', 'databases']);
+  // Titled from the translations, which in English read as servers title them.
+  for (const [kind, title] of [
+    ['people', 'People'],
+    ['pages', 'Pages'],
+    ['databases', 'Databases'],
+  ]) {
+    const heading = mentionPanel(page).locator(`[data-section-kind="${kind}"]`).getByText(title, { exact: true });
+
+    await expect(heading).toBeVisible();
+  }
+});
+
+Then(
+  'the mention panel lists the fixture database in its own section beside four pages and "1 more"',
+  async ({ page }) => {
+    const state = getState(page);
+    const panel = mentionPanel(page);
+    const pagesSection = panel.locator('[data-section-kind="pages"]');
+
+    await expect(
+      panel.locator('[data-section-kind="databases"] [data-option-kind="database"]').filter({
+        hasText: requireSectionsDatabaseTitle(state),
+      })
+    ).toBeVisible({ timeout: 15000 });
+    await expect(pagesSection.locator('[data-option-kind="page"]')).toHaveCount(4);
+    await expect(pagesSection.locator('[data-option-key="pages|more"]')).toHaveText('1 more results...');
+  }
+);
+
+Then('the mention panel offers to create a page named after the query last', async ({ page }) => {
+  const query = requireSectionsQuery(getState(page));
+  const options = mentionPanel(page).locator('[data-option-key]');
+  const keys = await options.evaluateAll((shown) => shown.map((option) => option.getAttribute('data-option-key')));
+
+  // After every result: the sub-page, then the page reference.
+  expect(keys.slice(-2)).toEqual(['createPage:childPage', 'createPage:pageReference']);
+  await expect(options.nth(keys.length - 2)).toHaveText(`Create "${query}" sub-page`);
 });
 
 Then('the mention panel shows the fixture member', async ({ page }) => {
@@ -278,6 +702,63 @@ Then('the mention panel shows an external link for {string}', async ({ page }, h
   await expect(linksSection.getByText('Links', { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(linksSection.getByRole('button', { name: hostnamePattern })).toBeVisible({ timeout: 15000 });
 });
+
+Then(
+  'the typed mention requests for {string} were answered on two streams of one session',
+  async ({ page }, query: string) => {
+    const state = getState(page);
+    const answered = requireMentionRequests(state);
+    const typed = () => answered.filter((request) => request.body?.query === query);
+    const primaryOf = () => typed().find((request) => !isDatabaseRowOnlyRecordedRequest(request));
+    const rowsOf = () => typed().find(isDatabaseRowOnlyRecordedRequest);
+
+    // The primary request and the rows-only request leave together after the typing debounce.
+    await expect
+      .poll(() => Boolean(primaryOf() && rowsOf()), {
+        timeout: 15000,
+        message: `answered primary and rows mention requests for "${query}". ${mentionFailureHint(state)}`,
+      })
+      .toBe(true);
+
+    const primary = primaryOf();
+    const rows = rowsOf();
+    const primaryStream = primary?.headers['x-request-stream-id'] ?? '';
+    const session = /^web-mention-(.+)-primary$/.exec(primaryStream)?.[1];
+
+    expect(primary?.body?.include ?? []).not.toContain('database_row');
+    expect(session, `primary stream id "${primaryStream}". ${mentionFailureHint(state)}`).toBeTruthy();
+    expect(rows?.headers['x-request-stream-id']).toBe(`web-mention-${session}-rows`);
+    expect(primary?.headers['x-request-time']).toMatch(/^\d+$/);
+    expect(rows?.headers['x-request-time']).toMatch(/^\d+$/);
+    expect([primary?.status, rows?.status]).toEqual([200, 200]);
+    state.mentionStreamSession = session;
+  }
+);
+
+Then(
+  'the empty mention request was answered on the bare stream of that session without database rows',
+  async ({ page }) => {
+    const state = getState(page);
+    const session = state.mentionStreamSession;
+    const bareOf = () => requireMentionRequests(state).find((request) => (request.body?.query ?? '') === '');
+
+    expect(session, 'the session of the typed mention requests').toBeTruthy();
+    await expect
+      .poll(() => Boolean(bareOf()), {
+        timeout: 15000,
+        message: `an answered empty-query mention request. ${mentionFailureHint(state)}`,
+      })
+      .toBe(true);
+
+    const bare = bareOf();
+
+    expect(bare?.body?.include ?? []).not.toContain('database_row');
+    // Typing does not end the panel session, so the bare request shares the typed requests' session.
+    expect(bare?.headers['x-request-stream-id']).toBe(`web-mention-${session}-bare`);
+    expect(bare?.headers['x-request-time']).toMatch(/^\d+$/);
+    expect(bare?.status).toBe(200);
+  }
+);
 
 Then('the browser sent a database-row mention search request', async ({ page }) => {
   const body = getState(page).rowSearchRequestBody as {
@@ -302,8 +783,8 @@ Then('the mention panel shows the fixture database row', async ({ page }) => {
     .locator('[data-option-kind="database_row"]')
     .filter({ hasText: new RegExp(requireRowKeyword(getState(page))) });
 
-  // Desktop parity: the row renders inline in the Pages section — there is no
-  // separate "Database rows" heading.
+  // The stubbed rows answer has a Database rows section, which the default folded layout shows in
+  // Pages: there is no "Database rows" heading.
   await expect(rowResult.first()).toBeVisible({ timeout: 30000 });
   await expect(resultSection.getByText('Database rows', { exact: true })).toHaveCount(0);
 });
@@ -319,6 +800,9 @@ async function ensureMemberJoinedOwnerWorkspace(request: APIRequestContext, stat
   const alreadyJoined = memberWorkspaceInfo.workspaces.some((workspace) => workspace.workspace_id === workspaceId);
 
   if (!alreadyJoined) {
+    // A hosted server, which CI's backend is, lets a Free workspace hold one member.
+    grantWorkspaceProSubscription(workspaceId);
+
     const createdInvite = await apiPost<{ code: string | null }>(
       request,
       ownerToken,
@@ -786,6 +1270,71 @@ function requireOwnerToken(state: MentionFixtureState): string {
   }
 
   return state.ownerToken;
+}
+
+function requireMentionRequests(state: MentionFixtureState): RecordedMentionRequest[] {
+  if (!state.mentionRequests) {
+    throw new Error('Mention search requests are not being recorded');
+  }
+
+  return state.mentionRequests;
+}
+
+function isMentionSearchRequest(request: Request): boolean {
+  return request.method() === 'POST' && request.url().includes('/mentions/search');
+}
+
+// Mention searches that failed without a response explain a missing stream header: the page sends a
+// search again without the headers when a CORS preflight rejects them, as a Cloud nginx.conf whose
+// $cors_headers lacks x-request-time and x-request-stream-id does for a Web on another origin.
+function mentionFailureHint(state: MentionFixtureState): string {
+  const failed = state.failedMentionRequests ?? [];
+
+  if (failed.length === 0) return 'No mention request failed without a response.';
+
+  return (
+    `${failed.length} mention request(s) failed without a response (${[...new Set(failed)].join(', ')}). ` +
+    'A CORS preflight that rejects x-request-time and x-request-stream-id makes the page send ' +
+    'mention searches without them.'
+  );
+}
+
+function isDatabaseRowOnlyRecordedRequest(request: RecordedMentionRequest): boolean {
+  const include = request.body?.include;
+
+  return Array.isArray(include) && include.length === 1 && include[0] === 'database_row';
+}
+
+function requireSectionsQuery(state: MentionFixtureState): string {
+  if (!state.sectionsQuery) {
+    throw new Error('The stubbed sections mention answer is not initialized');
+  }
+
+  return state.sectionsQuery;
+}
+
+function requireSectionsDatabaseTitle(state: MentionFixtureState): string {
+  if (!state.sectionsDatabaseTitle) {
+    throw new Error('The stubbed sections mention answer is not initialized');
+  }
+
+  return state.sectionsDatabaseTitle;
+}
+
+function requireFreshPage(state: MentionFixtureState): { id: string; title: string } {
+  if (!state.freshPage) {
+    throw new Error('No fresh fixture page was created');
+  }
+
+  return state.freshPage;
+}
+
+function requireRecentPages(state: MentionFixtureState): { id: string; title: string }[] {
+  if (!state.recentPages || state.recentPages.length < 2) {
+    throw new Error('The stubbed recent mention pages are not initialized');
+  }
+
+  return state.recentPages;
 }
 
 function requireRowKeyword(state: MentionFixtureState): string {

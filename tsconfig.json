@@ -50,7 +50,8 @@
     "api",
     ".storybook",
     "vite.config.ts",
-    "deploy/**/*.ts"
+    "deploy/**/*.ts",
+    "scripts/mention-eval/**/*.ts"
   ],
   "exclude": [
     "node_modules",

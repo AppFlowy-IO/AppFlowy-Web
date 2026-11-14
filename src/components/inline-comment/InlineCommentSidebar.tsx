@@ -14,6 +14,7 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { inlineCommentMentionParticipants } from '@/application/comment-mention-ranking';
 import { serializeCommentMentions } from '@/application/comment-mentions';
 import { InlineComment, InlineCommentReaction } from '@/application/inline-comment';
 // The same glyphs the desktop card uses (FlowySvgs.comment_* / three_dots).
@@ -28,6 +29,7 @@ import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EmptyCommentIcon } from '@/assets/icons/empty_comment.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { NormalModal } from '@/components/_shared/modal';
+import { useAppAwareness } from '@/components/app/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -519,13 +521,25 @@ function CommentEntry({
   );
 }
 
-function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onClose: () => void }) {
+function ReplyInput({
+  comment,
+  replies,
+  onClose,
+}: {
+  comment: InlineComment;
+  replies: InlineComment[];
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
-  const { mutatingCommentIds } = useInlineCommentStatus();
+  const { currentUserUuid, mutatingCommentIds } = useInlineCommentStatus();
   const { createReply } = useInlineCommentActions();
   const [draft, setDraft] = useState<CommentDraft>(EMPTY_COMMENT_DRAFT);
   const { content } = draft;
+  const parentCommentId = comment.commentId;
   const submitting = mutatingCommentIds.has(parentCommentId);
+  // The @ picker ranks the thread's participants first, then who is on the page.
+  const participantIds = useMemo(() => inlineCommentMentionParticipants([comment, ...replies]), [comment, replies]);
+  const awareness = useAppAwareness(comment.viewId);
 
   const submit = useCallback(async () => {
     if (!content.trim() || submitting) return;
@@ -555,6 +569,9 @@ function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onC
           placeholder={t('inlineComment.addReply')}
           draft={draft}
           onDraftChange={setDraft}
+          mentionParticipantIds={participantIds}
+          mentionAwareness={awareness}
+          mentionRequesterId={currentUserUuid}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault();
@@ -670,7 +687,7 @@ function CommentThread({
 
       {canReply && replying && (
         <div onClick={(event) => event.stopPropagation()}>
-          <ReplyInput parentCommentId={comment.commentId} onClose={() => setReplying(false)} />
+          <ReplyInput comment={comment} replies={replies} onClose={() => setReplying(false)} />
         </div>
       )}
     </article>

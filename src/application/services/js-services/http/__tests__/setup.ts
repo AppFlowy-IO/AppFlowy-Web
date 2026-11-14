@@ -76,6 +76,8 @@ jest.mock('dayjs', () => {
     };
 });
 
+// Every export of the real module, with its values under Jest: `initAPIService` reads
+// `isLocalDevelopment` (false outside the Vite dev server) to decide whether to rewrite local URLs.
 jest.mock('@/utils/runtime-config', () => ({
     getConfigValue: jest.fn((key: string, defaultValue: string) => {
         const value = process.env[key];
@@ -86,6 +88,8 @@ jest.mock('@/utils/runtime-config', () => ({
 
         return value || defaultValue;
     }),
+    isDevelopmentOrTestEnvironment: jest.fn(() => true),
+    isLocalDevelopment: jest.fn(() => false),
 }));
 
 jest.mock('@/utils/file-storage-url', () => ({
@@ -96,11 +100,28 @@ jest.mock('@/utils/file-storage-url', () => ({
     isAppFlowyFileStorageUrl: jest.fn(() => true),
 }));
 
-// Mock the session/token module (not @/application/session!)
-jest.mock('@/application/session/token', () => ({
-    getTokenParsed: jest.fn(() => null), // Default to null, tests will override with mockReturnValue
-    invalidToken: jest.fn(),
-}));
+// Mock the session/token module (not @/application/session!), with every export of the real one: the
+// API client's request interceptor captures and checks the login session on each request. Tests pick
+// the signed-in account with setActiveTestToken, which sets getTokenParsed's return value; the other
+// exports follow from it, with one login session for the whole run.
+jest.mock('@/application/session/token', () => {
+    const getTokenParsed = jest.fn((): { user?: { id?: string } } | null => null);
+
+    return {
+        getTokenParsed,
+        getToken: jest.fn(() => {
+            const token = getTokenParsed();
+
+            return token ? JSON.stringify(token) : null;
+        }),
+        isTokenValid: jest.fn(() => getTokenParsed() !== null),
+        invalidToken: jest.fn(),
+        saveGoTrueAuth: jest.fn(() => true),
+        captureTokenSession: jest.fn(() => ({ generation: 0, userId: getTokenParsed()?.user?.id ?? null })),
+        isTokenSessionCurrent: jest.fn(() => true),
+        invalidTokenForSession: jest.fn(),
+    };
+});
 
 // Mock UI notification components
 jest.mock('@/components/_shared/notify', () => ({

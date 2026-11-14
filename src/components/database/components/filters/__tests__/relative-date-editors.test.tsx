@@ -199,7 +199,10 @@ describe.each([false, true])('relative date editor (advanced=%s)', (advanced) =>
     expect(JSON.parse(node.get(K.content))).toEqual({ relative_date: 'Tomorrow' });
     expect(screen.getByTestId('summary').textContent).toContain('onOrAfter relativeDates.tomorrow');
     fireEvent.click(screen.getByTestId(pickerId));
-    const fixedDay = dayjs().add(1, 'day').date(15);
+    // A day in tomorrow's month that is not tomorrow itself. "Tomorrow" is the selected day here,
+    // and clicking the selected day clears it, so day 15 failed on the 14th of every month.
+    const tomorrow = dayjs().add(1, 'day');
+    const fixedDay = tomorrow.date(tomorrow.date() === 15 ? 16 : 15);
 
     fireEvent.click(screen.getByRole('gridcell', { name: fixedDay.format('D'), exact: true }));
     expect(JSON.parse(node.get(K.content))).toEqual({ timestamp: fixedDay.startOf('day').unix() });
