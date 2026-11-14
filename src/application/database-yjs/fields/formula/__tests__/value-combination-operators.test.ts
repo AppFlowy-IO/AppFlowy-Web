@@ -69,15 +69,24 @@ function rank(contract: ValueContract, value: ConcreteValue): number {
   return rank;
 }
 
+function dateOrder(timestamp: number | null | undefined, includeTime?: boolean): number | null {
+  if (timestamp === null || timestamp === undefined) return null;
+  return includeTime ? timestamp : new Date(timestamp).setHours(0, 0, 0, 0);
+}
+
 function equal(left: PreparedValue, right: PreparedValue): boolean {
   const a = left.value.expected;
   const b = right.value.expected;
+  const includeTime = a.include_time || b.include_time;
 
   switch (left.contract.kind) {
     case 'number':
       return (a.number ?? 0) === (b.number ?? 0);
     case 'date':
-      return a.start_ms === b.start_ms && a.end_ms === b.end_ms;
+      return (
+        dateOrder(a.start_ms, includeTime) === dateOrder(b.start_ms, includeTime) &&
+        dateOrder(a.end_ms, includeTime) === dateOrder(b.end_ms, includeTime)
+      );
     case 'boolean':
       return a.boolean === b.boolean;
     case 'text':
@@ -103,8 +112,8 @@ function ordered(left: PreparedValue, right: PreparedValue): number | null {
       y = b.number;
       break;
     case 'date':
-      x = a.start_ms;
-      y = b.start_ms;
+      x = dateOrder(a.start_ms, a.include_time || b.include_time);
+      y = dateOrder(b.start_ms, a.include_time || b.include_time);
       break;
     default:
       throw new Error(`Unexpected ordered type ${left.contract.kind}`);

@@ -18,7 +18,6 @@ export {
   isMcpApiError,
   isMcpAppApprovalKey,
   isMcpDisabledError,
-  isMcpLicenseRequired,
   isMcpServiceUnavailable,
   listMcpAccessRequests,
   listMcpWorkspaceConnections,

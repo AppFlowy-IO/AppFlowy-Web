@@ -3,7 +3,6 @@ import { useSyncExternalStore } from 'react';
 import {
   getMcpBaseUrlOverride,
   getMcpConfiguration,
-  isMcpLicenseRequired,
   type McpConfiguration,
 } from '@/application/services/domains/mcp';
 import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
@@ -31,19 +30,6 @@ export function useMcpConfiguration({ loadServerInfo = false }: UseMcpConfigurat
   useServerInfo(loadServerInfo && !getMcpBaseUrlOverride(), defaultConfig.baseURL);
 
   return useSyncExternalStore(subscribeToServerInfo, getMcpConfiguration, getMcpConfiguration);
-}
-
-/**
- * Whether server-info says this self-hosted server's license does not include
- * MCP (`mcp_status: license_required`). Re-renders when server-info changes.
- */
-export function useMcpLicenseRequired(): boolean {
-  return useSyncExternalStore(subscribeToServerInfo, readMcpLicenseRequired, readMcpLicenseRequired);
-}
-
-// `useSyncExternalStore` calls the snapshot getter with no argument.
-function readMcpLicenseRequired(): boolean {
-  return isMcpLicenseRequired();
 }
 
 export default useMcpConfiguration;
