@@ -664,6 +664,7 @@ jobs:
         run: pnpm exec bddgen test -c playwright.bdd.config.ts
 
       - name: Run ${{ matrix.test-group.name }} tests
+        id: group-tests
         shell: bash
         run: |
           test_args=("--workers=2")
@@ -690,6 +691,17 @@ jobs:
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+
+      # The mention API's HTTP integration tests need a Cloud stack, and this job has one. Jest's
+      # default run ignores *.integration.test.ts, and no workflow runs `pnpm test:http-api`. They
+      # run after the group's scenarios, whether those passed or failed.
+      - name: Run the mention HTTP API integration tests
+        if: >-
+          ${{ !cancelled() && matrix.test-group.name == 'mention-search-bdd' &&
+          (steps.group-tests.outcome == 'success' || steps.group-tests.outcome == 'failure') }}
+        run: pnpm test:http-api:mention
+        env:
+          CI: true
 
       - name: Upload exact Cloud runtime manifest
         if: always() && steps.cloud-input.outputs.needs-tools == 'true'

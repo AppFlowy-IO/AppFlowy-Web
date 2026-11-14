@@ -35,6 +35,7 @@
     "test:http-api:subscription": "jest src/application/services/js-services/http/__tests__/subscription.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
     "test:http-api:file-import": "jest src/application/services/js-services/http/__tests__/file-import.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
     "test:http-api:quick-note": "jest src/application/services/js-services/http/__tests__/quick-note.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
+    "test:http-api:mention": "jest src/application/services/js-services/http/__tests__/mention.integration.test.ts --no-coverage --maxWorkers=1 --testPathIgnorePatterns=/node_modules/",
     "test:e2e": "playwright test",
     "test:e2e:block-spacing": "playwright test -c playwright.block-spacing.config.ts",
     "test:e2e:callout": "playwright test -c playwright.callout.config.ts",

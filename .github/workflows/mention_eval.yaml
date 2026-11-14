@@ -54,6 +54,15 @@ jobs:
       - name: Replay the mention sessions and check the committed rankings and verdict
         run: pnpm mention:eval --report mention-eval-report.json
 
+      # The MEN-WEB-15 spike's assertions on a 10,000-row database: residency, the index build,
+      # keystroke matching and freshness. The default Jest run skips them, and their memory
+      # measurements need the collector exposed.
+      - name: Check the local rows lane on a 10,000-row database
+        run: >-
+          MENTION_ROWS_BENCH=1 node --expose-gc node_modules/jest/bin/jest.js
+          src/components/editor/components/panels/mention-panel/__tests__/mentionLocalRows.bench.test.ts
+          --no-coverage --maxWorkers=1
+
       - name: Upload the replay report
         if: always()
         uses: actions/upload-artifact@v4
