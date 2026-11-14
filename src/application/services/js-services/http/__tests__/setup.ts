@@ -76,6 +76,8 @@ jest.mock('dayjs', () => {
     };
 });
 
+// Every export of the real module, with its values under Jest: `initAPIService` reads
+// `isLocalDevelopment` (false outside the Vite dev server) to decide whether to rewrite local URLs.
 jest.mock('@/utils/runtime-config', () => ({
     getConfigValue: jest.fn((key: string, defaultValue: string) => {
         const value = process.env[key];
@@ -86,6 +88,8 @@ jest.mock('@/utils/runtime-config', () => ({
 
         return value || defaultValue;
     }),
+    isDevelopmentOrTestEnvironment: jest.fn(() => true),
+    isLocalDevelopment: jest.fn(() => false),
 }));
 
 jest.mock('@/utils/file-storage-url', () => ({
