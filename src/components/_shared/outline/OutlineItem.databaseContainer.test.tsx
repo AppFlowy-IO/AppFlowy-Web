@@ -9,6 +9,7 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useAIEnabled: () => true,
+  useCurrentWorkspaceIdOptional: () => undefined,
 }));
 
 jest.mock('@/components/_shared/outline/OutlineIcon', () => () => null);
