@@ -285,15 +285,15 @@ type DatabaseHistoryStackGroup = {
 export class DatabaseHistoryManager {
   private databaseSource: DatabaseHistorySourceController | null = null;
   /**
-   * History sources on other databases' docs (a dashboard saving a widget's
-   * conditions to its source view). Each is released when its doc, or this
-   * manager's own doc, is destroyed; the value removes the `destroy` listener.
+   * History sources on other database or row docs. Each is released when its
+   * doc or this manager's doc is destroyed; unwatch removes the destroy listener.
    */
-  private foreignDatabaseSources = new Map<YDoc, { source: DatabaseHistorySourceController; unwatch: () => void }>();
+  private foreignSources = new Map<YDoc, { source: DatabaseHistorySourceController; unwatch: () => void }>();
   private watchesOwnDocDestroy = false;
   // Yjs matches origin constructors exactly. A private subclass lets this
   // manager own foreign writes without adding them to the source's history.
   private readonly foreignDatabaseOrigin = class extends DatabaseHistoryOrigin {};
+  private readonly foreignRowOrigin = class extends DatabaseRowHistoryOrigin {};
   private rowSources = new WeakMap<YDoc, DatabaseHistorySourceController>();
   private sourceUnsubscribers = new WeakMap<DatabaseHistorySourceController, () => void>();
   private sourceSubscribers = new WeakMap<DatabaseHistorySourceController, () => void>();
@@ -369,22 +369,22 @@ export class DatabaseHistoryManager {
     if (!this.databaseSource || !insertions.clients.size) return;
     const stackItem: StackItem = { insertions, deletions: Y.createDeleteSet(), meta: new Map() };
     const entry = { source: this.databaseSource, stackItem };
-    const latest = this.undoStack[this.undoStack.length - 1];
+    const existingGroup = this.undoStack.find((entry) => entry.group === group);
 
     this.databaseSource.undoManager.undoStack.push(stackItem);
     // Calendar setup may have created its date field before the row committed.
     // Keep that setup and the new membership in the same user-visible undo step.
-    if (latest?.group === group) {
-      latest.entries.push(entry);
-      const previousGuard = latest.isCurrent;
+    if (existingGroup) {
+      existingGroup.entries.push(entry);
+      const previousGuard = existingGroup.isCurrent;
 
-      latest.isCurrent = () => isCurrent() && (!previousGuard || previousGuard());
+      existingGroup.isCurrent = () => isCurrent() && (!previousGuard || previousGuard());
     } else {
       this.undoStack.push({ group, entries: [entry], isCurrent });
       this.trimUndoHistory();
+      this.clearRedoHistory();
     }
 
-    this.clearRedoHistory();
     this.notify();
   }
 
@@ -424,23 +424,36 @@ export class DatabaseHistoryManager {
   }
 
   createForeignDatabaseHistoryOrigin(databaseDoc: YDoc, action: DatabaseHistoryAction) {
-    if (!this.foreignDatabaseSources.has(databaseDoc)) {
-      const scope = getDatabaseHistoryScope(databaseDoc);
+    return this.createForeignHistoryOrigin(databaseDoc, action, 'database', this.foreignDatabaseOrigin);
+  }
+
+  createForeignRowHistoryOrigin(rowDoc: YDoc, action: DatabaseRowHistoryAction) {
+    return this.createForeignHistoryOrigin(rowDoc, action, 'row', this.foreignRowOrigin);
+  }
+
+  private createForeignHistoryOrigin(
+    doc: YDoc,
+    action: DatabaseHistoryAction,
+    kind: HistorySourceKind,
+    Origin: typeof DatabaseHistoryOrigin
+  ) {
+    if (!this.foreignSources.has(doc)) {
+      const scope = kind === 'database' ? getDatabaseHistoryScope(doc) : getDatabaseRowHistoryScope(doc);
 
       if (scope) {
         const source = new DatabaseHistorySourceController(
-          'database',
-          databaseDoc,
+          kind,
+          doc,
           scope,
-          undefined,
-          new Set([this.foreignDatabaseOrigin])
+          action.rowId,
+          new Set([Origin])
         );
-        const handleDestroy = () => this.releaseForeignDatabaseSource(databaseDoc);
+        const handleDestroy = () => this.releaseForeignDatabaseSource(doc);
 
-        databaseDoc.on('destroy', handleDestroy);
-        this.foreignDatabaseSources.set(databaseDoc, {
+        doc.on('destroy', handleDestroy);
+        this.foreignSources.set(doc, {
           source,
-          unwatch: () => databaseDoc.off('destroy', handleDestroy),
+          unwatch: () => doc.off('destroy', handleDestroy),
         });
         this.attachSource(source);
 
@@ -451,7 +464,7 @@ export class DatabaseHistoryManager {
       }
     }
 
-    return new this.foreignDatabaseOrigin(action, action.historyGroup ?? activeDatabaseHistoryGroup);
+    return new Origin(action, action.historyGroup ?? activeDatabaseHistoryGroup);
   }
 
   /**
@@ -460,11 +473,11 @@ export class DatabaseHistoryManager {
    * source. A later write to that doc starts a new source.
    */
   releaseForeignDatabaseSource(databaseDoc: YDoc) {
-    const entry = this.foreignDatabaseSources.get(databaseDoc);
+    const entry = this.foreignSources.get(databaseDoc);
 
     if (!entry) return;
 
-    this.foreignDatabaseSources.delete(databaseDoc);
+    this.foreignSources.delete(databaseDoc);
     entry.unwatch();
     this.detachSource(entry.source);
     entry.source.dispose();
@@ -472,7 +485,7 @@ export class DatabaseHistoryManager {
   }
 
   private releaseForeignDatabaseSources = () => {
-    Array.from(this.foreignDatabaseSources.keys()).forEach((databaseDoc) => {
+    Array.from(this.foreignSources.keys()).forEach((databaseDoc) => {
       this.releaseForeignDatabaseSource(databaseDoc);
     });
   };
@@ -543,17 +556,19 @@ export class DatabaseHistoryManager {
 
     const group =
       event.origin instanceof DatabaseHistoryOrigin && event.origin.group ? event.origin.group : Object.freeze({});
-    const latestGroup = this.undoStack[this.undoStack.length - 1];
+    // Asynchronous parts of one action can finish after another action. Keep
+    // their entries with the original group without consuming the newer one.
+    const existingGroup = this.undoStack.find((entry) => entry.group === group);
     const entry = { source, stackItem: event.stackItem };
 
-    if (latestGroup?.group === group) {
-      latestGroup.entries.push(entry);
+    if (existingGroup) {
+      existingGroup.entries.push(entry);
     } else {
       this.undoStack.push({ group, entries: [entry] });
       this.trimUndoHistory();
+      this.clearRedoHistory(source);
     }
 
-    this.clearRedoHistory(source);
     this.notify();
   };
 
@@ -873,6 +888,26 @@ export function runDatabaseRowAction(rowDoc: YDoc, action: DatabaseRowHistoryAct
     }
 
     rowDoc.transact(mutate, createDatabaseRowHistoryOrigin(action));
+  }, action.historyGroup);
+}
+
+/** Capture a compound action's row writes in its initiating database's history. */
+export function runDatabaseRowActionForDatabase(
+  databaseDoc: YDoc,
+  rowDoc: YDoc,
+  action: DatabaseRowHistoryAction,
+  mutate: () => void
+) {
+  if (isDatabaseHistoryDocumentImmutable(databaseDoc) || isDatabaseHistoryDocumentImmutable(rowDoc)) return;
+  if (getDatabaseHistoryPolicy(action) !== 'capture') {
+    runDatabaseRowAction(rowDoc, action, mutate);
+    return;
+  }
+
+  runDatabaseHistoryGroup(() => {
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    rowDoc.transact(mutate, manager.createForeignRowHistoryOrigin(rowDoc, action));
   }, action.historyGroup);
 }
 

@@ -48,6 +48,7 @@ import {
 } from '@/application/database-yjs/history';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { createNumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { getPrimaryFieldId, useCalendarLayoutSetting, useDatabaseViewLayout } from '@/application/database-yjs/selector';
@@ -902,8 +903,18 @@ export function useDuplicateRowDispatch() {
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const rowMap = useRowMap();
-  const { databaseDoc, workspaceId, activeViewId, readOnly, canWrite, loadRowDocument, checkIfRowDocumentExists } =
-    useDatabaseContext();
+  const {
+    databaseDoc,
+    workspaceId,
+    activeViewId,
+    readOnly,
+    canWrite,
+    loadRowDocument,
+    checkIfRowDocumentExists,
+    loadView,
+    getViewIdFromDatabaseId,
+    bindViewSync,
+  } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
   const ownerRef = useRef({ databaseDoc, workspaceId, activeViewId, readOnly, canWrite });
@@ -919,6 +930,8 @@ export function useDuplicateRowDispatch() {
 
   return useCallback(
     async (referenceRowId: string) => {
+      const version = databaseDoc.version;
+      const restoreId = databaseDoc.databaseRestoreId;
       const assertCurrent = () => {
         const owner = ownerRef.current;
 
@@ -929,6 +942,8 @@ export function useDuplicateRowDispatch() {
           owner.activeViewId !== activeViewId ||
           owner.readOnly ||
           owner.canWrite === false ||
+          databaseDoc.version !== version ||
+          databaseDoc.databaseRestoreId !== restoreId ||
           isDatabaseHistoryDocumentImmutable(databaseDoc)
         )
           throw new Error('This database is no longer writable.');
@@ -947,6 +962,7 @@ export function useDuplicateRowDispatch() {
       const rowDoc = new Y.Doc({ guid: rowId }) as YDoc;
       const databaseId = database.get(YjsDatabaseKey.id);
       let committed = false;
+      let activatedRowDoc: YDoc | undefined;
 
       try {
         initialDatabaseRow(rowId, databaseId, rowDoc, actorUid);
@@ -1017,7 +1033,10 @@ export function useDuplicateRowDispatch() {
           rowDoc,
           position: { kind: 'after', row_id: referenceRowId },
           assertCurrent,
-          registerRow: () => createRow(rowKey),
+          registerRow: async () => {
+            activatedRowDoc = await createRow(rowKey);
+            return activatedRowDoc;
+          },
           documentState,
           historyGroup,
           preserveCellStorage: true,
@@ -1036,6 +1055,10 @@ export function useDuplicateRowDispatch() {
         });
         committed = true;
         assertCurrent();
+        if (!activatedRowDoc) throw new Error('Created Row was not activated');
+
+        // A one-only reciprocal link can unlink the original row. Preserve its
+        // custom dependency metadata before that asynchronous follow-up runs.
         executeOperationWithAllViews(
           sharedRoot,
           database,
@@ -1043,6 +1066,38 @@ export function useDuplicateRowDispatch() {
           'duplicateRowDispatch',
           historyGroup
         );
+
+        // The committed row owns its final cells. Copying their forward values alone
+        // leaves two-way targets unaware of the new row, so reuse the relation writer.
+        const activatedRow = activatedRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+        await Promise.all(
+          Array.from(activatedRow.get(YjsDatabaseKey.cells).entries(), ([fieldId, cell]) => {
+            const field = database.get(YjsDatabaseKey.fields).get(fieldId);
+
+            if (!field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Relation) return;
+            const rowIds = getRelationRowIdsFromCell(cell);
+
+            if (rowIds.length === 0) return;
+            return applyRelationReciprocalInserts({
+              sourceRowId: rowId,
+              sourceFieldId: fieldId,
+              insertedRowIds: rowIds,
+              sourceRowDoc: activatedRowDoc,
+              historyGroup,
+              database,
+              databaseDoc,
+              rowMap,
+              createRow,
+              loadView,
+              getViewIdFromDatabaseId,
+              bindViewSync,
+              actorUid,
+              assertCurrent,
+            });
+          })
+        );
+        assertCurrent();
         return rowId;
       } catch (error) {
         if (committed) throw new CommittedRowActivationError(rowId, error);
@@ -1054,12 +1109,15 @@ export function useDuplicateRowDispatch() {
     [
       activeViewId,
       actorUid,
+      bindViewSync,
       checkIfRowDocumentExists,
       createRow,
       database,
       databaseDoc,
       guid,
+      getViewIdFromDatabaseId,
       loadRowDocument,
+      loadView,
       rowMap,
       sharedRoot,
       workspaceId,

@@ -1033,19 +1033,12 @@ export async function expectNoCalendarEvent(page: Page, viewName: string, day: s
   await expect(cell.locator('.fc-event')).toHaveCount(0, WAIT);
 }
 
-/**
- * Drag an event to the day `today + to` the way a user does in a month grid
- * (FullCalendar needs a jiggle past its drag threshold, then a stepped move).
- * Both days must be on the grid of the event's month: the next day always is.
- */
-export async function dragCalendarEvent(page: Page, viewName: string, title: string, to: number) {
-  const from = calendarDayOf(page, viewName, title);
-  const source = await showCalendarDay(page, viewName, from);
-  const target = calendarDayCell(widgetLocator(page, viewName), to);
-  const event = calendarEvent(source, title).first();
-
+/** Drag a rendered calendar event into another day cell. */
+export async function dragCalendarEventToCell(page: Page, event: Locator, target: Locator) {
   await expect(event).toBeVisible(WAIT);
-  await expect(target, `day ${isoLocalDay(to)} is not on the grid that shows ${isoLocalDay(from)}`).toHaveCount(1);
+  await event.scrollIntoViewIfNeeded();
+  // Reveal a clipped week row without centering it and scrolling the source event out of view.
+  await target.evaluate((element) => element.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
   const eventBox = await event.boundingBox();
   const targetBox = await target.boundingBox();
 
@@ -1059,6 +1052,22 @@ export async function dragCalendarEvent(page: Page, viewName: string, title: str
   await page.mouse.move(end.x, end.y, { steps: 25 });
   await page.mouse.move(end.x, end.y, { steps: 5 });
   await page.mouse.up();
+}
+
+/**
+ * Drag an event to the day `today + to` the way a user does in a month grid
+ * (FullCalendar needs a jiggle past its drag threshold, then a stepped move).
+ * Both days must be on the grid of the event's month: the next day always is.
+ */
+export async function dragCalendarEvent(page: Page, viewName: string, title: string, to: number) {
+  const from = calendarDayOf(page, viewName, title);
+  const source = await showCalendarDay(page, viewName, from);
+  const target = calendarDayCell(widgetLocator(page, viewName), to);
+  const event = calendarEvent(source, title).first();
+
+  await expect(event).toBeVisible(WAIT);
+  await expect(target, `day ${isoLocalDay(to)} is not on the grid that shows ${isoLocalDay(from)}`).toHaveCount(1);
+  await dragCalendarEventToCell(page, event, target);
   await expect(calendarEvent(target, title).first()).toBeVisible(WAIT);
   rememberCalendarDay(page, viewName, title, to);
 }

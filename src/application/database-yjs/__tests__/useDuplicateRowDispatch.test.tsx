@@ -11,6 +11,9 @@ import {
   TimelineDependencyType,
 } from '@/application/database-yjs/database.type';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedProviderDoc } from '@/application/db';
 import {
@@ -148,7 +151,9 @@ function createWrapper({
   sourceDocument,
   loadRowDocument,
   checkIfRowDocumentExists,
+  contextOverrides,
 }: {
+  contextOverrides?: Partial<DatabaseContextState>;
   sourceDocument?: YDoc;
   loadRowDocument?: DatabaseContextState['loadRowDocument'];
   checkIfRowDocumentExists?: DatabaseContextState['checkIfRowDocumentExists'];
@@ -180,6 +185,7 @@ function createWrapper({
         if (!sourceDocument) throw new Error('missing source document');
         return sourceDocument;
       }),
+    ...contextOverrides,
   };
 
   return ({ children }: { children: ReactNode }) => (
@@ -188,6 +194,88 @@ function createWrapper({
 }
 
 describe('useDuplicateRowDispatch', () => {
+  it.each([RelationLimit.NoLimit, RelationLimit.OneOnly])(
+    'preserves the Goal reverse link when duplicating a Task with source limit %s',
+    async (sourceLimit) => {
+      const relationFieldId = 'task-goals';
+      const reciprocalFieldId = 'goal-tasks';
+      const goalDatabaseId = 'goals-database';
+      const goalRowId = 'goal-row';
+      const databaseDoc = createDatabaseDoc();
+      const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+      database.get(YjsDatabaseKey.fields).set(
+        relationFieldId,
+        createRelationField(relationFieldId, {
+          database_id: goalDatabaseId,
+          is_two_way: true,
+          reciprocal_field_id: reciprocalFieldId,
+          source_limit: sourceLimit,
+        })
+      );
+      const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: true });
+      const sourceRow = referenceRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      const sourceCell = new Y.Map() as YDatabaseCell;
+
+      sourceCell.set(YjsDatabaseKey.field_type, FieldType.Relation);
+      sourceCell.set(YjsDatabaseKey.data, [goalRowId]);
+      sourceRow.get(YjsDatabaseKey.cells).set(relationFieldId, sourceCell);
+
+      const goalDatabaseDoc = createDatabaseDoc();
+
+      goalDatabaseDoc.guid = 'goals-document';
+      const goalDatabase = goalDatabaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+      goalDatabase.set(YjsDatabaseKey.id, goalDatabaseId);
+      goalDatabase.get(YjsDatabaseKey.fields).set(
+        reciprocalFieldId,
+        createRelationField(reciprocalFieldId, {
+          database_id: databaseId,
+          is_two_way: true,
+          reciprocal_field_id: relationFieldId,
+        })
+      );
+      const goalRowDoc = createRowDoc(goalRowId, goalDatabaseId, {
+        [reciprocalFieldId]: createCell(FieldType.Relation, [sourceRowId]),
+      });
+      const createdRows = new Map<string, YDoc>();
+      const { result } = renderHook(() => useDuplicateRowDispatch(), {
+        wrapper: createWrapper({
+          databaseDoc,
+          referenceRowDoc,
+          createdRows,
+          duplicateRowDocument: jest.fn(),
+          contextOverrides: {
+            getViewIdFromDatabaseId: async () => viewId,
+            loadView: async () => goalDatabaseDoc,
+            bindViewSync: jest.fn(),
+            createRow: async (key) => {
+              if (key === getRowKey(goalDatabaseDoc.guid, goalRowId)) return goalRowDoc;
+              const doc = new Y.Doc({ guid: key }) as YDoc;
+
+              createdRows.set(key, doc);
+              return doc;
+            },
+          },
+        }),
+      });
+      let copiedId = '';
+
+      await act(async () => {
+        copiedId = await result.current(sourceRowId);
+      });
+      const copy = createdRows.get(getRowKey(databaseDocId, copiedId))!;
+      const copiedRow = copy.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      const goalRow = goalRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+      expect(copiedRow.get(YjsDatabaseKey.cells).get(relationFieldId)?.get(YjsDatabaseKey.data)).toEqual([goalRowId]);
+      expect(sourceCell.get(YjsDatabaseKey.data)).toEqual([goalRowId]);
+      expect(getRelationRowIdsFromCell(goalRow.get(YjsDatabaseKey.cells).get(reciprocalFieldId))).toEqual(
+        expect.arrayContaining([sourceRowId, copiedId])
+      );
+    }
+  );
+
   it.each([TimelineDependencyDirection.BlockedBy, TimelineDependencyDirection.Blocking])(
     'copies custom dependency metadata for direction %s in every saved view',
     async (direction) => {
@@ -202,10 +290,25 @@ describe('useDuplicateRowDispatch', () => {
       views.set('other-view', secondView);
       const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: true });
       const sourceRow = referenceRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
-      const relation = createField('dependency');
+      const relation = createRelationField('dependency', {
+        database_id: databaseId,
+        is_two_way: true,
+        reciprocal_field_id: 'reverse',
+      });
 
-      relation.set(YjsDatabaseKey.type, FieldType.Relation);
       database.get(YjsDatabaseKey.fields).set('dependency', relation);
+      database.get(YjsDatabaseKey.fields).set(
+        'reverse',
+        createRelationField('reverse', {
+          database_id: databaseId,
+          is_two_way: true,
+          reciprocal_field_id: 'dependency',
+          source_limit: RelationLimit.OneOnly,
+        })
+      );
+      const relatedRowDoc = createRowDoc('related', databaseId, {
+        reverse: createCell(FieldType.Relation, [sourceRowId]),
+      });
       const relationCell = new Y.Map() as YDatabaseCell;
 
       relationCell.set(YjsDatabaseKey.field_type, FieldType.Relation);
@@ -224,7 +327,13 @@ describe('useDuplicateRowDispatch', () => {
       );
       const createdRows = new Map<string, YDoc>();
       const { result } = renderHook(() => useDuplicateRowDispatch(), {
-        wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument: jest.fn() }),
+        wrapper: createWrapper({
+          databaseDoc,
+          referenceRowDoc,
+          createdRows,
+          duplicateRowDocument: jest.fn(),
+          contextOverrides: { rowMap: { [sourceRowId]: referenceRowDoc, related: relatedRowDoc } },
+        }),
       });
       let copiedId = '';
 
@@ -575,3 +684,35 @@ test('duplicate completion after owner retirement reports the committed copy ins
   expect(createdRows.has(getRowKey(databaseDocId, rowId))).toBe(true);
   expect(jest.mocked(createCloudRow)).toHaveBeenCalledTimes(1);
 });
+
+test.each(['version', 'databaseRestoreId'] as const)(
+  'duplicate completion after a %s change retains the committed copy without following the old branch',
+  async (property) => {
+    const databaseDoc = createDatabaseDoc();
+
+    databaseDoc[property] = 'original-branch';
+    const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: true });
+    const createdRows = new Map<string, YDoc>();
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument: jest.fn() }),
+    });
+    const publish = jest.mocked(createCloudRow).getMockImplementation()!;
+
+    jest.mocked(createCloudRow).mockImplementationOnce(async (intent) => {
+      const rowId = await publish(intent);
+
+      databaseDoc[property] = 'restored-branch';
+      return rowId;
+    });
+    let error: unknown;
+
+    await act(async () => {
+      error = await result.current(sourceRowId).catch((error: unknown) => error);
+    });
+    expect(error).toBeInstanceOf(CommittedRowActivationError);
+    const rowId = (error as CommittedRowActivationError).rowId;
+
+    expect(createdRows.has(getRowKey(databaseDocId, rowId))).toBe(true);
+    expect(jest.mocked(createCloudRow)).toHaveBeenCalledTimes(1);
+  }
+);
