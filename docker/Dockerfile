@@ -6,6 +6,9 @@ ARG VERSION
 
 # Set production environment
 ENV NODE_ENV=production
+# `vite build` needs more than Node's default heap of about 2 GB. Without this the image build
+# fails now and then with "JavaScript heap out of memory". Web-CI's own build uses the same value.
+ENV NODE_OPTIONS=--max-old-space-size=8192
 
 WORKDIR /app
 
