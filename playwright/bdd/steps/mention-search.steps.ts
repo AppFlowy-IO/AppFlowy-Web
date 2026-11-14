@@ -9,6 +9,7 @@ import { AuthTestUtils } from '../../support/auth-utils';
 import { BlockSelectors, DatabaseGridSelectors, EditorSelectors, SidebarSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
+import { grantWorkspaceProSubscription } from '../../support/subscription-test-helpers';
 
 const { Given, When, Then, Before } = createBdd();
 
@@ -799,6 +800,9 @@ async function ensureMemberJoinedOwnerWorkspace(request: APIRequestContext, stat
   const alreadyJoined = memberWorkspaceInfo.workspaces.some((workspace) => workspace.workspace_id === workspaceId);
 
   if (!alreadyJoined) {
+    // A hosted server, which CI's backend is, lets a Free workspace hold one member.
+    grantWorkspaceProSubscription(workspaceId);
+
     const createdInvite = await apiPost<{ code: string | null }>(
       request,
       ownerToken,
