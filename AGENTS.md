@@ -36,6 +36,13 @@ This is a regression checklist and record of user expectations, not a claim that
   edits before and after the message. Assert that uploads retain the version and both edits reach
   a server replica, without cache reopening, outbox discard, or document destruction.
 
+## Row duplication relation regressions
+
+- Re-read the activated source cell and its membership after related database or row hydration. A newer edit or undo must prevent a delayed reciprocal insertion from restoring a removed link.
+- Preserve canonical shared-array identity for unlimited relation edits so concurrent additions merge. Keep one-only replacement semantics and legacy on-write normalization separate.
+- A duplicate's reciprocal graph belongs to its creation history group, even though ordinary relation edits skip history. Foreign row writes need an owner-specific history origin and lifecycle cleanup so unrelated target edits retain their own undo history.
+- Late completion must join the original history group without consuming newer actions or discarding their redo. Cover deferred hydration, real Yjs replica merging, displacement, and undo/redo.
+
 ## CI regression history
 
 - Regression checked 2026-11-14: freeze the clock in relative-date editor interaction tests and pick a calendar date different from the resolved relative date. On November 14, Tomorrow is the 15th; clicking the selected 15th clears the value to `timestamp: null`.

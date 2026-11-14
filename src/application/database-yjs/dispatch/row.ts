@@ -1083,6 +1083,8 @@ export function useDuplicateRowDispatch() {
               sourceRowId: rowId,
               sourceFieldId: fieldId,
               insertedRowIds: rowIds,
+              sourceRowDoc: activatedRowDoc,
+              historyGroup,
               database,
               databaseDoc,
               rowMap,
