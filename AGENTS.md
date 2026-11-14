@@ -36,6 +36,12 @@ This is a regression checklist and record of user expectations, not a claim that
   edits before and after the message. Assert that uploads retain the version and both edits reach
   a server replica, without cache reopening, outbox discard, or document destruction.
 
+## CI regression history
+
+- Regression checked 2026-11-14: freeze the clock in relative-date editor interaction tests and pick a calendar date different from the resolved relative date. On November 14, Tomorrow is the 15th; clicking the selected 15th clears the value to `timestamp: null`.
+- Docker build heap settings must reach the Node process inside both builder stages. The `web-build` job's `NODE_OPTIONS` does not configure a separate Docker build.
+- Calendar drag helpers must reveal the target inside its scroll container before measuring pointer coordinates. Use nearest-edge scrolling so revealing a clipped Sunday row does not hide Saturday's source event. Keep the real FullCalendar and mouse-drag regression.
+
 ## Shared issues reported across embed PRs
 
 ### Menus, icons, hover, and placement
