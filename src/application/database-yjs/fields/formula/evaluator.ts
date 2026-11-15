@@ -5,7 +5,7 @@ import { FormulaError, SourcePosition } from './errors';
 import { getFormulaFunction } from './functions';
 import { EvalContext } from './registry';
 import { joinText } from './styled-text';
-import { bool, EMPTY, FormulaValue, list, num, text, valuesEqual } from './values';
+import { bool, compareDateTimes, EMPTY, FormulaValue, list, num, text, valuesEqual } from './values';
 
 export interface EvaluateOptions {
   getProp: (ref: string, position: SourcePosition) => FormulaValue;
@@ -21,7 +21,7 @@ function compareOrdered(left: FormulaValue, right: FormulaValue, position: Sourc
   }
 
   if (left.type === 'date' && right.type === 'date') {
-    return left.value.start - right.value.start;
+    return compareDateTimes(left.value.start, right.value.start, left.value.includeTime || right.value.includeTime);
   }
 
   return asNumber(left, position) - asNumber(right, position);

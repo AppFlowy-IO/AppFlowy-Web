@@ -7,6 +7,7 @@ import {
   type McpApprovedApp,
   type McpMemberStatus,
   type McpMyConnection,
+  type McpServerStatus,
 } from '@/application/services/domains/mcp';
 import { ReactComponent as ArrowRightIcon } from '@/assets/icons/arrow_right.svg';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
@@ -15,7 +16,6 @@ import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
 import { useIsSelfHosted } from '@/components/app/hooks/useServerInfo';
 import { McpSetupGuide } from '@/components/mcp/McpSetupGuide';
 import { RAW_INTERPOLATION } from '@/components/mcp/rawInterpolation';
-import { useMcpLicenseRequired } from '@/components/mcp/useMcpConfiguration';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -41,6 +41,8 @@ import { useMyMcpConnections } from './useMyMcpConnections';
 
 export interface McpPanelProps {
   workspaceId: string;
+  serverStatus: McpServerStatus;
+  hasMcpEndpoint: boolean;
   /** Shows Settings > Connections; without it, Connect AI apps does not point there. */
   onOpenConnections?: () => void;
 }
@@ -52,36 +54,34 @@ const TAB_TRIGGER_CLASS =
   'h-8 min-w-0 items-center gap-1.5 rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-fill-content-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden';
 
 /**
- * Settings > MCP, rendered lazily with `key={workspaceId}`, in two tabs: Connect
+ * Settings > MCP, rendered lazily in two tabs: Connect
  * AI apps (how to connect them through the MCP server) and Manage AI apps (the
  * caller's own connections and, for owners, which apps members may connect,
  * with a count of pending approval requests on the tab). See doc/MCP.md.
  *
- * Everything shown is gated on the member status: unreachable service, AI app
- * connections turned off for the server, ineligible account (email gate or
- * guest), member, or owner. The caller's own connections load alongside it;
- * the owner lists wait for it, since only owners may read them.
+ * Server-info supplies the deployment status. The member status checks eligibility
+ * and ownership for the selected workspace. The caller's own connections load
+ * alongside it, and the owner lists wait for it.
  */
-export default function McpPanel({ workspaceId, onOpenConnections }: McpPanelProps) {
+export default function McpPanel({ workspaceId, serverStatus, hasMcpEndpoint, onOpenConnections }: McpPanelProps) {
   const { t } = useTranslation();
   // Tooltips render here so they stay inside the Settings dialog.
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<McpPanelTab>('connect');
-  const member = useMcpMemberStatus(workspaceId);
-  const { status, disabled } = member;
-  // Server-info says this self-hosted server's license does not include MCP: the panel asks for an
-  // upgrade, like the other features a license unlocks, whatever the member status says.
-  const licenseRequired = useMcpLicenseRequired();
+  const member = useMcpMemberStatus(workspaceId, hasMcpEndpoint);
+  const { status } = member;
+  const licenseRequired = serverStatus === 'license_required';
+  const disabled = serverStatus === 'disabled' || member.disabled;
   // The setup guide's note that Claude's apps and ChatGPT reach a self-hosted server from their clouds.
   const selfHosted = useIsSelfHosted();
   // While AI apps are turned off, and for an owner the email gate excludes, the panel offers only
   // the caller's own connections, so the owner lists stay unloaded (approving, for one, is refused
   // then). The server would let such owners withdraw access; doc/MCP.md lists that as not in v1.
-  const isOwner = !disabled && mcpManagesApprovals(status);
+  const isOwner = !licenseRequired && !disabled && mcpManagesApprovals(status);
   // The caller's own connections and their cross-workspace summary need nothing from the member
   // status, so they load alongside it instead of a round trip after it. A failed status (other
   // than AI apps turned off) shows neither and pauses them; its Retry loads them again.
-  const loadOwnConnections = !member.failed || disabled;
+  const loadOwnConnections = hasMcpEndpoint && (!member.failed || disabled);
   // Own connections stay listed for ineligible accounts and while AI apps are turned off:
   // revoking must remain possible.
   const mine = useMyMcpConnections(workspaceId, loadOwnConnections);

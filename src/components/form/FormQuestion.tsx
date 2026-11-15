@@ -47,9 +47,7 @@ const FormMediaInput = lazy(loadFormMediaInput);
 
 /** Load only the controls required by a projected respondent schema. */
 export async function preloadFormQuestionInputs(questions: PublicQuestion[]): Promise<void> {
-  const needsText = questions.some((question) =>
-    ['text', 'url', 'email', 'phone'].includes(question.kind)
-  );
+  const needsText = questions.some((question) => ['text', 'url', 'email', 'phone'].includes(question.kind));
   const needsLongText = questions.some((question) => question.kind === 'text' && question.long_answer);
   const needsDate = questions.some((question) => question.kind === 'date');
   const needsMedia = questions.some((question) => question.kind === 'files');
@@ -84,11 +82,13 @@ export const FormQuestion = memo(_FormQuestion);
 
 function _FormQuestion({
   question,
+  renderTitle,
   value,
   error,
   onChange,
 }: {
   question: PublicQuestion;
+  renderTitle?: (question: PublicQuestion) => React.ReactNode;
   value: FormAnswerValue | undefined;
   error: string | undefined;
   onChange: (questionId: string, value: FormAnswerValue) => void;
@@ -99,22 +99,29 @@ function _FormQuestion({
       data-question-kind={question.kind}
       data-question-id={question.id}
       tabIndex={-1}
-      className='flex flex-col gap-2'
+      className={renderTitle ? 'flex flex-col gap-4 py-3' : 'flex flex-col gap-2'}
     >
       <div className='flex flex-col gap-1'>
-        <h2 className='text-base font-semibold'>
-          {question.label}
-          {question.required && (
-            <span className='ml-0.5 text-fill-default' aria-label='required'>
-              *
-            </span>
-          )}
-        </h2>
+        {renderTitle?.(question) ?? (
+          <h2 className='text-base font-semibold'>
+            {question.label}
+            {question.required && (
+              <span className='ml-0.5 text-fill-default' aria-label='required'>
+                *
+              </span>
+            )}
+          </h2>
+        )}
         {question.description && <p className='text-sm text-text-caption'>{question.description}</p>}
       </div>
       <div className={cn(error && 'ring-fill-default/40 rounded-md ring-1')}>
         <Suspense fallback={<QuestionInputLoading />}>
-          <QuestionInput question={question} value={value} onChange={(v) => onChange(question.id, v)} />
+          <QuestionInput
+            desktopPreview={Boolean(renderTitle)}
+            question={question}
+            value={value}
+            onChange={(v) => onChange(question.id, v)}
+          />
         </Suspense>
       </div>
       {error && <p className='text-xs text-fill-default'>{error}</p>}
@@ -128,10 +135,12 @@ function QuestionInputLoading() {
 
 function QuestionInput({
   question,
+  desktopPreview,
   value,
   onChange,
 }: {
   question: PublicQuestion;
+  desktopPreview?: boolean;
   value: FormAnswerValue | undefined;
   onChange: (value: FormAnswerValue) => void;
 }) {
@@ -171,6 +180,7 @@ function QuestionInput({
     case 'single_select':
       return (
         <FormSelectInput
+          desktopPreview={desktopPreview}
           question={question}
           mode='single'
           value={value?.kind === 'single_select' ? value.option_id : null}
@@ -180,6 +190,7 @@ function QuestionInput({
     case 'multi_select':
       return (
         <FormSelectInput
+          desktopPreview={desktopPreview}
           question={question}
           mode='multi'
           value={value?.kind === 'multi_select' ? value.option_ids : []}

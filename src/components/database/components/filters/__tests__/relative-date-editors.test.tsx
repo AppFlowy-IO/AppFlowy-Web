@@ -122,6 +122,8 @@ beforeAll(() => {
   } as unknown as typeof ResizeObserver;
 });
 beforeEach(() => {
+  // Keep the clock on the CI regression date, when Tomorrow is the 15th.
+  jest.useFakeTimers({ advanceTimers: true, now: new Date(2026, 10, 14, 12) });
   updateServerInfo('https://test.appflowy.cloud', {
     status: 'available',
     info: { enable_page_history: false, enable_relative_date_comparisons: true },
@@ -129,7 +131,10 @@ beforeEach(() => {
   mockReadOnly = false;
   mockUpdate.mockClear();
 });
-afterEach(() => updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING));
+afterEach(() => {
+  updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+  jest.useRealTimers();
+});
 
 describe.each([false, true])('relative date editor (advanced=%s)', (advanced) => {
   const pickerId = advanced ? 'advanced-filter-date-input' : 'date-filter-date-picker';
@@ -199,7 +204,8 @@ describe.each([false, true])('relative date editor (advanced=%s)', (advanced) =>
     expect(JSON.parse(node.get(K.content))).toEqual({ relative_date: 'Tomorrow' });
     expect(screen.getByTestId('summary').textContent).toContain('onOrAfter relativeDates.tomorrow');
     fireEvent.click(screen.getByTestId(pickerId));
-    const fixedDay = dayjs().add(1, 'day').date(15);
+    // Clicking Tomorrow again clears the calendar's single selection.
+    const fixedDay = dayjs().add(2, 'day');
 
     fireEvent.click(screen.getByRole('gridcell', { name: fixedDay.format('D'), exact: true }));
     expect(JSON.parse(node.get(K.content))).toEqual({ timestamp: fixedDay.startOf('day').unix() });

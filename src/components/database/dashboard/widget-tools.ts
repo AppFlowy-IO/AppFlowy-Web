@@ -97,14 +97,15 @@ function getStandaloneToolbarTools({
   caps,
 }: Required<Pick<WidgetToolsInput, 'layout' | 'canWrite' | 'canEditConditions' | 'caps'>>): WidgetTool[] {
   if (layout === DatabaseViewLayout.Dashboard) return [];
+  // Desktop's Form setting bar contains Settings, Preview and Share only.
+  if (layout === DatabaseViewLayout.Form) return canWrite ? ['settings'] : [];
   const tools: WidgetTool[] = [];
   const searches = CARD_SEARCH_LAYOUTS.has(layout) || (caps.contentTools && CONTENT_TOOL_LAYOUTS.has(layout));
 
   if (canEditConditions) tools.push('filter');
   if (canEditConditions && caps.sortLayouts.has(layout)) tools.push('sort');
   if (searches) tools.push('search');
-  // A Form view has no view settings panel.
-  if (canWrite && layout !== DatabaseViewLayout.Form) tools.push('settings');
+  if (canWrite) tools.push('settings');
   if (canWrite && TEMPLATE_LAYOUTS.has(layout)) tools.push('new');
 
   return tools;

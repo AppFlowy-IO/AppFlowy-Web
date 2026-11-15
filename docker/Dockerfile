@@ -24,8 +24,8 @@ COPY . .
 ARG APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID
 ARG APPFLOWY_GOOGLE_DRIVE_PICKER_API_KEY
 
-# Build the application
-RUN APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
+# Match the CI web build's heap budget for the full application graph.
+RUN NODE_OPTIONS="--max-old-space-size=8192" APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
 
 # Production stage
 FROM nginx:1.25-alpine

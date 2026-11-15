@@ -26,19 +26,19 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) =>
 // Modules read the runtime config while they load, so it lives inside the mock.
 jest.mock('@/utils/runtime-config', () => {
   const config: Record<string, string> = {};
-  // Settings offers the MCP tab only under the Vite dev server for now.
-  const localDevelopment = { value: true };
 
   return {
     mockRuntimeConfig: config,
-    mockLocalDevelopment: localDevelopment,
     getConfigValue: (key: string, fallback: string) => config[key] ?? fallback,
     isDevelopmentOrTestEnvironment: () => true,
-    isLocalDevelopment: () => localDevelopment.value,
+    isLocalDevelopment: () => false,
   };
 });
 // Inside the app the auth layer refreshes server-info; Settings only reads the snapshot.
-jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerInfo: jest.fn() }));
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  ...jest.requireActual('@/components/app/hooks/useServerInfo'),
+  useServerInfo: jest.fn(),
+}));
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => mockWorkspaceId,
   useUserWorkspaceInfo: () => mockWorkspaceInfo,
@@ -58,19 +58,21 @@ jest.mock('@/components/app/settings/ManageDataPanel', () => ({ ManageDataPanel:
 // Settings only owns the menu entry and the lazy slot; the panel has its own tests.
 jest.mock('@/components/app/settings/mcp/McpPanel', () => ({
   __esModule: true,
-  default: ({ workspaceId }: { workspaceId: string }) => <div data-testid='mcp-panel' data-workspace-id={workspaceId} />,
+  default: ({ workspaceId, serverStatus }: { workspaceId: string; serverStatus: string }) => (
+    <div data-testid='mcp-panel' data-workspace-id={workspaceId} data-server-status={serverStatus} />
+  ),
 }));
 
-const { mockRuntimeConfig: mockConfig, mockLocalDevelopment } = jest.requireMock<{
+const { mockRuntimeConfig: mockConfig } = jest.requireMock<{
   mockRuntimeConfig: Record<string, string>;
-  mockLocalDevelopment: { value: boolean };
 }>('@/utils/runtime-config');
 
 // Without APPFLOWY_BASE_URL in the config, the snapshot belongs to the default Cloud URL.
 const CLOUD = 'https://test.appflowy.cloud';
+const MCP_ORIGIN = 'https://mcp.example.com';
 
-function serverInfo(mcpUrl?: string): ServerInfoState {
-  return { status: 'available', info: { enable_page_history: true, mcp_url: mcpUrl } };
+function serverInfo(mcpStatus?: string, mcpUrl?: string): ServerInfoState {
+  return { status: 'available', info: { enable_page_history: true, mcp_status: mcpStatus, mcp_url: mcpUrl } };
 }
 
 function setServerInfo(state: ServerInfoState) {
@@ -88,14 +90,13 @@ function renderSettings({ search = '', onRequestOpen = jest.fn() } = {}) {
 describe('Settings AI apps entry', () => {
   beforeEach(() => {
     mockWorkspaceId = 'workspace-1';
-    mockLocalDevelopment.value = true;
     Object.keys(mockConfig).forEach((key) => delete mockConfig[key]);
     resetMcpConfigurationForTests();
     updateServerInfo(CLOUD, SERVER_INFO_LOADING);
   });
 
-  it('lists AI apps after Connections when Cloud server-info names the MCP service', () => {
-    setServerInfo(serverInfo('https://mcp.example.com'));
+  it.each(['enabled', 'disabled'])('lists AI apps in production when server-info reports %s', (mcpStatus) => {
+    setServerInfo(serverInfo(mcpStatus, MCP_ORIGIN));
     renderSettings();
 
     const items = screen.getAllByTestId(/^settings-menu-/).map((item) => item.getAttribute('data-testid'));
@@ -104,23 +105,26 @@ describe('Settings AI apps entry', () => {
     expect(items.indexOf('settings-menu-ai_apps')).toBe(items.indexOf('settings-menu-connections') + 1);
   });
 
-  it('lists AI apps for the Web’s APPFLOWY_MCP_BASE_URL without waiting for server-info', () => {
-    mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
-    renderSettings();
+  it('waits for server-info to enable MCP when the Web provides the origin', async () => {
+    mockConfig.APPFLOWY_MCP_BASE_URL = MCP_ORIGIN;
+    renderSettings({ search: '?setting=AI_APPS' });
 
-    expect(screen.getByTestId('settings-menu-ai_apps')).toBeTruthy();
+    expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
+    expect(screen.getByRole('status', { name: 'settings.mcp.loading' })).toBeTruthy();
+    setServerInfo(serverInfo('enabled'));
+    expect(await screen.findByTestId('mcp-panel')).toBeTruthy();
   });
 
   it('adds AI apps once server-info resolves', () => {
     renderSettings();
 
     expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
-    setServerInfo(serverInfo('https://mcp.example.com'));
+    setServerInfo(serverInfo('enabled', MCP_ORIGIN));
     expect(screen.getByTestId('settings-menu-ai_apps')).toBeTruthy();
   });
 
   it('hides AI apps when the MCP service is not configured', () => {
-    setServerInfo(serverInfo());
+    setServerInfo(serverInfo('enabled'));
     renderSettings();
 
     expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
@@ -128,21 +132,21 @@ describe('Settings AI apps entry', () => {
   });
 
   it('lists MCP on a self-hosted server whose license does not include it, to ask for an upgrade', () => {
-    setServerInfo({ status: 'available', info: { enable_page_history: true, mcp_status: 'license_required' } });
+    setServerInfo(serverInfo('license_required'));
     renderSettings();
 
     expect(screen.getByTestId('settings-menu-ai_apps')).toBeTruthy();
   });
 
-  it('ignores an mcp_status it does not know, as an older Web would', () => {
-    setServerInfo({ status: 'available', info: { enable_page_history: true, mcp_status: 'something_newer' } });
+  it.each([undefined, 'something_newer'])('hides AI apps with an origin and status %s', (mcpStatus) => {
+    setServerInfo(serverInfo(mcpStatus, MCP_ORIGIN));
     renderSettings();
 
     expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
   });
 
   it('lazily opens the panel for the current workspace', async () => {
-    setServerInfo(serverInfo('https://mcp.example.com'));
+    setServerInfo(serverInfo('enabled', MCP_ORIGIN));
     renderSettings();
 
     expect(screen.queryByTestId('mcp-panel')).toBeNull();
@@ -155,7 +159,7 @@ describe('Settings AI apps entry', () => {
   });
 
   it('opens AI apps from the ?setting=AI_APPS deep link', async () => {
-    setServerInfo(serverInfo('https://mcp.example.com'));
+    setServerInfo(serverInfo('enabled', MCP_ORIGIN));
     const onRequestOpen = jest.fn();
 
     renderSettings({ search: '?setting=AI_APPS', onRequestOpen });
@@ -170,7 +174,7 @@ describe('Settings AI apps entry', () => {
     expect(screen.getByRole('status', { name: 'settings.mcp.loading' })).toBeTruthy();
     expect(screen.queryByTestId('account-panel')).toBeNull();
 
-    setServerInfo(serverInfo('https://mcp.example.com'));
+    setServerInfo(serverInfo('enabled', MCP_ORIGIN));
     expect(await screen.findByTestId('mcp-panel')).toBeTruthy();
   });
 
@@ -182,31 +186,21 @@ describe('Settings AI apps entry', () => {
     expect(screen.getByTestId('account-panel')).toBeTruthy();
   });
 
-  // Until the MCP service is ready, production builds hide the tab however the server offers it.
-  it.each([
-    ['server-info names the MCP service', () => setServerInfo(serverInfo('https://mcp.example.com'))],
-    [
-      'APPFLOWY_MCP_BASE_URL names it',
-      () => {
-        mockConfig.APPFLOWY_MCP_BASE_URL = 'https://mcp.example.com';
-      },
-    ],
-    [
-      'a self-hosted license lacks it',
-      () => setServerInfo({ status: 'available', info: { enable_page_history: true, mcp_status: 'license_required' } }),
-    ],
-  ])('hides AI apps outside local development when %s', (_case, arrange) => {
-    mockLocalDevelopment.value = false;
-    arrange();
-    renderSettings();
+  it('refreshes the open panel when server-info changes the MCP status', async () => {
+    setServerInfo(serverInfo('enabled', MCP_ORIGIN));
+    renderSettings({ search: '?setting=AI_APPS' });
+    const enabledPanel = await screen.findByTestId('mcp-panel');
 
-    expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
-    expect(screen.getByTestId('settings-menu-connections')).toBeTruthy();
+    expect(enabledPanel.getAttribute('data-server-status')).toBe('enabled');
+    setServerInfo(serverInfo('disabled', MCP_ORIGIN));
+    const disabledPanel = await screen.findByTestId('mcp-panel');
+
+    expect(disabledPanel.getAttribute('data-server-status')).toBe('disabled');
+    expect(disabledPanel).not.toBe(enabledPanel);
   });
 
-  it('opens Account from the AI apps deep link outside local development', () => {
-    mockLocalDevelopment.value = false;
-    setServerInfo(serverInfo('https://mcp.example.com'));
+  it('opens Account from the AI apps deep link when server-info omits the status', () => {
+    setServerInfo(serverInfo(undefined, MCP_ORIGIN));
     const onRequestOpen = jest.fn();
 
     renderSettings({ search: '?setting=AI_APPS', onRequestOpen });
@@ -291,12 +285,11 @@ describe('Settings AI apps badge', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWorkspaceId = 'workspace-1';
-    mockLocalDevelopment.value = true;
     Object.keys(mockConfig).forEach((key) => delete mockConfig[key]);
     resetMcpConfigurationForTests();
     resetMcpPendingRequestCountsForTests();
     updateServerInfo(CLOUD, SERVER_INFO_LOADING);
-    setServerInfo(serverInfo('https://mcp.example.com'));
+    setServerInfo(serverInfo('enabled', MCP_ORIGIN));
     status.mockResolvedValue(ownerStatus());
   });
 
@@ -419,14 +412,15 @@ describe('Settings AI apps badge', () => {
     expect(screen.getByTestId('settings-menu-ai_apps-badge').textContent).toBe('1');
   });
 
-  it('asks the MCP service nothing outside local development', async () => {
-    mockLocalDevelopment.value = false;
+  it.each(['disabled', 'license_required'])('skips owner approval requests when server-info reports %s', async (mcpStatus) => {
+    setServerInfo(serverInfo(mcpStatus, MCP_ORIGIN));
     mockWorkspaceInfo = workspaceInfo(Role.Owner);
     requests.mockResolvedValue(pending(3));
     renderSettings();
     await act(settleAnswers);
 
-    expect(screen.queryByTestId('settings-menu-ai_apps')).toBeNull();
+    expect(screen.getByTestId('settings-menu-ai_apps')).toBeTruthy();
+    expect(screen.queryByTestId('settings-menu-ai_apps-badge')).toBeNull();
     expect(status).not.toHaveBeenCalled();
     expect(requests).not.toHaveBeenCalled();
   });

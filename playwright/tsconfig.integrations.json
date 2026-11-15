@@ -19,8 +19,11 @@
     "support/dashboard-owned-clone.fixture.tsx",
     "support/dashboard-view-startup.fixture.tsx",
     "support/chart-settings.fixture.tsx",
+    "support/calendar-event-drag.fixture.tsx",
     "../playwright.google-drive.config.ts",
-    "support/google-drive.fixture.tsx"
+    "support/google-drive.fixture.tsx",
+    "fixtures/form/**/*.tsx",
+    "e2e/form/**/*.ts"
   ],
   "references": []
 }

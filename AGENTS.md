@@ -44,6 +44,19 @@ This is a regression checklist and record of user expectations, not a claim that
 - Calendar-unit shifts preserve the input's time setting. Cover both arithmetic directions, range
   endpoints, ordering, equality, and deduplication without removing date-only comparison behavior.
 
+## Row duplication relation regressions
+
+- Re-read the activated source cell and its membership after related database or row hydration. A newer edit or undo must prevent a delayed reciprocal insertion from restoring a removed link.
+- Preserve canonical shared-array identity for unlimited relation edits so concurrent additions merge. Keep one-only replacement semantics and legacy on-write normalization separate.
+- A duplicate's reciprocal graph belongs to its creation history group, even though ordinary relation edits skip history. Foreign row writes need an owner-specific history origin and lifecycle cleanup so unrelated target edits retain their own undo history.
+- Late completion must join the original history group without consuming newer actions or discarding their redo. Cover deferred hydration, real Yjs replica merging, displacement, and undo/redo.
+
+## CI regression history
+
+- Regression checked 2026-11-14: freeze the clock in relative-date editor interaction tests and pick a calendar date different from the resolved relative date. On November 14, Tomorrow is the 15th; clicking the selected 15th clears the value to `timestamp: null`.
+- Docker build heap settings must reach the Node process inside both builder stages. The `web-build` job's `NODE_OPTIONS` does not configure a separate Docker build.
+- Calendar drag helpers must reveal the target inside its scroll container before measuring pointer coordinates. Use nearest-edge scrolling so revealing a clipped Sunday row does not hide Saturday's source event. Keep the real FullCalendar and mouse-drag regression.
+
 ## Shared issues reported across embed PRs
 
 ### Menus, icons, hover, and placement
@@ -181,6 +194,16 @@ This is a regression checklist and record of user expectations, not a claim that
 - In provider-error tests, wait for the initial authenticated metadata response before installing the failure mock; Picker metadata can render the footer before the preview request finishes. For scroll containment, record the outer scroll position after hovering the target, because Playwright may scroll it into view.
 
 ## Other issues from previous reviews — apply when relevant
+
+- Form UI parity review (2026-11-11, Premium #1575 first commit): Add question is a centered, content-width outlined button. Question-menu triggers follow card hover, independently of popup-open state; retain keyboard and touch access. Do not pin the trigger visible just because its menu is open. The trigger hit area is 32px.
+- Form question-menu placement — explicit user correction supersedes the earlier Flutter-anchor interpretation: align the popup's top-right with the trigger's bottom-right. Use `side='bottom'`, `align='end'`, and zero offset. Match the card's 16px right inset, retain viewport collision handling, and verify the popup's right/top coordinates against the trigger's right/bottom coordinates. Do not place the menu beside the button or open it upward when there is sufficient space below.
+- Add question picker placement: open centered directly above its button with the shared 4px gap (`side='top'`, `align='center'`). Never use a negative offset that covers the button. Browser regression checks must compare popup/button centers and assert the popup's bottom remains above the button's top.
+- Form tab icon must use the native `16x/form_builder.svg` from Premium commit `90d4bf9b49851576bb513357486e886082afc293`, rather than the generic edit/pencil glyph. Keep PageIcon and ViewIcon consistent and bind the native stroke to the theme for dark mode.
+- Form title/description textareas must occupy the full 600px authoring column (and shrink with it). A full-width wrapper alone leaves a native textarea at its default `cols` width. Do not force `height:auto !important`, which overrides the autosizer's measured height; verify single-line and multiline heights and actual input widths in the browser.
+- Form author toolbar follows desktop: Settings, Preview, Share form; no Filter or Sort. Form Settings is a functional menu containing Layout only. Keep the separate Grid/Responses toolbar and read-only permissions intact, and do not leak a previous view's conditions bar into the Form.
+- Form option editing must keep the same 24px row height before and after Add option is activated, including browser inline-element baseline spacing. Preserve actual options in read-only authoring. Use the native date/URL placeholder arrows, plain option rows, and native radio selection glyphs in desktop preview.
+- Desktop form preview validates locally, retains answers after a successful submit, and reports success without uploading files or creating rows. Empty previews disable Submit. Copy-link feedback floats above a constant-width button. Keep the Report abuse link in the preview footer.
+- For the current Form refactor, the user asked that changes be visible in the main checkout's `revamp/database/form` branch. Worktree isolation must not leave the reviewable result available only in a separate checkout; preserve unrelated changes when syncing it back.
 
 - Floating document outlines must be enabled only for visible hosts. The AI chat drawer can close by shrinking to zero width while its Document stays mounted; an outline portaled to document.body must not remain visible or navigate that hidden document.
 - In short viewports with a cover, reserve enough height for usable outline entries. Example failure: viewport height 600px, content start 412px, panel height 76px, header/padding 72px, leaving only 4px for headings. Clamp position against a usable minimum height.

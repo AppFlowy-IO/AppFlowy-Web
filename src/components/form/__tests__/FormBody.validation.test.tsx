@@ -14,6 +14,34 @@ describe('FormBody typed-answer validation', () => {
 
   beforeEach(() => scrollIntoView.mockClear());
 
+  it('keeps validated desktop preview answers visible and invokes feedback without submitting', async () => {
+    const onPreviewSubmit = jest.fn();
+    const submit = jest.spyOn(formApi, 'submitPublicForm');
+
+    render(
+      <FormBody
+        token='preview'
+        schema={schemaFor(question('text', true))}
+        previewMode
+        onPreviewSubmit={onPreviewSubmit}
+      />
+    );
+    const input = await questionInput('text');
+
+    fireEvent.change(input, { target: { value: 'Keep this local answer' } });
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    expect(onPreviewSubmit).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe('Keep this local answer');
+    expect(screen.queryByTestId('public-form-confirmation')).toBeNull();
+    expect(submit).not.toHaveBeenCalled();
+    submit.mockRestore();
+  });
+
+  it('disables submission of an empty desktop preview', () => {
+    render(<FormBody token='preview' schema={schemaFor()} previewMode />);
+    expect(screen.getByTestId('public-form-submit').disabled).toBe(true);
+  });
+
   afterAll(() => {
     if (scrollIntoViewDescriptor) {
       Object.defineProperty(Element.prototype, 'scrollIntoView', scrollIntoViewDescriptor);

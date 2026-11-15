@@ -2734,7 +2734,7 @@ export enum SettingMenuItem {
   MEMBERS = 'MEMBERS',
   MANAGE_DATA = 'MANAGE_DATA',
   CONNECTIONS = 'CONNECTIONS',
-  /** AI apps connected through the AppFlowy MCP server; shown once the MCP service is known (`useMcpConfiguration`). */
+  /** Connect and manage AI apps through the AppFlowy MCP server. */
   AI_APPS = 'AI_APPS',
   SITES = 'SITES',
   PLAN = 'PLAN',
