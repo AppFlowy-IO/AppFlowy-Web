@@ -36,6 +36,14 @@ This is a regression checklist and record of user expectations, not a claim that
   edits before and after the message. Assert that uploads retain the version and both edits reach
   a server replica, without cache reopening, outbox discard, or document destruction.
 
+## Formula date precision
+
+- Regression checked 2026-11-09: explicit hour, minute, and second arithmetic in `dateAdd` and
+  `dateSubtract` must produce time-enabled values, including when the input is date-only. Otherwise
+  calendar-day comparisons and `unique()` erase intentional differences within the same day.
+- Calendar-unit shifts preserve the input's time setting. Cover both arithmetic directions, range
+  endpoints, ordering, equality, and deduplication without removing date-only comparison behavior.
+
 ## Row duplication relation regressions
 
 - Re-read the activated source cell and its membership after related database or row hydration. A newer edit or undo must prevent a delayed reciprocal insertion from restoring a removed link.
