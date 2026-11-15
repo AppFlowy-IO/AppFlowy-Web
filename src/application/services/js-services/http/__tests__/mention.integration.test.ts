@@ -77,6 +77,36 @@ async function waitForMentionItem(
     throw new Error(`Timed out waiting for mention item. Last response: ${JSON.stringify(lastResponse)}`);
 }
 
+/**
+ * Creates a fixture page through `POST /api/workspace/{id}/page-view`, the route released clients
+ * use. `addAppPage` creates a blank page through atomic creation instead, which needs what only a
+ * mounted browser workspace has: an outbox session, a creation journal and the server-info
+ * snapshot. These tests only need the page to exist.
+ */
+async function createFixturePage(
+    workspaceId: string,
+    parentViewId: string,
+    layout: ViewLayout,
+    name: string,
+    pageData?: unknown
+): Promise<{ view_id: string; database_id?: string }> {
+    const response = await APIService.getAxiosInstance()?.post(`/api/workspace/${workspaceId}/page-view`, {
+        parent_view_id: parentViewId,
+        layout,
+        name,
+        ...(pageData === undefined ? {} : { page_data: pageData }),
+    });
+    const body = response?.data as
+        | { code: number; message?: string; data?: { view_id: string; database_id?: string } }
+        | undefined;
+
+    if (!body || body.code !== 0 || !body.data) {
+        throw new Error(`Creating fixture page "${name}" failed: ${JSON.stringify(body)}`);
+    }
+
+    return body.data;
+}
+
 async function ensureMemberJoinedWorkspace(
     owner: FeatureFixtureAccount,
     member: FeatureFixtureAccount,
@@ -153,10 +183,7 @@ describe('HTTP API - Mention Search', () => {
 
         searchablePageQuery = `mention-http-${uuidv4().slice(0, 8)}`;
         searchablePageName = `Mention HTTP ${searchablePageQuery}`;
-        const { view_id } = await APIService.addAppPage(workspaceId, rootViewId, {
-            layout: ViewLayout.Document,
-            name: searchablePageName,
-        });
+        const { view_id } = await createFixturePage(workspaceId, rootViewId, ViewLayout.Document, searchablePageName);
 
         contextPageId = view_id;
         await APIService.addRecentPages(workspaceId, [contextPageId]);
@@ -270,18 +297,17 @@ describe('HTTP API - Mention Search', () => {
         const titledIds: string[] = [];
 
         for (const name of titles) {
-            const { view_id } = await APIService.addAppPage(workspaceId, rootViewId, {
-                layout: ViewLayout.Document,
-                name,
-            });
+            const { view_id } = await createFixturePage(workspaceId, rootViewId, ViewLayout.Document, name);
 
             titledIds.push(view_id);
         }
 
-        const { view_id: bodyPageId } = await APIService.addAppPage(workspaceId, rootViewId, {
-            layout: ViewLayout.Document,
-            name: `Weekly sync ${uuidv4().slice(0, 8)}`,
-            page_data: {
+        const { view_id: bodyPageId } = await createFixturePage(
+            workspaceId,
+            rootViewId,
+            ViewLayout.Document,
+            `Weekly sync ${uuidv4().slice(0, 8)}`,
+            {
                 type: BlockType.Page,
                 children: [
                     {
@@ -290,8 +316,8 @@ describe('HTTP API - Mention Search', () => {
                         children: [],
                     },
                 ],
-            },
-        });
+            }
+        );
 
         // Recent views reach the recent lane before the keyword index has the new titles.
         await APIService.addRecentPages(workspaceId, titledIds);
@@ -332,10 +358,11 @@ describe('HTTP API - Mention Search', () => {
         const token = `sections${uuidv4().replace(/-/g, '').slice(0, 10)}`;
         const { outline } = await APIService.getAppOutline(workspaceId);
         const rootViewId = outline[0]?.view_id || workspaceId;
-        const { view_id: databaseViewId, database_id: databaseId } = await APIService.addAppPage(
+        const { view_id: databaseViewId, database_id: databaseId } = await createFixturePage(
             workspaceId,
             rootViewId,
-            { layout: ViewLayout.Grid, name: `Tracker ${token}` }
+            ViewLayout.Grid,
+            `Tracker ${token}`
         );
 
         expect(databaseId).toBeTruthy();
