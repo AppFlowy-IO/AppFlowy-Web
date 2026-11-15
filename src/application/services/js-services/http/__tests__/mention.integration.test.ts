@@ -6,7 +6,6 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
-    BlockType,
     MentionSearchRequest,
     MentionSearchResponse,
     MentionSearchResultItem,
@@ -41,9 +40,6 @@ import { v4 as uuidv4 } from 'uuid';
 const FEATURE_NAME = 'mention-api';
 const MEMBER_DISPLAY_NAME = 'Mention API Fixture Member';
 const SEARCH_POLL_TIMEOUT_MS = 60000;
-// A page found through its body waits for Search to index the document, which Cloud's own search
-// tests allow 180 s in CI (tests/search/document_mention_search.rs); titles reach answers sooner.
-const BODY_INDEX_TIMEOUT_MS = 180000;
 const SEARCH_POLL_INTERVAL_MS = 1500;
 
 function sleep(ms: number): Promise<void> {
@@ -61,13 +57,12 @@ function allItems(response: MentionSearchResponse): MentionSearchResultItem[] {
 async function waitForMentionItem(
     workspaceId: string,
     request: MentionSearchRequest,
-    predicate: (item: MentionSearchResultItem) => boolean,
-    timeoutMs: number = SEARCH_POLL_TIMEOUT_MS
+    predicate: (item: MentionSearchResultItem) => boolean
 ) {
     const startedAt = Date.now();
     let lastResponse: MentionSearchResponse | undefined;
 
-    while (Date.now() - startedAt < timeoutMs) {
+    while (Date.now() - startedAt < SEARCH_POLL_TIMEOUT_MS) {
         lastResponse = await APIService.searchMentions(workspaceId, request);
         const item = allItems(lastResponse).find(predicate);
 
@@ -91,14 +86,12 @@ async function createFixturePage(
     workspaceId: string,
     parentViewId: string,
     layout: ViewLayout,
-    name: string,
-    pageData?: unknown
+    name: string
 ): Promise<{ view_id: string; database_id?: string }> {
     const response = await APIService.getAxiosInstance()?.post(`/api/workspace/${workspaceId}/page-view`, {
         parent_view_id: parentViewId,
         layout,
         name,
-        ...(pageData === undefined ? {} : { page_data: pageData }),
     });
     const body = response?.data as
         | { code: number; message?: string; data?: { view_id: string; database_id?: string } }
@@ -290,8 +283,9 @@ describe('HTTP API - Mention Search', () => {
     }, 30000);
 
     // The server tiers typed Pages by their current title (MEN-SEARCH-08) with the matcher the Web
-    // ranker ports (MEN-WEB-06), so re-tiering the server's own answer on the client moves nothing,
-    // and a page found only through its body sits below every title match.
+    // ranker ports (MEN-WEB-06), so re-tiering the server's own answer on the client moves nothing.
+    // A page found only through its body is left to mentionLocalRanker.test.ts: Search indexes a
+    // document body from realtime edits, which this HTTP-only suite does not make.
     it('agrees with the client ranker on the title tiers of a typed Pages answer', async () => {
         const token = `retier${uuidv4().replace(/-/g, '').slice(0, 10)}`;
         const { outline } = await APIService.getAppOutline(workspaceId);
@@ -306,23 +300,6 @@ describe('HTTP API - Mention Search', () => {
             titledIds.push(view_id);
         }
 
-        const { view_id: bodyPageId } = await createFixturePage(
-            workspaceId,
-            rootViewId,
-            ViewLayout.Document,
-            `Weekly sync ${uuidv4().slice(0, 8)}`,
-            {
-                type: BlockType.Page,
-                children: [
-                    {
-                        type: BlockType.Paragraph,
-                        data: { delta: [{ insert: `Agenda: ${token} review` }] },
-                        children: [],
-                    },
-                ],
-            }
-        );
-
         // Recent views reach the recent lane before the keyword index has the new titles.
         await APIService.addRecentPages(workspaceId, titledIds);
 
@@ -334,8 +311,8 @@ describe('HTTP API - Mention Search', () => {
                 include: [MentionTargetKind.Page],
                 context: { view_id: contextPageId },
             },
-            (item) => item.object_id === bodyPageId,
-            BODY_INDEX_TIMEOUT_MS
+            // The substring match, the last tier the titles hold.
+            (item) => item.object_id === titledIds[titledIds.length - 1]
         );
         const pages = section(response, MentionSearchSectionKind.Pages);
 
@@ -346,7 +323,6 @@ describe('HTTP API - Mention Search', () => {
 
         expect(tiers).toEqual([...tiers].sort((left, right) => left - right));
         expect(retierServerSection(token, pages)).toBe(pages);
-        expect(tiers[pages.items.findIndex((item) => item.object_id === bodyPageId)]).toBe(MENTION_UNMATCHED_SERVER_TIER);
 
         const seeded = pages.items
             .map((item) => titledIds.indexOf(item.object_id ?? ''))
@@ -354,7 +330,7 @@ describe('HTTP API - Mention Search', () => {
 
         expect(seeded[0]).toBe(0);
         expect(seeded).toEqual([...seeded].sort((left, right) => left - right));
-    }, BODY_INDEX_TIMEOUT_MS + 60000);
+    }, 120000);
 
     // The picker's separate layout (MEN-WEB-12) shows each section where the server puts it, so a
     // database viewed a minute ago is listed beside the pages instead of behind them. That needs the
