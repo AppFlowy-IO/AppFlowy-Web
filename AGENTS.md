@@ -63,6 +63,7 @@ This is a regression checklist and record of user expectations, not a claim that
 
 ## CI regression history
 
+- PR #719 CI follow-up (2026-11-15): wait for the row-text fixture editor to mount before asserting AppTheme's `data-dark-mode`; a cold Vite module graph can still be loading when the shorter theme assertion expires. Form preview BDD must assert the success toast, retained typed answer, and no submission request, matching the desktop preview contract rather than the public form's confirmation screen.
 - Regression checked 2026-11-14: freeze the clock in relative-date editor interaction tests and pick a calendar date different from the resolved relative date. On November 14, Tomorrow is the 15th; clicking the selected 15th clears the value to `timestamp: null`.
 - Docker build heap settings must reach the Node process inside both builder stages. The `web-build` job's `NODE_OPTIONS` does not configure a separate Docker build.
 - Calendar drag helpers must reveal the target inside its scroll container before measuring pointer coordinates. Use nearest-edge scrolling so revealing a clipped Sunday row does not hide Saturday's source event. Keep the real FullCalendar and mouse-drag regression.

@@ -28,10 +28,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
         contentType: 'text/html', body: fixtureHTML('row-text-page-link'),
       }));
       await page.goto(new URL(route, integrationsURL).href);
-      await expect(page.locator('html')).toHaveAttribute('data-dark-mode', colorScheme === 'dark' ? 'true' : 'false');
       const editor = page.getByTestId('rich-text-cell-editor');
 
       await expect(editor).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator('html')).toHaveAttribute('data-dark-mode', colorScheme === 'dark' ? 'true' : 'false');
       await editor.click();
       // A real DOM paste event exercises Slate's input handler without
       // changing the developer's system clipboard or application state.
@@ -72,11 +72,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
         contentType: 'text/html', body: fixtureHTML('row-text-page-link'),
       }));
       await page.goto(new URL(route, integrationsURL).href);
-      await expect(page.locator('html')).toHaveAttribute('data-dark-mode', colorScheme === 'dark' ? 'true' : 'false');
       const editor = page.getByTestId('rich-text-cell-editor');
       const pageLink = page.url();
 
       await expect(editor).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator('html')).toHaveAttribute('data-dark-mode', colorScheme === 'dark' ? 'true' : 'false');
       await editor.click();
       await editor.evaluate((element) => {
         const data = new DataTransfer();

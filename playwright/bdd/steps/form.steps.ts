@@ -221,13 +221,23 @@ When('I submit the form preview', async ({ page }) => {
   await dialog.getByTestId('public-form-submit').click();
 });
 
-Then('the form preview confirmation is visible', async ({ page }) => {
+When('I enter {string} in the form preview', async ({ page }, answer: string) => {
+  const input = FormSelectors.previewDialog(page).getByRole('textbox');
+
+  await input.click();
+  await input.pressSequentially(answer);
+});
+
+Then('the form preview success feedback is visible', async ({ page }) => {
   const dialog = FormSelectors.previewDialog(page);
 
   await expect(dialog).toBeVisible({ timeout: 10000 });
-  await expect(dialog.getByTestId('public-form-confirmation')).toBeVisible({
-    timeout: 5000,
-  });
+  await expect(page.locator('[data-sonner-toast][data-type="success"]')).toContainText('Submission valid — looks good!');
+  await expect(dialog.getByTestId('public-form-confirmation')).toHaveCount(0);
+});
+
+Then('the form preview answer remains {string}', async ({ page }, answer: string) => {
+  await expect(FormSelectors.previewDialog(page).getByRole('textbox')).toHaveValue(answer);
 });
 
 Then('no public-form submit request was sent', async ({ page }) => {
