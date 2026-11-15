@@ -43,6 +43,7 @@ if (typeof File === 'undefined') {
 // Load environment variables from .env file (or dev.env if .env doesn't exist)
 import * as dotenv from 'dotenv';
 
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -207,6 +208,48 @@ export async function ensureWorkspace(mockToken?: TestAuthToken): Promise<string
     const workspaceInfo = await APIService.getUserWorkspaceInfo();
 
     return workspaceInfo.selected_workspace.id;
+}
+
+/**
+ * Puts a workspace on the Pro plan, as `grantWorkspaceProSubscription` in
+ * playwright/support/subscription-test-helpers.ts does for the Playwright fixtures: a Free
+ * workspace takes one member, so a test that adds a second one needs Pro. It writes to the CI
+ * stack's PostgreSQL through the container CI names in APPFLOWY_TEST_POSTGRES_CONTAINER, and does
+ * nothing outside CI without one.
+ */
+export function grantWorkspaceProPlan(workspaceId: string): void {
+    const container = process.env.APPFLOWY_TEST_POSTGRES_CONTAINER;
+
+    if (!container) {
+        if (process.env.CI) throw new Error('CI must provide APPFLOWY_TEST_POSTGRES_CONTAINER for Pro fixtures');
+        return;
+    }
+
+    execFileSync(
+        'docker',
+        [
+            'exec',
+            '-i',
+            container,
+            'sh',
+            '-c',
+            'exec psql -U "${POSTGRES_USER:-postgres}" -d "${2:-${POSTGRES_DB:-postgres}}" -v ON_ERROR_STOP=1 -v "workspace_id=$1"',
+            'psql',
+            workspaceId,
+            process.env.APPFLOWY_TEST_POSTGRES_DATABASE ?? '',
+        ],
+        {
+            // Pro = 1 in the server's SubscriptionPlan enum. The fixture's own subscription ID makes
+            // repeat setup safe and leaves other subscriptions alone.
+            input: `
+                INSERT INTO af_workspace_subscription (workspace_id, subscription_id, workspace_plan, active)
+                VALUES (:'workspace_id'::uuid, 'jest-http-api-' || :'workspace_id', 1, TRUE)
+                ON CONFLICT (workspace_id, subscription_id)
+                DO UPDATE SET workspace_plan = EXCLUDED.workspace_plan, active = EXCLUDED.active;
+            `,
+            encoding: 'utf8',
+        }
+    );
 }
 
 function normalizeFixturePart(value: string): string {

@@ -67,7 +67,8 @@
     "spec": "playwright/.features-gen/playwright/bdd/features/editor/mention-search.feature.spec.js",
     "description": "Mention panel search: defaults, typed sections, keep-and-narrow and the local lane",
     "bdd": "true",
-    "shard": ""
+    "shard": "",
+    "workers": "1"
   },
   {
     "name": "rich-text-bdd",

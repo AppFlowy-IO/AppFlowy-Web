@@ -26,6 +26,7 @@ import {
     FeatureFixtureAccount,
     getEnvConfig,
     getFeatureFixtureAccount,
+    grantWorkspaceProPlan,
     initAPIService,
     setActiveTestToken,
 } from './setup';
@@ -81,6 +82,8 @@ async function ensureMemberJoinedWorkspace(
     member: FeatureFixtureAccount,
     workspaceId: string
 ) {
+    // A Free workspace takes one member, and the member is a second.
+    grantWorkspaceProPlan(workspaceId);
     setActiveTestToken(owner.token);
 
     const createdInvite = await APIService.createWorkspaceInviteCode(workspaceId, 24);
