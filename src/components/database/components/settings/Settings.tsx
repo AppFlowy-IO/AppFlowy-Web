@@ -10,6 +10,7 @@ import ListSettings from '@/components/database/components/settings/ListSettings
 import TimelineSettings from '@/components/database/components/settings/TimelineSettings';
 
 import GridSettings from './GridSettings';
+import FormSettings from './FormSettings';
 
 import type { ComponentType, ReactNode } from 'react';
 
@@ -17,6 +18,7 @@ const GallerySettings = lazy(() => import('@/components/database/components/sett
 
 const SETTINGS_BY_LAYOUT: Partial<Record<DatabaseViewLayout, ComponentType<{ children: ReactNode }>>> = {
   [DatabaseViewLayout.Grid]: GridSettings,
+  [DatabaseViewLayout.Form]: FormSettings,
   [DatabaseViewLayout.Board]: BoardSettings,
   [DatabaseViewLayout.Calendar]: CalendarSettings,
   [DatabaseViewLayout.Chart]: ChartSettings,

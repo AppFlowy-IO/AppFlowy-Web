@@ -17,6 +17,7 @@ import {
   runDatabaseHistoryGroup,
   runDatabaseHistoryGroupForDatabase,
   runDatabaseRowAction,
+  runDatabaseRowActionForDatabase,
 } from '@/application/database-yjs/history';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -100,6 +101,36 @@ function createWrapper(contextValue: DatabaseContextState) {
 }
 
 describe('database row history', () => {
+  it('releases a compound row source when its owning database is destroyed', () => {
+    const owner = createDatabaseDoc();
+    const rowDoc = createRowDoc('foreign-row', 'foreign-database', {});
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cell = new Y.Map() as YDatabaseCell;
+
+    cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+    cell.set(YjsDatabaseKey.data, 'Before');
+    row.get(YjsDatabaseKey.cells).set(textFieldId, cell);
+    const history = getOrCreateDatabaseHistoryManager(owner.databaseDoc);
+    const destroyListeners = () =>
+      (rowDoc as unknown as { _observers: Map<string, Set<unknown>> })._observers.get('destroy')?.size ?? 0;
+    const before = destroyListeners();
+
+    runDatabaseRowActionForDatabase(owner.databaseDoc, rowDoc, { type: 'row.duplicate-relation' }, () => {
+      setCellData(rowDoc, textFieldId, 'Compound edit');
+    });
+    expect(history.canUndo()).toBe(true);
+    owner.databaseDoc.destroy();
+    expect(history.canUndo()).toBe(false);
+    expect(destroyListeners()).toBe(before);
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('Compound edit');
+
+    runDatabaseRowAction(rowDoc, { type: 'cell.text', fieldId: textFieldId }, () => {
+      setCellData(rowDoc, textFieldId, 'Independent edit');
+    });
+    getOrCreateDatabaseRowHistoryController(rowDoc)?.undo();
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('Compound edit');
+  });
+
   it('captures creation of the row root before database_row exists', () => {
     const rowDoc = new Y.Doc({ guid: rowId }) as YDoc;
     const sharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;

@@ -61,6 +61,7 @@ const Timeline = lazy(() => import('@/components/database/timeline'));
 // never a second one; a dashboard page starts it while its document loads.
 const Dashboard = lazy(loadDashboard);
 const DashboardPageScope = lazy(() => loadDashboard().then((module) => ({ default: module.DashboardProvider })));
+const FormViewScope = lazy(() => import('@/components/database/form/FormViewScope'));
 const FormBuilderView = lazy(() =>
   import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
     default: Component,
@@ -677,8 +678,8 @@ function PageDatabaseViews({
         onReorderTabs={handleReorderTabs}
       />
 
-      {/* A dashboard shows its global filters inside the grid instead. */}
-      {isDashboardLayout ? null : <DatabaseConditionsPanel />}
+      {/* Dashboards own global filters; Forms author questions without row conditions. */}
+      {isDashboardLayout || effectiveLayout === DatabaseViewLayout.Form ? null : <DatabaseConditionsPanel />}
 
       <DatabaseViewport geometry={geometry}>{view}</DatabaseViewport>
     </>
@@ -702,6 +703,10 @@ function PageDatabaseViews({
               <DashboardPageScope modeStore={dashboardModeStore} viewIds={displayedViewIds}>
                 {content}
               </DashboardPageScope>
+            </Suspense>
+          ) : effectiveLayout === DatabaseViewLayout.Form && !isHistory ? (
+            <Suspense fallback={<GridSkeleton includeTitle={false} />}>
+              <FormViewScope key={activeViewId}>{content}</FormViewScope>
             </Suspense>
           ) : (
             <ViewGroupingProvider layout={effectiveLayout}>{content}</ViewGroupingProvider>

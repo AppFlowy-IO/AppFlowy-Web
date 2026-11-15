@@ -1,8 +1,10 @@
-import { Ban, CircleAlert, Globe, LoaderCircle, Lock } from 'lucide-react';
+import { CircleAlert, LoaderCircle } from 'lucide-react';
 import { useContext } from 'react';
 
 import { FormShareTier } from '@/application/services/js-services/http';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
+import { Button } from '@/components/ui/button';
+import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
 import { cn } from '@/lib/utils';
 
 import { useFormShareContext } from './FormShareContext';
@@ -31,11 +33,6 @@ export function FormAccessBanner() {
   const isPublic = tier === 'public';
   const hasUnavailableLink = !share.isLoading && (share.info === null || !url);
 
-  const changeLinkClasses = cn(
-    'text-sm font-medium hover:underline',
-    isPublic ? 'text-text-warning-on-fill' : 'text-fill-default'
-  );
-
   return (
     <div
       data-testid='form-access-banner'
@@ -43,24 +40,25 @@ export function FormAccessBanner() {
       data-anonymous={anonymous ? 'true' : 'false'}
       data-submission-access={submissionAccess}
       className={cn(
-        'flex items-center gap-3 rounded-md border px-4 py-3 text-sm',
+        'flex items-center gap-3 rounded-xl py-3 pl-4 pr-3 text-sm',
         isPublic
-          ? 'border-border-warning-thick bg-fill-warning-light text-text-warning-on-fill'
-          : 'border-line-divider text-text-primary'
+          ? 'border border-border-warning-thick bg-fill-warning-light text-text-warning-on-fill'
+          : 'bg-fill-content-visible text-text-primary'
       )}
     >
-      <BannerIcon tier={tier} isPublic={isPublic} isLoading={share.isLoading} unavailable={hasUnavailableLink} />
+      <BannerIcon isPublic={isPublic} isLoading={share.isLoading} unavailable={hasUnavailableLink} />
       <span className='flex-1' aria-live='polite'>
         {bannerCopy(tier, workspaceName, share.isLoading, hasUnavailableLink)}
       </span>
       <FormSharePopover
         trigger={
-          <button type='button' className={changeLinkClasses}>
+          <Button type='button' variant='outline' size='sm' className='h-7'>
             Change
-          </button>
+          </Button>
         }
         info={share.info}
         isLoading={share.isLoading}
+        isSaving={share.isSaving}
         errorMessage={share.error}
         onRetry={share.retryBootstrap}
         onRetryMutation={share.retryMutation}
@@ -74,31 +72,21 @@ export function FormAccessBanner() {
 }
 
 function BannerIcon({
-  tier,
   isPublic,
   isLoading,
   unavailable,
 }: {
-  tier: FormShareTier | undefined;
   isPublic: boolean;
   isLoading: boolean;
   unavailable: boolean;
 }) {
   const className = isPublic ? 'text-text-warning-on-fill' : 'text-text-tertiary';
-  const props = { size: 16, className };
+  const props = { size: 20, className: `${className} shrink-0` };
 
   if (isLoading) return <LoaderCircle {...props} className={`${className} animate-spin`} />;
   if (unavailable) return <CircleAlert {...props} />;
 
-  switch (tier) {
-    case 'public':
-      return <Globe {...props} />;
-    case 'closed':
-      return <Ban {...props} />;
-    case 'workspace':
-    default:
-      return <Lock {...props} />;
-  }
+  return <LockIcon className='h-5 w-5 shrink-0 text-icon-primary' />;
 }
 
 function bannerCopy(

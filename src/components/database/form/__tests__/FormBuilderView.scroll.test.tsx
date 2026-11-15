@@ -114,6 +114,7 @@ jest.mock('../FormQuestionTypePicker', () => ({
 }));
 jest.mock('../FormShareButton', () => ({ FormShareButton: () => <button data-testid='form-share-button' /> }));
 jest.mock('../FormShareContext', () => ({
+  useFormShareContextOptional: () => null,
   FormShareProvider: ({ canUpdateSettings, children }: { canUpdateSettings: boolean; children: ReactNode }) => (
     <div data-testid='form-share-provider' data-can-update={canUpdateSettings ? 'true' : 'false'}>
       {children}

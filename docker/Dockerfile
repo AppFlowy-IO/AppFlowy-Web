@@ -6,9 +6,6 @@ ARG VERSION
 
 # Set production environment
 ENV NODE_ENV=production
-# `vite build` needs more than Node's default heap of about 2 GB. Without this the image build
-# fails now and then with "JavaScript heap out of memory". Web-CI's own build uses the same value.
-ENV NODE_OPTIONS=--max-old-space-size=8192
 
 WORKDIR /app
 
@@ -27,8 +24,8 @@ COPY . .
 ARG APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID
 ARG APPFLOWY_GOOGLE_DRIVE_PICKER_API_KEY
 
-# Build the application
-RUN APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
+# Match the CI web build's heap budget for the full application graph.
+RUN NODE_OPTIONS="--max-old-space-size=8192" APPFLOWY_WEB_VERSION="${VERSION}" pnpm run build
 
 # Production stage
 FROM nginx:1.25-alpine
