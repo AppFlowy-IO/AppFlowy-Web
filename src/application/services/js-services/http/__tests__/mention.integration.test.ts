@@ -41,6 +41,9 @@ import { v4 as uuidv4 } from 'uuid';
 const FEATURE_NAME = 'mention-api';
 const MEMBER_DISPLAY_NAME = 'Mention API Fixture Member';
 const SEARCH_POLL_TIMEOUT_MS = 60000;
+// A page found through its body waits for Search to index the document, which Cloud's own search
+// tests allow 180 s in CI (tests/search/document_mention_search.rs); titles reach answers sooner.
+const BODY_INDEX_TIMEOUT_MS = 180000;
 const SEARCH_POLL_INTERVAL_MS = 1500;
 
 function sleep(ms: number): Promise<void> {
@@ -58,12 +61,13 @@ function allItems(response: MentionSearchResponse): MentionSearchResultItem[] {
 async function waitForMentionItem(
     workspaceId: string,
     request: MentionSearchRequest,
-    predicate: (item: MentionSearchResultItem) => boolean
+    predicate: (item: MentionSearchResultItem) => boolean,
+    timeoutMs: number = SEARCH_POLL_TIMEOUT_MS
 ) {
     const startedAt = Date.now();
     let lastResponse: MentionSearchResponse | undefined;
 
-    while (Date.now() - startedAt < SEARCH_POLL_TIMEOUT_MS) {
+    while (Date.now() - startedAt < timeoutMs) {
         lastResponse = await APIService.searchMentions(workspaceId, request);
         const item = allItems(lastResponse).find(predicate);
 
@@ -330,7 +334,8 @@ describe('HTTP API - Mention Search', () => {
                 include: [MentionTargetKind.Page],
                 context: { view_id: contextPageId },
             },
-            (item) => item.object_id === bodyPageId
+            (item) => item.object_id === bodyPageId,
+            BODY_INDEX_TIMEOUT_MS
         );
         const pages = section(response, MentionSearchSectionKind.Pages);
 
@@ -349,7 +354,7 @@ describe('HTTP API - Mention Search', () => {
 
         expect(seeded[0]).toBe(0);
         expect(seeded).toEqual([...seeded].sort((left, right) => left - right));
-    }, 120000);
+    }, BODY_INDEX_TIMEOUT_MS + 60000);
 
     // The picker's separate layout (MEN-WEB-12) shows each section where the server puts it, so a
     // database viewed a minute ago is listed beside the pages instead of behind them. That needs the
