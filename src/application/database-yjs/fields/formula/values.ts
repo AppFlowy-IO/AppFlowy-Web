@@ -6,6 +6,7 @@
  * milliseconds so `timestamp()`/`fromTimestamp()` match Notion, and are
  * converted to AppFlowy's unix-second cells only at the boundary.
  */
+import dayjs from 'dayjs';
 
 export type FormulaScalarType = 'text' | 'number' | 'boolean' | 'date';
 
@@ -130,6 +131,11 @@ export function isEmptyValue(value: FormulaValue): boolean {
   }
 }
 
+/** Compare calendar days when both operands are date-only. */
+export function compareDateTimes(left: number, right: number, includeTime: boolean): number {
+  return includeTime ? left - right : dayjs(left).startOf('day').diff(dayjs(right).startOf('day'));
+}
+
 export function valuesEqual(a: FormulaValue, b: FormulaValue, visit?: () => void): boolean {
   visit?.();
   if (a.type === 'empty' || b.type === 'empty') return isEmptyValue(a) && isEmptyValue(b);
@@ -141,9 +147,17 @@ export function valuesEqual(a: FormulaValue, b: FormulaValue, visit?: () => void
     case 'boolean':
       return a.value === (b as typeof a).value;
     case 'date': {
-      const other = (b as typeof a).value;
+      const left = a.value;
+      const right = (b as typeof a).value;
+      const includeTime = left.includeTime || right.includeTime;
 
-      return a.value.start === other.start && (a.value.end ?? null) === (other.end ?? null);
+      if (compareDateTimes(left.start, right.start, includeTime) !== 0) return false;
+
+      const leftEnd = left.end ?? null;
+      const rightEnd = right.end ?? null;
+
+      if (leftEnd === null || rightEnd === null) return leftEnd === rightEnd;
+      return compareDateTimes(leftEnd, rightEnd, includeTime) === 0;
     }
 
     case 'list': {

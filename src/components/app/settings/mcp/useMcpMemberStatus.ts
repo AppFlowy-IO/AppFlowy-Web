@@ -22,13 +22,13 @@ export interface McpMemberStatusState {
   reload: () => Promise<void>;
 }
 
-/** Loads `GET /api/mcp/me/workspaces/{workspaceId}`, which gates everything else in Settings > MCP. */
-export function useMcpMemberStatus(workspaceId: string): McpMemberStatusState {
+/** Loads the workspace's member status once the MCP service's endpoint is known. */
+export function useMcpMemberStatus(workspaceId: string, enabled: boolean): McpMemberStatusState {
   const load = useCallback(
     (signal: AbortSignal) => McpService.getMcpMemberStatus(workspaceId, undefined, { signal }),
     [workspaceId]
   );
-  const { data, loading, failed, error, reload } = useMcpResource(load);
+  const { data, loading, failed, error, reload } = useMcpResource(load, enabled);
 
   return {
     status: data,

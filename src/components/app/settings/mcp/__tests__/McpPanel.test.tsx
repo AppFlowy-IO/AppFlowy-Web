@@ -16,7 +16,7 @@ import { defaultConfig } from '@/application/services/js-services/http/cloud-con
 import { notify } from '@/components/_shared/notify';
 import { SERVER_INFO_LOADING, updateServerInfo } from '@/utils/server-info';
 
-import McpPanel from '../McpPanel';
+import McpPanel, { type McpPanelProps } from '../McpPanel';
 import { resetMcpPendingRequestCountsForTests, useMcpPendingRequestCount } from '../pendingRequestCount';
 
 // Real i18next over en.json, so a name that loses RAW_INTERPOLATION shows escaped here as in the app.
@@ -42,7 +42,6 @@ jest.mock('@/application/services/domains/mcp', () => ({
   disconnectAllMcpWorkspaceConnections: jest.fn(),
   listMcpAccessRequests: jest.fn(),
   dismissMcpAccessRequest: jest.fn(),
-  isMcpLicenseRequired: jest.fn(),
 }));
 
 const api = jest.mocked(McpService);
@@ -223,9 +222,13 @@ function openTab(tab: 'connect' | 'manage') {
   fireEvent.mouseDown(screen.getByTestId(`mcp-tab-${tab}`), { button: 0 });
 }
 
+function renderPanel(props: Partial<McpPanelProps> = {}) {
+  return render(<McpPanel workspaceId={WS} serverStatus='enabled' hasMcpEndpoint {...props} />);
+}
+
 async function renderOwnerPanel() {
   api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
-  render(<McpPanel workspaceId={WS} />);
+  renderPanel();
   await screen.findAllByTestId('mcp-approved-client-row');
   await screen.findAllByTestId('mcp-access-request-row');
   await screen.findAllByTestId('mcp-member-connection-row');
@@ -276,7 +279,7 @@ describe('McpPanel', () => {
 
   describe('tabs', () => {
     it('opens on Connect AI apps, and Manage AI apps holds the connections without unmounting the guide', async () => {
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await screen.findByTestId('mcp-my-connection-row');
       const connectTab = screen.getByRole('tab', { name: translations.settings.mcp.connectTab });
@@ -306,7 +309,7 @@ describe('McpPanel', () => {
 
     it('points from Connect AI apps to Settings > Connections when the dialog can show it', async () => {
       const onOpenConnections = jest.fn();
-      const { unmount } = render(<McpPanel workspaceId={WS} onOpenConnections={onOpenConnections} />);
+      const { unmount } = renderPanel({ onOpenConnections });
 
       await screen.findByTestId('mcp-my-connection-row');
       const hint = screen.getByTestId('mcp-connections-hint');
@@ -318,7 +321,7 @@ describe('McpPanel', () => {
       unmount();
 
       // Without a way to switch panels (outside Settings), the hint is left out.
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
       await screen.findByTestId('mcp-my-connection-row');
       expect(screen.queryByTestId('mcp-connections-hint')).toBeNull();
     });
@@ -342,7 +345,7 @@ describe('McpPanel', () => {
 
   describe('members', () => {
     it('shows a spinner, then the setup guide and the member’s own devices without owner controls', async () => {
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect(screen.getByTestId('mcp-panel-loading')).toBeTruthy();
       const row = await screen.findByTestId('mcp-my-connection-row');
@@ -379,7 +382,7 @@ describe('McpPanel', () => {
           resolveStatus = resolve;
         })
       );
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect(screen.getByTestId('mcp-panel-loading')).toBeTruthy();
       expect(api.listMyMcpConnections).toHaveBeenCalledWith(WS, signal);
@@ -397,7 +400,7 @@ describe('McpPanel', () => {
     });
 
     it('sums up the user’s apps across workspaces and feeds the setup guide its connections', async () => {
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       // Claude twice (two devices) and Cursor: two apps in two workspaces.
       expect((await screen.findByTestId('mcp-all-connections-summary')).textContent).toBe(
@@ -414,7 +417,7 @@ describe('McpPanel', () => {
 
     it('leaves the summary out when the service cannot list connections across workspaces', async () => {
       api.listMyMcpConnectionsAcrossWorkspaces.mockRejectedValue(new McpApiError({ status: 404 }));
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await screen.findByTestId('mcp-my-connection-row');
       await waitFor(() => expect(api.listMyMcpConnectionsAcrossWorkspaces).toHaveBeenCalled());
@@ -452,7 +455,7 @@ describe('McpPanel', () => {
         workspace_count: 1,
         connection_count: 2,
       });
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect((await screen.findByTestId('mcp-all-connections-summary')).textContent).toBe(
         'You have 1 app connected across 1 workspace.'
@@ -470,7 +473,7 @@ describe('McpPanel', () => {
         })
       );
       api.listMyMcpConnections.mockResolvedValue([]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect((await screen.findByTestId('mcp-approval-notice')).textContent).toBe(
         translations.settings.mcp.approvalNotice
@@ -493,13 +496,13 @@ describe('McpPanel', () => {
 
     it('says when no app is approved, and hides the list where approval does not apply', async () => {
       api.getMcpMemberStatus.mockResolvedValue(memberStatus({ requires_approval: true, approved_apps: [] }));
-      const { unmount } = render(<McpPanel workspaceId={WS} />);
+      const { unmount } = renderPanel();
 
       expect(await screen.findByTestId('mcp-approved-for-workspace-empty')).toBeTruthy();
       unmount();
 
       api.getMcpMemberStatus.mockResolvedValue(memberStatus({ requires_approval: false, approved_apps: [] }));
-      const second = render(<McpPanel workspaceId={WS} />);
+      const second = renderPanel();
 
       await screen.findByTestId('mcp-my-connection-row');
       expect(screen.queryByTestId('mcp-approved-for-workspace')).toBeNull();
@@ -510,7 +513,7 @@ describe('McpPanel', () => {
       api.getMcpMemberStatus.mockResolvedValue(
         memberStatus({ requires_approval: true, approval_mode: 'verified_and_approved', approved_apps: [] })
       );
-      const { unmount } = render(<McpPanel workspaceId={WS} />);
+      const { unmount } = renderPanel();
 
       // Verified web apps need no request, so an empty list must not suggest every app does.
       expect((await screen.findByTestId('mcp-approval-notice')).textContent).toBe(
@@ -523,7 +526,7 @@ describe('McpPanel', () => {
       api.getMcpMemberStatus.mockResolvedValue(
         memberStatus({ requires_approval: true, approval_mode: 'approved_only', approved_apps: [] })
       );
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
       expect((await screen.findByTestId('mcp-approval-notice')).textContent).toBe(
         translations.settings.mcp.approvalNotice
       );
@@ -536,7 +539,7 @@ describe('McpPanel', () => {
       ['a failing service', new McpApiError({ status: 503, reason: 'temporarily_unavailable' })],
     ])('shows the unavailable state with Retry for %s', async (_case, error) => {
       api.getMcpMemberStatus.mockRejectedValueOnce(error);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       const unavailable = await screen.findByTestId('mcp-panel-unavailable');
 
@@ -559,7 +562,7 @@ describe('McpPanel', () => {
       api.getMcpMemberStatus.mockRejectedValueOnce(
         new McpApiError({ status: 403, error: 'forbidden', reason: 'not_workspace_member' })
       );
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       const failure = await screen.findByTestId('mcp-panel-error');
 
@@ -573,7 +576,7 @@ describe('McpPanel', () => {
       api.getMcpMemberStatus.mockResolvedValue(
         memberStatus({ eligible: false, ineligible_reason: 'email_not_allowed', requires_approval: true })
       );
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       const notice = await screen.findByTestId('mcp-panel-ineligible');
 
@@ -600,7 +603,7 @@ describe('McpPanel', () => {
         memberStatus({ role: 'guest', eligible: false, ineligible_reason: 'guest_not_allowed' })
       );
       api.listMyMcpConnections.mockResolvedValue([]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect((await screen.findByTestId('mcp-panel-ineligible')).textContent).toContain(
         translations.settings.mcp.ineligible_guest_not_allowed
@@ -623,7 +626,7 @@ describe('McpPanel', () => {
             resolveRetry = resolve;
           })
         );
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect(await screen.findByTestId('mcp-panel-ineligible')).toBeTruthy();
       expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
@@ -641,7 +644,7 @@ describe('McpPanel', () => {
 
     it('disconnects one device only after confirmation and keeps the others', async () => {
       api.listMyMcpConnections.mockResolvedValueOnce([myClaude, myClaudeDesktop]).mockResolvedValue([myClaudeDesktop]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
       await waitFor(() => expect(rows('mcp-my-connection-row')).toHaveLength(2));
 
       const desktop = rows('mcp-my-connection-row')[1];
@@ -683,7 +686,7 @@ describe('McpPanel', () => {
       const legacy: McpMyConnection = { ...myClaude, family_id: null, device_label: null, last_used_at: null };
 
       api.listMyMcpConnections.mockResolvedValueOnce([legacy]).mockResolvedValue([]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       const row = await screen.findByTestId('mcp-my-connection-row');
 
@@ -704,7 +707,7 @@ describe('McpPanel', () => {
       api.listMyMcpConnections
         .mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }))
         .mockResolvedValue([myClaude]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
       expect(screen.queryByTestId('mcp-my-connections-empty')).toBeNull();
@@ -719,7 +722,7 @@ describe('McpPanel', () => {
         .mockResolvedValueOnce([myClaude])
         .mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }))
         .mockResolvedValue([]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       fireEvent.click(await screen.findByTestId('mcp-my-disconnect-0'));
       fireEvent.click(await screen.findByTestId('mcp-confirm-disconnect'));
@@ -732,7 +735,7 @@ describe('McpPanel', () => {
 
     it('reports a failed disconnect and keeps its confirmation and the connection', async () => {
       api.disconnectMyMcpConnection.mockRejectedValue(new McpApiError({ status: 429, reason: 'rate_limited' }));
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       fireEvent.click(await screen.findByTestId('mcp-my-disconnect-0'));
       fireEvent.click(await screen.findByTestId('mcp-confirm-disconnect'));
@@ -1133,7 +1136,7 @@ describe('McpPanel', () => {
     it('shows a section error with Retry when one owner list fails', async () => {
       api.listMcpAccessRequests.mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }));
       api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect(await screen.findByTestId('mcp-access-requests-error')).toBeTruthy();
       expect(await screen.findByTestId('mcp-approved-client-row')).toBeTruthy();
@@ -1162,7 +1165,7 @@ describe('McpPanel', () => {
         eligible: false,
         ineligible_reason: 'email_not_allowed',
       });
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect((await screen.findByTestId('mcp-panel-ineligible')).getAttribute('data-reason')).toBe('email_not_allowed');
       expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
@@ -1177,7 +1180,7 @@ describe('McpPanel', () => {
     it('shows one alert with Retry when the settings fail, then the approved apps', async () => {
       api.getMcpWorkspaceSettings.mockRejectedValueOnce(new McpApiError({ status: 500, reason: 'server_error' }));
       api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       const access = await screen.findByTestId('mcp-workspace-access');
 
@@ -1201,7 +1204,7 @@ describe('McpPanel', () => {
       // A policy a newer server added reads as undefined (getMcpWorkspaceSettings).
       api.getMcpWorkspaceSettings.mockResolvedValue({ ...settings, approval_mode: undefined });
       api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       const access = await screen.findByTestId('mcp-workspace-access');
 
@@ -1280,7 +1283,7 @@ describe('McpPanel', () => {
 
     it('offers an owner Claude’s organization-wide link and a member only the personal one', async () => {
       api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
-      const { unmount } = render(<McpPanel workspaceId={WS} />);
+      const { unmount } = renderPanel();
 
       fireEvent.click(await screen.findByTestId('mcp-client-tab-claude'));
       expect(screen.getByTestId('mcp-add-to-claude-organization').getAttribute('href')).toContain(
@@ -1289,7 +1292,7 @@ describe('McpPanel', () => {
       unmount();
 
       api.getMcpMemberStatus.mockResolvedValue(memberStatus());
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
       fireEvent.click(await screen.findByTestId('mcp-client-tab-claude'));
       expect(screen.getByTestId('mcp-add-to-claude').getAttribute('href')).toContain(
         'https://claude.ai/customize/connectors?modal=add-custom-connector'
@@ -1298,7 +1301,7 @@ describe('McpPanel', () => {
     });
 
     it('notes on a self-hosted server that Claude and ChatGPT must reach it from the internet', async () => {
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       expect(await screen.findByTestId('mcp-setup-guide')).toBeTruthy();
       expect(screen.queryByTestId('mcp-setup-self-hosted-note')).toBeNull();
@@ -1330,15 +1333,11 @@ describe('McpPanel', () => {
       expect(screen.queryByTestId('mcp-panel-error')).toBeNull();
     }
 
-    beforeEach(() => {
-      api.isMcpLicenseRequired.mockReturnValue(true);
-    });
-
     it('asks for a license upgrade and keeps the member’s connections to disconnect', async () => {
       // MCP answers, and reports itself off while the license does not include it.
       api.getMcpMemberStatus.mockResolvedValue(memberStatus({ enabled: false }));
       api.listMyMcpConnections.mockResolvedValue([myClaude]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel({ serverStatus: 'license_required' });
 
       await expectUpgradePrompt();
       await waitFor(() => expect(rows('mcp-my-connection-row')).toHaveLength(1));
@@ -1346,10 +1345,19 @@ describe('McpPanel', () => {
 
     it('asks for the upgrade even when the MCP service does not answer', async () => {
       api.getMcpMemberStatus.mockRejectedValue(new McpApiError({ status: 503, error: 'temporarily_unavailable' }));
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel({ serverStatus: 'license_required' });
 
       await expectUpgradePrompt();
       expect(screen.queryByTestId('mcp-my-connections')).toBeNull();
+    });
+
+    it('shows the upgrade prompt without fetching member status when there is no MCP endpoint', async () => {
+      renderPanel({ serverStatus: 'license_required', hasMcpEndpoint: false });
+
+      await expectUpgradePrompt();
+      expect(api.getMcpMemberStatus).not.toHaveBeenCalled();
+      expect(api.listMyMcpConnections).not.toHaveBeenCalled();
+      expect(api.listMyMcpConnectionsAcrossWorkspaces).not.toHaveBeenCalled();
     });
   });
 
@@ -1374,6 +1382,17 @@ describe('McpPanel', () => {
       expect(screen.queryByTestId('mcp-panel-error')).toBeNull();
     }
 
+    it('honors a disabled server-info status when the MCP member response still reports enabled', async () => {
+      api.getMcpMemberStatus.mockResolvedValue(ownerStatus());
+      renderPanel({ serverStatus: 'disabled' });
+
+      await expectTurnedOff();
+      expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
+      expect(api.getMcpWorkspaceSettings).not.toHaveBeenCalled();
+      expect(api.listMcpAccessRequests).not.toHaveBeenCalled();
+      expect(api.listMcpWorkspaceConnections).not.toHaveBeenCalled();
+    });
+
     it('says so when the member status reports them off, and keeps the member’s devices to disconnect', async () => {
       api.getMcpMemberStatus.mockResolvedValue(
         memberStatus({
@@ -1383,7 +1402,7 @@ describe('McpPanel', () => {
         })
       );
       api.listMyMcpConnections.mockResolvedValueOnce([myClaude, myClaudeDesktop]).mockResolvedValue([myClaudeDesktop]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await expectTurnedOff();
       await waitFor(() => expect(rows('mcp-my-connection-row')).toHaveLength(2));
@@ -1405,7 +1424,7 @@ describe('McpPanel', () => {
 
     it('says so when the member status is refused with mcp_disabled, without Retry, and still lists connections', async () => {
       api.getMcpMemberStatus.mockRejectedValue(mcpDisabled());
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await expectTurnedOff();
       expect(screen.queryByTestId('mcp-panel-retry')).toBeNull();
@@ -1418,7 +1437,7 @@ describe('McpPanel', () => {
         memberStatus({ enabled: false, role: 'guest', eligible: false, ineligible_reason: 'guest_not_allowed' })
       );
       api.listMyMcpConnections.mockResolvedValue([]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await expectTurnedOff();
       expect(await screen.findByTestId('mcp-my-connections-empty')).toBeTruthy();
@@ -1434,7 +1453,7 @@ describe('McpPanel', () => {
       api.listMyMcpConnections
         .mockRejectedValueOnce(new McpApiError({ status: 503, reason: 'temporarily_unavailable' }))
         .mockResolvedValue([myClaude]);
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await expectTurnedOff();
       expect(await screen.findByTestId('mcp-my-connections-error')).toBeTruthy();
@@ -1458,7 +1477,7 @@ describe('McpPanel', () => {
       api.listMcpAccessRequests.mockClear();
 
       api.getMcpMemberStatus.mockResolvedValue({ ...ownerStatus(), enabled: false });
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await expectTurnedOff();
       expect(await screen.findByTestId('mcp-my-connection-row')).toBeTruthy();
@@ -1486,7 +1505,7 @@ describe('McpPanel', () => {
         .mockResolvedValueOnce(ownerStatus())
         .mockResolvedValue({ ...ownerStatus(), enabled: false });
       api.listMcpWorkspaceConnections.mockRejectedValue(mcpDisabled());
-      render(<McpPanel workspaceId={WS} />);
+      renderPanel();
 
       await expectTurnedOff();
       expect(api.getMcpMemberStatus).toHaveBeenCalledTimes(2);

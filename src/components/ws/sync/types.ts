@@ -132,25 +132,8 @@ export const versionChanged = (context: SyncContext, message: collab.ICollabMess
   }
 
   const incomingVersion = message.update?.version || message.syncRequest?.version || null;
-  const localVersion = context.doc.version;
-  const incomingKnown = isCollabVersionId(incomingVersion);
-  const localKnown = isCollabVersionId(localVersion);
 
-  // Both unknown — no conflict, apply the update normally.
-  if (!incomingKnown && !localKnown) {
-    return false;
-  }
-
-  // Server has a known version but local doesn't → reset to adopt the server's version.
-  if (!localKnown) {
-    return true;
-  }
-
-  // Local has a known version but incoming doesn't → the server lost/cleared its
-  // version (e.g. cache eviction). Reset so local state re-syncs from scratch.
-  if (!incomingKnown) {
-    return true;
-  }
-
-  return incomingVersion !== localVersion;
+  // Omitted metadata carries no branch information. A legacy reply or failed version lookup
+  // must not erase a known local branch and its unsent edits; only a concrete version can reset it.
+  return isCollabVersionId(incomingVersion) && incomingVersion !== context.doc.version;
 };

@@ -1,5 +1,3 @@
-import { Share2 } from 'lucide-react';
-
 import { Button } from '@/components/ui/button';
 
 import { useFormShareContext } from './FormShareContext';
@@ -16,13 +14,13 @@ export function FormShareButton() {
   return (
     <FormSharePopover
       trigger={
-        <Button data-testid='form-share-button' size='sm' className='gap-1'>
-          <Share2 size={14} />
+        <Button data-testid='form-share-button' size='sm' className='h-7 px-2 font-medium'>
           Share form
         </Button>
       }
       info={share.info}
       isLoading={share.isLoading}
+      isSaving={share.isSaving}
       errorMessage={share.error}
       onRetry={share.retryBootstrap}
       onRetryMutation={share.retryMutation}

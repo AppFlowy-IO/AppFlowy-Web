@@ -242,22 +242,24 @@ need to reach the server from there. The guide's self-hosted note says this in s
 
 ## Settings → MCP
 
-The menu item appears once the MCP service's URL is known (`useMcpConfiguration`, see
-[MCP service URL](#mcp-service-url)). `?setting=AI_APPS` opens it, also through
-`/app?setting=AI_APPS` (`MCP_SETTINGS_PATH`, which `AppWorkspaceRedirect` keeps); while server-info
-is still loading the deep link waits with a spinner, and it falls back to Account on a server
-without MCP (see [MCP service URL](#mcp-service-url); a server that turned MCP off still names
-the service, and the panel shows that it is off). `McpPanel` renders lazily with
-`key={workspaceId}` and loads the member status together with the caller's own connections and
-their summary across workspaces, which need nothing from it (a failed status pauses those two, and
-its Retry loads them again); the owner lists wait for the status. What the panel shows follows the
-member status:
+In development and production, Settings uses Cloud's `mcp_status` from `/api/server-info`.
+The menu item appears for `enabled` or `disabled` when Web knows the [MCP service URL](#mcp-service-url),
+and for `license_required` so the panel can show the upgrade prompt. A missing or unrecognized
+status leaves the tab hidden, including when the Web has an origin override.
+
+`?setting=AI_APPS` opens it, also through `/app?setting=AI_APPS` (`MCP_SETTINGS_PATH`, which
+`AppWorkspaceRedirect` keeps). The deep link waits for server-info and falls back to Account
+when the response leaves the tab hidden. `McpPanel` renders lazily and refreshes its data when the
+workspace, MCP status or service origin changes. With a known origin it loads the member status
+alongside the caller's connections and their cross-workspace summary. The owner lists wait for
+member status to confirm the caller can manage AI apps.
 
 - Loading shows a spinner. When the MCP service cannot answer (no response, 5xx, or a 404 without a
   reason, as from a server without these endpoints) the panel shows `mcp-panel-unavailable` with
   Retry; other failures show `mcp-panel-error` with the reason's message and Retry.
-- **Turned off** (see [Enable MCP switch](#enable-mcp-switch)): when the member status says
-  `enabled: false`, or its request fails with 503 `mcp_disabled`, the panel shows
+- **Turned off** (see [Enable MCP switch](#enable-mcp-switch)). When server-info reports
+  `mcp_status: "disabled"`, the member status says `enabled: false`, or its request fails with
+  503 `mcp_disabled`, the panel shows
   `mcp-panel-disabled` ("AI app connections are turned off": ask your administrator; your
   connections are kept and work again as soon as AI app connections are back on) and **Your
   connections** below it, always, with its empty state when there are none, so anyone can still
@@ -505,8 +507,9 @@ While it is off:
   page's `mcp_disabled` error view (see the reasons table above) and the Settings notice with Your
   connections (see [Settings → MCP](#settings--mcp)).
 
-The Web reads the state from the member status's `enabled` and from the `mcp_disabled` reason
-(`isMcpDisabledError`), never from the description text.
+Settings applies Cloud's `mcp_status` as soon as server-info is available. The member status's
+`enabled` and the MCP service's `mcp_disabled` reason also keep connection setup unavailable while
+the service has turned it off.
 
 ## HTTP client
 

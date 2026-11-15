@@ -3,7 +3,7 @@ import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { useFormMetadataDraft } from './useFormMetadataDraft';
 
 /**
- * Inline form-level description editor — the italic "Description
+ * Inline form-level description editor — the "Description
  * (optional)" line under the form title. Auto-sizing textarea so a
  * long blurb wraps naturally.
  *
@@ -29,7 +29,7 @@ export function FormFormDescription({
 
   if (readOnly) {
     if (!description) return null;
-    return <p className='whitespace-pre-wrap break-words text-sm italic text-text-caption'>{description}</p>;
+    return <p className='whitespace-pre-wrap break-words text-sm text-text-primary'>{description}</p>;
   }
 
   return (
@@ -38,9 +38,9 @@ export function FormFormDescription({
       onFocus={handleFocus}
       onChange={(event) => handleValueChange(event.target.value)}
       onBlur={handleBlur}
-      placeholder='Description (optional)'
+      placeholder='Description (Optional)'
       variant='ghost'
-      className='italic text-text-caption'
+      className='w-full !px-0 !py-0 text-sm text-text-primary placeholder:text-text-tertiary'
       minRows={1}
     />
   );

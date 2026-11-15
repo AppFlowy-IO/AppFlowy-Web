@@ -7,10 +7,7 @@ import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
 import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
 import { ReactComponent as DashboardSvg } from '@/assets/icons/dashboard.svg';
 import { ReactComponent as FeedSvg } from '@/assets/icons/feed.svg';
-// No dedicated form-view SVG yet; reuse `edit.svg` — it's a pencil
-// glyph that maps cleanly onto "fill out / author this form" and
-// matches the desktop's form-tab icon convention.
-import { ReactComponent as FormSvg } from '@/assets/icons/edit.svg';
+import FormSvg from './FormViewIcon';
 import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';

@@ -92,6 +92,22 @@ is available; empty columns and intentionally unmounted offscreen columns do not
 real virtualizer's viewport and scroll behavior. The cloud BDD scenario “Board, calendar and
 timeline widgets of a slow source” also checks that no empty widget appears before its data.
 
+### Collaboration branch recovery
+
+Collab versions identify history branches. A server Update or Manifest that omits its version
+carries no branch-change information: keep the document's known version, cache, and pending edits.
+A concrete differing version still enters the existing history-recovery flow. Server write fences
+remain responsible for rejecting uploads from the wrong branch.
+
+Sibling-tab updates can be broadcast before the server accepts them. They need a matching version
+to enter a known branch; an unversioned peer frame is ignored without resetting local state.
+Subsequent authoritative server state can still catch the document up normally.
+
+The versionless-message cases in `src/components/ws/__tests__/useSync.test.ts` exercise the real
+Yjs protocol with queued edits before and after both Update and Manifest delivery. They verify
+that neither WebSocket nor sibling-tab traffic destroys the local branch, and that drained
+uploads retain its version and carry both edits to a server replica.
+
 ### React subscriptions and request ownership
 
 Yjs handles keep their identity when their contents change. Database field readers should use

@@ -27,6 +27,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
             'playwright/support/dashboard-view-startup.fixture.tsx',
             'playwright/support/chart-settings.fixture.tsx',
             'playwright/support/row-text-page-link.fixture.tsx',
+            'playwright/support/calendar-event-drag.fixture.tsx',
           ],
         },
         server: { host: '127.0.0.1', port: 0, strictPort: false },
@@ -56,6 +57,7 @@ export function fixtureHTML(
     | 'dashboard-view-startup'
     | 'chart-settings'
     | 'row-text-page-link'
+    | 'calendar-event-drag'
 ) {
   return `<!doctype html><html lang="en"><head><title>AppFlowy integration tests</title></head>
   <body id="body"><div id="root"></div><script type="module">

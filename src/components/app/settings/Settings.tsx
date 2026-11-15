@@ -3,8 +3,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { getMcpServerStatus } from '@/application/services/domains/mcp';
 import { Role, SettingMenuItem } from '@/application/types';
 import { useCurrentWorkspaceId, useIsOfficialHosted, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useServerInfoState } from '@/components/app/hooks/useServerInfo';
 import { AccountAppPanel } from '@/components/app/settings/AccountAppPanel';
 import { ManageDataPanel } from '@/components/app/settings/ManageDataPanel';
 import { useMcpPendingRequestCount } from '@/components/app/settings/mcp/pendingRequestCount';
@@ -12,9 +14,8 @@ import { MembersPanel } from '@/components/app/settings/MembersPanel';
 import { ProfilePanel } from '@/components/app/settings/ProfilePanel';
 import SettingMenu from '@/components/app/settings/SettingMenu';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
-import { useMcpConfiguration, useMcpLicenseRequired } from '@/components/mcp/useMcpConfiguration';
+import { useMcpConfiguration } from '@/components/mcp/useMcpConfiguration';
 import { Progress } from '@/components/ui/progress';
-import { isLocalDevelopment } from '@/utils/runtime-config';
 import { canManageWorkspaceBilling } from '@/utils/subscription';
 
 const ConnectionsPanel = lazy(() =>
@@ -42,8 +43,9 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   const currentUser = useCurrentUserOptional();
   const isOfficialHosted = useIsOfficialHosted();
   // The app's auth layer runs the server-info loop this reads.
+  const serverInfo = useServerInfoState();
   const mcpConfiguration = useMcpConfiguration();
-  const mcpLicenseRequired = useMcpLicenseRequired();
+  const mcpStatus = getMcpServerStatus(serverInfo);
   const [selectedItem, setSelectedItem] = useState<SettingMenuItem>(SettingMenuItem.ACCOUNT);
 
   const currentWorkspace = useMemo(
@@ -52,17 +54,15 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   );
   // Billing exists only on the official cloud, and only the owner can change a workspace's plan.
   const showBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isOfficialHosted);
-  // The MCP service is not ready on the servers yet, so only local development (`pnpm dev`) offers the MCP tab.
-  // Production builds hide it, even where server-info names the service.
-  const aiAppsAllowed = isLocalDevelopment();
-  // The MCP tab exists where the MCP service is known (APPFLOWY_MCP_BASE_URL or Cloud server-info's mcp_url), and
-  // on a self-hosted server whose license does not include MCP, where it asks for a license upgrade.
-  const showAiApps = aiAppsAllowed && (mcpConfiguration.status === 'configured' || mcpLicenseRequired);
-  const aiAppsMissing = !aiAppsAllowed || (mcpConfiguration.status === 'not_configured' && !mcpLicenseRequired);
+  const mcpBaseUrl = mcpConfiguration.status === 'configured' ? mcpConfiguration.baseUrl : undefined;
+  const hasMcpEndpoint = mcpBaseUrl !== undefined;
+  // A disabled deployment can still list and disconnect existing connections.
+  const showAiApps = mcpStatus === 'license_required' || (mcpStatus !== undefined && hasMcpEndpoint);
+  const aiAppsMissing = !showAiApps && (serverInfo.status === 'available' || serverInfo.status === 'unsupported');
   // Owners see how many AI app approval requests are waiting.
   const aiAppsPendingRequests = useMcpPendingRequestCount(
     workspaceId,
-    open && showAiApps && currentWorkspace?.role === Role.Owner
+    open && hasMcpEndpoint && mcpStatus === 'enabled' && currentWorkspace?.role === Role.Owner
   );
 
   useEffect(() => {
@@ -84,15 +84,14 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     if (item) {
       const requested = Object.values(SettingMenuItem).find((value) => value === item) ?? SettingMenuItem.ACCOUNT;
 
-      // Without the MCP tab, its deep link opens Account rather than flashing the tab's loading state.
-      setSelectedItem(requested === SettingMenuItem.AI_APPS && !aiAppsAllowed ? SettingMenuItem.ACCOUNT : requested);
+      setSelectedItem(requested === SettingMenuItem.AI_APPS && aiAppsMissing ? SettingMenuItem.ACCOUNT : requested);
       onRequestOpen?.();
       setSearch((prev) => {
         prev.delete('setting');
         return prev;
       });
     }
-  }, [search, setSearch, onRequestOpen, aiAppsAllowed]);
+  }, [search, setSearch, onRequestOpen, aiAppsMissing]);
 
   const handleImport = useCallback(() => {
     // Reuse the workspace importer after closing Settings so only one dialog owns focus.
@@ -145,11 +144,14 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
         {open &&
           selectedItem === SettingMenuItem.AI_APPS &&
           workspaceId &&
+          !aiAppsMissing &&
           (showAiApps ? (
             <Suspense fallback={<PanelFallback label={t('settings.mcp.loading')} />}>
               <McpPanel
-                key={workspaceId}
+                key={`${workspaceId}:${mcpStatus}:${mcpBaseUrl ?? ''}`}
                 workspaceId={workspaceId}
+                serverStatus={mcpStatus}
+                hasMcpEndpoint={hasMcpEndpoint}
                 onOpenConnections={() => setSelectedItem(SettingMenuItem.CONNECTIONS)}
               />
             </Suspense>

@@ -154,6 +154,11 @@ export function useCollabMessageHandler(
           const activeVersion = activeContext.doc.version;
           const activeVersionKnown = isCollabVersionId(activeVersion);
           const incomingVersionKnown = isCollabVersionId(incomingVersion);
+          const isPeerMessage = peerMessages.current.has(message);
+          // Server replies can omit version metadata without changing branches. Sibling-tab
+          // edits have not passed the server's write fence, so they still need a matching version.
+          const versionMismatch = activeVersionKnown &&
+            (incomingVersionKnown ? incomingVersion !== activeVersion : isPeerMessage);
 
           Log.debug(
             `[Version] handleOnActiveContext guard: objectId=${objectId}, activeVersion=${JSON.stringify(
@@ -161,11 +166,11 @@ export function useCollabMessageHandler(
             )}, activeVersionKnown=${activeVersionKnown}, incomingVersion=${JSON.stringify(
               incomingVersion
             )}, incomingVersionKnown=${incomingVersionKnown}, guardWillFire=${
-              activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)
+              versionMismatch
             }`
           );
 
-          if (activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)) {
+          if (versionMismatch) {
             Log.debug('Skipped collab message with mismatched version on active context', {
               objectId,
               incomingVersion,
@@ -176,7 +181,7 @@ export function useCollabMessageHandler(
           }
 
           context = activeContext;
-          if (peerMessages.current.has(message)) {
+          if (isPeerMessage) {
             handleMessage(activeContext, message, false);
           } else {
             handleMessage(activeContext, message);
@@ -288,27 +293,18 @@ export function useCollabMessageHandler(
                   let nextDoc: YDoc & SyncDocMeta;
 
                   try {
-                    const shouldForceResetCache =
-                      !isCollabVersionId(newVersion) && isCollabVersionId(previousDoc.version);
                     const openOptions: {
                       expectedVersion?: string;
                       currentUser?: string;
-                      forceReset?: boolean;
                     } = {
                       currentUser: options?.user?.uid,
+                      expectedVersion: newVersion,
                     };
 
-                    if (isCollabVersionId(newVersion)) {
-                      openOptions.expectedVersion = newVersion;
-                    } else if (shouldForceResetCache) {
-                      openOptions.forceReset = true;
-                    }
-
                     Log.debug(
-                      '[Version] opening new doc: objectId=%s, expectedVersion=%s, forceReset=%s, previousDocVersion=%s, incomingVersion=%s',
+                      '[Version] opening new doc: objectId=%s, expectedVersion=%s, previousDocVersion=%s, incomingVersion=%s',
                       objectId,
                       openOptions.expectedVersion,
-                      openOptions.forceReset,
                       previousDoc.version,
                       newVersion
                     );
@@ -323,15 +319,6 @@ export function useCollabMessageHandler(
                     }
 
                     Log.debug('[Version] opened new doc: objectId=%s, nextDocVersion=%s', objectId, nextDoc.version);
-                    if (!isCollabVersionId(newVersion)) {
-                      // Align with desktop Option<version> semantics after mismatch reset:
-                      // local doc should become version-unknown until a new authoritative version is learned.
-                      nextDoc.version = undefined;
-                      Log.debug(
-                        '[Version] newVersion is unknown, set nextDoc.version=undefined for objectId=%s',
-                        objectId
-                      );
-                    }
                   } catch (error) {
                     // Keep the page usable if cache replacement/open fails after teardown.
                     // Rehydrate a best-effort in-memory doc from the previous snapshot so
