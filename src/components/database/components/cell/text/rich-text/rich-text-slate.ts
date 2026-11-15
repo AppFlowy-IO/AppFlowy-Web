@@ -357,6 +357,8 @@ function insertAppFlowyPageMention(editor: Editor, url: string) {
       mention: {
         type: MentionType.PageRef,
         page_id: target.viewId,
+        // Keep a meaningful label if the page name cannot be loaded on save.
+        data: { title: url },
         ...(target.blockId ? { block_id: target.blockId } : {}),
       },
     },

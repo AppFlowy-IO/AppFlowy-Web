@@ -35,7 +35,7 @@ describe('AppFlowy page-link paste in a row Text property', () => {
     editor.insertData({ getData: (type: string) => (type === 'text/plain' ? pageLink : '') } as DataTransfer);
 
     expect(slateValueToRichText(editor.children)).toEqual([
-      { insert: '@', attributes: { mention: { type: MentionType.PageRef, page_id: pageId } } },
+      { insert: '@', attributes: { mention: { type: MentionType.PageRef, page_id: pageId, data: { title: pageLink } } } },
     ]);
   });
 
@@ -50,7 +50,9 @@ describe('AppFlowy page-link paste in a row Text property', () => {
     for (const char of ' next') editor.insertText(char);
 
     expect(slateValueToRichText(editor.children)).toEqual([
-      { insert: '@', attributes: { mention: { type: MentionType.PageRef, page_id: pageId, block_id: 'block-1' } } },
+      { insert: '@', attributes: { mention: {
+        type: MentionType.PageRef, page_id: pageId, data: { title: `${pageLink}?blockId=block-1` }, block_id: 'block-1',
+      } } },
       { insert: ' next' },
     ]);
   });

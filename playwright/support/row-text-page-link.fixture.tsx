@@ -9,7 +9,7 @@ import { DatabaseContext, type DatabaseContextState } from '@/application/databa
 import type { TextCell as TextCellValue } from '@/application/database-yjs/cell.type';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { readRichTextFromCell } from '@/application/database-yjs/fields/text/rich-text';
-import { type View, ViewLayout, type YDatabaseCell, type YDoc, YjsEditorKey } from '@/application/types';
+import { type View, type YDatabaseCell, type YDoc, YjsEditorKey } from '@/application/types';
 import { TextCell } from '@/components/database/components/cell/text/TextCell';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import AppTheme from '@/components/main/AppTheme';
@@ -44,10 +44,12 @@ const context: DatabaseContextState = {
   databaseDoc, rowMap: { [rowId]: rowDoc }, activeViewId: pageId, databasePageId: pageId,
   workspaceId, eventEmitter: new EventEmitter(), readOnly: false, canWrite: true,
   ensureRow: async () => rowDoc,
-  loadViewMeta: async (viewId) => ({
-    view_id: viewId, name: 'Mention target', layout: ViewLayout.Document, children: [],
-    icon: null, extra: { is_space: false }, is_published: false, is_private: false,
-  }) as View,
+  loadViewMeta: async (viewId) => {
+    const response = await fetch(`/__fixtures__/row-text-page-link/meta/${viewId}`);
+
+    if (!response.ok) throw new Error('Page metadata unavailable');
+    return await response.json() as View;
+  },
 };
 
 function Fixture() {

@@ -33,6 +33,7 @@ This is a regression checklist and record of user expectations, not a claim that
 - Database-row (`?r=`) and selected-tab (`?v=`) links need their separate target/title resolution. Keep those URLs intact in the page-only conversion path.
 - Browser theme cases must mount the real `AppTheme` provider and assert `data-dark-mode`; setting a dark browser preference alone does not activate AppFlowy's semantic tokens. Browser regression data belongs to an isolated Yjs/Storage fixture, without a live account or Cloud round trip.
 - These findings establish a missing conversion in the rich-text cell handlers, rather than a proven regression from previously working automatic conversion. Integration of the prepared fixes is pending.
+- PR #719 follow-up (2026-11-15): seed pasted page mentions with the copied URL as their stored fallback title. Rejected, missing, empty, or unconfigured metadata must not persist the default new-page name; preserve page/block IDs and verify save/reopen in both Text properties and row titles. A resolved page name still takes precedence. Browser coverage must exercise metadata failure, fixture reload, further edits, and recovery with real Slate/Yjs and a mocked metadata boundary.
 
 ## Collaboration branch identity
 
