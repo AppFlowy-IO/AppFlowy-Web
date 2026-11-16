@@ -25,6 +25,16 @@ This is a regression checklist and record of user expectations, not a claim that
 - Existing Codex sessions may still have the old `--autoConnect` MCP process loaded. Do not call its browser tools until it has been restarted with the isolated configuration. Do not enumerate personal browser tabs to verify isolation.
 - These preferences apply across projects, including when a skill suggests reusing an existing Chrome session. If isolation cannot be established, report the blocker instead of accessing the user's browser.
 
+## Database Text property paste (reported 2026-11-06)
+
+- Pasting a standard AppFlowy page link into a row's Text property should create a page mention. The row title shares this paste handler and needs coverage too.
+- Desktop widget tests and Web Slate/React paste-and-save tests reproduced the current gap: both save the full URL with `href`, without `mention`. Ordinary URL paste and copying existing rich mentions already have separate coverage.
+- Fixes prepared in the Desktop and Web task worktrees recognize same-workspace page/block targets before generic URL insertion, using the existing cell insertion/save path. Preserve host/workspace boundaries, external links, selected-text linking, plain-text paste, and typing beside a mention; check persisted attributes as well as appearance.
+- Database-row (`?r=`) and selected-tab (`?v=`) links need their separate target/title resolution. Keep those URLs intact in the page-only conversion path.
+- Browser theme cases must mount the real `AppTheme` provider and assert `data-dark-mode`; setting a dark browser preference alone does not activate AppFlowy's semantic tokens. Browser regression data belongs to an isolated Yjs/Storage fixture, without a live account or Cloud round trip.
+- These findings establish a missing conversion in the rich-text cell handlers, rather than a proven regression from previously working automatic conversion. Integration of the prepared fixes is pending.
+- PR #719 follow-up (2026-11-15): seed pasted page mentions with the copied URL as their stored fallback title. Rejected, missing, empty, or unconfigured metadata must not persist the default new-page name; preserve page/block IDs and verify save/reopen in both Text properties and row titles. A resolved page name still takes precedence. Browser coverage must exercise metadata failure, fixture reload, further edits, and recovery with real Slate/Yjs and a mocked metadata boundary.
+
 ## Collaboration branch identity
 
 - Regression checked 2026-11-09: missing remote collab-version metadata is no evidence of a branch
@@ -53,6 +63,7 @@ This is a regression checklist and record of user expectations, not a claim that
 
 ## CI regression history
 
+- PR #719 CI follow-up (2026-11-15): wait for the row-text fixture editor to mount before asserting AppTheme's `data-dark-mode`; a cold Vite module graph can still be loading when the shorter theme assertion expires. Form preview BDD must assert the success toast, retained typed answer, and no submission request, matching the desktop preview contract rather than the public form's confirmation screen.
 - Regression checked 2026-11-14: freeze the clock in relative-date editor interaction tests and pick a calendar date different from the resolved relative date. On November 14, Tomorrow is the 15th; clicking the selected 15th clears the value to `timestamp: null`.
 - Docker build heap settings must reach the Node process inside both builder stages. The `web-build` job's `NODE_OPTIONS` does not configure a separate Docker build.
 - Calendar drag helpers must reveal the target inside its scroll container before measuring pointer coordinates. Use nearest-edge scrolling so revealing a clipped Sunday row does not hide Saturday's source event. Keep the real FullCalendar and mouse-drag regression.
@@ -237,3 +248,10 @@ Use the relevant MCP frame and latest user screenshot; these links are reference
 - Check applicable upload limits and account/auth boundaries without weakening them for the test.
 - Run focused regression tests with real Slate/Yjs and browser interactions where relevant. Mock external service boundaries deterministically, and explicitly distinguish mocked-provider tests from live provider verification.
 - Summarize effects on shared menus, captions, mentions, upload controls, media AI, selection, and other blocks. Report remaining limitations rather than claiming untested parity.
+
+## Calendar popup regression (2026-11-06)
+
+- With the navigation sidebar hidden, a selected multi-day range can span the full calendar width. Event editor popovers must stay within the viewport even when their anchor is wider than the available side space; prefer bottom/top placement with collision shifting for both draft and saved events; left/right placement can leave a wide anchor with no usable side space.
+- Constrain editor width and height for narrow/short viewports, keep all properties reachable by scrolling, and cover wide anchors near viewport edges.
+
+- Follow-up (2026-11-06): the user still saw `data-side="left"`, a fixed `w-[360px]` draft editor and negative popup X after the first fix. The running main-checkout server had not received the worktree change. Verify the actual user-facing origin serves the changed component; a passing isolated wrapper test does not prove the real application loaded the fix.

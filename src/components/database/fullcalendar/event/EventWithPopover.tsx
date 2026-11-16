@@ -4,11 +4,12 @@ import { toast } from 'sonner';
 
 import { DatabaseContext, useNavigateToRow } from '@/application/database-yjs/context';
 import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
 
 import { useEventContext } from '../CalendarContent';
 
 import { useCalendarDraftContext } from './CalendarDraftContext';
+import { CalendarEventPopover } from './CalendarEventPopover';
 import { EventDisplay } from './EventDisplay';
 import EventPopoverContent from './EventPopoverContent';
 
@@ -117,14 +118,14 @@ const PersistedEventWithPopover = memo(({ event, eventInfo, isWeekView = false }
                 className='absolute left-0 top-0 h-full w-full'
               ></div>
             </PopoverTrigger>
-            <PopoverContent collisionPadding={20} side='left' align='center' sideOffset={8}>
+            <CalendarEventPopover>
               <EventPopoverContent
                 onGotoDate={handleGotoDate}
                 rowId={rowId}
                 onCloseEvent={handleCloseEvent}
                 onRequestDelete={handleDeleteRequest}
               />
-            </PopoverContent>
+            </CalendarEventPopover>
           </Popover>
         )}
       </div>
@@ -203,13 +204,7 @@ function DraftEventWithPopover({
           <PopoverTrigger asChild>
             <div className='absolute left-0 top-0 h-full w-full' />
           </PopoverTrigger>
-          <PopoverContent
-            collisionPadding={20}
-            side='left'
-            align='center'
-            sideOffset={8}
-            onCloseAutoFocus={(event) => event.preventDefault()}
-          >
+          <CalendarEventPopover onCloseAutoFocus={(event) => event.preventDefault()}>
             <EventPopoverContent
               rowId={event.id}
               isDraft
@@ -222,7 +217,7 @@ function DraftEventWithPopover({
               }}
               onGotoDate={() => undefined}
             />
-          </PopoverContent>
+          </CalendarEventPopover>
         </Popover>
       )}
     </div>

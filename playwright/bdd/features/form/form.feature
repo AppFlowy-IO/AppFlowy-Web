@@ -71,17 +71,18 @@ Feature: Form Authoring
     # 404" beside the Submit button (user-reported in Image #67).
     #
     # The fix passes `previewMode={true}` from FormPreviewButton into
-    # FormBody so submit short-circuits to the confirmation screen
-    # after client-side validation, with no network call. This
-    # scenario asserts both halves: (1) clicking Submit reaches the
-    # confirmation screen, and (2) no submit request leaves the page.
+    # FormBody so submit only validates locally, with no network call.
+    # The desktop-style preview shows success feedback and keeps the
+    # answer visible, rather than replacing it with a confirmation page.
     Given a Grid with a Form tab is open
-    When I add a "SingleSelect" question
+    When I add a "RichText" question
     And I open the form preview
     Then the form preview dialog is visible
     When I record network calls to the public-form submit endpoint
+    And I enter "Keep this preview answer" in the form preview
     And I submit the form preview
-    Then the form preview confirmation is visible
+    Then the form preview success feedback is visible
+    And the form preview answer remains "Keep this preview answer"
     And no public-form submit request was sent
 
   Scenario: Adding a Form tab via "+" appends to the right of existing tabs

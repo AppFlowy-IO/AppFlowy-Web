@@ -189,6 +189,102 @@ describe('RichTextCellEditor', () => {
     mockContext = { workspaceId: 'ws', eventEmitter: new EventEmitter(), databaseDoc };
   });
 
+  it('saves a copied AppFlowy page link pasted through the row property editor as a page mention', async () => {
+    const workspaceId = '2f8365f8-ce19-4376-8ba0-2b4948ed0f4a';
+    const pageId = 'd996a5f3-0bca-40ed-96b7-5938de6cdd5d';
+    const pageLink = `http://localhost/app/${workspaceId}/${pageId}`;
+    const originalPath = window.location.pathname;
+
+    window.history.replaceState({}, '', `/app/${workspaceId}/${pageId}`);
+    mockContext = { ...mockContext, workspaceId, loadViewMeta: async () => view(pageId, 'Mention target') };
+    try {
+      const { editable } = await renderEditor({ value: '' });
+      const clipboardData = {
+        files: [],
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? pageLink : ''),
+      };
+
+      await act(async () => {
+        fireEvent.paste(editable, { clipboardData });
+      });
+      await flush();
+      await pressEnter(editable);
+      await flush();
+
+      expect(mockUpdateCell).toHaveBeenCalledTimes(1);
+      const [, , options] = mockUpdateCell.mock.calls[0];
+      const saved = JSON.parse(options.richText);
+
+      expect(saved.delta).toEqual([
+        expect.objectContaining({
+          insert: '@',
+          attributes: expect.objectContaining({
+            mention: expect.objectContaining({ type: MentionType.PageRef, page_id: pageId }),
+          }),
+        }),
+      ]);
+    } finally {
+      window.history.replaceState({}, '', originalPath);
+    }
+  });
+
+  describe.each(['cell', 'title'] as const)('pasted page-link fallback in a %s', (variant) => {
+    it.each(['rejected', 'missing', 'empty', 'unconfigured'] as const)(
+      'preserves the copied URL when the metadata lookup is %s',
+      async (lookup) => {
+        const workspaceId = '2f8365f8-ce19-4376-8ba0-2b4948ed0f4a';
+        const pageId = 'd996a5f3-0bca-40ed-96b7-5938de6cdd5d';
+        const pageLink = `http://localhost/app/${workspaceId}/${pageId}?blockId=block-1`;
+        const originalPath = window.location.pathname;
+
+        window.history.replaceState({}, '', `/app/${workspaceId}/${pageId}`);
+        mockContext = {
+          ...mockContext,
+          workspaceId,
+          loadViewMeta: lookup === 'unconfigured' ? undefined : jest.fn(async () => {
+            if (lookup === 'rejected') throw new Error('Page metadata unavailable');
+            return lookup === 'missing' ? null : view(pageId, '');
+          }),
+        };
+        try {
+          const { editable, unmount } = await renderEditor({ value: '', variant });
+
+          await act(async () => {
+            fireEvent.paste(editable, { clipboardData: {
+              files: [], types: ['text/plain'],
+              getData: (type: string) => (type === 'text/plain' ? pageLink : ''),
+            } });
+          });
+          await flush();
+          await pressEnter(editable);
+          await flush();
+
+          expect(savedTexts()).toEqual([pageLink]);
+          const saved = JSON.parse(mockUpdateCell.mock.calls[0][2].richText);
+
+          expect(saved.delta).toEqual([{
+            insert: '@',
+            attributes: { mention: {
+              type: MentionType.PageRef, page_id: pageId, block_id: 'block-1',
+              data: { title: pageLink }, label: pageLink,
+            } },
+          }]);
+
+          unmount();
+          mockUpdateCell.mockClear();
+          const reopened = await renderEditor({ value: pageLink, richText: saved.delta, variant });
+
+          await typeAtEnd(reopened.editor, '!');
+          await pressEnter(reopened.editable);
+          expect(savedTexts()).toEqual([`${pageLink}!`]);
+        } finally {
+          window.history.replaceState({}, '', originalPath);
+        }
+      }
+    );
+  });
+
   it.each(['row', 'field', 'workspace'])('keeps a dirty draft with its original cell when the %s changes', async (identity) => {
     const first = await renderEditor();
 
