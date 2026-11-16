@@ -1,5 +1,9 @@
 import { getTokenParsed } from '@/application/session/token';
-import { isAppFlowyAuthenticatedFileUrl, isAppFlowyPublicFormUploadUrl } from '@/utils/file-storage-url';
+import {
+  isAppFlowyAuthenticatedFileUrl,
+  isAppFlowyFileStorageUrl,
+  isAppFlowyPublicFormUploadUrl,
+} from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -266,6 +270,9 @@ async function attemptFileStorageFetch(
   const headers: Record<string, string> = { 'x-platform': 'web-app' };
 
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  // This reader already handles retryable 503s. Ask trusted blob routes to distinguish an
+  // admitted upload from a missing file instead of applying the legacy 404 retry contract.
+  if (isAppFlowyFileStorageUrl(fullUrl)) headers['x-appflowy-media-retry'] = '1';
 
   let response: Response;
 
