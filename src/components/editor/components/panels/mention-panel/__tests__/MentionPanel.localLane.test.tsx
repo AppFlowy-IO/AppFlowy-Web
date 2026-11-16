@@ -272,6 +272,16 @@ function personKeys() {
   return optionKeys().filter((key) => key?.startsWith('people|'));
 }
 
+/** Chooses People's "N more" row, which lists the people a collapsed section hides. */
+function expandPeople() {
+  const more = document.querySelector<HTMLElement>('[data-option-key="people|more"]');
+
+  if (!more) throw new Error('People shows no "N more" row');
+  act(() => {
+    fireEvent.click(more);
+  });
+}
+
 function freshTitles() {
   return resultOptions()
     .filter((option) => option.getAttribute('data-fresh') === 'true')
@@ -666,6 +676,9 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
       const keysOf = (...entries: MentionablePerson[]) => entries.map((entry) => `people|person:${entry.person_id}`);
 
       // Up to three people on the page come first, by name since the answer lists none of them.
+      // People shows five of the six above its "1 more" row.
+      expect(personKeys()).toEqual(keysOf(cy, dee, eve, anna, bob));
+      expandPeople();
       expect(personKeys()).toEqual(keysOf(cy, dee, eve, anna, bob, me));
 
       type(panel, 'bo');
@@ -678,8 +691,10 @@ describe('MentionPanel local lane (MEN-WEB-09)', () => {
         })
       );
 
-      // The requester stays last, where the server puts them.
+      // The requester stays last, where the server puts them. Reopening collapses People again.
       await reopen(panel, 100);
+      expect(personKeys()).toEqual(keysOf(bob, cy, dee, eve, anna));
+      expandPeople();
       expect(personKeys()).toEqual(keysOf(bob, cy, dee, eve, anna, me));
     });
   });

@@ -24,10 +24,12 @@ import {
   isDatabaseRowOnlyMentionRequest,
   isSupersededMentionResponse,
   layoutMentionSectionsForPicker,
+  MENTION_PEOPLE_COLLAPSE_LIMIT,
   MENTION_SECTION_COLLAPSE_LIMIT,
   mentionItemNavKey,
   MentionPanelSearchResult,
   mentionSearchItemToMention,
+  mentionSectionCollapseLimit,
   mentionSectionCollapses,
   mentionSectionTitle,
   mergeMentionSearchResponses,
@@ -1204,12 +1206,12 @@ describe('mention picker sections', () => {
     ]);
   });
 
-  it('collapses only Pages when folded, and every people and object section when separate', () => {
+  it('collapses People and Pages when folded, and every people and object section when separate', () => {
     const collapsing = (layout: 'folded' | 'separate') =>
       Object.values(MentionSearchSectionKind).filter((kind) => mentionSectionCollapses(kind, layout));
 
     expect(MENTION_SECTION_COLLAPSE_LIMIT).toBe(4);
-    expect(collapsing('folded')).toEqual([MentionSearchSectionKind.Pages]);
+    expect(collapsing('folded')).toEqual([MentionSearchSectionKind.People, MentionSearchSectionKind.Pages]);
     expect(collapsing('separate')).toEqual([
       MentionSearchSectionKind.Suggested,
       MentionSearchSectionKind.People,
@@ -1218,6 +1220,19 @@ describe('mention picker sections', () => {
       MentionSearchSectionKind.DatabaseRows,
     ]);
     expect(mentionSectionCollapses(UNKNOWN_KIND, 'separate')).toBe(false);
+    expect(mentionSectionCollapses(UNKNOWN_KIND, 'folded')).toBe(false);
+  });
+
+  it('shows five people above a collapsed People section\'s "N more" row, and four of anything else', () => {
+    expect(MENTION_PEOPLE_COLLAPSE_LIMIT).toBe(5);
+    expect(
+      Object.values(MentionSearchSectionKind).map((kind) => [kind, mentionSectionCollapseLimit(kind)] as const)
+    ).toEqual(
+      Object.values(MentionSearchSectionKind).map(
+        (kind) => [kind, kind === MentionSearchSectionKind.People ? 5 : 4] as const
+      )
+    );
+    expect(mentionSectionCollapseLimit(UNKNOWN_KIND)).toBe(MENTION_SECTION_COLLAPSE_LIMIT);
   });
 
   describe('withSuggestedItemsOnce (MEN-WEB-11)', () => {

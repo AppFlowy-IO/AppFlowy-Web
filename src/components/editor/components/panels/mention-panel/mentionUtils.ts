@@ -114,8 +114,8 @@ export function mentionSectionTitle(
 /**
  * How the picker lays its sections out:
  * - `folded`, the default: Databases and Database rows show inside Pages, after its pages, or as a
- *   Pages section in Pages' place when no page is listed; every other section keeps its place. Only
- *   Pages collapses.
+ *   Pages section in Pages' place when no page is listed; every other section keeps its place.
+ *   People and Pages collapse.
  * - `separate` (MEN-WEB-12, behind the picker's sections switch, off by default until product signs
  *   off): every kind is a section of its own, in the canonical order, as Desktop shows them, so a
  *   database viewed a minute ago is never hidden behind the pages. Rows stay where the server put
@@ -124,8 +124,16 @@ export function mentionSectionTitle(
  */
 export type MentionSectionLayout = 'folded' | 'separate';
 
-/** How many results a collapsed section shows above its "N more" row. */
+/** How many results a collapsed section shows above its "N more" row, People's apart. */
 export const MENTION_SECTION_COLLAPSE_LIMIT = 4;
+
+/** How many people a collapsed People section shows above its "N more" row. */
+export const MENTION_PEOPLE_COLLAPSE_LIMIT = 5;
+
+/** How many results a collapsed section of `kind` shows above its "N more" row. */
+export function mentionSectionCollapseLimit(kind: MentionSearchSectionKind): number {
+  return kind === MentionSearchSectionKind.People ? MENTION_PEOPLE_COLLAPSE_LIMIT : MENTION_SECTION_COLLAPSE_LIMIT;
+}
 
 /**
  * The kinds the separate layout collapses: those of people and objects, Suggested among them. Dates
@@ -140,11 +148,13 @@ const MENTION_SEPARATE_COLLAPSING_KINDS: ReadonlySet<MentionSearchSectionKind> =
 ]);
 
 /**
- * Whether a section of `kind` shows at most {@link MENTION_SECTION_COLLAPSE_LIMIT} results and a
+ * Whether a section of `kind` shows at most {@link mentionSectionCollapseLimit} results and a
  * "N more" row until it is expanded, in `layout`.
  */
 export function mentionSectionCollapses(kind: MentionSearchSectionKind, layout: MentionSectionLayout): boolean {
-  return layout === 'separate' ? MENTION_SEPARATE_COLLAPSING_KINDS.has(kind) : kind === MentionSearchSectionKind.Pages;
+  if (layout === 'separate') return MENTION_SEPARATE_COLLAPSING_KINDS.has(kind);
+
+  return kind === MentionSearchSectionKind.People || kind === MentionSearchSectionKind.Pages;
 }
 
 /**

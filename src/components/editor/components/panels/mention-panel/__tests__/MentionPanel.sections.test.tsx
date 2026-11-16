@@ -1,7 +1,8 @@
 /**
  * MEN-WEB-12: the @ picker's section titles come from the translations, and its sections switch
- * (off by default) lays every kind out in a section of its own, collapses each people and object
- * section to four results with "N more", and offers to create a page for a typed query.
+ * (off by default) lays every kind out in a section of its own, collapses People to five results
+ * and each object section to four, each with "N more", and offers to create a page for a typed
+ * query. With the switch off, People and Pages collapse.
  *
  * The panel renders with a real i18next instance on `en.json`, set up as the app sets it up
  * (`src/i18n/config.ts`: values escaped), so the strings on screen are the shipped English ones.
@@ -376,14 +377,14 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
       expect(dateKinds()).toEqual([MentionTargetKind.Date]);
     });
 
-    it('folds the database into Pages behind "N more", lists every person, and offers no page to create', async () => {
+    it('folds the database into Pages behind "N more", lists five people, and offers no page to create', async () => {
       mockEditorContext.addPage = jest.fn();
       mockEditorContext.viewId = 'current-page';
       await openAndType('road');
 
       expect(sectionKinds()).toEqual([MentionSearchSectionKind.People, MentionSearchSectionKind.Pages]);
-      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(6);
-      expect(moreRowIn(MentionSearchSectionKind.People)).toBeNull();
+      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(5);
+      expect(moreRowIn(MentionSearchSectionKind.People)?.textContent).toBe('1 more results...');
       expect(titlesIn(MentionSearchSectionKind.Pages)).toEqual(['Road 1', 'Road 2', 'Road 3', 'Road 4']);
       expect(moreRowIn(MentionSearchSectionKind.Pages)?.textContent).toBe('2 more results...');
       expect(screen.queryByText('Road database')).toBeNull();
@@ -393,6 +394,14 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
         fireEvent.click(moreRowIn(MentionSearchSectionKind.Pages) as HTMLElement);
       });
       expect(titlesIn(MentionSearchSectionKind.Pages)).toEqual([...PAGES.map(({ title }) => title), 'Road database']);
+      // Expanding Pages leaves People collapsed; its own "N more" row shows the sixth person.
+      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(5);
+
+      act(() => {
+        fireEvent.click(moreRowIn(MentionSearchSectionKind.People) as HTMLElement);
+      });
+      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(6);
+      expect(moreRowIn(MentionSearchSectionKind.People)).toBeNull();
     });
 
     it("keeps the local fallback's own titles and its create options, now translated", async () => {
@@ -482,8 +491,8 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
       expect(titlesIn(MentionSearchSectionKind.Databases)).toEqual(['Road database']);
       expect(titlesIn(MentionSearchSectionKind.Pages)).toEqual(['Road 1', 'Road 2', 'Road 3', 'Road 4']);
       expect(moreRowIn(MentionSearchSectionKind.Pages)?.textContent).toBe('1 more results...');
-      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(4);
-      expect(moreRowIn(MentionSearchSectionKind.People)?.textContent).toBe('2 more results...');
+      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(5);
+      expect(moreRowIn(MentionSearchSectionKind.People)?.textContent).toBe('1 more results...');
     });
 
     it("titles the separate sections in the user's language too", async () => {
@@ -523,7 +532,7 @@ describe('MentionPanel sections (MEN-WEB-12)', () => {
       mockPanelContext.searchText = 'roads';
       view.rerender();
       await advance(1_000);
-      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(4);
+      expect(resultsIn(MentionSearchSectionKind.People)).toHaveLength(5);
       expect(titlesIn(MentionSearchSectionKind.Pages)).toHaveLength(4);
     });
 

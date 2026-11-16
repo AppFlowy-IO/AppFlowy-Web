@@ -135,10 +135,10 @@ import {
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
   layoutMentionSectionsForPicker,
-  MENTION_SECTION_COLLAPSE_LIMIT,
   mentionItemNavKey,
   MentionOptionSelection,
   MentionPanelSearchResult,
+  mentionSectionCollapseLimit,
   mentionSectionCollapses,
   MentionSectionLayout,
   mentionSectionTitle,
@@ -860,8 +860,9 @@ export function MentionPanel({
   // The first option is highlighted unless an arrow key holds the highlight (off by default).
   const defaultHighlight = typeaheadV2 && typeaheadSettings.defaultHighlight;
   // The picker's sections switch (MEN-WEB-12), off by default and read once per opening: every kind
-  // in a section of its own, each people and object section collapsed to four results, and a
-  // typed query offered to create a page. Off, databases fold into Pages and only Pages collapses.
+  // in a section of its own, People collapsed to five results and each object section to four, and
+  // a typed query offered to create a page. Off, databases fold into Pages, and People and Pages
+  // collapse.
   const sectionsV2 = useMemo(() => open && readMentionSectionsV2(), [open]);
   const sectionLayout: MentionSectionLayout = sectionsV2 ? 'separate' : 'folded';
   // The query an arrow key took the highlight at: it stays on its item until the next keystroke.
@@ -1939,11 +1940,12 @@ export function MentionPanel({
 
         sectionOccurrences.set(section.kind, occurrence);
 
+        const collapseLimit = mentionSectionCollapseLimit(section.kind);
         const shouldCollapse =
           mentionSectionCollapses(section.kind, sectionLayout) &&
           !expandedSections.has(section.kind) &&
-          results.length > MENTION_SECTION_COLLAPSE_LIMIT;
-        const visibleResults = shouldCollapse ? results.slice(0, MENTION_SECTION_COLLAPSE_LIMIT) : results;
+          results.length > collapseLimit;
+        const visibleResults = shouldCollapse ? results.slice(0, collapseLimit) : results;
         const sectionOptions: MentionPanelResultOption[] = visibleResults.map((result) => ({
           kind: 'result',
           key: result.key,
@@ -1952,13 +1954,13 @@ export function MentionPanel({
         }));
 
         if (shouldCollapse) {
-          const firstHidden = results[MENTION_SECTION_COLLAPSE_LIMIT];
+          const firstHidden = results[collapseLimit];
 
           sectionOptions.push({
             kind: 'moreResults',
             key: `${sectionKey}|more`,
             sectionKind: section.kind,
-            remainingCount: results.length - MENTION_SECTION_COLLAPSE_LIMIT,
+            remainingCount: results.length - collapseLimit,
             firstHidden: { key: firstHidden.key, navKey: firstHidden.navKey },
           });
         }
