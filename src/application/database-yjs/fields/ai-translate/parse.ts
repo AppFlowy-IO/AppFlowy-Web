@@ -1,7 +1,7 @@
 import { AITranslateLanguage, getTypeOptions } from '@/application/database-yjs';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
-export function parseAITranslateTypeOption (field: YDatabaseField) {
+export function parseAITranslateTypeOption(field?: YDatabaseField) {
   const typeOption = getTypeOptions(field);
 
   const language = typeOption ? Number(typeOption.get(YjsDatabaseKey.language)) : AITranslateLanguage.English;

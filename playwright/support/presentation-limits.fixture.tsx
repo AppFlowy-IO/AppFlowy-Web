@@ -50,7 +50,8 @@ function Fixture() {
     snapshot: source, options, onOptions: setOptions, style, onStyle: setStyle, styles: APPFLOWY_SLIDE_THEMES,
     canGenerate: remaining > 0, canAssess: remaining > 0, remainingSlides: remaining, maxSlides: remaining,
     isPro: false, customSlideCount: false, onUpgrade, onCancel: () => undefined, onStage: () => undefined,
-    onPrepareGeneration: async () => { throw new Error('Quota-blocked setup must not prepare sources.'); },
+    // `analysisError` stands in for a failed source analysis, which shows the Retry analysis notice.
+    onPrepareGeneration: async () => { throw new Error(query.get('analysisError') ?? 'Quota-blocked setup must not prepare sources.'); },
     onGenerate: () => { throw new Error('This fixture never generates model output.'); },
     reuse: { available: query.get('cached') === 'true', checking: false, onOpen: () => setOpenedSaved(true) },
   } as SlidesWorkflowProps;

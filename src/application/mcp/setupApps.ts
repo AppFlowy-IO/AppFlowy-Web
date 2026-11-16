@@ -1,0 +1,110 @@
+/**
+ * The setup guide's app gallery: its cards, and which of the caller's
+ * connections each card stands for. A card is "Connected" only through the
+ * server's verified app catalog (`app_id` of a client summary), never through
+ * a self-asserted client name. See doc/MCP.md. AppFlowy Desktop ports the
+ * cards and this grouping (mcp_setup.dart); keep the two in step.
+ */
+import { compareDashboardText } from '@/utils/normalize-text';
+
+import { getMcpClientDisplayName, type McpClientNaming, trustedCatalogAppId } from './setup';
+
+/** Cards of the setup guide, in display order. */
+export const MCP_SETUP_APPS = ['claude', 'chatgpt', 'claude-code', 'codex', 'vscode', 'other'] as const;
+
+export type McpSetupAppId = (typeof MCP_SETUP_APPS)[number];
+
+/**
+ * The verified catalog app (`app_id`) behind each card that has one. "Other
+ * app" stands for apps that register themselves with loopback or unlisted
+ * redirects, which the catalog never recognizes, so it never shows "Connected".
+ * A catalog app without a card (Cursor, say) badges nothing.
+ */
+const CATALOG_APP_IDS: Readonly<Partial<Record<McpSetupAppId, string>>> = {
+  claude: 'claude',
+  chatgpt: 'chatgpt',
+  'claude-code': 'claude-code',
+  codex: 'codex',
+  vscode: 'vscode',
+};
+
+/** The gallery card of a verified catalog app, if it has one. */
+export function setupAppForCatalogApp(appId?: string | null): McpSetupAppId | undefined {
+  if (!appId) return undefined;
+  return MCP_SETUP_APPS.find((app) => CATALOG_APP_IDS[app] === appId);
+}
+
+/**
+ * What the gallery reads from one of the caller's connections (a subset of
+ * `McpMyConnection`, kept structural so either connection list fits).
+ */
+export interface McpSetupConnection extends McpClientNaming {
+  client_id: string;
+}
+
+/** One app among the caller's connections, for the gallery's "Connected" badges and Settings' app count. */
+export interface McpConnectedApp {
+  /** `app:<app_id>` for a recognized app, else `name:<client name>`, else `client:<client ID>`. */
+  key: string;
+  /** The app's gallery card, when it has one. */
+  setupApp?: McpSetupAppId;
+  /** The catalog's name, else the client's own name or host; undefined means "Unknown app". */
+  name?: string;
+}
+
+function groupKey(connection: McpSetupConnection, appId: string | undefined): string {
+  if (appId) return `app:${appId}`;
+  // Every install of a self-registered app (say, Gemini CLI on two computers) is its own client.
+  // Their shared name groups them for counting only; nothing else may trust that name.
+  const clientName = connection.client_name?.trim().toLowerCase();
+
+  return clientName ? `name:${clientName}` : `client:${connection.client_id}`;
+}
+
+function galleryRank(app: McpConnectedApp): number {
+  return app.setupApp ? MCP_SETUP_APPS.indexOf(app.setupApp) : MCP_SETUP_APPS.length;
+}
+
+/**
+ * Gallery rank, then named apps by name, unnamed last. Names compare by
+ * `compareDashboardText`: folded with `normalizeDashboardText` (case and
+ * accents ignored), then as written, both by UTF-16 code unit, the rule
+ * dashboard labels sort by on both clients, which Desktop's `mcp_setup.dart`
+ * uses here too. No locale collation, so the order is the same in every
+ * browser language.
+ */
+function compareConnectedApps(a: McpConnectedApp, b: McpConnectedApp): number {
+  const rank = galleryRank(a) - galleryRank(b);
+
+  if (rank !== 0) return rank;
+  if (a.name === undefined || b.name === undefined) return a.name === b.name ? 0 : a.name === undefined ? 1 : -1;
+  return compareDashboardText(a.name, b.name);
+}
+
+/**
+ * The distinct apps among the caller's connections: gallery apps first, in
+ * gallery order, then the others by name. Every device and registration of a
+ * recognized app counts once (`app:<app_id>`). Settings' "N apps across M
+ * workspaces" groups the same way over every workspace, so it is larger
+ * whenever another workspace has an app this one lacks.
+ */
+export function summarizeConnectedApps(connections: readonly McpSetupConnection[]): McpConnectedApp[] {
+  const apps = new Map<string, McpConnectedApp>();
+
+  connections.forEach((connection) => {
+    // The same rule as `mcpApprovalKey` and `getMcpClientDisplayName`, so an entry keyed by an app
+    // also carries that app's catalog name.
+    const appId = trustedCatalogAppId(connection);
+    const key = groupKey(connection, appId);
+
+    if (apps.has(key)) return;
+    apps.set(key, { key, setupApp: setupAppForCatalogApp(appId), name: getMcpClientDisplayName(connection) });
+  });
+
+  return Array.from(apps.values()).sort(compareConnectedApps);
+}
+
+/** The gallery cards that have at least one connection. */
+export function connectedSetupApps(apps: readonly McpConnectedApp[]): ReadonlySet<McpSetupAppId> {
+  return new Set(apps.flatMap(({ setupApp }) => (setupApp ? [setupApp] : [])));
+}

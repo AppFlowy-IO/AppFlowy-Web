@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["./node_modules/@types", "./node_modules/@fullcalendar"]
+  },
+  "include": [
+    "src/slate-editor.d.ts",
+    "src/vite-env.d.ts",
+    "src/@types/i18next.d.ts",
+    "src/__mocks__/__tests__/runtime-config.test.ts",
+    "src/application/mcp/__tests__",
+    "src/application/services/js-services/http/__tests__/mcp-api.test.ts",
+    "src/application/session/__tests__/sign_in.test.ts",
+    "src/components/app/__tests__/AppWorkspaceRedirect.test.tsx",
+    "src/components/app/settings/__tests__/Settings.mcp.test.tsx",
+    "src/components/app/settings/mcp/__tests__",
+    "src/components/main/__tests__/MainAppRoutes.mcp.test.tsx",
+    "src/components/mcp/**/__tests__",
+    "src/pages/__tests__/LoginPage.mcp-consent.test.tsx",
+    "src/pages/__tests__/McpAuthorizePage.test.tsx",
+    "src/pages/__tests__/McpSetupPage.test.tsx",
+    "src/utils/__tests__/runtime-config-value.test.ts"
+  ]
+}

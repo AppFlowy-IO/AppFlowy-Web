@@ -25,6 +25,11 @@ const MARKETING_META: Record<
     title: 'Login | AppFlowy',
     description: 'Login to AppFlowy',
   },
+  '/oauth/mcp/setup': {
+    title: 'Connect AI apps | AppFlowy',
+    description:
+      'Use AppFlowy from Claude, ChatGPT, Cursor, VS Code and other AI apps through the Model Context Protocol (MCP).',
+  },
 };
 
 export const renderMarketingPage = (pathname: string) => {

@@ -29,6 +29,7 @@ let mockSharedRoot: YSharedRoot;
 jest.mock('@/application/database-yjs/context', () => ({
   ...jest.requireActual('@/application/database-yjs/context'),
   useDatabase: () => mockDatabase,
+  useDatabaseSelector: (selector: (database: YDatabase) => unknown) => selector(mockDatabase),
   useDatabaseView: () => mockView,
   useDatabaseFields: () => mockFields,
   useSharedRoot: () => mockSharedRoot,

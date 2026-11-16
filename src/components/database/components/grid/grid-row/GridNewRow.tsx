@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext, useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
@@ -62,4 +62,5 @@ function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?
   );
 }
 
-export default GridNewRow;
+// Memoized: the grid re-renders its row list on every scroll range change, and this row's props stay the same.
+export default memo(GridNewRow);

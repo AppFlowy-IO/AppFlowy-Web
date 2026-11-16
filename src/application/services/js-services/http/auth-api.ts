@@ -55,6 +55,25 @@ export interface ServerInfo {
    * Older servers omit this field, which keeps the slow lane disabled.
    */
   max_slow_sync_update_bytes?: number;
+  /**
+   * Public origin of the AppFlowy MCP service (no `/mcp`): Cloud's
+   * `APPFLOWY_MCP_BASE_URL` only, never its `APPFLOWY_BASE_URL`. Cloud
+   * advertises it once it has loaded its MCP policy, whether MCP is on or off;
+   * it is absent before that, on servers without an MCP origin (a deployment
+   * without the MCP service), and on older servers. The Web's own
+   * `APPFLOWY_MCP_BASE_URL` overrides it (see doc/MCP.md, "MCP service URL").
+   */
+  mcp_url?: string | null;
+  /**
+   * Whether MCP can be used on this server: `enabled`, `disabled` (an
+   * administrator turned it off in Admin) or `license_required` (a self-hosted
+   * server whose license does not include MCP: it needs One, Team or
+   * Enterprise). Sent only where Cloud knows an MCP origin: absent without one,
+   * on older servers, and (except `license_required`) while Cloud has not
+   * loaded its MCP policy; read any other value as unknown (see
+   * `getMcpServerStatus`).
+   */
+  mcp_status?: string | null;
 }
 
 const SERVER_INFO_REQUEST_TIMEOUT_MS = 10_000;

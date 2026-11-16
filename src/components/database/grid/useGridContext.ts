@@ -131,18 +131,38 @@ export type GridContextType = {
   rowOrders?: Row[];
   rows: RenderRow[];
   setRows: (rows: RenderRow[]) => void;
+  /** The field whose property editor is open. */
   activePropertyId?: string;
-  setActivePropertyId: (activePropertyId?: string) => void;
+  /**
+   * The header row of `rows` (its render key) that shows the open property
+   * editor: a grouped grid repeats its header row once per group. While the
+   * sticky header holds the field menus, it shows the editor instead.
+   */
+  activePropertyRowKey?: string;
+  /** Opens the property editor of a field from the header row `rowKey`, or closes it. */
+  setActivePropertyId: (activePropertyId?: string, rowKey?: string) => void;
   remainingRowCount: number;
   lastVisibleRowId?: string;
   loadMoreRows: () => void;
   revealCreatedRow: () => void;
-  showStickyHeader: boolean;
   setShowStickyHeader: (show: boolean) => void;
   isGrouped: boolean;
 };
 
 export const GridContext = createContext<GridContextType | undefined>(undefined);
+
+/**
+ * Whether the page shows the grid's sticky header, the copy of the column
+ * header pinned under the app bar. Kept out of `GridContext`: it flips each
+ * time a page scroll takes the grid's own header under the app bar, only header
+ * cells read it, and every row, its hover controls and the calculation cells
+ * read `GridContext`.
+ */
+export const GridStickyHeaderContext = createContext(false);
+
+export function useGridStickyHeaderShown() {
+  return useContext(GridStickyHeaderContext);
+}
 
 /**
  * How far an ungrouped grid still reading its rows got. Kept out of

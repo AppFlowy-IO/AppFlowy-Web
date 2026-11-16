@@ -1,38 +1,44 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { TemplateService } from '@/application/services/domains';
 import { Template, TemplateCategory, TemplateCreator, TemplateSummary } from '@/application/template.type';
 import { notify } from '@/components/_shared/notify';
 
-export function useLoadCategoryTemplates () {
+export function useLoadCategoryTemplates() {
   const [loading, setLoading] = useState(false);
-
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const latestLoad = useRef(0);
+
+  useEffect(
+    () => () => {
+      latestLoad.current += 1;
+    },
+    []
+  );
 
   const loadCategoryTemplates = useCallback(async (categoryId: string, nameContains?: string) => {
+    const request = ++latestLoad.current;
+
     try {
       setLoading(true);
       const data = await TemplateService.getAll({ categoryId, nameContains });
 
+      if (request !== latestLoad.current) return;
       if (!data) throw new Error('Failed to fetch templates');
       setTemplates(data);
-    } catch (error) {
-      notify.error('Failed to fetch ${categoryId} templates');
-      return Promise.reject(error);
+    } catch {
+      // Callers trigger searches from debounced UI events, so handle current failures
+      // here rather than returning an unobserved rejection. Obsolete requests are silent.
+      if (request === latestLoad.current) notify.error('Failed to fetch templates');
     } finally {
-      setLoading(false);
+      if (request === latestLoad.current) setLoading(false);
     }
   }, []);
 
-  return {
-    templates,
-    loadCategoryTemplates,
-    loading,
-  };
-
+  return { templates, loadCategoryTemplates, loading };
 }
 
-export function useLoadTemplate (id: string) {
+export function useLoadTemplate(id: string) {
   const [loading, setLoading] = useState(false);
   const [template, setTemplate] = useState<Template | null>(null);
   const latestLoad = useRef(0);
@@ -59,9 +65,7 @@ export function useLoadTemplate (id: string) {
   };
 }
 
-export function useLoadCategories (props?: {
-  searchText?: string;
-}) {
+export function useLoadCategories(props?: { searchText?: string }) {
   const searchText = props?.searchText || '';
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<TemplateCategory[]>([]);
@@ -81,9 +85,13 @@ export function useLoadCategories (props?: {
     }
   }, []);
 
-  const filteredCategories = useMemo(() => categories.filter((category) => {
-    return searchText ? category.name.toLowerCase().includes(searchText.toLowerCase()) : true;
-  }), [categories, searchText]);
+  const filteredCategories = useMemo(
+    () =>
+      categories.filter((category) => {
+        return searchText ? category.name.toLowerCase().includes(searchText.toLowerCase()) : true;
+      }),
+    [categories, searchText]
+  );
 
   return {
     categories: filteredCategories,
@@ -93,11 +101,7 @@ export function useLoadCategories (props?: {
   };
 }
 
-export function useLoadCreators ({
-  searchText,
-}: {
-  searchText: string;
-}) {
+export function useLoadCreators({ searchText }: { searchText: string }) {
   const [loading, setLoading] = useState(false);
   const [creators, setCreators] = useState<TemplateCreator[]>([]);
   const loadCreators = useCallback(async () => {
@@ -114,9 +118,13 @@ export function useLoadCreators ({
     }
   }, []);
 
-  const filteredCreators = useMemo(() => creators.filter((creator) => {
-    return creator.name.toLowerCase().includes(searchText.toLowerCase());
-  }), [creators, searchText]);
+  const filteredCreators = useMemo(
+    () =>
+      creators.filter((creator) => {
+        return creator.name.toLowerCase().includes(searchText.toLowerCase());
+      }),
+    [creators, searchText]
+  );
 
   return {
     creators: filteredCreators,

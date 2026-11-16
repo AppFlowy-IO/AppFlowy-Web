@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Editor, Range, Text } from 'slate';
 import { ReactEditor } from 'slate-react';
 
@@ -34,6 +34,8 @@ export const RemoteSelectionsLayer: React.FC<RemoteSelectionsLayerProps> = ({ ed
   const remoteSelections = useRemoteSelectionsSelector(awareness);
 
   const [selectionPositions, setSelectionPositions] = useState<RemoteSelectionPosition[]>([]);
+  const hasRemoteSelections = remoteSelections.some((selection) => selection.baseRange);
+  const scheduleMeasurementRef = useRef<() => void>();
 
   const calculateSelectionPositions = useCallback((): RemoteSelectionPosition[] => {
     if (!editor) {
@@ -151,16 +153,54 @@ export const RemoteSelectionsLayer: React.FC<RemoteSelectionsLayerProps> = ({ ed
     return positions;
   }, [remoteSelections, editor]);
 
-  useEffect(() => {
-    try {
-      const positions = calculateSelectionPositions();
+  const calculateRef = useRef(calculateSelectionPositions);
 
-      setSelectionPositions(positions);
-    } catch (error) {
-      console.error('Selection position calculation failed:', error);
-      setSelectionPositions([]);
-    }
+  useLayoutEffect(() => {
+    calculateRef.current = calculateSelectionPositions;
+    scheduleMeasurementRef.current?.();
   }, [calculateSelectionPositions]);
+
+  useEffect(() => {
+    if (!hasRemoteSelections) {
+      setSelectionPositions((previous) => (previous.length ? [] : previous));
+      return;
+    }
+
+    const element = ReactEditor.toDOMNode(editor, editor);
+    let frame: number | undefined;
+    let disposed = false;
+    const schedule = () => {
+      if (disposed || frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        setSelectionPositions(calculateRef.current());
+      });
+    };
+
+    // Remote awareness can stay unchanged while local content, images or a
+    // narrower viewport move the corresponding DOM ranges. Observe only while
+    // there are peer ranges, and share one measurement frame across signals.
+    scheduleMeasurementRef.current = schedule;
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+    const mutationObserver = new MutationObserver(schedule);
+
+    resizeObserver?.observe(element);
+    mutationObserver.observe(element, { childList: true, characterData: true, subtree: true });
+    element.addEventListener('load', schedule, true);
+    element.addEventListener('scroll', schedule, { capture: true, passive: true });
+    window.addEventListener('resize', schedule);
+    schedule();
+    return () => {
+      disposed = true;
+      scheduleMeasurementRef.current = undefined;
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      mutationObserver.disconnect();
+      element.removeEventListener('load', schedule, true);
+      element.removeEventListener('scroll', schedule, true);
+      window.removeEventListener('resize', schedule);
+    };
+  }, [editor, hasRemoteSelections]);
 
   return (
     <>

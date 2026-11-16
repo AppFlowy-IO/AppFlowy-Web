@@ -149,10 +149,14 @@ function CardList({
   // virtual items and remount a card during a pointer gesture.
   const virtualItems = virtualizer.getVirtualItems();
   const items = onScreen ? virtualItems : NO_ITEMS;
+  // Grouping can settle before the scroller's first size observation. Keep the
+  // pending cards visibly loading instead of presenting an empty column.
+  const awaitingMeasurement = onScreen && items.length === 0 && data.some((card) => card.type === CardType.CARD);
 
   return (
     <div
       ref={parentRef}
+      aria-busy={awaitingMeasurement || undefined}
       className='appflowy-custom-scroller w-full min-h-0 flex-1'
       style={onScreen ? CARD_LIST_STYLE : OFFSCREEN_CARD_LIST_STYLE}
     >
@@ -163,6 +167,14 @@ function CardList({
           position: 'relative',
         }}
       >
+        {awaitingMeasurement && (
+          <div
+            data-testid='board-card-loading'
+            aria-hidden='true'
+            className='pointer-events-none mx-2 mt-[10px] animate-pulse rounded-lg bg-fill-content-hover'
+            style={{ height: estimatedCardHeight }}
+          />
+        )}
         {items.map((virtualRow) => {
           const row = data[virtualRow.index];
           const { id, type } = row;

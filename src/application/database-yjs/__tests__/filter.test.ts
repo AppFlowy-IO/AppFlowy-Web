@@ -94,6 +94,45 @@ function createFilter(config: { fieldType: FieldType; condition: number; content
   return filter;
 }
 
+describe('media and generated text row filters', () => {
+  it.each([0, 1])('applies media condition %s to populated, empty, missing and converted cells', (condition) => {
+    const fieldId = 'photos';
+    const fields = new Map([[fieldId, createField(fieldId, FieldType.Media)]]) as unknown as YDatabaseFields;
+    const files = new Y.Array<string>();
+
+    files.push([JSON.stringify({ id: 'photo', name: 'resort.jpg', url: 'https://example.com/resort.jpg', file_type: 1, upload_type: 1 })]);
+    const rowMetas = {
+      photo: createRowDoc('photo', 'db', { [fieldId]: createCell(FieldType.Media, files) }),
+      empty: createRowDoc('empty', 'db', { [fieldId]: createCell(FieldType.Media, new Y.Array<string>()) }),
+      missing: createRowDoc('missing', 'db', {}),
+      converted: createRowDoc('converted', 'db', { [fieldId]: createCell(FieldType.RichText, 'old text') }),
+    };
+    const rows = Object.keys(rowMetas).map((id) => ({ id, height: 0 }));
+    const filters = createFilters([{ fieldId, fieldType: FieldType.Media, condition }]);
+    const matching = () => filterBy(rows, filters, fields, rowMetas).map((row) => row.id);
+
+    expect(matching()).toEqual(condition === 0 ? ['empty', 'missing', 'converted'] : ['photo']);
+    files.delete(0, 1);
+    expect(matching()).toEqual(condition === 0 ? ['photo', 'empty', 'missing', 'converted'] : []);
+    files.push([JSON.stringify({ id: 'replacement', name: 'new.jpg', url: 'https://example.com/new.jpg', file_type: 1, upload_type: 1 })]);
+    expect(matching()).toEqual(condition === 0 ? ['empty', 'missing', 'converted'] : ['photo']);
+  });
+
+  it.each([FieldType.Summary, FieldType.Translate])('applies text predicates to generated field type %s', (fieldType) => {
+    const fieldId = 'generated';
+    const fields = new Map([[fieldId, createField(fieldId, fieldType)]]) as unknown as YDatabaseFields;
+    const rowMetas = {
+      matching: createRowDoc('matching', 'db', { [fieldId]: createCell(fieldType, 'Snow resort') }),
+      other: createRowDoc('other', 'db', { [fieldId]: createCell(fieldType, 'Beach') }),
+      missing: createRowDoc('missing', 'db', {}),
+    };
+    const filters = createFilters([{ fieldId, fieldType, condition: TextFilterCondition.TextContains, content: 'snow' }]);
+    const rows = Object.keys(rowMetas).map((id) => ({ id, height: 0 }));
+
+    expect(filterBy(rows, filters, fields, rowMetas).map((row) => row.id)).toEqual(['matching']);
+  });
+});
+
 describe('date filter parsing', () => {
   it.each([
     DateFilterCondition.DateStartIsEmpty,

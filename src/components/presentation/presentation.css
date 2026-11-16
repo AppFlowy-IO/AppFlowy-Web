@@ -432,7 +432,10 @@
 }
 .ps-notice {
   display: flex;
-  align-items: flex-start;
+  /* The icon sits on the message's first line by baseline. An action button
+     in that line makes the line taller and lowers its text, so a fixed offset
+     from the top would leave the icon above the text. */
+  align-items: baseline;
   gap: 8px;
   padding: 12px 12px 12px 16px;
   background: var(--fill-content-visible);
@@ -442,10 +445,18 @@
   font-size: 14px;
   line-height: 20px;
 }
-.ps-notice svg {
+/* One text line tall, with the icon centred in it. The zero-width space gives
+   the box the same baseline as the message's text, so baseline alignment
+   centres the icon on the message's first line, whatever else that line holds. */
+.ps-notice-icon {
+  display: flex;
   flex-shrink: 0;
-  margin-top: 2px;
+  align-items: center;
+  height: 20px;
   color: var(--icon-tertiary);
+}
+.ps-notice-icon::before {
+  content: '\200b';
 }
 .ps-panel {
   padding: 23px;

@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
@@ -16,6 +16,7 @@ export function AppWorkspaceRedirect() {
   const authContext = useContext(AuthInternalContext);
   const userWorkspaceInfo = authContext?.userWorkspaceInfo;
   const navigate = useNavigate();
+  const { search } = useLocation();
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
@@ -33,8 +34,9 @@ export function AppWorkspaceRedirect() {
     }
 
     Log.debug('[AppWorkspaceRedirect] Redirecting to workspace', { workspaceId });
-    navigate(`/app/${workspaceId}`, { replace: true });
-  }, [userWorkspaceInfo, navigate]);
+    // Keep the query so deep links such as /app?setting=AI_APPS reach the workspace.
+    navigate({ pathname: `/app/${workspaceId}`, search }, { replace: true });
+  }, [userWorkspaceInfo, navigate, search]);
 
   if (hasError || authContext?.workspaceInfoError) {
     return (

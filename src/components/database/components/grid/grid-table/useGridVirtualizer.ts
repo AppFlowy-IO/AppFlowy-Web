@@ -241,32 +241,38 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     };
   }, [getScrollElement, updateParentOffset, isDocumentBlock]);
 
+  const lastColumn = columns[columns.length - 1];
+  const isLastColumnNewProperty = lastColumn?.type === GridColumnType.NewProperty;
   const [containerWidth, setContainerWidth] = useState(0);
 
+  // Only the New property column's fill reads the grid's width; other grids
+  // skip this forced layout. Whole pixels, so the fill never overflows the grid
+  // by a fraction and a sub-pixel change re-renders nothing. The scroller has no
+  // padding, border or visible scrollbar, so its bounding width is the content
+  // box the observer reports and its first report matches the seed (unlike
+  // `clientWidth`, which rounds); a scaled ancestor, e.g. a dialog zooming in,
+  // skews the seed until that report.
   useLayoutEffect(() => {
     const el = parentRef.current;
 
-    if (!el) return;
+    if (!el || !isLastColumnNewProperty) return;
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
 
       if (entry) {
-        setContainerWidth(entry.contentRect.width);
+        setContainerWidth(Math.floor(entry.contentRect.width));
       }
     });
 
     observer.observe(el);
-    setContainerWidth(el.clientWidth);
+    setContainerWidth(Math.floor(el.getBoundingClientRect().width));
 
     return () => observer.disconnect();
-  }, []);
+  }, [isLastColumnNewProperty]);
 
   const effectivePaddingStart = paddingStart || PADDING_INLINE;
   const effectivePaddingEnd = paddingEnd || PADDING_INLINE;
-
-  const lastColumn = columns[columns.length - 1];
-  const isLastColumnNewProperty = lastColumn?.type === GridColumnType.NewProperty;
 
   const { shouldFill, fillWidth } = useMemo(() => {
     if (!isLastColumnNewProperty || containerWidth <= 0) {
@@ -312,6 +318,8 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     parentRef,
     virtualizer,
     columnVirtualizer,
+    // The columns' `estimateSize`: a new function whenever a column's width may change.
+    getColumnWidth,
     scrollMarginTop: parentOffset,
     isReady,
     pinColumnHeader,

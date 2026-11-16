@@ -40,6 +40,13 @@ class WebCiComposeTest(unittest.TestCase):
         self.assertEqual(result.stdout.strip(),
                          str(ROOT / ".github/docker-compose-web-ci.gateway.override.yml"))
 
+    def test_gateway_fixture_without_the_former_cloud_admission_module(self):
+        result = self.select(["docker-compose-web-ci.yml", "docker-compose-ci.yml",
+                              "nginx/api-limits-ci.conf"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(),
+                         str(ROOT / ".github/docker-compose-web-ci.gateway.override.yml"))
+
     def test_partial_capability_cannot_silently_select_the_legacy_fixture(self):
         for files in (["libs/database/src/gateway_api_limits.rs"],
                       ["nginx/api-limits-ci.conf"],

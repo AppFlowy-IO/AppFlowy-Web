@@ -27,6 +27,10 @@ disposed on cancel, unmount or account/workspace changes. Metadata still uses th
 server integration proxy. The public picker app ID defaults to Flutter's project;
 custom builds can set `APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID` and the optional
 `APPFLOWY_GOOGLE_DRIVE_PICKER_API_KEY` at build time (or via `window.__APP_CONFIG__`).
+Docker image builds leave `.env` files out, so pass both to `docker/Dockerfile`
+or `docker/Dockerfile.ssr` as build args
+(`--build-arg APPFLOWY_GOOGLE_DRIVE_PICKER_APP_ID=…`); the images' entrypoints
+do not inject them at runtime.
 
 PDFs and documents always use the full Google viewer, even when metadata includes
 a thumbnail. A first-page thumbnail cannot provide document pagination. Only

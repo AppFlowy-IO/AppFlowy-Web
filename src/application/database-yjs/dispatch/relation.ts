@@ -24,6 +24,7 @@ import {
   executeDatabaseOperations as executeOperations,
   runDatabaseAction,
   runDatabaseRowAction,
+  runDatabaseRowActionForDatabase,
 } from '@/application/database-yjs/history';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
@@ -62,6 +63,8 @@ type EffectiveRelationCellChanges = {
   insertedRowIds: RowId[];
   removedRowIds: RowId[];
 };
+
+type PlannedRelationCell = { rowIds: RowId[]; limit: RelationLimit };
 
 function uniq(ids: RowId[]) {
   return Array.from(new Set(ids.filter(Boolean)));
@@ -203,7 +206,8 @@ export function setRelationCellRowIds(
   rowDoc: YDoc,
   fieldId: FieldId,
   rowIds: RowId[],
-  actorUid?: AttributionUid
+  actorUid?: AttributionUid,
+  limit = RelationLimit.NoLimit
 ): CellWriteStatus {
   let status: CellWriteStatus = 'written';
 
@@ -224,13 +228,36 @@ export function setRelationCellRowIds(
 
     if (!row || !cell) return;
 
-    const data = new Y.Array<string>();
+    if (limit === RelationLimit.OneOnly) {
+      // Concurrent one-only selections retain the existing replacement semantics.
+      const data = new Y.Array<string>();
 
-    if (ids.length > 0) {
       data.push(ids);
+      cell.set(YjsDatabaseKey.data, data);
+    } else {
+      // Keep the shared array's identity. Replacing it makes independent
+      // unlimited inserts compete as map assignments and loses one writer.
+      const data = cell.get(YjsDatabaseKey.data) as Y.Array<string>;
+      const current = data.toArray();
+
+      for (let index = 0; index < ids.length; index += 1) {
+        const id = ids[index];
+
+        if (current[index] === id) continue;
+        const previous = current.indexOf(id, index);
+
+        if (previous >= 0) {
+          data.delete(previous, 1);
+          current.splice(previous, 1);
+        }
+
+        data.insert(index, [id]);
+        current.splice(index, 0, id);
+      }
+
+      if (data.length > ids.length) data.delete(ids.length, data.length - ids.length);
     }
 
-    cell.set(YjsDatabaseKey.data, data);
     setCellStoredType(cell, FieldType.Relation);
     // Drop any leftover source-type marker — getRelationRowIdsFromCell uses it
     // to ignore preserved-on-conversion payloads, but we just wrote canonical
@@ -253,7 +280,7 @@ function applyRelationCellChanges(
   const result = applyRelationCellChangeset(existing, changes, limit);
 
   // A refused cell changes nothing, so its reciprocal side must not change either.
-  if (setRelationCellRowIds(rowDoc, fieldId, result.nextRowIds, actorUid) === 'refused-rich-text-newer') {
+  if (setRelationCellRowIds(rowDoc, fieldId, result.nextRowIds, actorUid, limit) === 'refused-rich-text-newer') {
     notifyRichTextNewer();
     return { insertedRowIds: [], removedRowIds: [] };
   }
@@ -572,6 +599,10 @@ export async function applyRelationReciprocalInserts(args: {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   bindViewSync?: (doc: YDoc) => unknown;
   actorUid?: AttributionUid;
+  /** The activated source, whose links can change while related rows hydrate. */
+  sourceRowDoc?: YDoc;
+  /** Capture duplication's reciprocal changes with its committed membership. */
+  historyGroup?: object;
   /** Retire asynchronous follow-up when the creation's caller or restore branch changes. */
   assertCurrent?: () => void;
   /**
@@ -611,13 +642,58 @@ export async function applyRelationReciprocalInserts(args: {
 
   const relatedDatabase = getDatabaseFromDoc(relatedDoc);
   const reciprocalFieldId = typeOption.reciprocal_field_id;
-  const reciprocalField = relatedDatabase?.get(YjsDatabaseKey.fields)?.get(reciprocalFieldId);
-  const reciprocalLimit = reciprocalField
-    ? parseRelationTypeOption(reciprocalField).source_limit
-    : RelationLimit.NoLimit;
+  const sourceStillReferences = (targetRowId: RowId) => {
+    if (!args.sourceRowDoc) return true;
+    const currentField = args.database.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId);
+
+    if (!currentField || Number(currentField.get(YjsDatabaseKey.type)) !== FieldType.Relation) return false;
+    const currentOption = parseRelationTypeOption(currentField);
+
+    if (
+      !currentOption.is_two_way ||
+      currentOption.database_id !== typeOption.database_id ||
+      currentOption.reciprocal_field_id !== reciprocalFieldId ||
+      !getRelationRowIdsFromCell(getRowFromDoc(args.sourceRowDoc)?.get(YjsDatabaseKey.cells)?.get(args.sourceFieldId)).includes(
+        targetRowId
+      )
+    ) return false;
+
+    for (const view of args.database.get(YjsDatabaseKey.views).values()) {
+      const orders = view.get(YjsDatabaseKey.row_orders)?.toArray() as Array<{ id?: RowId; is_deleted?: boolean }> | undefined;
+
+      if (orders?.some((row) => row.id === args.sourceRowId && !row.is_deleted)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const writeCell = (doc: YDoc, fieldId: FieldId, changes: RelationCellChanges, limit: RelationLimit) => {
+    let result: EffectiveRelationCellChanges = { insertedRowIds: [], removedRowIds: [] };
+    const write = () => {
+      result = applyRelationCellChanges(doc, fieldId, changes, limit, args.actorUid);
+    };
+
+    if (args.historyGroup) {
+      // Ordinary relation edits deliberately skip undo. This compound action
+      // owns both the new membership and all its reciprocal row mutations.
+      runDatabaseRowActionForDatabase(
+        args.databaseDoc,
+        doc,
+        { type: 'row.duplicate-relation', rowId: getRowFromDoc(doc)?.get(YjsDatabaseKey.id), fieldId, historyGroup: args.historyGroup },
+        write
+      );
+    } else {
+      write();
+    }
+
+    return result;
+  };
 
   await Promise.all(
     args.insertedRowIds.map(async (targetRowId) => {
+      if (!sourceStillReferences(targetRowId)) return;
       const targetRowDoc = await loadRowDoc({
         databaseDoc: relatedDoc,
         rowId: targetRowId,
@@ -628,41 +704,47 @@ export async function applyRelationReciprocalInserts(args: {
 
       args.assertCurrent?.();
       if (!targetRowDoc) return;
+      const displaced = new Map<RowId, YDoc | null>();
 
-      const reciprocalChanges = applyRelationCellChanges(
-        targetRowDoc,
-        reciprocalFieldId,
-        { insertedRowIds: [args.sourceRowId] },
-        reciprocalLimit,
-        args.actorUid
-      );
+      for (;;) {
+        args.assertCurrent?.();
+        if (!sourceStillReferences(targetRowId)) return;
+        const reciprocalField = relatedDatabase?.get(YjsDatabaseKey.fields)?.get(reciprocalFieldId);
+        const reciprocalLimit = reciprocalField
+          ? parseRelationTypeOption(reciprocalField).source_limit
+          : RelationLimit.NoLimit;
+        const existing = getRelationRowIdsFromCell(getRowFromDoc(targetRowDoc)?.get(YjsDatabaseKey.cells)?.get(reciprocalFieldId));
+        const removed = reciprocalLimit === RelationLimit.OneOnly ? existing.filter((id) => id !== args.sourceRowId) : [];
+        const missing = removed.filter((id) => !displaced.has(id));
 
-      if (reciprocalLimit !== RelationLimit.OneOnly) return;
-
-      await Promise.all(
-        reciprocalChanges.removedRowIds.map(async (removedSourceRowId) => {
-          if (removedSourceRowId === args.sourceRowId) return;
-
-          const removedSourceRowDoc = await loadRowDoc({
-            databaseDoc: args.databaseDoc,
-            rowId: removedSourceRowId,
-            rowMap: args.rowMap,
-            createRow: args.createRow,
-            assertCurrent: args.assertCurrent,
-          });
-
-          args.assertCurrent?.();
-          if (!removedSourceRowDoc) return;
-
-          applyRelationCellChanges(
-            removedSourceRowDoc,
-            args.sourceFieldId,
-            { removedRowIds: [targetRowId] },
-            typeOption.source_limit,
-            args.actorUid
+        if (missing.length > 0) {
+          await Promise.all(
+            missing.map(async (id) => {
+              displaced.set(id, await loadRowDoc({
+                databaseDoc: args.databaseDoc,
+                rowId: id,
+                rowMap: args.rowMap,
+                createRow: args.createRow,
+                assertCurrent: args.assertCurrent,
+              }));
+            })
           );
-        })
-      );
+          // A remote edit may have replaced a one-only participant during hydration.
+          continue;
+        }
+
+        if (removed.some((id) => !displaced.get(id))) throw new Error('A displaced relation Row is unavailable');
+        // No await from the final source/participant checks through either side's writes.
+        const changes = writeCell(targetRowDoc, reciprocalFieldId, { insertedRowIds: [args.sourceRowId] }, reciprocalLimit);
+
+        for (const id of changes.removedRowIds) {
+          const doc = displaced.get(id);
+
+          if (doc) writeCell(doc, args.sourceFieldId, { removedRowIds: [targetRowId] }, typeOption.source_limit);
+        }
+
+        return;
+      }
     })
   );
 }
@@ -733,7 +815,7 @@ export function useUpdateRelationCellDispatch() {
 
       for (;;) {
         const loading = new Map<string, Promise<void>>();
-        const plan = new Map<YDoc, Map<FieldId, RowId[]>>();
+        const plan = new Map<YDoc, Map<FieldId, PlannedRelationCell>>();
         let unavailable = false;
         const getRow = (databaseDoc: YDoc, id: RowId, required: boolean) => {
           const key = getRowKey(databaseDoc.guid, id);
@@ -768,12 +850,12 @@ export function useUpdateRelationCellDispatch() {
         };
 
         const stage = (doc: YDoc, id: FieldId, update: RelationCellChanges, limit: RelationLimit) => {
-          const fields = plan.get(doc) ?? new Map<FieldId, RowId[]>();
+          const fields = plan.get(doc) ?? new Map<FieldId, PlannedRelationCell>();
           const existing =
-            fields.get(id) ?? getRelationRowIdsFromCell(getRowFromDoc(doc)?.get(YjsDatabaseKey.cells)?.get(id));
+            fields.get(id)?.rowIds ?? getRelationRowIdsFromCell(getRowFromDoc(doc)?.get(YjsDatabaseKey.cells)?.get(id));
           const result = applyRelationCellChangeset(existing, update, limit);
 
-          fields.set(id, result.nextRowIds);
+          fields.set(id, { rowIds: result.nextRowIds, limit });
           plan.set(doc, fields);
           return result.effectiveChanges;
         };
@@ -812,10 +894,10 @@ export function useUpdateRelationCellDispatch() {
         if (unavailable) return;
 
         for (const [doc, fields] of plan) {
-          for (const [id, ids] of fields) {
+          for (const [id, { rowIds }] of fields) {
             if (
               checkExistingCellWrite(getRowFromDoc(doc)?.get(YjsDatabaseKey.cells)?.get(id), {
-                set: { [YjsDatabaseKey.data]: ids },
+                set: { [YjsDatabaseKey.data]: rowIds },
                 delete: [YjsDatabaseKey.source_field_type],
               }) === 'refuse'
             ) {
@@ -827,7 +909,7 @@ export function useUpdateRelationCellDispatch() {
 
         // No await between the final checks and the writes to either side.
         for (const [doc, fields] of plan) {
-          for (const [id, ids] of fields) setRelationCellRowIds(doc, id, ids, actorUid);
+          for (const [id, { rowIds, limit }] of fields) setRelationCellRowIds(doc, id, rowIds, actorUid, limit);
         }
 
         return;

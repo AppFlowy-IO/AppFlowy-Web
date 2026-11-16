@@ -34,18 +34,8 @@ import {
 } from './mocks';
 
 /**
- * Hostname mocking utilities
+ * Hostname mocking utilities. `window.__APP_CONFIG__` is typed by `@/utils/runtime-config`.
  */
-declare global {
-  interface Window {
-    __APP_CONFIG__?: {
-      APPFLOWY_BASE_URL?: string;
-      APPFLOWY_GOTRUE_BASE_URL?: string;
-      APPFLOWY_WS_BASE_URL?: string;
-    };
-  }
-}
-
 type CleanupFn = () => void;
 
 const normalizeHostnameToBaseUrl = (hostname: string): string => {

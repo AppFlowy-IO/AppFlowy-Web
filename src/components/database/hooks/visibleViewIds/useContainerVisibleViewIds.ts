@@ -2,7 +2,11 @@ import { useMemo } from 'react';
 
 import { filterOwnedTabViewIds } from '@/application/database-yjs/dashboard-owned-views';
 import { View } from '@/application/types';
-import { isDashboardOwnedView, isDatabaseContainer } from '@/application/view-utils';
+import {
+  isDashboardOwnedView,
+  isDatabaseContainer,
+  isLinkedDatabaseViewUnderDocument,
+} from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 
 interface UseContainerVisibleViewIdsProps {
@@ -20,8 +24,8 @@ interface UseContainerVisibleViewIdsProps {
    */
   parentViewId?: string;
   /**
-   * Database id from the active view metadata. Used as a fallback for
-   * container lookup when parent metadata is not enough.
+   * Database id from the active view metadata. Used as a compatibility
+   * fallback only when parent identity is unavailable.
    */
   databaseId?: string;
   /**
@@ -40,7 +44,8 @@ interface UseContainerVisibleViewIdsResult {
   /**
    * For database containers: the container's children view IDs, without the
    * views a dashboard owns (only the opened view when it is one of those).
-   * For standalone databases: undefined (show all non-embedded views).
+   * For a document-owned link: its opened view only. For standalone database
+   * roots: undefined (show all non-embedded views).
    */
   visibleViewIds: string[] | undefined;
 }
@@ -93,7 +98,11 @@ export function useContainerVisibleViewIds({
       }
     }
 
-    if (!databaseId || embedded) {
+    // Linked views can live under a document while sharing the source's row
+    // store. Its container owns a different tab list; borrowing that list
+    // replaces this route's selection with the source's first tab. A known
+    // parent remains authoritative even before its outline branch arrives.
+    if (parentId || !databaseId || embedded) {
       return undefined;
     }
 
@@ -115,7 +124,18 @@ export function useContainerVisibleViewIds({
 
   const openedViewId = view?.view_id;
   const visibleViewIds = useMemo(() => {
-    if (!containerView) return undefined;
+    if (!containerView) {
+      const parentId = view?.parent_view_id || parentViewId;
+      const parent = parentId && outline ? findView(outline, parentId) : undefined;
+
+      // A linked route opens that document's view, not every view in the row
+      // store. An explicit list also retains embedded tabs that the legacy
+      // standalone selector would hide.
+      return openedViewId && parent && !parent.extra?.is_space && isLinkedDatabaseViewUnderDocument(view, parent)
+        ? [openedViewId]
+        : undefined;
+    }
+
     if (containerView.children.length === 0) return undefined;
     const ownedViewIds = new Set(
       containerView.children.filter((child) => isDashboardOwnedView(child)).map((child) => child.view_id)
@@ -127,7 +147,7 @@ export function useContainerVisibleViewIds({
       openedViewId,
       (viewId) => ownedViewIds.has(viewId) || (viewId === openedViewId && isDashboardOwnedView(view))
     );
-  }, [containerView, openedViewId, view]);
+  }, [containerView, openedViewId, outline, parentViewId, view]);
 
   return { containerView, visibleViewIds };
 }

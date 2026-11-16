@@ -10,3 +10,18 @@
 export function normalizeDashboardText(value: string): string {
   return value.toLowerCase().normalize('NFKD').replace(/\p{M}+/gu, '').trim();
 }
+
+/** Orders two strings by UTF-16 code unit, as `<` does: the same in every locale. */
+export function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The order of dashboard labels on both clients (`compareChartLabels`, pinned
+ * by `dashboard-parity/group-keys.json#labelCompare`), also used for the MCP
+ * connected-app names: the texts folded with `normalizeDashboardText`, then as
+ * written, both by UTF-16 code unit. Never locale collation.
+ */
+export function compareDashboardText(a: string, b: string): number {
+  return compareCodeUnits(normalizeDashboardText(a), normalizeDashboardText(b)) || compareCodeUnits(a, b);
+}

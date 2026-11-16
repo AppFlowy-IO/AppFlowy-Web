@@ -105,4 +105,30 @@ describe('PrimaryCell', () => {
       expect(screen.getAllByTestId(`row-document-icon-${rowId}`)).toHaveLength(1);
     });
   });
+
+  it('keeps the title line one text line tall while the row loads and after', async () => {
+    const rowDoc = new Y.Doc() as YDoc;
+    // jsdom has no layout, so check the line box: `min-h-5` is the 20px line of
+    // a `text-sm` title. A row that grew when its data arrived would move the
+    // scroll offset of a grid already scrolled past it.
+    const lineClasses = (element: HTMLElement | null | undefined) => element?.className.split(' ') ?? [];
+
+    renderPrimaryCell(rowDoc);
+
+    const spinner = screen.getByTestId(`primary-cell-loading-${rowId}`);
+
+    expect(lineClasses(spinner.parentElement)).toEqual(expect.arrayContaining(['min-h-5', 'items-center']));
+
+    act(() => {
+      rowDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database_row, new Y.Map());
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Row title')).toBeTruthy();
+    });
+    expect(screen.queryByTestId(`primary-cell-loading-${rowId}`)).toBeNull();
+    expect(lineClasses(screen.getByText('Row title').parentElement)).toEqual(
+      expect.arrayContaining(['min-h-5', 'items-center'])
+    );
+  });
 });

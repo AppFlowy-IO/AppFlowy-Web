@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type UIEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   GroupColumn,
@@ -45,9 +45,9 @@ export const Group = ({ groupId }: GroupProps) => {
 
   if (notFound) return <BoardNoGroup fieldId={fieldId} />;
 
-  if (!fieldId) return null;
-
-  if (!groupRowsReady) {
+  // The grouping field initializes in an effect before the rows can hydrate.
+  // Keep the loading state throughout both stages, including that first render.
+  if (!fieldId || !groupRowsReady) {
     return <KanbanSkeleton includeTitle={false} includeTabs={false} />;
   }
 
@@ -164,7 +164,7 @@ const HydratedGroup = ({ groupId, columns, groupResult, groupingRows, fieldId, g
     [getVerticalScrollContainer, ref]
   );
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
 
     const bottomScrollbar = bottomScrollbarRef.current;

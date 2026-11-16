@@ -231,7 +231,7 @@ export function Cell(props: CellProps<CellType>) {
     <Component
       {...cellProps}
       fieldType={field ? fieldType : undefined}
-      fieldName={field?.get(YjsDatabaseKey.name) as string | undefined}
+      fieldName={field?.get(YjsDatabaseKey.name)}
     />
   );
 

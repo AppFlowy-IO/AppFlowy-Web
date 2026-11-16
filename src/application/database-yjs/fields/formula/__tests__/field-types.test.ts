@@ -334,6 +334,38 @@ describe('Number', () => {
 });
 
 describe('Date', () => {
+  it.each([false, true])('compares dates with Include time set to %s', (includeTime) => {
+    const row = createRow('same-day', {
+      'f-date': {
+        type: FieldType.DateTime,
+        data: String(dayjs(NOW).hour(16).unix()),
+        extra: { include_time: includeTime },
+      },
+    }).row;
+
+    expect(run('today() == prop("Due")', row).rawBoolean).toBe(!includeTime);
+    expect(run('today() != prop("Due")', row).rawBoolean).toBe(includeTime);
+    expect(run('today() < prop("Due")', row).rawBoolean).toBe(includeTime);
+    expect(run('today() >= prop("Due")', row).rawBoolean).toBe(!includeTime);
+    expect(run('prop("Due") < dateAdd(today(), 1, "days")', row).rawBoolean).toBe(true);
+    expect(run('now() < prop("Due")', row).rawBoolean).toBe(true);
+  });
+
+  it('compares both calendar dates of a range', () => {
+    const row = createRow('same-days', {
+      'f-date': {
+        type: FieldType.DateTime,
+        data: String(JOINED.hour(14).unix()),
+        extra: { is_range: true, end_timestamp: String(TRIP_END.hour(19).unix()), include_time: false },
+      },
+    }).row;
+
+    expect(run('prop("Due") == dateRange(parseDate("2024-03-10"), parseDate("2024-03-17"))', row).rawBoolean).toBe(true);
+    expect(run('prop("Due") == dateRange(parseDate("2024-03-10"), parseDate("2024-03-18"))', row).rawBoolean).toBe(
+      false
+    );
+  });
+
   it('reads a date range and its parts', () => {
     expect(run('formatDate(dateStart(prop("Due")), "YYYY-MM-DD")').text).toBe('2024-03-10');
     expect(run('formatDate(dateEnd(prop("Due")), "YYYY-MM-DD")').text).toBe('2024-03-17');

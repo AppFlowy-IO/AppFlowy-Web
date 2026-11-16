@@ -37,110 +37,150 @@ export function useGlobalCommentContext() {
   return context;
 }
 
+type ReactionSnapshot = Record<string, Reaction[]> | null;
+type ReactionIntent = { commentId: string; reactionType: string; user: AFWebUser; added: boolean };
+type ReactionQueue = { confirmed: boolean; pending: number; tail: Promise<void> };
+
+/** Apply an explicit membership; React never decides which request an event sends. */
+function applyReactionIntent(previous: ReactionSnapshot, intent: ReactionIntent): Record<string, Reaction[]> {
+  const { commentId, reactionType, user, added } = intent;
+  const reactions = previous?.[commentId] ?? [];
+  const existing = reactions.find((reaction) => reaction.reactionType === reactionType);
+  const otherUsers = existing?.reactUsers.filter((item) => item.uuid !== user.uuid) ?? [];
+  const next = { commentId, reactionType, reactUsers: added ? [...otherUsers, user] : otherUsers };
+
+  return {
+    ...previous,
+    [commentId]: existing
+      ? reactions.map((reaction) => (reaction === existing ? next : reaction))
+      : [...reactions, next],
+  };
+}
+
 export function useLoadReactions() {
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
   const currentUser = useCurrentUserOptional();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
   const currentUserAvatar = useMemo(() => getUserIconUrl(currentUser, workspaceAvatar), [currentUser, workspaceAvatar]);
-  const [reactions, setReactions] = useState<Record<string, Reaction[]> | null>(null);
-  const fetchReactions = useCallback(async () => {
-    if (!viewId) return;
-
-    try {
-      const reactions = await PublishService.getReactions(viewId);
-
-      setReactions(reactions);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [viewId]);
+  const userUuid = currentUser?.uuid;
+  // The synchronous snapshot preserves rapid clicks before React commits. Each
+  // page/user session owns its requests so an old completion cannot change it.
+  const session = useMemo(
+    () => ({
+      viewId,
+      userUuid,
+      active: false,
+      loading: true,
+      reactions: null as ReactionSnapshot,
+      changes: new Map<string, ReactionIntent>(),
+      queues: new Map<string, ReactionQueue>(),
+      load: Promise.resolve(),
+    }),
+    [viewId, userUuid]
+  );
+  const [state, setState] = useState<{ session: typeof session; reactions: ReactionSnapshot }>({
+    session,
+    reactions: null,
+  });
+  const publishIntent = useCallback(
+    (key: string, intent: ReactionIntent) => {
+      if (session.loading) session.changes.set(key, intent);
+      session.reactions = applyReactionIntent(session.reactions, intent);
+      setState({ session, reactions: session.reactions });
+    },
+    [session]
+  );
 
   useEffect(() => {
-    void fetchReactions();
-  }, [fetchReactions]);
+    let current = true;
+
+    session.active = true;
+    session.load = (async () => {
+      if (!session.viewId) return;
+      try {
+        let reactions = await PublishService.getReactions(session.viewId);
+
+        if (!current) return;
+        // Requests wait for this baseline, while the UI can already reflect
+        // clicks. Rebase their rollback value without erasing optimistic intent.
+        for (const [key, intent] of session.changes) {
+          const queue = session.queues.get(key);
+
+          if (queue)
+            queue.confirmed =
+              reactions[intent.commentId]?.some(
+                (reaction) =>
+                  reaction.reactionType === intent.reactionType &&
+                  reaction.reactUsers.some((user) => user.uuid === intent.user.uuid)
+              ) ?? false;
+          reactions = applyReactionIntent(reactions, intent);
+        }
+
+        session.reactions = reactions;
+        setState({ session, reactions });
+      } catch (error) {
+        if (current) console.error(error);
+      } finally {
+        if (current) {
+          session.loading = false;
+          session.changes.clear();
+        }
+      }
+    })();
+    return () => {
+      current = false;
+      session.active = false;
+    };
+  }, [session]);
 
   const toggleReaction = useCallback(
     async (commentId: string, reactionType: string) => {
-      try {
-        if (!viewId) return;
-        let isAdded = true;
+      if (!viewId || !currentUser?.uuid || !reactionType || !session.active) return;
+      const key = JSON.stringify([commentId, reactionType]);
+      const hasReacted =
+        session.reactions?.[commentId]?.some(
+          (reaction) =>
+            reaction.reactionType === reactionType && reaction.reactUsers.some((user) => user.uuid === currentUser.uuid)
+        ) ?? false;
+      const intent: ReactionIntent = {
+        commentId,
+        reactionType,
+        user: { uuid: currentUser.uuid, name: currentUser.name || '', avatarUrl: currentUserAvatar || null },
+        added: !hasReacted,
+      };
+      const queue = session.queues.get(key) ?? { confirmed: hasReacted, pending: 0, tail: Promise.resolve() };
 
-        setReactions((prev) => {
-          const commentReactions = prev?.[commentId] || [];
-          const reaction = commentReactions.find((reaction) => reaction.reactionType === reactionType);
-          const reactUsers = reaction?.reactUsers || [];
-          const hasReacted = reactUsers.some((user) => user.uuid === currentUser?.uuid);
-          let newReaction: Reaction | null = null;
-          let index = -1;
-          const reactUser = {
-            uuid: currentUser?.uuid || '',
-            name: currentUser?.name || '',
-            avatarUrl: currentUserAvatar || null,
-          };
-
-          // If the reaction does not exist, create a new reaction.
-          if (!reaction) {
-            index = commentReactions.length;
-            newReaction = {
-              reactionType,
-              reactUsers: [reactUser],
-              commentId,
-            };
-          } else {
-            let newReactUsers: AFWebUser[] = [];
-
-            // If the user has not reacted, add the user to the reaction.
-            if (!hasReacted) {
-              newReactUsers = [...reactUsers, reactUser];
-
-              // If the user has reacted, remove the user from the reaction.
-            } else {
-              isAdded = false;
-              newReactUsers = reactUsers.filter((user) => user.uuid !== currentUser?.uuid);
-            }
-
-            newReaction = {
-              reactionType,
-              reactUsers: newReactUsers,
-              commentId,
-            };
-            index = commentReactions.findIndex((reaction) => reaction.reactionType === reactionType);
-          }
-
-          const newReactions = [...commentReactions];
-
-          if (!newReaction) return prev;
-          // If the reaction does not exist, add the reaction to the list.
-          if (index === -1) {
-            newReactions.push(newReaction);
-            // If the reaction exists, update the reaction.
-          } else {
-            newReactions.splice(index, 1, newReaction);
-          }
-
-          return {
-            ...prev,
-            [commentId]: newReactions,
-          };
-        });
-
+      session.queues.set(key, queue);
+      queue.pending += 1;
+      publishIntent(key, intent);
+      // Serialize only this reaction: a slow add must settle before its remove.
+      queue.tail = queue.tail.then(async () => {
+        await session.load;
+        if (!session.active) return;
         try {
-          if (isAdded) {
+          if (intent.added) {
             await PublishService.addReaction(viewId, commentId, reactionType);
           } else {
             await PublishService.removeReaction(viewId, commentId, reactionType);
           }
-        } catch (e) {
-          console.error(e);
+
+          queue.confirmed = intent.added;
+        } catch (error) {
+          console.error(error);
+        } finally {
+          queue.pending -= 1;
+          if (queue.pending === 0) {
+            session.queues.delete(key);
+            if (session.active) publishIntent(key, { ...intent, added: queue.confirmed });
+          }
         }
-      } catch (e) {
-        console.error(e);
-      }
+      });
+      return queue.tail;
     },
-    [currentUser, currentUserAvatar, viewId]
+    [currentUser, currentUserAvatar, publishIntent, session, viewId]
   );
 
-  return { reactions, toggleReaction };
+  return { reactions: state.session === session ? state.reactions : null, toggleReaction };
 }
 
 export function useLoadComments() {

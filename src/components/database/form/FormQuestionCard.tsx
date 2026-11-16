@@ -1,10 +1,15 @@
-import { ArrowDown, ArrowUp, MoreHorizontal, Star, Trash2, Type as TypeIcon } from 'lucide-react';
+import { ReactComponent as TypeIcon } from '@/assets/icons/long_text.svg';
+import { ReactComponent as Trash2 } from '@/assets/icons/delete.svg';
+import { ReactComponent as Star } from '@/assets/icons/star.svg';
+import { ReactComponent as MoreHorizontal } from '@/assets/icons/more.svg';
+import { ReactComponent as List } from '@/assets/icons/list.svg';
+import { ReactComponent as ArrowUp } from '@/assets/icons/arrow_up.svg';
+import { ReactComponent as ArrowDown } from '@/assets/icons/arrow_down.svg';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { FieldType } from '@/application/database-yjs/database.type';
 import type { FormWriter } from '@/application/database-yjs/form-writer';
 import type { YDatabaseField } from '@/application/types';
-import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,10 +17,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
+import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
+import { FormQuestionTitle } from './FormQuestionTitle';
 import { FormQuestionPlaceholder } from './FormQuestionPlaceholder';
 import { FormSelectOptionsEditor } from './FormSelectOptionsEditor';
 import type { AddFormSelectOption } from './FormSelectOptionsEditor';
@@ -77,13 +83,9 @@ function _FormQuestionCard({
   /** Current page permission, shared by the parent across branch unmounts. */
   canWriteRef?: React.RefObject<boolean>;
 }) {
-  // Tracks ONLY the dropdown's open state — needed so the 3-dot
-  // trigger stays visible while the menu is open even if the user
-  // moves the cursor off the card. Border color and trigger visibility
-  // for the *unopened* state are driven by Tailwind `group-hover:`
-  // (no React state → no re-render per mouse-enter / leave on every
-  // card in the list).
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Desktop visibility follows the pointer, independently of the popup.
+  // Touch/pen users retain the mounted control after their first contact.
+  const [usesTouchInput, setUsesTouchInput] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState(description);
   const descriptionDraftRef = useRef(description);
   const lastCommittedDescription = useRef(description);
@@ -92,7 +94,6 @@ function _FormQuestionCard({
   const deferredExternalDescriptionRef = useRef<string | null>(null);
   const descriptionVisibleRef = useRef(descriptionVisible);
   const descriptionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const helper = helperText(fieldType);
   const isSelect = fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect;
 
   const clearDescriptionTimer = useCallback(() => {
@@ -170,24 +171,37 @@ function _FormQuestionCard({
       data-required={required ? 'true' : 'false'}
       data-description-visible={descriptionVisible ? 'true' : 'false'}
       data-long-answer={longAnswer ? 'true' : 'false'}
-      className='group relative rounded-md border border-line-divider px-5 py-4 transition-colors hover:cursor-grab hover:border-fill-default'
+      onPointerDownCapture={(event) => {
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') setUsesTouchInput(true);
+      }}
+      className='group relative rounded-xl border border-border-primary px-4 py-3 transition-colors hover:cursor-grab hover:border-border-theme-thick'
     >
       {/*
         Stop mouse-down here so clicking the 3-dot trigger doesn't
         race the RBD drag sensor (which is bound to this card's
         wrapper `<div>` — see `DraggableQuestionList`).
       */}
-      <div className='absolute right-3 top-3' onMouseDownCapture={(e) => e.stopPropagation()}>
-        <div className={cn('transition-opacity group-hover:opacity-100', menuOpen ? 'opacity-100' : 'opacity-0')}>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <div className='absolute right-4 top-3' onMouseDownCapture={(e) => e.stopPropagation()}>
+        <div
+          className={cn(
+            'transition-opacity [transition-duration:120ms] group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100',
+            usesTouchInput ? 'opacity-100' : 'opacity-0'
+          )}
+        >
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger
               data-testid='form-question-menu-trigger'
               aria-label='Question options'
-              className='rounded p-1 hover:bg-fill-content'
+              className='flex h-8 w-8 items-center justify-center rounded-md p-1.5 text-text-secondary hover:bg-fill-content-hover hover:text-icon-primary'
             >
-              <MoreHorizontal size={16} />
+              <MoreHorizontal className='h-5 w-5' />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align='end' className='w-56'>
+            <DropdownMenuContent
+              side='bottom'
+              align='end'
+              sideOffset={0}
+              className='max-h-[var(--radix-dropdown-menu-content-available-height)] w-60'
+            >
               <DropdownMenuItem
                 role='menuitemcheckbox'
                 aria-checked={required}
@@ -198,7 +212,7 @@ function _FormQuestionCard({
                 className='flex items-center justify-between'
               >
                 <span className='flex items-center gap-2'>
-                  <Star size={14} />
+                  <Star className='h-5 w-5 text-text-secondary' />
                   Required
                 </span>
                 <Switch aria-hidden tabIndex={-1} className='pointer-events-none' checked={required} />
@@ -213,7 +227,7 @@ function _FormQuestionCard({
                 className='flex items-center justify-between'
               >
                 <span className='flex items-center gap-2'>
-                  <TypeIcon size={14} />
+                  <List className='h-5 w-5 text-text-secondary' />
                   Description
                 </span>
                 <Switch aria-hidden tabIndex={-1} className='pointer-events-none' checked={descriptionVisible} />
@@ -229,7 +243,7 @@ function _FormQuestionCard({
                   className='flex items-center justify-between'
                 >
                   <span className='flex items-center gap-2'>
-                    <TypeIcon size={14} />
+                    <TypeIcon className='h-5 w-5 text-text-secondary' />
                     Long answer
                   </span>
                   <Switch aria-hidden tabIndex={-1} className='pointer-events-none' checked={longAnswer} />
@@ -240,14 +254,14 @@ function _FormQuestionCard({
                 disabled={index === 0}
                 onSelect={() => writer.reorderQuestion(questionId, index - 1, visibleQuestionIds)}
               >
-                <ArrowUp size={14} />
+                <ArrowUp className='h-5 w-5 text-text-secondary' />
                 Move up
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={index === questionCount - 1}
                 onSelect={() => writer.reorderQuestion(questionId, index + 1, visibleQuestionIds)}
               >
-                <ArrowDown size={14} />
+                <ArrowDown className='h-5 w-5 text-text-secondary' />
                 Move down
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -255,9 +269,9 @@ function _FormQuestionCard({
                 // Notion-parity copy. Removes only the projection entry —
                 // the underlying database field stays in the Grid tab.
                 onSelect={() => writer.removeQuestion(questionId)}
-                className='text-fill-default focus:text-fill-default'
+                variant='destructive'
               >
-                <Trash2 size={14} />
+                <Trash2 className='h-5 w-5' />
                 Remove from form
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -265,28 +279,10 @@ function _FormQuestionCard({
         </div>
       </div>
 
-      <div className='flex items-center gap-1.5 pr-8'>
-        <FieldTypeIcon type={fieldType} className='h-4 w-4 shrink-0 text-text-tertiary' />
-        <h2 className='text-base font-semibold'>{name}</h2>
-        {required && (
-          <span className='ml-0.5 text-fill-default' aria-label='required'>
-            *
-          </span>
-        )}
-      </div>
-
-      {/*
-        Helper subtitle — matches the desktop's `_PreviewQuestionCard._helperText`
-        and Notion's authoring card. Single-select reads
-        "Respondents can select up to 1"; multi-select / relation /
-        person read "Respondents can select as many as they like".
-        Other types don't surface a helper because the affordance
-        (e.g. single text input) is self-evident from the placeholder.
-      */}
-      {helper && <p className='mt-1 text-xs text-text-caption'>{helper}</p>}
+      <FormQuestionTitle name={name} fieldType={fieldType} required={required} reserveMenu />
 
       {descriptionVisible && (
-        <Input
+        <TextareaAutosize
           variant='ghost'
           value={descriptionDraft}
           onChange={(e) => {
@@ -325,11 +321,11 @@ function _FormQuestionCard({
           // phase so the stop happens before RBD's sensor fires.
           onMouseDownCapture={(e) => e.stopPropagation()}
           placeholder='Add description'
-          className='mt-1 italic'
+          className='mt-1 !px-0 !py-0 text-sm italic'
         />
       )}
 
-      <div className='mt-3'>
+      <div className='mt-4'>
         {/*
           Single-/Multi-select questions render an editable option list
           (Notion / desktop parity). All other types stay as static
@@ -348,19 +344,3 @@ function _FormQuestionCard({
 }
 
 const ALWAYS_WRITABLE: React.RefObject<boolean> = { current: true };
-
-/// Helper subtitle shown between the question title and its body. Single-
-/// select reads "up to 1"; multi-value pickers (multi-select, relation,
-/// person) read "as many as they like". Returns `null` for types where
-/// the affordance is self-evident (text/number/date/checkbox/url/files).
-function helperText(fieldType: FieldType): string | null {
-  if (fieldType === FieldType.SingleSelect) {
-    return 'Respondents can select up to 1';
-  }
-
-  if (fieldType === FieldType.MultiSelect || fieldType === FieldType.Relation || fieldType === FieldType.Person) {
-    return 'Respondents can select as many as they like';
-  }
-
-  return null;
-}

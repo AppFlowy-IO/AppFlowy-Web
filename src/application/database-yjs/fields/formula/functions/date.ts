@@ -109,10 +109,11 @@ function dateComponent(
 }
 
 function shift(value: FormulaDate, amount: number, unit: ManipulateType, sign: 1 | -1): FormulaDate {
+  // An explicit sub-day shift makes the time meaningful even for a date-only input.
   return {
     start: dayjs(value.start).add(sign * amount, unit).valueOf(),
     end: value.end === undefined ? undefined : dayjs(value.end).add(sign * amount, unit).valueOf(),
-    includeTime: value.includeTime,
+    includeTime: value.includeTime || unit === 'hour' || unit === 'minute' || unit === 'second',
   };
 }
 

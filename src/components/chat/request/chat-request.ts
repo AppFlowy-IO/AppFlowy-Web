@@ -344,7 +344,8 @@ export class ChatRequest {
       model_name?: string;
     },
     onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void,
-    onProgress?: (step: string) => void
+    onProgress?: (step: string) => void,
+    signal?: AbortSignal
   ) {
     const baseUrl = this.axiosInstance.defaults.baseURL;
     const url = `${baseUrl}/api/chat/${this.workspaceId}/${this.chatId}/answer/stream`;
@@ -354,13 +355,14 @@ export class ChatRequest {
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined = undefined;
 
     const cancel = () => {
-      void reader?.cancel();
-      reader?.releaseLock();
-      console.log('Stream canceled');
+      // The iterator releases its lock after a pending read settles. Fetch's
+      // AbortSignal may already have errored or released this reader.
+      void reader?.cancel().catch(() => undefined);
     };
 
     const response = await fetch(url, {
       method: 'POST',
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,

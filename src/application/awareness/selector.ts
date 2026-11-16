@@ -128,6 +128,7 @@ export function useUsersSelector(awareness?: Awareness) {
 export function useRemoteSelectionsSelector(awareness?: Awareness) {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const editor = useSlate();
+  const children = editor.children;
   const localDeviceId = CollabService.getDeviceId();
 
   useEffect(() => {
@@ -182,15 +183,16 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
       );
     };
 
+    renderCursors();
     awareness?.on('change', renderCursors);
     return () => awareness?.off('change', renderCursors);
   }, [awareness, localDeviceId]);
 
   const cursorsWithBaseRange = useMemo(() => {
-    if (!cursors.length || !editor || !editor.children[0]) return [];
+    if (!cursors.length || !children[0]) return [];
 
     const result = cursors.map((cursor) => {
-      const baseRange = convertAwarenessSelection(cursor.selection, editor.children);
+      const baseRange = convertAwarenessSelection(cursor.selection, children);
 
       return {
         ...cursor,
@@ -200,7 +202,7 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
 
     Log.debug('🎯 Final cursors array:', result);
     return result;
-  }, [cursors, editor]);
+  }, [cursors, children]);
 
   return cursorsWithBaseRange;
 }
