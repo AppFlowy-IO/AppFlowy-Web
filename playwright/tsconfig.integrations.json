@@ -22,6 +22,7 @@
     "support/calendar-event-drag.fixture.tsx",
     "../playwright.google-drive.config.ts",
     "support/google-drive.fixture.tsx",
+    "support/row-text-page-link.fixture.tsx",
     "fixtures/form/**/*.tsx",
     "e2e/form/**/*.ts"
   ],
