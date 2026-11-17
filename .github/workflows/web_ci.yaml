@@ -218,6 +218,11 @@ jobs:
         if: failure()
         run: |
           docker logs appflowy-web-test || true
+          # The SSR image writes nginx errors to a file, outside docker logs.
+          # Include upstream failures when a runtime smoke request returns 502.
+          if [ "${{ matrix.dockerfile }}" = docker/Dockerfile.ssr ]; then
+            docker exec appflowy-web-test tail -n 100 /var/log/nginx/error.log || true
+          fi
 
       - name: Cleanup container
         if: always()
