@@ -5,6 +5,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import {
+  MentionSearchOptions,
   MentionSearchRequest,
   Types,
   UIVariant,
@@ -48,6 +49,7 @@ import {
 } from '@/components/app/hooks/useViewOperations';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
+import { recordMentionViewOpened } from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
@@ -83,12 +85,12 @@ function AppPage() {
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
   const searchMentions = useCallback(
-    (request: MentionSearchRequest) => {
+    (request: MentionSearchRequest, options?: MentionSearchOptions) => {
       if (!workspaceId) {
         return Promise.reject(new Error('workspaceId is required'));
       }
 
-      return WorkspaceService.searchMentions(workspaceId, request);
+      return WorkspaceService.searchMentions(workspaceId, request, options);
     },
     [workspaceId]
   );
@@ -345,6 +347,14 @@ function AppPage() {
 
     return () => clearTimeout(recoveryTimer);
   }, [viewId, layout, view, doc, loadPageDoc, getDocViewId]);
+
+  // An AI chat opens here, never through loadView, which records every other open. The mention
+  // picker's local candidates count this one too, so a bare @ lifts a chat this tab created as an
+  // open, not for 15 minutes as a creation the user has not opened (MEN-WEB-09).
+  useEffect(() => {
+    if (!workspaceId || !viewId || layout !== ViewLayout.AIChat || !aiEnabled) return;
+    recordMentionViewOpened(workspaceId, viewId);
+  }, [aiEnabled, layout, viewId, workspaceId]);
 
   useEffect(() => {
     if (layout === ViewLayout.AIChat) {

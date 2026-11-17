@@ -136,6 +136,148 @@ beforeEach(() => {
 
 afterEach(() => jest.useRealTimers());
 
+test('ordinary sync traffic cannot restart a definitive restore-state denial after its cooldown', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+
+  jest.mocked(getDatabaseRestoreState).mockResolvedValueOnce({ database_restore_id: null, version: null })
+    .mockRejectedValue({ code: ERROR_CODE.NOT_HAS_PERMISSION, httpStatus: 403 });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await act(async () => {
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(true);
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, 'changed-version')).toBe(false);
+  });
+  for (let tick = 0; tick < 3; tick += 1) {
+    jest.setSystemTime(Date.now() + 5000);
+    await act(async () => {
+      expect(await result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow)).toBe(false);
+      expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(false);
+    });
+  }
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+  expect(startDrainAll).not.toHaveBeenCalled();
+  unmount();
+});
+
+test.each(['online', 'focus', 'permission', 'reopen', 'socket'])(
+  '%s permits a denied database authority retry without granting sync before its response', async (trigger) => {
+    jest.useFakeTimers();
+    const f = fixture();
+    const events = new EventEmitter();
+    const state = { database_restore_id: null, version: null };
+
+    jest.mocked(getDatabaseRestoreState).mockResolvedValueOnce(state)
+      .mockRejectedValue({ httpStatus: 403 });
+    const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+      refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+      eventEmitter: events, register: f.register, unregister: f.unregister, scheduleDeferredCleanup: jest.fn(),
+    }));
+
+    await act(async () => {
+      await result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+      expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, 'version')).toBe(false);
+    });
+    let succeed!: (value: typeof state) => void;
+
+    jest.mocked(getDatabaseRestoreState).mockReturnValue(new Promise((resolve) => { succeed = resolve; }));
+    await act(async () => {
+      if (trigger === 'socket') {
+        result.current.prepareReconnect();
+        void result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow);
+      } else if (trigger === 'permission') {
+        events.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'ancestor', reason: 0 });
+      } else if (trigger === 'reopen') {
+        f.refs.contextRefCounts.current.delete('database');
+        result.current.prepareDatabaseContext(f.contexts.get('database')!);
+        f.refs.contextRefCounts.current.set('database', 1);
+      } else {
+        window.dispatchEvent(new Event(trigger));
+      }
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+    expect(startDrainAll).not.toHaveBeenCalled();
+    let rowGuard!: Promise<boolean>;
+
+    await act(async () => {
+      rowGuard = result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow);
+    });
+    expect(startDrainAll).not.toHaveBeenCalled();
+    await act(async () => { succeed(state); });
+    expect(await rowGuard).toBe(true);
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+    expect(startDrainAll).toHaveBeenCalledTimes(1);
+    unmount();
+  }
+);
+
+test('switching workspace and user does not reuse another session access denial', async () => {
+  const f = fixture();
+  const state = { database_restore_id: null, version: null };
+
+  jest.mocked(getDatabaseRestoreState).mockResolvedValueOnce(state).mockRejectedValue({ httpStatus: 403 });
+  const { result, rerender, unmount } = renderHook(({ workspaceId, userId }) => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId, userId, enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister, scheduleDeferredCleanup: jest.fn(),
+  }), { initialProps: { workspaceId: 'workspace', userId: 'user' } });
+
+  await act(async () => {
+    await result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+    await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, 'version');
+  });
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue(state);
+  rerender({ workspaceId: 'different-workspace', userId: 'different-user' });
+  await act(async () => {
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(true);
+  });
+  expect(getDatabaseRestoreState).toHaveBeenLastCalledWith('different-workspace', 'database');
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+  unmount();
+});
+
+test.each(['online', 'focus', 'permission', 'socket'])(
+  '%s recovers a denied row-only outbox without resuming routine root polling', async (trigger) => {
+    jest.useFakeTimers();
+    const f = fixture();
+    const events = new EventEmitter();
+    const state = { database_restore_id: null, version: null };
+
+    jest.mocked(getDatabaseRestoreState).mockResolvedValueOnce(state).mockRejectedValue({ httpStatus: 403 });
+    const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+      refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+      eventEmitter: events, register: f.register, unregister: f.unregister, scheduleDeferredCleanup: jest.fn(),
+    }));
+
+    await act(async () => { await result.current.ensureDatabaseRestoreCurrent('database', Types.Database); });
+    f.contexts.delete('database');
+    f.refs.contextRefCounts.current.delete('database');
+    await act(async () => {
+      // The restore hint requires authority even though only the parent-owned row remains open.
+      expect(await result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow, 'restore-hint')).toBe(false);
+    });
+    jest.mocked(getDatabaseRestoreState).mockResolvedValue(state);
+    await act(async () => {
+      if (trigger === 'socket') {
+        result.current.prepareReconnect();
+        void result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow);
+      } else if (trigger === 'permission') {
+        events.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'ancestor', reason: 0 });
+      } else {
+        window.dispatchEvent(new Event(trigger));
+      }
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+    expect(startDrainAll).toHaveBeenCalledTimes(1);
+    await act(async () => { jest.advanceTimersByTime(900_000); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+    unmount();
+  }
+);
+
 test('all views and rows share a database check on open and every five minutes, stopping when closed', async () => {
   jest.useFakeTimers();
   const f = fixture();

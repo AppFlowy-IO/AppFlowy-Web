@@ -46,6 +46,7 @@ import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { DatabaseRestoreNoticeProvider } from '../DatabaseRestoreNotice';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
+import { useMentionLocalIndexSources } from '../hooks/useMentionLocalIndexSources';
 import { usePageOperations } from '../hooks/usePageOperations';
 import { useRowOperations } from '../hooks/useRowOperations';
 import { useViewOperations } from '../hooks/useViewOperations';
@@ -239,6 +240,16 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     ensureViewVisibleInOutline,
     revalidateSidebarOutline,
   } = useWorkspaceData();
+
+  // The mention picker's local candidates read the same outline, recent views and trash.
+  useMentionLocalIndexSources({
+    workspaceId: currentWorkspaceId,
+    requesterId,
+    outline,
+    recentViews,
+    trashList,
+    eventEmitter: syncContext.eventEmitter,
+  });
 
   const breadcrumbViewId = useMemo(() => {
     return resolveSidebarSelectedViewId({

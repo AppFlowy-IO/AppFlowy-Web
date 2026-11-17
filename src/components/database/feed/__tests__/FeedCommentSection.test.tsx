@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { COMMENT_MENTION_RANKING_OVERRIDE_KEY } from '@/application/comment-mention-ranking';
 import { useDatabaseContext, useRowMap } from '@/application/database-yjs';
 import { useAddCommentDispatch } from '@/application/database-yjs/comment_dispatch';
-import { addComment } from '@/application/database-yjs/row_comment';
-import { YDoc, YjsEditorKey } from '@/application/types';
+import { addComment, deleteComment } from '@/application/database-yjs/row_comment';
+import { MentionablePerson, YDoc, YjsEditorKey } from '@/application/types';
 
 import { FeedCommentSection } from '../FeedCommentSection';
 import { useFeedMembers } from '../FeedMembersContext';
@@ -332,6 +333,81 @@ describe('FeedCommentSection', () => {
     expect(input.selectionStart).toBe(input.value.length);
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(addCommentDispatch).toHaveBeenCalledWith(`@[Alice](${personId}) please review`, 'me', undefined, []);
+  });
+
+  describe('composer @ picker', () => {
+    const member = (uid: number, name: string): MentionablePerson => ({
+      person_id: `a318b9a0-6e2a-4c85-9638-16fd152af6e${uid}`,
+      name,
+      email: `${name.toLowerCase()}@example.com`,
+      uid: String(uid),
+      avatar_url: null,
+      cover_image_url: null,
+      custom_image_url: null,
+      description: null,
+      role: 1,
+      invited: false,
+      last_mentioned_at: null,
+    });
+    const alice = member(1, 'Alice');
+    const bob = member(2, 'Bob');
+    const cara = member(3, 'Cara');
+    const dan = member(4, 'Dan');
+
+    function openPicker() {
+      render(<FeedCommentSection rowId='row-1' />);
+      fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+      fireEvent.change(screen.getByTestId('feed-add-comment-input-row-1'), { target: { value: '@' } });
+      return screen.getAllByRole('option').map((option) => option.textContent);
+    }
+
+    beforeEach(() => {
+      // Alice writes the comment. Whoever commented on the row sorts after Bob and Cara by name.
+      mockUseFeedMembers.mockReturnValue({
+        ...mockUseFeedMembers(),
+        currentCommentAuthorId: alice.person_id,
+        mentionableUsers: [alice, bob, cara, dan],
+      });
+    });
+    afterEach(() => window.localStorage.clear());
+
+    it.each([
+      ['legacy', ['Alice', 'Bob', 'Cara', 'Dan']],
+      ['ranked', ['Dan', 'Bob', 'Cara', 'Alice']],
+    ] as const)('lists %s order: ranked puts the commenters first and the author last (%j)', (ranking, expected) => {
+      const rowDoc = createRowDoc();
+
+      if (ranking === 'ranked') window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+      mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+      addComment(rowDoc, 'First', dan.person_id);
+      expect(openPicker()).toEqual(expected);
+    });
+
+    it('keeps the participants current when the comments change but their count does not', () => {
+      const rowDoc = createRowDoc();
+
+      window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+      mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+      jest.useFakeTimers({ now: new Date('2024-06-15T10:00:00Z') });
+      const first = addComment(rowDoc, 'First', bob.person_id);
+
+      jest.setSystemTime(new Date('2024-06-15T10:00:20Z'));
+      addComment(rowDoc, 'Second', dan.person_id);
+      render(<FeedCommentSection rowId='row-1' />);
+
+      // One remote change replaces Bob's comment with an older one of Cara's: same count, same latest.
+      jest.setSystemTime(new Date('2024-06-15T10:00:10Z'));
+      act(() => {
+        rowDoc.transact(() => {
+          deleteComment(rowDoc, first);
+          addComment(rowDoc, 'Third', cara.person_id);
+        });
+      });
+      jest.useRealTimers();
+      fireEvent.click(screen.getByTestId('feed-add-comment-collapsed-row-1'));
+      fireEvent.change(screen.getByTestId('feed-add-comment-input-row-1'), { target: { value: '@' } });
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Dan', 'Cara', 'Bob', 'Alice']);
+    });
   });
 
   it('keeps the draft and disables submission while uploading or when an upload fails', async () => {

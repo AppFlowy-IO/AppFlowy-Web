@@ -6,8 +6,14 @@ import { MentionablePerson, MentionPersonRole } from '@/application/types';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import {
   getMentionableUserIndex,
+  loadMentionableUsers,
   useMentionableUsersWithAutoFetch,
 } from '@/components/database/components/cell/person/useMentionableUsers';
+import {
+  clearMentionLocalIndex,
+  getMentionLocalSnapshot,
+  setMentionIndexSources,
+} from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
 
 jest.mock('@/application/db', () => ({
   db: {
@@ -173,5 +179,44 @@ describe('useMentionableUsersWithAutoFetch', () => {
       expect(deleteProfiles).toHaveBeenCalledTimes(1);
       expect(mockProfiles.bulkPut).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('mentionable users in the mention picker’s local candidates', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.clear();
+    clearMentionLocalIndex();
+  });
+
+  it('gives every roster it caches, from the API or a fresh disk copy, to the local index', async () => {
+    const workspaceId = 'roster-workspace';
+    const users = [person('9007199254740993', 'Nathan'), person('9007199254740994', 'Eva')];
+    const equals = jest.fn(() => ({ delete: jest.fn().mockResolvedValue(undefined), toArray: jest.fn().mockResolvedValue([]) }));
+
+    mockProfiles.where.mockReturnValue({ equals });
+    mockProfiles.bulkPut.mockResolvedValue(undefined);
+    mockWorkspaceService.getMentionableUsers.mockResolvedValue(users);
+    setMentionIndexSources(workspaceId, { outline: [] });
+
+    await expect(loadMentionableUsers(workspaceId)).resolves.toBe(users);
+    expect(getMentionLocalSnapshot(workspaceId).people).toBe(users);
+
+    const diskWorkspaceId = 'roster-disk-workspace';
+    const nathan = person('9007199254740993', 'Nathan');
+    const diskEquals = jest.fn(() => ({
+      delete: jest.fn().mockResolvedValue(undefined),
+      toArray: jest
+        .fn()
+        .mockResolvedValue([{ ...nathan, workspace_id: diskWorkspaceId, user_uuid: nathan.person_id, updated_at: 0 }]),
+    }));
+
+    localStorage.setItem(`af_mentionable_users_synced_at:${diskWorkspaceId}`, String(Date.now()));
+    mockProfiles.where.mockReturnValue({ equals: diskEquals });
+
+    // Loaded before the app gives the workspace's outline: kept until it does.
+    await loadMentionableUsers(diskWorkspaceId);
+    setMentionIndexSources(diskWorkspaceId, { outline: [] });
+    expect(getMentionLocalSnapshot(diskWorkspaceId).people.map((user) => user.name)).toEqual(['Nathan']);
   });
 });

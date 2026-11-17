@@ -3224,6 +3224,18 @@
     },
     "mention": {
       "placeholder": "Mention a person or a page or date...",
+      "reason": {
+        "opened": "Opened {{time}}",
+        "created": "Created {{time}}",
+        "onThisPage": "On this page",
+        "justNow": "just now",
+        "minutesAgo_one": "1 min ago",
+        "minutesAgo_other": "{{count}} min ago",
+        "hoursAgo_one": "1 hour ago",
+        "hoursAgo_other": "{{count}} hours ago",
+        "daysAgo_one": "1 day ago",
+        "daysAgo_other": "{{count}} days ago"
+      },
       "page": {
         "label": "Link to page",
         "tooltip": "Click to open page"
@@ -3241,7 +3253,29 @@
       "openTrash": "Open Trash",
       "deletedPage": "Deleted page",
       "trashHint": " - in trash",
-      "morePages": "more pages"
+      "morePages": "more pages",
+      "suggestionsUnavailable": "Suggestions unavailable",
+      "offline": "You're offline",
+      "retry": "Retry",
+      "retrying": "Retrying…",
+      "busyRetryingIn": "Busy, retrying in {{seconds}} s",
+      "updatingSuggestions": "Updating suggestions…"
+    },
+    "mentionMenu": {
+      "suggested": "Suggested",
+      "people": "People",
+      "pages": "Pages",
+      "databases": "Databases",
+      "databaseRows": "Database rows",
+      "dates": "Dates",
+      "dateAndReminder": "Date & Reminder",
+      "links": "Links",
+      "moreResults": "{{count}} more results...",
+      "sendNotification": "Send notification",
+      "createSubPage": "Create \"{{name}}\" sub-page",
+      "createPageIn": "Create \"{{name}}\" page in...",
+      "createNewSubPage": "Create new sub-page",
+      "createNewPageIn": "Create new page in..."
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"

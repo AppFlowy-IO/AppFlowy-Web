@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section People classes. `class` is person_match_class(`query`, `name`, `email`); null is no match.",
+  "cases": [
+    {
+      "id": "name-word-prefix",
+      "query": "an",
+      "name": "Annie Wang",
+      "email": "annie@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "later-name-word-prefix",
+      "query": "an",
+      "name": "Dana Andersen",
+      "email": "dana@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "name-substring",
+      "query": "an",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": "C1"
+    },
+    {
+      "id": "domain-alone-never-matches",
+      "query": "app",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "domain-alone-never-matches-without-a-name",
+      "query": "app",
+      "name": "",
+      "email": "x@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "name-prefix-beats-domain",
+      "query": "app",
+      "name": "Appleton Grey",
+      "email": "grey@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "second-name-word",
+      "query": "grey",
+      "name": "Appleton Grey",
+      "email": "grey@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "accented-name",
+      "query": "jose",
+      "name": "José Álvarez",
+      "email": "jose.alvarez@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "accent-in-name",
+      "query": "zoe",
+      "name": "Zoë Kim",
+      "email": "zk@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "tokens-in-any-order",
+      "query": "wang an",
+      "name": "Annie Wang",
+      "email": "annie@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "two-tokens-one-word",
+      "query": "an an",
+      "name": "Annie Wang",
+      "email": "annie@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "tokens-split-across-fields",
+      "query": "annie appflowy",
+      "name": "Annie Wang",
+      "email": "annie@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "local-part-prefix",
+      "query": "ann",
+      "name": "Zed",
+      "email": "anna.k@x.io",
+      "class": "C0"
+    },
+    {
+      "id": "local-part-word",
+      "query": "alvarez",
+      "name": "José",
+      "email": "jose.alvarez@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "local-part-substring",
+      "query": "lvar",
+      "name": "José",
+      "email": "jose.alvarez@appflowy.io",
+      "class": "C2"
+    },
+    {
+      "id": "blank-name-local-part",
+      "query": "x",
+      "name": "",
+      "email": "x@appflowy.io",
+      "class": "C0"
+    },
+    {"id": "uppercase-address", "query": "ann", "name": "", "email": "ANN@X.IO", "class": "C0"},
+    {
+      "id": "address-query-matches-a-name-word",
+      "query": "brian@",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "full-address-with-at",
+      "query": "@appflowy",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": "C3"
+    },
+    {
+      "id": "full-address-with-dot",
+      "query": "appflowy.io",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": "C3"
+    },
+    {
+      "id": "full-address-without-a-name",
+      "query": "@appflowy.io",
+      "name": "",
+      "email": "x@appflowy.io",
+      "class": "C3"
+    },
+    {
+      "id": "cjk-name-prefix",
+      "query": "王",
+      "name": "王小明",
+      "email": "xiaoming@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "cjk-name-contains",
+      "query": "小明",
+      "name": "王小明",
+      "email": "xiaoming@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "hangul-name-contains",
+      "query": "민수",
+      "name": "김민수",
+      "email": "minsu@appflowy.io",
+      "class": "C0"
+    },
+    {
+      "id": "symbol-in-name",
+      "query": "-",
+      "name": "Mary-Jane Watson",
+      "email": "mj@appflowy.io",
+      "class": "C1"
+    },
+    {
+      "id": "symbol-in-local-part",
+      "query": ".",
+      "name": "Anh Nguyen",
+      "email": "anh.nguyen@appflowy.io",
+      "class": "C2"
+    },
+    {
+      "id": "at-alone-never-matches",
+      "query": "@",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "dot-alone-never-matches-the-domain",
+      "query": ".",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "dash-alone",
+      "query": "-",
+      "name": "Brian Chen",
+      "email": "brian@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "empty-query",
+      "query": "",
+      "name": "Annie Wang",
+      "email": "annie@appflowy.io",
+      "class": null
+    },
+    {
+      "id": "whitespace-query",
+      "query": "  ",
+      "name": "Ann",
+      "email": "ann@appflowy.io",
+      "class": null
+    }
+  ]
+}

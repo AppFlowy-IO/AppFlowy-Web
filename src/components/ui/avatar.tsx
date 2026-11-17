@@ -56,7 +56,6 @@ function Avatar({
 function AvatarImage({ className, src, ...props }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
   const [authenticatedSrc, setAuthenticatedSrc] = React.useState<string>('');
   const [isLoading, setIsLoading] = React.useState(false);
-  const blobUrlRef = React.useRef<string>('');
 
   React.useEffect(() => {
     if (!src) {
@@ -64,34 +63,38 @@ function AvatarImage({ className, src, ...props }: React.ComponentProps<typeof A
       return;
     }
 
-    let isMounted = true;
+    // Set once `src` changes or the component unmounts: an image that loads later is not shown.
+    let stale = false;
+    let ownedBlobUrl: string | undefined;
 
     setIsLoading(true);
 
     Log.debug('[AvatarImage] src', src);
     getImageUrl(src)
       .then((url) => {
-        if (isMounted) {
-          setAuthenticatedSrc(url);
-          blobUrlRef.current = url;
-          setIsLoading(false);
+        // Only a blob fetched here is this image's to revoke; a URL `src` names itself is borrowed.
+        const owned = url !== src ? url : undefined;
+
+        if (stale) {
+          if (owned) revokeBlobUrl(owned);
+          return;
         }
+
+        ownedBlobUrl = owned;
+        setAuthenticatedSrc(url);
+        setIsLoading(false);
       })
       .catch((error) => {
         console.error('Failed to load avatar image:', error);
-        if (isMounted) {
+        if (!stale) {
           setAuthenticatedSrc('');
           setIsLoading(false);
         }
       });
 
     return () => {
-      isMounted = false;
-      // Clean up blob URL if it was created
-      if (blobUrlRef.current) {
-        revokeBlobUrl(blobUrlRef.current);
-        blobUrlRef.current = '';
-      }
+      stale = true;
+      if (ownedBlobUrl) revokeBlobUrl(ownedBlobUrl);
     };
   }, [src]);
 

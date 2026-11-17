@@ -48,3 +48,6 @@ cypress/downloads
 storybook-static
 docs/
 __pycache__/
+
+# The mention replay report (scripts/mention-eval/run-eval.mjs --report)
+mention-eval-report.json

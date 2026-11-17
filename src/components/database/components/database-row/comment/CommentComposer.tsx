@@ -10,6 +10,7 @@ import { ReactComponent as AtIcon } from '@/assets/icons/at.svg';
 import { ReactComponent as AttachmentIcon } from '@/assets/icons/attachment.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.svg';
+import { useCommentMentionPicker } from '@/components/_shared/comment-mention/useCommentMentionPicker';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
@@ -19,7 +20,11 @@ import { CommentDraftContext } from './CommentDraftContext';
 interface CommentComposerProps {
   onSubmit: (content: string, attachments: CommentAttachment[]) => string | undefined;
   placeholder: string;
-  members?: MentionablePerson[];
+  members?: readonly MentionablePerson[];
+  /** People who took part in the discussion, the most recent first; a ranked picker lists them first. */
+  mentionParticipantIds?: readonly string[];
+  /** The commenter, by person id or uid; a ranked picker lists them last. */
+  mentionRequesterId?: string;
   testIds: { collapsed: string; input: string; submit: string; attachment: string };
   onCancel?: () => void;
   initiallyExpanded?: boolean;
@@ -33,11 +38,15 @@ interface CommentComposerProps {
   variant?: 'boxed' | 'inline';
 }
 
+const NO_MEMBERS: readonly MentionablePerson[] = [];
+
 /** Shared by Feed cards and row detail so drafts, attachments and IME behave alike. */
 export function CommentComposer({
   onSubmit,
   placeholder,
-  members = [],
+  members = NO_MEMBERS,
+  mentionParticipantIds,
+  mentionRequesterId,
   testIds,
   onCancel,
   initiallyExpanded = false,
@@ -57,7 +66,6 @@ export function CommentComposer({
   const [uploadError, setUploadError] = useState(false);
   const [mentions, setMentions] = useState<DraftMention[]>([]);
   const [mentionQuery, setMentionQuery] = useState<{ start: number; end: number; text: string } | null>(null);
-  const [selectedMember, setSelectedMember] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const caretAfterRender = useRef<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -66,15 +74,12 @@ export function CommentComposer({
   const collapsed = !focused && !content && attachments.length === 0 && !uploading;
   const canSend = !uploading && (content.trim().length > 0 || attachments.length > 0);
   const hasDraft = content.length > 0 || attachments.length > 0 || uploading;
-  const suggestions = mentionQuery
-    ? members
-        .filter(
-          (member) =>
-            member.person_id &&
-            `${member.name} ${member.email}`.toLocaleLowerCase().includes(mentionQuery.text.toLocaleLowerCase())
-        )
-        .slice(0, 8)
-    : [];
+  const { suggestions, activeIndex, moveActive, resetActive } = useCommentMentionPicker({
+    query: mentionQuery?.text ?? null,
+    people: members,
+    participantIds: mentionParticipantIds,
+    requesterId: mentionRequesterId,
+  });
 
   useEffect(
     () => () => {
@@ -127,7 +132,7 @@ export function CommentComposer({
     const match = /(?:^|\s)@([^@\n]*)$/.exec(next.slice(0, caret));
 
     setMentionQuery(match ? { start: caret - match[1].length - 1, end: caret, text: match[1] } : null);
-    setSelectedMember(0);
+    resetActive();
   };
 
   const selectMention = (member: MentionablePerson) => {
@@ -197,15 +202,13 @@ export function CommentComposer({
         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
         if (suggestions.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
           event.preventDefault();
-          setSelectedMember(
-            (current) => (current + (event.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length
-          );
+          moveActive(event.key === 'ArrowDown' ? 1 : -1);
           return;
         }
 
         if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey) {
           event.preventDefault();
-          if (suggestions.length) selectMention(suggestions[selectedMember] ?? suggestions[0]);
+          if (suggestions.length) selectMention(suggestions[activeIndex]);
           else submit();
         }
 
@@ -237,10 +240,10 @@ export function CommentComposer({
               key={member.person_id}
               type='button'
               role='option'
-              aria-selected={index === selectedMember}
+              aria-selected={index === activeIndex}
               className={cn(
                 'block w-full truncate rounded px-2 py-1 text-left text-sm',
-                index === selectedMember && 'bg-fill-content-hover'
+                index === activeIndex && 'bg-fill-content-hover'
               )}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectMention(member)}

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 import { CommentComposer } from './CommentComposer';
 import MemberAvatar from './MemberAvatar';
-import { useRowCommentDispatch, useRowCommentState } from './RowCommentContext';
+import { useRowCommentDispatch, useRowCommentMentionParticipants, useRowCommentState } from './RowCommentContext';
 
 function AddCommentInput({
   parentCommentId,
@@ -20,6 +20,7 @@ function AddCommentInput({
   const { addComment, setReplyingCommentId } = useRowCommentDispatch();
   const { currentUserId, members, canComment } = useRowCommentState();
   const mentionableUsers = useMemo(() => [...new Set(members.values())], [members]);
+  const participantIds = useRowCommentMentionParticipants(parentCommentId);
 
   if (!canComment) return null;
 
@@ -42,6 +43,8 @@ function AddCommentInput({
         initiallyExpanded={Boolean(parentCommentId)}
         placeholder={t(parentCommentId ? 'rowComment.addReply' : 'rowComment.commentPlaceholder')}
         members={mentionableUsers}
+        mentionParticipantIds={participantIds}
+        mentionRequesterId={currentUserId}
         testIds={{
           collapsed: 'row-comment-collapsed-input',
           input: 'row-comment-input',

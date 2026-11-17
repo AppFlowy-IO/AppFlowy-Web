@@ -1,3 +1,6 @@
+import axios from 'axios';
+
+import { ERROR_CODE } from '@/application/constants';
 import {
   AppOutlineResponse,
   WorkspaceDatabaseListPage,
@@ -185,12 +188,41 @@ export async function getAppRecent(workspaceId: string) {
   );
 }
 
+/** How many times a trash read is sent while the server answers it with RetryLater. */
+export const TRASH_READ_ATTEMPTS = 6;
+
+/**
+ * The workspace's trash. A read that overlaps a permission change, as right after a view moves
+ * to the trash, is answered with RetryLater: the server will not serve trash it listed under
+ * superseded permissions. That answer is sent again after 100 ms, doubling to 1.6 s; any other
+ * failure, an ambiguous transport outcome among them, is returned at once.
+ */
 export async function getAppTrash(workspaceId: string) {
   const url = `/api/workspace/${workspaceId}/trash`;
 
-  return executeAPIRequest<{ views: View[] }>(() => getAxios()?.get<APIResponse<{ views: View[] }>>(url)).then(
-    (data) => data.views
-  );
+  for (let attempt = 0; ; attempt += 1) {
+    let retryLater = false;
+
+    try {
+      const data = await executeAPIRequest<{ views: View[] }>(async () => {
+        try {
+          const response = await getAxios()?.get<APIResponse<{ views: View[] }>>(url);
+
+          retryLater = response?.data?.code === ERROR_CODE.RETRY_LATER;
+          return response;
+        } catch (error) {
+          retryLater =
+            axios.isAxiosError<APIResponse>(error) && error.response?.data?.code === ERROR_CODE.RETRY_LATER;
+          throw error;
+        }
+      });
+
+      return data.views;
+    } catch (error) {
+      if (!retryLater || attempt + 1 >= TRASH_READ_ATTEMPTS) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
+    }
+  }
 }
 
 export async function createOrphanedView(workspaceId: string, payload: CreateOrphanedViewPayload): Promise<Uint8Array> {

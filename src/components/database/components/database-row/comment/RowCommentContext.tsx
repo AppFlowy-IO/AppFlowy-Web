@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
+import { rowCommentMentionParticipants } from '@/application/comment-mention-ranking';
 import { useDatabaseContext, useReadOnly } from '@/application/database-yjs';
 import {
   useAddCommentDispatch,
@@ -182,6 +183,17 @@ export function useRowCommentData() {
   }
 
   return context;
+}
+
+/**
+ * The people a composer's @ picker ranks first, the most recent first: for a reply, the thread's
+ * authors and then the row's other commenters; for a new comment, everyone who commented on the
+ * row. Comment authors are person ids, or the uids older comments were written with.
+ */
+export function useRowCommentMentionParticipants(parentCommentId?: string): string[] {
+  const { comments } = useRowCommentData();
+
+  return useMemo(() => rowCommentMentionParticipants(comments, parentCommentId), [comments, parentCommentId]);
 }
 
 /** Hook for stable UI state (user info, members, editing state) */
