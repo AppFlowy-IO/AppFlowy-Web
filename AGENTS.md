@@ -25,6 +25,12 @@ This is a regression checklist and record of user expectations, not a claim that
 - Existing Codex sessions may still have the old `--autoConnect` MCP process loaded. Do not call its browser tools until it has been restarted with the isolated configuration. Do not enumerate personal browser tabs to verify isolation.
 - These preferences apply across projects, including when a skill suggests reusing an existing Chrome session. If isolation cannot be established, report the blocker instead of accessing the user's browser.
 
+## OAuth signup restriction messages (2026-11-17)
+
+- GoTrue wraps signup-whitelist hook rejections in `access_denied` with an empty `error_code`. Resolve the exact reviewed whitelist diagnostic through the shared error catalog; do not display a generic `Error -1` or infer whitelist rejection from every OAuth denial.
+- Preserve specific provider codes, HTTP status and support diagnostics, and keep arbitrary or extended diagnostics out of the UI. Retain the callback error identity so late localized catalog responses can update an open login dialog.
+- Admin's email-domain blocking and signup whitelist are independent. The `Enable Signup Whitelist` control follows the blocked-domains card in Users → Settings; verify the actual local database flag when investigating.
+
 ## Database Text property paste (reported 2026-11-06)
 
 - Pasting a standard AppFlowy page link into a row's Text property should create a page mention. The row title shares this paste handler and needs coverage too.

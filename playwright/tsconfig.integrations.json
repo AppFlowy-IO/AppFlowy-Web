@@ -2,6 +2,7 @@
   "extends": "../tsconfig.json",
   "include": [
     "../src/**/*.d.ts",
+    "e2e/auth/oauth-errors.spec.ts",
     "../playwright.integrations.config.ts",
     "e2e/integrations/**/*.ts",
     "e2e/embeded/image/**/*.ts",

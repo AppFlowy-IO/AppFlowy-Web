@@ -11,6 +11,8 @@ import { determineErrorType, ErrorType, isPermissionDeniedError, isRecordNotFoun
 import { getErrorDiagnostic, readErrorIdentity, userErrorSupportDetails, userFriendlyErrorMessage } from '../error-message';
 
 const diagnostic = 'SQLSTATE 23505: /private/server/data; private auth diagnostic';
+const signupRestriction = 'Signup is not allowed for this email address. Contact your administrator to request access.';
+const signupRestrictionMessage = 'Sign-up is not allowed for this email address. Contact your administrator to request access.';
 
 describe('shared error presentation', () => {
   it('lets localized server copy override known reasons without changing error identity', () => {
@@ -198,6 +200,41 @@ describe('shared error presentation', () => {
 });
 
 describe('GoTrue namespace and legacy responses', () => {
+  it.each(['?', '#'])('explains a signup-whitelist rejection in an OAuth %s callback', (separator) => {
+    const params = new URLSearchParams({ error: 'access_denied', error_code: '', error_description: signupRestriction });
+    const result = parseGoTrueErrorFromUrl(`https://appflowy.test/auth/callback${separator}${params}`);
+
+    expect(result?.message).toBe(signupRestrictionMessage);
+    expect(userFriendlyErrorMessage(result)).toBe(signupRestrictionMessage);
+    expect(result).toMatchObject({ code: -1, sourceDomain: 'gotrue', errorCode: 'access_denied' });
+    expect(getErrorDiagnostic(result)).toBe(signupRestriction);
+  });
+
+  it('explains the same restriction in an HTTP hook response while retaining its status', () => {
+    const result = parseGoTrueFailure({ response: { status: 403, data: { msg: signupRestriction } } });
+
+    expect(result.message).toBe(signupRestrictionMessage);
+    expect(result.code).toBe(403);
+    expect(result.httpStatus).toBe(403);
+    expect(getErrorDiagnostic(result)).toBe(signupRestriction);
+  });
+
+  it('keeps specific provider codes authoritative and does not expose arbitrary OAuth diagnostics', () => {
+    expect(parseGoTrueError({ error: 'signup_disabled', errorDescription: signupRestriction }).message).toBe(
+      'Sign-ups are disabled. Contact your administrator to request access.'
+    );
+    for (const body of [
+      { error: 'access_denied', errorDescription: diagnostic },
+      { error: 'access_denied', errorDescription: `${signupRestriction} ${diagnostic}` },
+      { error: 'future_condition', errorDescription: signupRestriction },
+    ]) {
+      expect(parseGoTrueError(body).message).toBe('Error -1: Something went wrong. Contact support if this keeps happening.');
+    }
+    expect(parseGoTrueError({ status: 503, error: 'access_denied', errorDescription: signupRestriction }).message).toBe(
+      "AppFlowy isn't available right now. Try again later."
+    );
+  });
+
   it.each([
     { code: 422, error_code: 'same_password', msg: diagnostic },
     { code: '422', msg: 'New password should be different from the old password.' },
