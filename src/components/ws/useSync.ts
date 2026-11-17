@@ -258,7 +258,7 @@ export const useSync = (
 
   beforeDatabaseSendRef.current = databaseRestore.ensureDatabaseRestoreCurrent;
   prepareDatabaseContextRef.current = databaseRestore.prepareDatabaseContext;
-  const { reloadDatabaseAfterRestore, handleRestoreNotification } = databaseRestore;
+  const { reloadDatabaseAfterRestore, handleRestoreNotification, prepareReconnect } = databaseRestore;
 
   useEffect(() => {
     if (historyOptions?.capabilityLoaded !== true) return;
@@ -299,8 +299,9 @@ export const useSync = (
       return;
     }
 
+    prepareReconnect();
     refs.registeredContexts.current.forEach((context) => bindSyncContext(context));
-  }, [readyState, refs]);
+  }, [readyState, refs, prepareReconnect]);
 
   const rebindSyncContext = useCallback(
     (objectId: string) => {

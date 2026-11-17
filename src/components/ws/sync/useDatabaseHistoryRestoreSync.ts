@@ -337,6 +337,30 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     return false;
   }, []);
 
+  const accessRecoveryDatabaseIds = useCallback(() => {
+    const current = latest.current;
+    const prefix = `${current.userId}:${current.workspaceId}:`;
+    const ids = new Set<string>();
+
+    // A denied row/outbox may outlive its root editor. Explicit access recovery must reach it
+    // without making that row an owner of routine five-minute polling.
+    for (const key of [...resetPlans.current.keys(), ...deferredSync.current]) {
+      if (key.startsWith(prefix)) ids.add(key.slice(prefix.length));
+    }
+
+    for (const context of current.refs.registeredContexts.current.values()) {
+      if (context.collabType === Types.Database && hasOpenDatabase(context.doc.guid)) {
+        ids.add(context.doc.guid);
+      }
+    }
+
+    return ids;
+  }, [hasOpenDatabase]);
+
+  const prepareReconnect = useCallback(() => {
+    for (const databaseId of accessRecoveryDatabaseIds()) tracker.invalidateVerification(databaseId);
+  }, [tracker, accessRecoveryDatabaseIds]);
+
   const scheduleDatabaseCheck = useCallback((databaseId: string) => {
     if (checkTimers.current.has(databaseId) || !hasOpenDatabase(databaseId)) return;
     const workspaceId = latest.current.workspaceId;
@@ -477,7 +501,13 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
         if (timer !== undefined) clearTimeout(timer);
         retryTimers.current.delete(retryKey);
         restoreHints.current.delete(retryKey);
-        deferredSync.current.delete(retryKey);
+        // Keep the blocked sync episode without scheduling retries. Renewed authority must
+        // resume its retained outbox even when the restore generation itself is unchanged.
+        if (sessionActive.current && !current.refs.isDisposedRef.current &&
+            latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId) {
+          deferredSync.current.add(retryKey);
+        }
+
         return false;
       }
 
@@ -557,38 +587,36 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, [ensureDatabaseRestoreCurrent, tracker]);
 
   useEffect(() => {
-    const verifyOpenDatabases = (force: boolean) => {
-      const databaseIds = new Set<string>();
-      const prefix = `${deps.userId}:${deps.workspaceId}:`;
-
-      for (const key of resetPlans.current.keys()) {
-        if (key.startsWith(prefix)) databaseIds.add(key.slice(prefix.length));
-      }
-
-      for (const context of deps.refs.registeredContexts.current.values()) {
-        if (context.collabType === Types.Database && hasOpenDatabase(context.doc.guid)) {
-          databaseIds.add(context.doc.guid);
-        }
-      }
-
-      for (const databaseId of databaseIds) {
-        if (force) tracker.invalidateVerification(databaseId);
+    const verifyOpenDatabases = (trigger: 'focus' | 'reconnect' | 'access-change') => {
+      for (const databaseId of accessRecoveryDatabaseIds()) {
+        if (trigger === 'access-change' && !tracker.allowAccessRetry(databaseId)) continue;
+        if (trigger === 'focus') tracker.allowAccessRetry(databaseId);
+        if (trigger === 'reconnect') tracker.invalidateVerification(databaseId);
         void ensureDatabaseRestoreCurrent(databaseId, Types.Database);
       }
     };
 
     // An offline tab may have missed a restore notification, so recent authority
     // no longer counts. Focus alone reuses it; the socket stayed connected.
-    const verifyAfterReconnect = () => verifyOpenDatabases(true);
-    const verifyOnFocus = () => verifyOpenDatabases(false);
+    const verifyAfterReconnect = () => verifyOpenDatabases('reconnect');
+    // Returning to a denied editor is an explicit opportunity to observe renewed credentials
+    // or access. Healthy roots still reuse their five-minute authority observation.
+    const verifyOnFocus = () => verifyOpenDatabases('focus');
+    const verifyAfterAccessChange = (value?: notification.IPermissionChanged) => {
+      // Deletion is a terminal resource outcome. Other workspace access changes may restore
+      // a database through one of its ancestors; only retained denials need a fresh check.
+      if (value?.objectId && value.reason !== 1) verifyOpenDatabases('access-change');
+    };
 
     window.addEventListener('online', verifyAfterReconnect);
     window.addEventListener('focus', verifyOnFocus);
+    deps.eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, verifyAfterAccessChange);
     return () => {
       window.removeEventListener('online', verifyAfterReconnect);
       window.removeEventListener('focus', verifyOnFocus);
+      deps.eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, verifyAfterAccessChange);
     };
-  }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent, tracker, hasOpenDatabase]);
+  }, [deps.workspaceId, deps.userId, deps.eventEmitter, ensureDatabaseRestoreCurrent, tracker, accessRecoveryDatabaseIds]);
 
   const prepareDatabaseContext = useCallback((context: RegisterSyncContext) => {
     const databaseId = contextDatabaseId(context, rowDatabases.current);
@@ -619,5 +647,5 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     }
   }, [tracker, hasOpenDatabase]);
 
-  return { ensureDatabaseRestoreCurrent, reloadDatabaseAfterRestore, handleRestoreNotification, prepareDatabaseContext };
+  return { ensureDatabaseRestoreCurrent, reloadDatabaseAfterRestore, handleRestoreNotification, prepareDatabaseContext, prepareReconnect };
 }

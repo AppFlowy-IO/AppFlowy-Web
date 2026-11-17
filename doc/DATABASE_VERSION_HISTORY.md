@@ -48,9 +48,10 @@ outbox updates, and reloads the aggregate. Repeated notifications for the same g
 current providers and queued edits. Row-page documents retain their independent state.
 
 Ordinary sync shares restore authority by `(server, user, workspace, database ID)`
-within the tab. Opening the first database view or row checks authority; subsequent
-messages and additional views reuse that result for five minutes. One timer per
-database verifies idle open editors, and stops when no root/row owners remain.
+within the tab. Opening the first database root checks authority; subsequent
+messages and additional views reuse that result for five minutes. Row pages share
+their root's generation and join pending recovery without starting routine checks.
+One timer per database verifies idle open root editors and stops when the root closes.
 Reopening and coming back online check again. Restore notifications and generation/version mismatches
 bypass freshness, and checks after a reset still verify that no newer restore won
 during reload. Failed checks defer sync and share the recovery cooldown, including
@@ -75,7 +76,13 @@ a stamped sync response, a database root version boundary, or an existing persis
 requires authoritative generation verification even while capability discovery is pending or history is disabled locally. This keeps
 remote restores consistent with document history without enabling the history UI. Root and row
 traffic remain fenced after a failed verification; transient failures retry, while permission denials
-stop background polling. A hint arriving during verification invalidates the earlier authority read,
+stop background polling. For an established root, a retained 401/403 also prevents ordinary
+root/row message traffic from restarting requests after the transient cooldown. Reopening,
+reconnecting, returning focus, a non-deletion permission notification, or concrete new restore/version
+evidence permits a new authority read; none grants sync until that read succeeds. A root that has
+never had an authoritative marker keeps the retryable first-403 path needed while creation commits.
+A denial from a request admitted before reconnect cannot latch the renewed access revision.
+A hint arriving during verification invalidates the earlier authority read,
 so sync waits for a read started after that hint before admitting traffic.
 Root version boundaries trigger the same aggregate recovery when a notification was missed; the
 collab version UUID never substitutes for the restore job UUID, and the partial root frame is discarded.

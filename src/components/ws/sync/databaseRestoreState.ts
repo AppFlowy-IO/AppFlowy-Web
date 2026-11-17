@@ -1,3 +1,4 @@
+import { ERROR_CODE } from '@/application/constants';
 import { DatabaseStorageGenerationChangedError } from '@/application/db/database-storage-fence';
 
 export const DATABASE_RESTORE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
@@ -22,8 +23,9 @@ export class DatabaseRestoreTracker {
   private readonly hints = new Map<string, DatabaseRestoreHint>();
   private readonly verifiedHints = new Map<string, DatabaseRestoreHint | undefined>();
   private readonly verifiedAt = new Map<string, number>();
+  private readonly accessRevisions = new Map<string, number>();
   private readonly failures = new Map<string, {
-    error: unknown; retryAt: number; hint: DatabaseRestoreHint | undefined;
+    error: unknown; retryAt: number; hint: DatabaseRestoreHint | undefined; denied: boolean;
   }>();
   private observedRestore = false;
 
@@ -94,6 +96,20 @@ export class DatabaseRestoreTracker {
   /** A newly opened database must verify even if its previous editor closed recently. */
   invalidateVerification(databaseId: string): void {
     this.verifiedAt.delete(databaseId);
+    this.accessRevisions.set(databaseId, (this.accessRevisions.get(databaseId) || 0) + 1);
+    // Reopening or reconnecting permits another authority read, never access by itself.
+    const failure = this.failures.get(databaseId);
+
+    if (failure?.denied) this.failures.set(databaseId, { ...failure, retryAt: 0, denied: false });
+  }
+
+  /** An access notification permits a retry while rows remain fenced until it succeeds. */
+  allowAccessRetry(databaseId: string): boolean {
+    const failure = this.failures.get(databaseId);
+
+    if (!failure?.denied) return false;
+    this.invalidateVerification(databaseId);
+    return true;
   }
 
   /** Time until the next routine check, shared by every view and row of this database. */
@@ -116,7 +132,8 @@ export class DatabaseRestoreTracker {
 
     // Message traffic must honor the same cooldown as the hook's recovery timer.
     // New restore evidence may supersede the failed read and bypass that cooldown.
-    if (failure && failure.hint === this.hints.get(databaseId) && Date.now() < failure.retryAt) {
+    if (failure && failure.hint === this.hints.get(databaseId) &&
+        (failure.denied || Date.now() < failure.retryAt)) {
       return Promise.reject(failure.error);
     }
 
@@ -128,12 +145,22 @@ export class DatabaseRestoreTracker {
 
     if (pending) return pending;
     this.verifiedAt.delete(databaseId);
+    const accessRevision = this.accessRevisions.get(databaseId) || 0;
     const task = this.checkCurrent(databaseId).catch((error: unknown) => {
       const retryAfter = (error as { retryAfterSecs?: number } | null)?.retryAfterSecs;
       const delay = typeof retryAfter === 'number' && Number.isFinite(retryAfter)
         ? Math.max(5000, retryAfter * 1000) : 5000;
+      const detail = error as { code?: number; httpStatus?: number } | null;
+      const accessDenialCodes: number[] = [ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.NOT_HAS_PERMISSION, ERROR_CODE.USER_UNAUTHORIZED];
+      const accessDenied = [401, 403].includes(detail?.httpStatus ?? 0) ||
+        accessDenialCodes.includes(detail?.code ?? 0);
+      // A never-verified root can receive a temporary 403 before its creation commits. Keep its
+      // normal retry path; established roots retain denial until fresh access/restore evidence.
+      // A response admitted before reconnect cannot re-close the new access revision.
+      const denied = accessDenied && this.markers.has(databaseId) &&
+        accessRevision === (this.accessRevisions.get(databaseId) || 0);
 
-      this.failures.set(databaseId, { error, retryAt: Date.now() + delay, hint: this.hints.get(databaseId) });
+      this.failures.set(databaseId, { error, retryAt: Date.now() + delay, hint: this.hints.get(databaseId), denied });
       throw error;
     }).finally(() => {
       if (this.checks.get(databaseId) === task) this.checks.delete(databaseId);
