@@ -420,6 +420,15 @@ export interface MentionSearchRequest {
   include?: MentionTargetKind[];
   context?: MentionSearchContext;
   filter?: MentionSearchFilter;
+  /**
+   * Opt-ins the server advertises in `ServerInfo.mention_features` and the client handles, such as
+   * `section_degradation_v1` (Cloud MEN-CLOUD-12), `reasons_v1` (MEN-X-09), `suggested_v1` on a bare
+   * `@` (MEN-X-10) and `selection_memory_v1` on typed queries (MEN-CLOUD-20); the picker decides
+   * which request carries which (`mentionClientFeatures.ts`). Omitted when there are none, so the
+   * request is the one released clients send; servers ignore values they do not know, and older ones
+   * the field.
+   */
+  client_features?: string[];
 }
 
 export interface MentionPayloadPerson {
@@ -475,17 +484,64 @@ export type MentionSearchPayload =
   | MentionPayloadDate
   | MentionPayloadExternalLink;
 
+/** One view of a mention item's breadcrumb (Cloud `MentionPathSegment`). */
+export interface MentionPathSegment {
+  view_id: string;
+  title: string;
+}
+
+/**
+ * Whether a mention item's `path` is there (Cloud `MentionPathStatus`): `complete`, or left out
+ * because Search shed it for load (the answer is then `partial`) or could not resolve it.
+ */
+export type MentionPathStatus = 'complete' | 'omitted_due_to_load' | 'omitted_unavailable';
+
+/** A mention item's icon as servers type it (Cloud `MentionIcon`). No server sets one yet. */
+export interface MentionItemIcon {
+  ty: string;
+  value: string;
+}
+
+/**
+ * Why a server offers a mention item where it does (Cloud MEN-X-09), sent only to a request that
+ * opts in with `reasons_v1`. Every field may be missing; `signal` and `matched` are open strings,
+ * and a value the client does not know means no reason it shows.
+ */
+export interface MentionItemReason {
+  /** What placed the item: `viewed`, `created`, `participant` and the other MEN-X-09 signals. */
+  signal?: string;
+  /** When the signal's event happened, in epoch milliseconds. */
+  at?: number;
+  /** How a typed query matched the item's text, such as `prefix`. */
+  matched?: string;
+  /** The typeahead contract's tier (T0-T4) or people class (C0-C3) that `matched` names. */
+  tier?: number;
+}
+
 export interface MentionSearchResultItem {
   kind: MentionTargetKind;
   object_id?: string;
   title: string;
   subtitle?: string;
-  icon?: string;
+  /**
+   * A page's ancestors, or a row's database view, root first; databases have none. Servers since
+   * Cloud 0.17.6 send it with `path_status`; older ones send neither, and no breadcrumb shows. Only a
+   * `complete` path is shown.
+   */
+  path?: MentionPathSegment[];
+  path_status?: MentionPathStatus;
+  /**
+   * No server sets it. Servers type it as an object, so it must never reach an `img` or a saved
+   * mention as is; older Web code typed it as a string, which is still read as an image URL.
+   */
+  icon?: MentionItemIcon | string | null;
   database_id?: string;
   database_view_id?: string;
   database_row_id?: string;
   row_document_id?: string;
   can_access_context?: boolean;
+  /** Only for a request that sent `client_features: ['reasons_v1']` (Cloud MEN-X-09). */
+  reason?: MentionItemReason;
   mention: MentionSearchPayload;
 }
 
@@ -504,7 +560,23 @@ export interface MentionSearchResponse {
   partial?: boolean;
 }
 
-export type SearchMentions = (request: MentionSearchRequest) => Promise<MentionSearchResponse>;
+/** Transport options for one mention search request. */
+export interface MentionSearchOptions {
+  /** Aborts the request. */
+  signal?: AbortSignal;
+  /**
+   * Sent as `x-request-stream-id`. Search cancels an in-flight request when a newer one arrives on
+   * the same stream, so requests that must both complete need different streams.
+   */
+  streamId?: string;
+  /** Sent as `x-request-time`, in epoch milliseconds. It must strictly increase within a stream. */
+  requestTime?: number;
+}
+
+export type SearchMentions = (
+  request: MentionSearchRequest,
+  options?: MentionSearchOptions
+) => Promise<MentionSearchResponse>;
 
 export interface FolderMeta {
   current_view: ViewId;

@@ -3,6 +3,7 @@ import { Text } from 'slate';
 
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
+import { useDatabaseMentionLocalRows } from '@/components/database/hooks/useDatabaseMentionLocalRows';
 import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { EditorContextProvider } from '@/components/editor/EditorContext';
 
@@ -11,7 +12,9 @@ import { setCachedPageName } from './page-name-cache';
 /**
  * Gives a Text cell's Slate editor the editor context the document's leaf
  * renderers, mention panel and toolbar buttons read, built from the database
- * context the cell lives in (app or publish mode alike).
+ * context the cell lives in (app or publish mode alike). An editable cell's
+ * @ picker also gets the database's rows, which it matches by title
+ * (MEN-WEB-15).
  */
 export function RichTextCellContext({
   rowId,
@@ -40,6 +43,7 @@ export function RichTextCellContext({
     }),
     [context?.mentionContext, rowId, viewId]
   );
+  const mentionLocalRows = useDatabaseMentionLocalRows(context, mentionContext.database_view_id, !readOnly);
 
   const [linkOpen, setLinkOpen] = useState<Text | undefined>(undefined);
   const openLinkPopover = useCallback((text: Text) => setLinkOpen(text), []);
@@ -63,6 +67,7 @@ export function RichTextCellContext({
       addPage={context?.addPage}
       searchMentions={context?.searchMentions}
       mentionContext={mentionContext}
+      mentionLocalRows={mentionLocalRows}
       enableReminderMentions={false}
       getMentionUser={getMentionUser}
       getSubscriptions={context?.getSubscriptions}

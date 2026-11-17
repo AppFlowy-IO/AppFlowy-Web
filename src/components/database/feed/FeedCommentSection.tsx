@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import { lazy, memo, MouseEvent, Suspense, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { rowCommentMentionParticipants } from '@/application/comment-mention-ranking';
 import { useRowMap } from '@/application/database-yjs';
 import { useAddCommentDispatch } from '@/application/database-yjs/comment_dispatch';
 import { getCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
@@ -20,9 +21,11 @@ const FeedDiscussion = lazy(() => import('@/components/database/components/datab
 interface FeedRowCommentsState {
   count: number;
   latest: RowComment | null;
+  /** The row's commenters, the most recent first, whom the composer's @ picker ranks first. */
+  participantIds: string[];
 }
 
-const EMPTY_COMMENTS: FeedRowCommentsState = { count: 0, latest: null };
+const EMPTY_COMMENTS: FeedRowCommentsState = { count: 0, latest: null, participantIds: [] };
 
 // The Figma `Comment card` floats 8px above the reply summary that opens it.
 const DISCUSSION_ANCHOR_ORIGIN = { vertical: 'top', horizontal: 'left' } as const;
@@ -45,7 +48,11 @@ function summarizeComments(comments: RowComment[]): FeedRowCommentsState {
     if (!latest || comment.createdAt >= latest.createdAt) latest = comment;
   });
 
-  return { count: comments.length, latest };
+  return { count: comments.length, latest, participantIds: rowCommentMentionParticipants(comments) };
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
 /**
@@ -68,7 +75,13 @@ export function useFeedRowComments(rowId: string): FeedRowCommentsState {
     const update = () => {
       const next = summarizeComments(getRowComments(rowDoc));
 
-      setState((current) => (current.count === next.count && current.latest?.id === next.latest?.id ? current : next));
+      setState((current) =>
+        current.count === next.count &&
+        current.latest?.id === next.latest?.id &&
+        sameIds(current.participantIds, next.participantIds)
+          ? current
+          : next
+      );
     };
 
     const syncCommentsMap = () => {
@@ -141,7 +154,15 @@ function FeedCommentSummary({
   );
 }
 
-function FeedAddCommentInput({ rowId, hasComments }: { rowId: string; hasComments: boolean }) {
+function FeedAddCommentInput({
+  rowId,
+  hasComments,
+  participantIds,
+}: {
+  rowId: string;
+  hasComments: boolean;
+  participantIds: readonly string[];
+}) {
   const { t } = useTranslation();
   const { currentCommentAuthorId, currentUser, resolveMember, mentionableUsers, canComment } = useFeedMembers();
   const addComment = useAddCommentDispatch(rowId);
@@ -166,6 +187,8 @@ function FeedAddCommentInput({ rowId, hasComments }: { rowId: string; hasComment
         onActiveChange={setActive}
         placeholder={t('rowComment.commentPlaceholder')}
         members={mentionableUsers}
+        mentionParticipantIds={participantIds}
+        mentionRequesterId={currentCommentAuthorId}
         testIds={{
           collapsed: `feed-add-comment-collapsed-${rowId}`,
           input: `feed-add-comment-input-${rowId}`,
@@ -190,7 +213,7 @@ export const FeedCommentSection = memo(function FeedCommentSection({
   visible?: boolean;
 }) {
   const { t } = useTranslation();
-  const { count, latest } = useFeedRowComments(rowId);
+  const { count, latest, participantIds } = useFeedRowComments(rowId);
   const { canComment, currentCommentAuthorId } = useFeedMembers();
   const [expanded, setExpanded] = useState(false);
   const [hasOpenedDiscussion, setHasOpenedDiscussion] = useState(false);
@@ -273,7 +296,11 @@ export const FeedCommentSection = memo(function FeedCommentSection({
 
       {/* This position stays stable when a first local or remote comment arrives. */}
       {canComment && currentCommentAuthorId ? (
-        <FeedAddCommentInput rowId={rowId} hasComments={Boolean(latest) || discussionOpen} />
+        <FeedAddCommentInput
+          rowId={rowId}
+          hasComments={Boolean(latest) || discussionOpen}
+          participantIds={participantIds}
+        />
       ) : null}
     </div>
   );

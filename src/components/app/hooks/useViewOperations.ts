@@ -24,6 +24,7 @@ import {
 } from '@/application/view-utils';
 import { throwIfAborted } from '@/application/utils/shared-request';
 import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
+import { recordMentionViewOpened } from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
@@ -249,6 +250,8 @@ export function useViewOperations({
         }
 
         if (loadAwareness) {
+          // The mention picker's local candidates count this open at once.
+          recordMentionViewOpened(currentWorkspaceId, viewId);
           // Add recent pages when view is loaded (fire and forget)
           void (async () => {
             try {

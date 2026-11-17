@@ -20,6 +20,10 @@ function optInSuites(): RegExp | undefined {
     // Needs AppFlowy-Cloud-Premium#1539 (paginated database PDFs on a chosen paper). Remove once
     // CI's Cloud image includes it.
     ...(process.env.RUN_CLOUD_DATABASE_PDF_LAYOUT ? [] : ['@cloud-database-pdf-layout']),
+    // Needs a Cloud nginx.conf whose CORS allow-list has x-request-time and x-request-stream-id
+    // (mention plan MEN-CLOUD-03) when Web and the API are on different origins, as in CI. Without
+    // it, Web drops both headers from mention searches. Remove once CI's Cloud image includes it.
+    ...(process.env.RUN_CLOUD_MENTION_STREAM_HEADERS ? [] : ['@cloud-mention-stream-headers']),
   ];
 
   return skipped.length > 0 ? new RegExp(skipped.join('|')) : undefined;

@@ -1,11 +1,19 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import * as encoding from 'lib0/encoding';
+import { applyAwarenessUpdate, Awareness } from 'y-protocols/awareness';
+import * as Y from 'yjs';
 
+import { COMMENT_MENTION_RANKING_OVERRIDE_KEY } from '@/application/comment-mention-ranking';
 import { InlineComment } from '@/application/inline-comment';
+import { MentionablePerson, MentionPersonRole } from '@/application/types';
+import { AppSyncContext } from '@/components/app/contexts/AppSyncContext';
 
 import { InlineCommentSidebar } from '../InlineCommentSidebar';
 
+let mockMentionableUsers: MentionablePerson[] = [];
+
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
-  useMentionableUsersWithAutoFetch: () => ({ users: [], loading: false }),
+  useMentionableUsersWithAutoFetch: () => ({ users: mockMentionableUsers, loading: false }),
 }));
 
 jest.mock('react-i18next', () => ({
@@ -95,6 +103,43 @@ const anchors = new Map([
     },
   ],
 ]);
+
+/**
+ * The awareness of page `view-1` after one Desktop collaborator joined, applied from the bytes
+ * Desktop sends: its Rust core writes the uid as an i64 JSON number, which arrives rounded, and its
+ * metadata carries the exact uid as the string `id`, with no person id.
+ */
+function pageAwarenessWithDesktopCollaborator(uid: string, name: string) {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const metadata = JSON.stringify({
+    id: uid,
+    cursor_color: '0xff00b5ff',
+    selection_color: '0x9900b5ff',
+    user_name: name,
+    user_email: `${name.toLowerCase()}@appflowy.io`,
+    user_avatar: '',
+  });
+  const update = encoding.createEncoder();
+
+  encoding.writeVarUint(update, 1); // one client: its id, clock and state
+  encoding.writeVarUint(update, 4242);
+  encoding.writeVarUint(update, 1);
+  encoding.writeVarString(
+    update,
+    `{"version":1,"user":{"uid":${uid},"device_id":"desktop"},"selection":null,` +
+      `"metadata":${JSON.stringify(metadata)},"timestamp":1}`
+  );
+  applyAwarenessUpdate(awareness, encoding.toUint8Array(update), 'remote');
+
+  return {
+    awareness,
+    destroy: () => {
+      awareness.destroy();
+      doc.destroy();
+    },
+  };
+}
 
 function setContext(overrides: Record<string, unknown> = {}) {
   mockInlineCommentContext = {
@@ -208,6 +253,81 @@ describe('InlineCommentSidebar', () => {
       fireEvent.keyDown(input, { key: 'Enter' });
     });
     expect(createReply).toHaveBeenCalledWith('open-comment', 'Sounds good');
+  });
+
+  it("ranks the reply's thread first in its @ picker, then who is on the page, the commenter last", () => {
+    const member = (uuid: string, name: string, uid: string | number = uuid.length): MentionablePerson => ({
+      uid,
+      person_id: uuid,
+      name,
+      email: `${name.toLowerCase()}@appflowy.io`,
+      role: MentionPersonRole.Member,
+      avatar_url: null,
+      cover_image_url: null,
+      custom_image_url: null,
+      description: null,
+      invited: false,
+      last_mentioned_at: null,
+    });
+
+    // Eve has the page open on Desktop, whose awareness names Eve by uid only.
+    const eveUid = '626259007224418304';
+    const page = pageAwarenessWithDesktopCollaborator(eveUid, 'Eve');
+    const resizeObserver = globalThis.ResizeObserver;
+
+    // The suggestions popover measures its anchor.
+    globalThis.ResizeObserver = class {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    } as unknown as typeof ResizeObserver;
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    mockMentionableUsers = [
+      member('user-1', 'Ada'),
+      member('user-2', 'Bea'),
+      member('user-3', 'Cal'),
+      member('user-4', 'Dan'),
+      member('user-5', 'Eve', eveUid),
+    ];
+    setContext({
+      comments: [
+        comment({ user: { uuid: 'user-2', name: 'Bea', avatarUrl: null } }),
+        comment({
+          commentId: 'reply-comment',
+          content: 'Chronological reply',
+          replyCommentId: 'open-comment',
+          createdAt: '2026-08-09T00:01:00Z',
+          user: { uuid: 'user-3', name: 'Cal', avatarUrl: null },
+        }),
+      ],
+    });
+
+    try {
+      render(
+        <AppSyncContext.Provider value={{ awarenessMap: { 'view-1': page.awareness } }}>
+          <InlineCommentSidebar />
+        </AppSyncContext.Provider>
+      );
+      fireEvent.click(screen.getByTestId('inline-comment-reply-button'));
+
+      const input = screen.getByTestId('inline-comment-reply-input');
+
+      fireEvent.change(input, { target: { value: '@', selectionStart: 1, selectionEnd: 1 } });
+      // The thread's authors (the latest first), the collaborator on the page, the others, the commenter.
+      expect(screen.getAllByRole('option').map((option) => option.getAttribute('data-person-name'))).toEqual([
+        'Cal',
+        'Bea',
+        'Eve',
+        'Dan',
+        'Ada',
+      ]);
+    } finally {
+      cleanup();
+      page.destroy();
+      globalThis.ResizeObserver = resizeObserver;
+      window.localStorage.clear();
+      mockMentionableUsers = [];
+    }
   });
 
   it('shows a loading indicator while a reply is being submitted', () => {

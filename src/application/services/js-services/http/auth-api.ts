@@ -74,6 +74,12 @@ export interface ServerInfo {
    * `getMcpServerStatus`).
    */
   mcp_status?: string | null;
+  /**
+   * Advisory, unsigned mention features this server supports, such as `session_metrics_v1`
+   * (picker session reports, see `mention-presentation-metrics.ts`). Absent on older servers and
+   * on deployments that offer none.
+   */
+  mention_features?: string[];
 }
 
 const SERVER_INFO_REQUEST_TIMEOUT_MS = 10_000;

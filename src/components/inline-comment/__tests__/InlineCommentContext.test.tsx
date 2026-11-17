@@ -14,7 +14,12 @@ import { BlockType, CollabOrigin } from '@/application/types';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { Log } from '@/utils/log';
 
-import { InlineCommentProvider, operationsCanAffectAnchors, useInlineCommentContext } from '../InlineCommentContext';
+import {
+  InlineCommentProvider,
+  operationsCanAffectAnchors,
+  useInlineCommentCompose,
+  useInlineCommentContext,
+} from '../InlineCommentContext';
 import { collectInlineCommentAnchors } from '../editor/anchors';
 
 const createComment = jest.fn();
@@ -134,6 +139,67 @@ describe('InlineCommentProvider selection lifetime', () => {
 
     act(() => unregisterPageEditor());
     expect(context.isEditorRegistered(pageEditor)).toBe(false);
+  });
+
+  it('tells the composer which document it comments on, whose collaborators its @ picker ranks', () => {
+    let composeViewId: string | undefined;
+
+    function ComposeProbe() {
+      composeViewId = useInlineCommentCompose().viewId;
+      return null;
+    }
+
+    const { rerender } = render(
+      <InlineCommentProvider workspaceId={'workspace-1'} viewId={'view-1'}>
+        <ComposeProbe />
+      </InlineCommentProvider>
+    );
+
+    expect(composeViewId).toBe('view-1');
+    rerender(
+      <InlineCommentProvider workspaceId={'workspace-1'} viewId={'view-2'}>
+        <ComposeProbe />
+      </InlineCommentProvider>
+    );
+    expect(composeViewId).toBe('view-2');
+  });
+
+  it('sends the people a reply mentions, read from its inserted tokens', async () => {
+    const editor = withReact(createEditor()) as YjsEditor;
+    const bob = 'a318b9a0-6e2a-4c85-9638-16fd152af6e1';
+    const parent: InlineComment = {
+      user: { uuid: 'user-1', name: 'Ada', avatarUrl: null },
+      commentId: 'comment-1',
+      viewId: 'view-1',
+      blockId: 'block-1',
+      content: 'Review this',
+      replyCommentId: null,
+      isResolved: false,
+      isDeleted: false,
+      canBeDeleted: true,
+      createdAt: '2026-08-10T00:00:00Z',
+      updatedAt: '2026-08-10T00:00:00Z',
+    };
+
+    listComments.mockResolvedValue([parent]);
+    render(
+      <InlineCommentProvider workspaceId={'workspace-1'} viewId={'view-1'}>
+        <Probe />
+      </InlineCommentProvider>
+    );
+    await act(async () => {
+      context.registerEditor(editor, { canComment: true, canWrite: true, readOnly: false, viewId: 'view-1' });
+    });
+    await waitFor(() => expect(context.comments).toHaveLength(1));
+
+    await act(async () => {
+      await context.createReply('comment-1', `@[Bob](${bob}) and @[Bob](${bob}), not @Bob or @[x](not-a-uuid)`);
+    });
+    expect(createComment).toHaveBeenCalledWith(
+      'workspace-1',
+      'view-1',
+      expect.objectContaining({ replyCommentId: 'comment-1', mentionedUserUuids: [bob] })
+    );
   });
 
   it('debounces matching workspace notifications before refetching the displayed comment list', async () => {

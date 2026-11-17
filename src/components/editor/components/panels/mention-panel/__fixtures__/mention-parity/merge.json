@@ -1,0 +1,1602 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Merge. Each case merges `server`, the answer to `request` (the picker's request, whose kinds and filter decide which local items may join; combined first with `rows_server`, the rows lane's answer, when present), with `local` and the `picks` (recorded before `now_ms`); omitted local fields take the README's defaults.",
+  "now_ms": 1767225600000,
+  "cases": [
+    {
+      "id": "the-local-title-and-icon-win",
+      "request": {"query": "road"},
+      "local": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000301",
+          "title": "Road",
+          "icon": {"ty": "emoji", "value": "🚗"}
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000301",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000301"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000301",
+              "title": "Road",
+              "source": "both",
+              "fresh": false,
+              "icon": {"ty": "emoji", "value": "🚗"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local-only-matches-join-and-fresh-ones-are-flagged",
+      "request": {"query": "road"},
+      "local": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000312",
+          "title": "Road trip",
+          "changed_ago_ms": 120000,
+          "used_ago_ms": 120000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000313",
+          "title": "Broadway notes",
+          "changed_ago_ms": 172800000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000314",
+          "title": "Finance",
+          "changed_ago_ms": 60000
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000311",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000311"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000312",
+              "title": "Road trip",
+              "source": "local",
+              "fresh": true,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-000000000311",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-000000000313",
+              "title": "Broadway notes",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "databases-are-keyed-by-database-and-view",
+      "request": {"query": "tasks"},
+      "local": [
+        {
+          "key": "database:00000000-0000-4000-8000-000000000321:00000000-0000-4000-8000-000000000322",
+          "title": "Tasks"
+        },
+        {
+          "key": "database:00000000-0000-4000-8000-000000000321:00000000-0000-4000-8000-000000000323",
+          "title": "Tasks board"
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "databases",
+            "title": "Databases",
+            "items": [
+              {
+                "kind": "database",
+                "object_id": "00000000-0000-4000-8000-000000000321",
+                "title": "Tasks",
+                "subtitle": "Database",
+                "database_id": "00000000-0000-4000-8000-000000000321",
+                "database_view_id": "00000000-0000-4000-8000-000000000322",
+                "mention": {
+                  "type": "database",
+                  "database_id": "00000000-0000-4000-8000-000000000321",
+                  "database_view_id": "00000000-0000-4000-8000-000000000322"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "databases",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "database:00000000-0000-4000-8000-000000000321:00000000-0000-4000-8000-000000000322",
+              "title": "Tasks",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "database:00000000-0000-4000-8000-000000000321:00000000-0000-4000-8000-000000000323",
+              "title": "Tasks board",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rows-stay-inside-pages",
+      "request": {"query": "road"},
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000331",
+                "title": "Road notes",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000331"}
+              },
+              {
+                "kind": "database_row",
+                "object_id": "00000000-0000-4000-8000-000000000334",
+                "title": "Road trip",
+                "database_id": "00000000-0000-4000-8000-000000000332",
+                "database_view_id": "00000000-0000-4000-8000-000000000333",
+                "database_row_id": "00000000-0000-4000-8000-000000000334",
+                "mention": {
+                  "type": "databaseRow",
+                  "database_id": "00000000-0000-4000-8000-000000000332",
+                  "database_view_id": "00000000-0000-4000-8000-000000000333",
+                  "row_id": "00000000-0000-4000-8000-000000000334"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000331",
+              "title": "Road notes",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "row:00000000-0000-4000-8000-000000000332:00000000-0000-4000-8000-000000000334",
+              "title": "Road trip",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-failed-section-keeps-local-results",
+      "request": {"query": "road"},
+      "local": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000341",
+          "title": "Road trip",
+          "changed_ago_ms": 0
+        }
+      ],
+      "server": {
+        "sections": [
+          {"kind": "people", "title": "People", "items": [], "has_more": false, "status": "ok"},
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [],
+            "has_more": false,
+            "status": "failed",
+            "message": "keyword search is unavailable"
+          }
+        ]
+      },
+      "expected": [
+        {"kind": "people", "status": "ok", "message": null, "items": []},
+        {
+          "kind": "pages",
+          "status": "failed",
+          "message": "keyword search is unavailable",
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000341",
+              "title": "Road trip",
+              "source": "local",
+              "fresh": true,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "people-take-the-local-name-and-the-requester-goes-last",
+      "request": {"query": "an"},
+      "requester": "00000000-0000-4000-8000-000000000351",
+      "local": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000351",
+          "title": "Annie W.",
+          "email": "annie@appflowy.io"
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-000000000353",
+          "title": "Anna Bell",
+          "email": "anna@appflowy.io"
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000351",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000351",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              },
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000352",
+                "title": "Andy Li",
+                "subtitle": "andy@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000352",
+                  "person_name": "Andy Li",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000352",
+              "title": "Andy Li",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000353",
+              "title": "Anna Bell",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000351",
+              "title": "Annie W.",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-blank-name-never-matches-through-the-domain",
+      "request": {"query": "app"},
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000361",
+                "title": "x@appflowy.io",
+                "subtitle": "x@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000361",
+                  "person_name": "x@appflowy.io",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              },
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000362",
+                "title": "Appleton Grey",
+                "subtitle": "grey@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000362",
+                  "person_name": "Appleton Grey",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000362",
+              "title": "Appleton Grey",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000361",
+              "title": "x@appflowy.io",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-local-only-section-takes-its-place",
+      "request": {"query": "road"},
+      "local": [
+        {
+          "key": "database:00000000-0000-4000-8000-000000000371:00000000-0000-4000-8000-000000000372",
+          "title": "Road database"
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000373",
+                "title": "Road Runner",
+                "subtitle": "rr@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000373",
+                  "person_name": "Road Runner",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "links",
+            "title": "Links",
+            "items": [
+              {
+                "kind": "external_link",
+                "title": "https://road.example",
+                "mention": {"type": "externalLink", "url": "https://road.example"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000373",
+              "title": "Road Runner",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "databases",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "database:00000000-0000-4000-8000-000000000371:00000000-0000-4000-8000-000000000372",
+              "title": "Road database",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "links",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "link:https://road.example",
+              "title": "https://road.example",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "the-limit-applies-after-merging",
+      "request": {"query": "road", "limit": 2},
+      "local": [{"key": "page:00000000-0000-4000-8000-000000000383", "title": "Road"}],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000381",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000381"}
+              },
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000382",
+                "title": "Road trip",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000382"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000383",
+              "title": "Road",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-000000000381",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-local-rename-that-no-longer-matches-ranks-last",
+      "request": {"query": "road"},
+      "local": [{"key": "page:00000000-0000-4000-8000-000000000391", "title": "Q3 plan"}],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000391",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000391"}
+              },
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-000000000392",
+                "title": "Road trip",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-000000000392"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000392",
+              "title": "Road trip",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-000000000391",
+              "title": "Q3 plan",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pick-memory-orders-merged-items",
+      "request": {"query": "road"},
+      "picks": [
+        {"ago_ms": 3600000, "input": "road", "key": "page:00000000-0000-4000-8000-0000000003a2"}
+      ],
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003a1",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003a1"}
+              },
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003a2",
+                "title": "Road trip",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003a2"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003a2",
+              "title": "Road trip",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003a1",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "the-rows-answer-joins-pages-after-the-primary-items",
+      "request": {"query": "road"},
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-0000000003c4",
+                "title": "Road Runner",
+                "subtitle": "rr@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-0000000003c4",
+                  "person_name": "Road Runner",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003c1",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003c1"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "rows_server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "database_row",
+                "object_id": "00000000-0000-4000-8000-0000000003c2",
+                "title": "Road",
+                "database_id": "00000000-0000-4000-8000-0000000003c5",
+                "database_view_id": "00000000-0000-4000-8000-0000000003c6",
+                "database_row_id": "00000000-0000-4000-8000-0000000003c2",
+                "mention": {
+                  "type": "databaseRow",
+                  "database_id": "00000000-0000-4000-8000-0000000003c5",
+                  "database_view_id": "00000000-0000-4000-8000-0000000003c6",
+                  "row_id": "00000000-0000-4000-8000-0000000003c2"
+                }
+              },
+              {
+                "kind": "database_row",
+                "object_id": "00000000-0000-4000-8000-0000000003c3",
+                "title": "Road trip",
+                "database_id": "00000000-0000-4000-8000-0000000003c5",
+                "database_view_id": "00000000-0000-4000-8000-0000000003c6",
+                "database_row_id": "00000000-0000-4000-8000-0000000003c3",
+                "mention": {
+                  "type": "databaseRow",
+                  "database_id": "00000000-0000-4000-8000-0000000003c5",
+                  "database_view_id": "00000000-0000-4000-8000-0000000003c6",
+                  "row_id": "00000000-0000-4000-8000-0000000003c3"
+                }
+              },
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003c1",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003c1"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-0000000003c4",
+              "title": "Road Runner",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "row:00000000-0000-4000-8000-0000000003c5:00000000-0000-4000-8000-0000000003c2",
+              "title": "Road",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003c1",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "row:00000000-0000-4000-8000-0000000003c5:00000000-0000-4000-8000-0000000003c3",
+              "title": "Road trip",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-failed-rows-lane-marks-pages-failed",
+      "request": {"query": "road"},
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003d1",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003d1"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "rows_server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [],
+            "has_more": false,
+            "status": "failed",
+            "message": "keyword results are incomplete"
+          }
+        ],
+        "partial": true
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "failed",
+          "message": "keyword results are incomplete",
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003d1",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-rows-section-the-primary-lacks-is-added",
+      "request": {"query": "road"},
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003e1",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003e1"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "rows_server": {
+        "sections": [
+          {
+            "kind": "database_rows",
+            "title": "Database rows",
+            "items": [],
+            "has_more": false,
+            "status": "failed",
+            "message": "mention search failed"
+          }
+        ],
+        "partial": true
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003e1",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "database_rows",
+          "status": "failed",
+          "message": "mention search failed",
+          "items": []
+        }
+      ]
+    },
+    {
+      "id": "a-bare-query-keeps-the-server-order",
+      "request": {"query": ""},
+      "local": [
+        {"key": "page:00000000-0000-4000-8000-0000000003b2", "title": "Zeta renamed"},
+        {
+          "key": "page:00000000-0000-4000-8000-0000000003b3",
+          "title": "Local only",
+          "changed_ago_ms": 0
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-0000000003b5",
+                "title": "Andy Li",
+                "subtitle": "andy@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-0000000003b5",
+                  "person_name": "Andy Li",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              },
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-0000000003b4",
+                "title": "Annie Wang",
+                "subtitle": "annie@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-0000000003b4",
+                  "person_name": "Annie Wang",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          },
+          {
+            "kind": "pages",
+            "title": "Pages",
+            "items": [
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003b1",
+                "title": "Roadmap",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003b1"}
+              },
+              {
+                "kind": "page",
+                "object_id": "00000000-0000-4000-8000-0000000003b2",
+                "title": "Zeta",
+                "mention": {"type": "page", "page_id": "00000000-0000-4000-8000-0000000003b2"}
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-0000000003b5",
+              "title": "Andy Li",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-0000000003b4",
+              "title": "Annie Wang",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003b1",
+              "title": "Roadmap",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-0000000003b2",
+              "title": "Zeta renamed",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-page-reference-picker-adds-no-people",
+      "request": {"query": "ann", "include": ["page", "database", "database_row"]},
+      "local": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000501",
+          "title": "Annie Wang",
+          "email": "annie@appflowy.io"
+        },
+        {"key": "page:00000000-0000-4000-8000-000000000502", "title": "Annual report"}
+      ],
+      "server": {
+        "sections": [
+          {"kind": "pages", "title": "Pages", "items": [], "has_more": false, "status": "ok"}
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000502",
+              "title": "Annual report",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-people-picker-adds-no-pages-or-databases",
+      "request": {"query": "ann", "include": ["person"]},
+      "local": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000511",
+          "title": "Annie Wang",
+          "email": "annie@appflowy.io"
+        },
+        {"key": "page:00000000-0000-4000-8000-000000000512", "title": "Annual report"},
+        {
+          "key": "database:00000000-0000-4000-8000-000000000513:00000000-0000-4000-8000-000000000514",
+          "title": "Annual budget"
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000515",
+                "title": "Anna Bell",
+                "subtitle": "anna@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000515",
+                  "person_name": "Anna Bell",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000515",
+              "title": "Anna Bell",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000511",
+              "title": "Annie Wang",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-database-filter-adds-only-what-it-names",
+      "request": {
+        "query": "road",
+        "include": ["person", "page", "database", "database_row"],
+        "filter": {"database_ids": ["00000000-0000-4000-8000-000000000521"]}
+      },
+      "local": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000528",
+          "title": "Road Runner",
+          "email": "rr@appflowy.io"
+        },
+        {"key": "page:00000000-0000-4000-8000-000000000525", "title": "Roadmap"},
+        {
+          "key": "database:00000000-0000-4000-8000-000000000521:00000000-0000-4000-8000-000000000522",
+          "title": "Road tasks"
+        },
+        {
+          "key": "database:00000000-0000-4000-8000-000000000523:00000000-0000-4000-8000-000000000524",
+          "title": "Road board"
+        },
+        {
+          "key": "row:00000000-0000-4000-8000-000000000521:00000000-0000-4000-8000-000000000526",
+          "title": "Road trip"
+        },
+        {
+          "key": "row:00000000-0000-4000-8000-000000000523:00000000-0000-4000-8000-000000000527",
+          "title": "Road show"
+        }
+      ],
+      "server": {
+        "sections": [
+          {"kind": "pages", "title": "Pages", "items": [], "has_more": false, "status": "ok"}
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000528",
+              "title": "Road Runner",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "row:00000000-0000-4000-8000-000000000521:00000000-0000-4000-8000-000000000526",
+              "title": "Road trip",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "kind": "databases",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "database:00000000-0000-4000-8000-000000000521:00000000-0000-4000-8000-000000000522",
+              "title": "Road tasks",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-view-filter-adds-only-that-view",
+      "request": {
+        "query": "road",
+        "include": ["database", "database_row"],
+        "filter": {"database_view_ids": ["00000000-0000-4000-8000-000000000532"]}
+      },
+      "local": [
+        {
+          "key": "database:00000000-0000-4000-8000-000000000531:00000000-0000-4000-8000-000000000532",
+          "title": "Road tasks"
+        },
+        {
+          "key": "database:00000000-0000-4000-8000-000000000531:00000000-0000-4000-8000-000000000533",
+          "title": "Road board"
+        },
+        {"key": "database:00000000-0000-4000-8000-000000000535:-", "title": "Road map"},
+        {
+          "key": "row:00000000-0000-4000-8000-000000000531:00000000-0000-4000-8000-000000000534",
+          "title": "Road trip"
+        }
+      ],
+      "server": {"sections": []},
+      "expected": [
+        {
+          "kind": "databases",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "database:00000000-0000-4000-8000-000000000531:00000000-0000-4000-8000-000000000532",
+              "title": "Road tasks",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-row-filter-adds-only-those-rows",
+      "request": {
+        "query": "road",
+        "include": ["database", "database_row"],
+        "filter": {"database_row_ids": ["00000000-0000-4000-8000-000000000543"]}
+      },
+      "local": [
+        {
+          "key": "database:00000000-0000-4000-8000-000000000541:00000000-0000-4000-8000-000000000542",
+          "title": "Road tasks"
+        },
+        {
+          "key": "row:00000000-0000-4000-8000-000000000541:00000000-0000-4000-8000-000000000543",
+          "title": "Road trip"
+        },
+        {
+          "key": "row:00000000-0000-4000-8000-000000000541:00000000-0000-4000-8000-000000000544",
+          "title": "Road show"
+        }
+      ],
+      "server": {"sections": []},
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "row:00000000-0000-4000-8000-000000000541:00000000-0000-4000-8000-000000000543",
+              "title": "Road trip",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-blank-name-person-shows-their-address",
+      "request": {"query": "x"},
+      "local": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000551",
+          "title": "",
+          "email": "xu@appflowy.io"
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-000000000552",
+          "title": "",
+          "email": "x@appflowy.io"
+        },
+        {
+          "key": "person:00000000-0000-4000-8000-000000000553",
+          "title": " ",
+          "email": "xena@appflowy.io"
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000551",
+                "title": "Xu Ming",
+                "subtitle": "xu@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000551",
+                  "person_name": "Xu Ming",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              },
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000552",
+                "title": "x@appflowy.io",
+                "subtitle": "x@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000552",
+                  "person_name": "x@appflowy.io",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000551",
+              "title": "Xu Ming",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000552",
+              "title": "x@appflowy.io",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000553",
+              "title": "xena@appflowy.io",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-blank-local-name-ranks-by-the-servers-name",
+      "request": {"query": "ming"},
+      "local": [
+        {
+          "key": "person:00000000-0000-4000-8000-000000000561",
+          "title": "",
+          "email": "xu@appflowy.io"
+        }
+      ],
+      "server": {
+        "sections": [
+          {
+            "kind": "people",
+            "title": "People",
+            "items": [
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000561",
+                "title": "Xu Ming",
+                "subtitle": "xu@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000561",
+                  "person_name": "Xu Ming",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              },
+              {
+                "kind": "person",
+                "object_id": "00000000-0000-4000-8000-000000000562",
+                "title": "Mingus Wu",
+                "subtitle": "mingus@appflowy.io",
+                "mention": {
+                  "type": "person",
+                  "person_id": "00000000-0000-4000-8000-000000000562",
+                  "person_name": "Mingus Wu",
+                  "page_id": "00000000-0000-4000-8000-000000000fff"
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "people",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "person:00000000-0000-4000-8000-000000000561",
+              "title": "Xu Ming",
+              "source": "both",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "person:00000000-0000-4000-8000-000000000562",
+              "title": "Mingus Wu",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fresh-includes-the-15-minute-bound",
+      "request": {"query": "spec"},
+      "local": [
+        {
+          "key": "page:00000000-0000-4000-8000-000000000571",
+          "title": "Spec A",
+          "changed_ago_ms": 900000
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000572",
+          "title": "Spec B",
+          "changed_ago_ms": 900001
+        },
+        {
+          "key": "page:00000000-0000-4000-8000-000000000573",
+          "title": "Spec C",
+          "changed_ago_ms": -60000
+        }
+      ],
+      "server": {
+        "sections": [
+          {"kind": "pages", "title": "Pages", "items": [], "has_more": false, "status": "ok"}
+        ]
+      },
+      "expected": [
+        {
+          "kind": "pages",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "page:00000000-0000-4000-8000-000000000571",
+              "title": "Spec A",
+              "source": "local",
+              "fresh": true,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-000000000572",
+              "title": "Spec B",
+              "source": "local",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "page:00000000-0000-4000-8000-000000000573",
+              "title": "Spec C",
+              "source": "local",
+              "fresh": true,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quick-picks-are-keyed-by-kind-and-title",
+      "request": {"query": ""},
+      "local": [],
+      "server": {
+        "sections": [
+          {
+            "kind": "dates",
+            "title": "Date & Reminder",
+            "items": [
+              {
+                "kind": "date",
+                "title": "Today",
+                "subtitle": "2026-01-01",
+                "mention": {
+                  "type": "date",
+                  "date": "2026-01-01T00:00:00+00:00",
+                  "include_time": false
+                }
+              },
+              {
+                "kind": "date",
+                "title": "Tomorrow",
+                "subtitle": "2026-01-02",
+                "mention": {
+                  "type": "date",
+                  "date": "2026-01-02T00:00:00+00:00",
+                  "include_time": false
+                }
+              },
+              {
+                "kind": "reminder",
+                "title": "Reminder tomorrow 9 AM",
+                "subtitle": "2026-01-02 09:00",
+                "mention": {
+                  "type": "date",
+                  "date": "2026-01-02T09:00:00+00:00",
+                  "reminder_option": "atTimeOfEvent",
+                  "include_time": true
+                }
+              },
+              {
+                "kind": "reminder",
+                "title": "Reminder 1 week",
+                "subtitle": "2026-01-08",
+                "mention": {
+                  "type": "date",
+                  "date": "2026-01-08T00:00:07.118+00:00",
+                  "reminder_option": "atTimeOfEvent",
+                  "include_time": false
+                }
+              }
+            ],
+            "has_more": false,
+            "status": "ok"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "dates",
+          "status": "ok",
+          "message": null,
+          "items": [
+            {
+              "key": "date:Today",
+              "title": "Today",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "date:Tomorrow",
+              "title": "Tomorrow",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "reminder:Reminder tomorrow 9 AM",
+              "title": "Reminder tomorrow 9 AM",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            },
+            {
+              "key": "reminder:Reminder 1 week",
+              "title": "Reminder 1 week",
+              "source": "server",
+              "fresh": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
