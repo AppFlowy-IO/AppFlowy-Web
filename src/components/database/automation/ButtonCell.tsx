@@ -26,10 +26,10 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
   const db = useDatabase();
   const context = useDatabaseContextOptional();
   const user = useCurrentUserOptional();
-  const options = field && getTypeOptions(field, FieldType.Button)?.toJSON();
+  const configuredLabel = getTypeOptions(field, FieldType.Button)?.get('label');
   const label =
-    (typeof options?.label === 'string' && options.label.trim()) ||
-    field?.get(YjsDatabaseKey.name) ||
+    (typeof configuredLabel === 'string' && configuredLabel.trim()) ||
+    field.get(YjsDatabaseKey.name) ||
     t('databaseAutomation.run');
   const [open, setOpen] = useState(false);
   const database = db?.get(YjsDatabaseKey.id);
