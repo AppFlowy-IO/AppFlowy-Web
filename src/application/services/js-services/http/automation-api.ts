@@ -19,6 +19,20 @@ export type TextPart =
   | { type: 'variable'; name: string }
   | { type: 'step_row_id'; action_index: number };
 export type AutomationText = string | { parts: TextPart[] };
+export type MemberRecipient =
+  | { type: 'address'; value: AutomationText }
+  | { type: 'workspace_user'; user_id: string }
+  | { type: 'actor' }
+  | { type: 'person_field'; field_id: string };
+export type EmailRecipient = AutomationText | MemberRecipient;
+export function isMemberRecipient(value: EmailRecipient): value is MemberRecipient {
+  return !!value && typeof value === 'object' && 'type' in value;
+}
+
+export function recipientText(value?: EmailRecipient): AutomationText | undefined {
+  return value === undefined || isMemberRecipient(value) ? undefined : value;
+}
+
 export type Formula = {
   operator: 'add' | 'subtract' | 'multiply' | 'divide' | 'add_days';
   left: PropertyValue;
@@ -91,11 +105,11 @@ export interface RuleAction {
   properties?: Assignment[];
   name?: string;
   recipient_id?: string;
-  to?: AutomationText[];
-  cc?: AutomationText[];
-  bcc?: AutomationText[];
+  to?: EmailRecipient[];
+  cc?: EmailRecipient[];
+  bcc?: EmailRecipient[];
   sender_name?: AutomationText;
-  reply_to?: AutomationText;
+  reply_to?: EmailRecipient;
   connection_id?: string;
   channel_id?: string;
   endpoint_id?: string;

@@ -1,5 +1,12 @@
 {
   "databaseAutomation": {
+    "recipientSource": "{{group}} recipient source",
+    "recipientKinds": {
+      "address": "Email address",
+      "workspace_user": "Workspace member",
+      "actor": "Person who triggered the rule",
+      "person_field": "People from a property"
+    },
     "insertFormulaProperty": "Insert source property",
     "duplicate": "Duplicate",
     "copyOf": "Copy of {{name}}",
@@ -124,6 +131,7 @@
     "kinds": {
       "expression": "Formula expression",
       "webhook_properties": "Send selected properties to webhook",
+      "member_addressed_email": "Send Gmail to people",
       "addressed_email": "Send addressed Gmail",
       "yearly": "Yearly",
       "connected_email": "Send from Gmail",

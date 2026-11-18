@@ -15,7 +15,8 @@ import { Input } from '@/components/ui/input';
 
 import { Capabilities, newAction, RuleField, valueKinds } from './model';
 import { PropertyEditedFields } from './PropertyEditedFields';
-import { SourceValue, TextFields, WorkflowFields } from './WorkflowFields';
+import { SourceValue, WorkflowFields } from './WorkflowFields';
+import { TextFields } from './TextFields';
 
 import type { ReactNode } from 'react';
 
@@ -393,6 +394,7 @@ export function ActionFields({
   fields,
   deleted,
   expressionRow,
+  scheduled,
   caps,
   change,
 }: {
@@ -400,6 +402,7 @@ export function ActionFields({
   fields: RuleField[];
   deleted: boolean;
   expressionRow: boolean;
+  scheduled: boolean;
   caps: Capabilities;
   workspace: string;
   previous: RuleAction[];
@@ -438,6 +441,8 @@ export function ActionFields({
         />
       ) : (
         <WorkflowFields
+          scheduled={scheduled}
+          hasRow={expressionRow}
           expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           webhookHeaders={caps.webhookHeaders}
           {...{ workspace, action, fields, previous, change }}

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toIntlLocale } from '@/i18n/intl-locale';
 
+import { needsRecipientRow } from './model';
 import { Select } from './Select';
 
 export function InvocationFields({
@@ -33,7 +34,8 @@ export function InvocationFields({
 }) {
   const { t, i18n } = useTranslation();
   const scheduled = rule.trigger.type === 'scheduled';
-  const rowRequired = !scheduled || rule.actions.some((action) => action.type === 'webhook_properties');
+  const rowRequired =
+    !scheduled || rule.actions.some((action) => action.type === 'webhook_properties' || needsRecipientRow(action));
   const [revision, setRevision] = useState(rule.revision);
   const [schedule, setSchedule] = useState<RuleSchedule>(() => ({
     ...(fixedRow && { row_id: fixedRow }),

@@ -1,7 +1,11 @@
+import { validate as isUuid } from 'uuid';
+
 import { FieldType } from '@/application/database-yjs';
+import { isMemberRecipient } from '@/application/services/js-services/http/automation-api';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import type {
   AutomationText,
+  EmailRecipient,
   Formula,
   PropertyValue,
   RuleAction,
@@ -31,6 +35,7 @@ export const actionTypes = [
   'email',
   'connected_email',
   'addressed_email',
+  'member_addressed_email',
   'slack',
   'webhook',
   'webhook_properties',
@@ -112,6 +117,8 @@ export function newAction(type: string): RuleAction {
       return { type, name: '', value: { kind: 'text', value: '' } };
     case 'email':
       return { type, recipient_id: '', subject: '', message: '' };
+    case 'member_addressed_email':
+      return { type, connection_id: '', to: [{ type: 'address', value: '' }], subject: '', message: '' };
     case 'addressed_email':
     case 'connected_email':
       return { type, connection_id: '', to: [''], subject: '', message: '' };
@@ -173,6 +180,7 @@ function knownText(text?: AutomationText): boolean {
     knownKeys(text, ['parts']) &&
     Array.isArray(text.parts) &&
     text.parts.every((p) => {
+      if (!p || typeof p !== 'object') return false;
       switch (p.type) {
         case 'text':
           return knownKeys(p, ['type', 'value']);
@@ -237,12 +245,30 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
     create_row: ['database_id', 'view_id', 'properties'],
     edit_row: ['database_id', 'row', 'properties'],
     email: ['recipient_id', 'subject', 'message'],
+    member_addressed_email: ['connection_id', 'to', 'cc', 'bcc', 'reply_to', 'sender_name', 'subject', 'message'],
     addressed_email: ['connection_id', 'to', 'cc', 'bcc', 'reply_to', 'sender_name', 'subject', 'message'],
     connected_email: ['connection_id', 'to', 'subject', 'message'],
     slack: ['connection_id', 'channel_id', 'message'],
     webhook: ['endpoint_id', 'message'],
     webhook_properties: ['endpoint_id', 'message', 'property_ids'],
   };
+  const recipient = (v: EmailRecipient) => {
+    if (a.type !== 'member_addressed_email') return !isMemberRecipient(v) && knownText(v);
+    if (!isMemberRecipient(v)) return false;
+    switch (v.type) {
+      case 'address':
+        return knownKeys(v, ['type', 'value']) && v.value !== undefined && knownText(v.value);
+      case 'actor':
+        return knownKeys(v, ['type']);
+      case 'workspace_user':
+        return knownKeys(v, ['type', 'user_id']) && typeof v.user_id === 'string';
+      case 'person_field':
+        return knownKeys(v, ['type', 'field_id']) && typeof v.field_id === 'string';
+      default:
+        return false;
+    }
+  };
+
   const row = a.row;
   const rowKeys =
     row &&
@@ -269,8 +295,8 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
       (caps.actions.includes('define_variable') && a.message === undefined && knownText(a.message_template))) &&
     knownText(a.message) &&
     knownText(a.subject) &&
-    [a.to, a.cc, a.bcc].every((group) => group === undefined || (Array.isArray(group) && group.every(knownText))) &&
-    knownText(a.reply_to) &&
+    [a.to, a.cc, a.bcc].every((group) => group === undefined || (Array.isArray(group) && group.every(recipient))) &&
+    (a.reply_to === undefined || recipient(a.reply_to)) &&
     knownText(a.sender_name) &&
     (!a.properties ||
       a.properties.every(
@@ -286,7 +312,19 @@ export function canEditRule(rule: RuleDefinition, caps: Capabilities) {
   return supportedTrigger(rule.trigger, caps) && rule.actions.every((action) => supportedAction(action, caps));
 }
 
-export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
+export const isRecipientField = (field: RuleField) =>
+  [FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(field.type);
+
+export function needsRecipientRow(a: RuleAction) {
+  return (
+    a.type === 'member_addressed_email' &&
+    [...(a.to || []), ...(a.cc || []), ...(a.bcc || []), a.reply_to].some(
+      (v) => v && isMemberRecipient(v) && v.type === 'person_field'
+    )
+  );
+}
+
+export function validRule(rule: RuleDefinition, fields: RuleField[] = [], calendarHasRow = false) {
   if (!rule.name.trim() || !rule.timezone.trim() || rule.actions.length < 1 || rule.actions.length > 5) return false;
   const validEvent = (tr: RuleTrigger) =>
     tr.type === 'property_edited'
@@ -340,17 +378,38 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
           (a.message_template === undefined || text(a.message_template)) &&
           (typeof a.message !== 'string' || a.message.length <= 500)
         );
+      case 'member_addressed_email':
       case 'addressed_email': {
         const groups = [a.to ?? [], a.cc ?? [], a.bcc ?? []];
         const addresses = groups.flat();
+        const recipient = (v: EmailRecipient) => {
+          if (a.type !== 'member_addressed_email') return !isMemberRecipient(v) && text(v);
+          if (!isMemberRecipient(v)) return false;
+          switch (v.type) {
+            case 'address':
+              return text(v.value);
+            case 'actor':
+              return rule.trigger.type !== 'scheduled';
+            case 'workspace_user':
+              return isUuid(v.user_id);
+            case 'person_field':
+              return (
+                !deletesRow &&
+                (rule.trigger.type !== 'scheduled' || calendarHasRow) &&
+                fields.some((f) => f.id === v.field_id && isRecipientField(f))
+              );
+            default:
+              return false;
+          }
+        };
 
         return (
           !!a.connection_id &&
           addresses.length > 0 &&
           addresses.length <= 10 &&
-          addresses.every(text) &&
+          addresses.every(recipient) &&
           (a.sender_name === undefined || text(a.sender_name)) &&
-          (a.reply_to === undefined || text(a.reply_to)) &&
+          (a.reply_to === undefined || recipient(a.reply_to)) &&
           text(a.subject) &&
           text(a.message)
         );
@@ -361,7 +420,7 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
           !!a.connection_id &&
           !!a.to?.length &&
           a.to.length <= 10 &&
-          a.to.every(text) &&
+          a.to.every((v) => !isMemberRecipient(v) && text(v)) &&
           text(a.subject) &&
           text(a.message)
         );
@@ -450,6 +509,8 @@ export function reorderActions(original: RuleAction[], ordered: RuleAction[]): R
   const parts = (value: TextPart[]) =>
     value.map((p) => (p.type === 'step_row_id' ? { ...p, action_index: index(p.action_index) } : p));
   const text = (value: AutomationText) => (typeof value === 'string' ? value : { parts: parts(value.parts) });
+  const recipient = (v: EmailRecipient): EmailRecipient =>
+    isMemberRecipient(v) ? (v.type === 'address' ? { ...v, value: text(v.value) } : v) : text(v);
   const property = (value: PropertyValue): PropertyValue =>
     formula(value)
       ? {
@@ -468,10 +529,10 @@ export function reorderActions(original: RuleAction[], ordered: RuleAction[]): R
     ...(action.value ? { value: property(action.value) } : {}),
     ...(action.properties ? { properties: action.properties.map((p) => ({ ...p, value: property(p.value) })) } : {}),
     ...(action.subject ? { subject: text(action.subject) } : {}),
-    ...(action.to ? { to: action.to.map(text) } : {}),
-    ...(action.cc ? { cc: action.cc.map(text) } : {}),
-    ...(action.bcc ? { bcc: action.bcc.map(text) } : {}),
-    ...(action.reply_to ? { reply_to: text(action.reply_to) } : {}),
+    ...(action.to ? { to: action.to.map(recipient) } : {}),
+    ...(action.cc ? { cc: action.cc.map(recipient) } : {}),
+    ...(action.bcc ? { bcc: action.bcc.map(recipient) } : {}),
+    ...(action.reply_to ? { reply_to: recipient(action.reply_to) } : {}),
     ...(action.sender_name ? { sender_name: text(action.sender_name) } : {}),
     ...(action.message ? { message: text(action.message) } : {}),
     ...(action.message_template ? { message_template: text(action.message_template) } : {}),

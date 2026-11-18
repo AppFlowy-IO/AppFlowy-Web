@@ -3,13 +3,12 @@ import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs';
 import {
-  AutomationText,
   PropertyValue,
   RuleAction,
+  recipientText,
   ruleApi,
   TargetDatabase,
   TargetField,
-  TextPart,
 } from '@/application/services/js-services/http/automation-api';
 import { listConnections, queryIntegration } from '@/application/services/js-services/http/integration-api';
 import { useMentionableUsers } from '@/components/database/components/cell/person/useMentionableUsers';
@@ -18,129 +17,11 @@ import { Input } from '@/components/ui/input';
 
 import { ConditionFields } from './ConditionFields';
 import { EndpointControls, ConnectAccount } from './DestinationSettings';
+import { TextFields } from './TextFields';
+import { MemberEmailFields } from './MemberEmailFields';
 import { ExpressionFields } from './ExpressionFields';
 import { arithmetic, formula, relationVariables, RuleField, valueKinds } from './model';
 import { Select, Item } from './Select';
-
-export function TextFields({
-  label,
-  value,
-  fields,
-  previous,
-  change,
-}: {
-  label: string;
-  value?: AutomationText;
-  fields: RuleField[];
-  previous: RuleAction[];
-  change: (v: AutomationText) => void;
-}) {
-  const { t } = useTranslation();
-
-  if (typeof value !== 'object')
-    return (
-      <div>
-        <label>
-          {label}
-          <Input value={value || ''} onChange={(e) => change(e.target.value)} />
-        </label>
-        <Button
-          size='sm'
-          variant='ghost'
-          type='button'
-          onClick={() => change({ parts: [{ type: 'text', value: value || '' }] })}
-        >
-          {t('databaseAutomation.template')}
-        </Button>
-      </div>
-    );
-  const parts = value.parts;
-  const variables = previous
-    .filter((a) => a.type === 'define_variable' && a.name)
-    .map((a) => ({ id: a.name!, name: a.name! }));
-  const steps = previous.flatMap((a, i) =>
-    a.type === 'create_row' ? [{ id: String(i), name: t('databaseAutomation.step', { n: i + 1 }) }] : []
-  );
-
-  function write(i: number, part: TextPart) {
-    change({ parts: parts.map((p, n) => (i === n ? part : p)) });
-  }
-
-  return (
-    <fieldset className='flex flex-col gap-2'>
-      <legend>{label}</legend>
-      {parts.map((p, i) => (
-        <div key={i} className='flex flex-wrap items-center gap-2'>
-          <Select
-            label={t('databaseAutomation.source')}
-            value={p.type}
-            options={[
-              'text',
-              'field',
-              ...(variables.length ? ['variable'] : []),
-              ...(steps.length ? ['step_row_id'] : []),
-            ].map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
-            change={([type]) => {
-              if (type === 'field') write(i, { type, field_id: fields[0]?.id || '' });
-              else if (type === 'variable') write(i, { type, name: variables[0]?.id || '' });
-              else if (type === 'step_row_id') write(i, { type, action_index: Number(steps[0]?.id) });
-              else write(i, { type: 'text', value: '' });
-            }}
-          />
-          {p.type === 'text' ? (
-            <Input
-              aria-label={t('databaseAutomation.value')}
-              value={p.value}
-              onChange={(e) => write(i, { ...p, value: e.target.value })}
-            />
-          ) : (
-            <Select
-              label={t('databaseAutomation.value')}
-              value={p.type === 'field' ? p.field_id : p.type === 'variable' ? p.name : String(p.action_index)}
-              options={p.type === 'field' ? fields : p.type === 'variable' ? variables : steps}
-              change={([v]) =>
-                write(
-                  i,
-                  p.type === 'field'
-                    ? { ...p, field_id: v }
-                    : p.type === 'variable'
-                    ? { ...p, name: v }
-                    : { ...p, action_index: Number(v) }
-                )
-              }
-            />
-          )}
-          <Button
-            variant='ghost'
-            size='sm'
-            type='button'
-            onClick={() => change({ parts: parts.filter((_, n) => n !== i) })}
-          >
-            {t('databaseAutomation.removePart')}
-          </Button>
-        </div>
-      ))}
-      <Button variant='outline' type='button' onClick={() => change({ parts: [...parts, { type: 'text', value: '' }] })}>
-        {t('databaseAutomation.addPart')}
-      </Button>
-      <Button
-        variant='ghost'
-        size='sm'
-        type='button'
-        onClick={() =>
-          change(
-            parts
-              .filter((p) => p.type === 'text')
-              .map((p) => (p as { value: string }).value)
-              .join('')
-          )
-        }
-      >
-        {t('databaseAutomation.literal')}
-      </Button>
-    </fieldset>
-  );
-}
 
 export function SourceValue({
   value,
@@ -664,6 +545,8 @@ export function WorkflowFields({
   previous,
   extended,
   webhookHeaders,
+  scheduled,
+  hasRow,
   expressionFields,
 }: {
   workspace: string;
@@ -673,6 +556,8 @@ export function WorkflowFields({
   previous: RuleAction[];
   extended: boolean;
   webhookHeaders: boolean;
+  scheduled: boolean;
+  hasRow: boolean;
   expressionFields?: RuleField[];
 }) {
   const { t } = useTranslation();
@@ -702,7 +587,7 @@ export function WorkflowFields({
         return results;
       }
 
-      if (['slack', 'connected_email', 'addressed_email'].includes(action.type))
+      if (['slack', 'connected_email', 'addressed_email', 'member_addressed_email'].includes(action.type))
         return (await listConnections(workspace, ac.signal))
           .filter((c) => c.provider === (action.type === 'slack' ? 'slack' : 'gmail') && c.status === 'active')
           .map((c) => ({ id: c.id, name: c.account_identifier || c.id }));
@@ -840,7 +725,7 @@ export function WorkflowFields({
           />
         </>
       )}
-      {['connected_email', 'addressed_email'].includes(action.type) && (
+      {['connected_email', 'addressed_email', 'member_addressed_email'].includes(action.type) && (
         <>
           <Select
             label={t('databaseAutomation.gmail')}
@@ -856,51 +741,55 @@ export function WorkflowFields({
               setRetry((n) => n + 1);
             }}
           />
-          {(action.type === 'addressed_email' ? (['to', 'cc', 'bcc'] as const) : (['to'] as const)).map((group) => {
-            const values = action[group] ?? [];
-            const label =
-              action.type === 'addressed_email' ? t(`databaseAutomation.${group}`) : t('databaseAutomation.recipient');
+          {action.type === 'member_addressed_email' && (
+            <MemberEmailFields {...{ action, change, fields, previous, scheduled, hasRow }} />
+          )}
+          {action.type !== 'member_addressed_email' &&
+            (action.type === 'addressed_email' ? (['to', 'cc', 'bcc'] as const) : (['to'] as const)).map((group) => {
+              const values = action[group] ?? [];
+              const label =
+                action.type === 'addressed_email' ? t(`databaseAutomation.${group}`) : t('databaseAutomation.recipient');
 
-            return (
-              <div key={group}>
-                {values.map((value, i) => (
-                  <div key={i}>
-                    <TextFields
-                      label={label}
-                      value={value}
-                      fields={fields}
-                      previous={previous}
-                      change={(next) => change({ ...action, [group]: values.map((v, n) => (i === n ? next : v)) })}
-                    />
+              return (
+                <div key={group}>
+                  {values.map((value, i) => (
+                    <div key={i}>
+                      <TextFields
+                        label={label}
+                        value={recipientText(value)}
+                        fields={fields}
+                        previous={previous}
+                        change={(next) => change({ ...action, [group]: values.map((v, n) => (i === n ? next : v)) })}
+                      />
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        onClick={() => change({ ...action, [group]: values.filter((_, n) => i !== n) })}
+                      >
+                        {t('databaseAutomation.removeRecipient')}
+                      </Button>
+                    </div>
+                  ))}
+                  {(action.to?.length ?? 0) + (action.cc?.length ?? 0) + (action.bcc?.length ?? 0) < 10 && (
                     <Button
                       type='button'
-                      variant='ghost'
-                      onClick={() => change({ ...action, [group]: values.filter((_, n) => i !== n) })}
+                      variant='outline'
+                      onClick={() => change({ ...action, [group]: [...values, ''] })}
                     >
-                      {t('databaseAutomation.removeRecipient')}
+                      {action.type === 'addressed_email'
+                        ? t('databaseAutomation.addAddress', { group: label })
+                        : t('databaseAutomation.addRecipient')}
                     </Button>
-                  </div>
-                ))}
-                {(action.to?.length ?? 0) + (action.cc?.length ?? 0) + (action.bcc?.length ?? 0) < 10 && (
-                  <Button
-                    type='button'
-                    variant='outline'
-                    onClick={() => change({ ...action, [group]: [...values, ''] })}
-                  >
-                    {action.type === 'addressed_email'
-                      ? t('databaseAutomation.addAddress', { group: label })
-                      : t('databaseAutomation.addRecipient')}
-                  </Button>
-                )}
-              </div>
-            );
-          })}
+                  )}
+                </div>
+              );
+            })}
           {action.type === 'addressed_email' &&
             (['reply_to', 'sender_name'] as const).map((key) => (
               <TextFields
                 key={key}
                 label={t(`databaseAutomation.${key}`)}
-                value={action[key]}
+                value={recipientText(action[key])}
                 previous={previous}
                 fields={fields}
                 change={(value) => change({ ...action, [key]: value || undefined })}

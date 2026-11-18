@@ -264,7 +264,10 @@ function RuleForm({
   const [deleting, setDeleting] = useState(false);
   const [editingConditions, setEditingConditions] = useState(false);
   const [calendarHasRow, setCalendarHasRow] = useState(false);
-  const scheduledRule = caps.formulaExpression && original?.trigger.type === 'scheduled' ? original.id : undefined;
+  const scheduledRule =
+    (caps.formulaExpression || caps.actions.includes('member_addressed_email')) && original?.trigger.type === 'scheduled'
+      ? original.id
+      : undefined;
 
   useEffect(() => {
     setCalendarHasRow(false);
@@ -334,7 +337,11 @@ function RuleForm({
   }
 
   const hasChanges = !original || Object.keys(ruleChanges(original, draft)).length > 0;
-  const canSave = error !== 'conflict' && hasChanges && !!draft.name.trim() && (!supported || validRule(draft, fields));
+  const canSave =
+    error !== 'conflict' &&
+    hasChanges &&
+    !!draft.name.trim() &&
+    (!supported || validRule(draft, fields, calendarHasRow));
 
   return (
     <form
@@ -412,6 +419,7 @@ function RuleForm({
                     draft.trigger.type !== 'row_deleted' &&
                     !draft.trigger.triggers?.some((event) => event.type === 'row_deleted')
                   }
+                  scheduled={draft.trigger.type === 'scheduled'}
                   deleted={draft.trigger.type === 'row_deleted'}
                   change={(a) => updateActions(index, a)}
                 />

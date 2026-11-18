@@ -1,5 +1,12 @@
 {
   "databaseAutomation": {
+    "recipientSource": "{{group}}收件人来源",
+    "recipientKinds": {
+      "address": "电子邮件地址",
+      "workspace_user": "工作区成员",
+      "actor": "触发规则的人员",
+      "person_field": "属性中的人员"
+    },
     "insertFormulaProperty": "插入来源属性",
     "duplicate": "复制",
     "copyOf": "{{name}}的副本",
@@ -124,6 +131,7 @@
     "kinds": {
       "expression": "公式表达式",
       "webhook_properties": "将指定属性发送到 Webhook",
+      "member_addressed_email": "使用 Gmail 向人员发送邮件",
       "addressed_email": "发送带收件人设置的 Gmail 邮件",
       "yearly": "每年",
       "connected_email": "使用 Gmail 发送",

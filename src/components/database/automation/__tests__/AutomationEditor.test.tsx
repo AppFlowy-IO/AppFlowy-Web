@@ -85,7 +85,15 @@ jest.mock('@/application/database-yjs', () => ({
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => {
   const fetchUsers = jest.fn();
 
-  return { useMentionableUsers: () => ({ users: [{ person_id: 'person-id', name: 'Avery' }], fetchUsers }) };
+  return {
+    useMentionableUsers: () => ({
+      users: [
+        { person_id: 'person-id', name: 'Avery' },
+        { person_id: '825119c1-c9e1-4bcd-b54c-b31ba43ee9de', name: 'Morgan' },
+      ],
+      fetchUsers,
+    }),
+  };
 });
 jest.mock('@/application/services/js-services/http/integration-api', () => ({
   listConnections: jest.fn(),
@@ -1099,6 +1107,157 @@ test('addressed Gmail saves visible and private recipients on the selected grant
       message: 'Ready',
     },
   ]);
+});
+
+test('Gmail member addressing persists four typed sources without exposing member email addresses', async () => {
+  (listConnections as jest.MockedFunction<typeof listConnections>).mockResolvedValue([
+    { id: 'mail', provider: 'gmail', connected_at: '2026-01-01', status: 'active', account_identifier: 'Work Gmail' },
+  ]);
+  fullManager();
+  api.create.mockResolvedValue(rule);
+  fireEvent.click(await screen.findByText('New automation'));
+  const choose = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+  choose('Name', 'Send update');
+  choose('Action', 'member_addressed_email');
+  await within(screen.getByLabelText('Gmail account')).findByText('Work Gmail');
+  choose('Gmail account', 'mail');
+  choose('To recipient source', 'actor');
+  fireEvent.click(screen.getByText('Add Cc recipient'));
+  choose('Cc recipient source', 'workspace_user');
+  await within(screen.getByLabelText('Workspace members')).findByText('Morgan');
+  choose('Workspace members', '825119c1-c9e1-4bcd-b54c-b31ba43ee9de');
+  fireEvent.click(screen.getByText('Add Bcc recipient'));
+  choose('Bcc recipient source', 'person_field');
+  choose('Property', 'assignee');
+  choose('Reply-To recipient source', 'address');
+  choose('Reply-To', 'updates@example.test');
+  choose('Sender name', 'Reviews');
+  choose('Subject', 'Status');
+  choose('Notification message', 'Approved');
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create.mock.calls[0][3].actions).toEqual([
+    {
+      type: 'member_addressed_email',
+      connection_id: 'mail',
+      subject: 'Status',
+      message: 'Approved',
+      sender_name: 'Reviews',
+      to: [{ type: 'actor' }],
+      cc: [{ type: 'workspace_user', user_id: '825119c1-c9e1-4bcd-b54c-b31ba43ee9de' }],
+      bcc: [{ type: 'person_field', field_id: 'assignee' }],
+      reply_to: { type: 'address', value: 'updates@example.test' },
+    },
+  ]);
+});
+
+test.each([false, true])(
+  'scheduled Gmail offers property recipients only for a bound row and never offers actor (bound=%s)',
+  async (rowBound) => {
+    const saved = {
+      ...rule,
+      trigger: { type: 'scheduled' },
+      actions: [
+        {
+          type: 'member_addressed_email',
+          connection_id: 'mail',
+          subject: 'Review',
+          message: 'Ready',
+          to: [{ type: 'address' as const, value: 'old@example.test' }],
+        },
+      ],
+    };
+
+    api.getSchedule.mockResolvedValue({ row_id: rowBound ? row : undefined } as ScheduleState);
+    api.list.mockResolvedValue({ items: [saved] });
+    api.get.mockResolvedValue(saved);
+    api.patch.mockResolvedValue(saved);
+    (listConnections as jest.MockedFunction<typeof listConnections>).mockResolvedValue([]);
+    fullManager();
+    fireEvent.click(await screen.findByText('Existing'));
+    const chooser = await screen.findByLabelText('To recipient source');
+
+    await waitFor(() => expect(api.getSchedule).toHaveBeenCalledTimes(1));
+    expect(within(chooser).queryByText('Person who triggered the rule')).toBeNull();
+    if (rowBound) {
+      expect(await within(chooser).findByText('People from a property')).toBeTruthy();
+      fireEvent.change(chooser, { target: { value: 'person_field' } });
+      fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'assignee' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() =>
+        expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+          actions: [{ ...saved.actions[0], to: [{ type: 'person_field', field_id: 'assignee' }] }],
+        })
+      );
+    } else {
+      expect(within(chooser).queryByText('People from a property')).toBeNull();
+    }
+  }
+);
+
+test('Gmail member selectors respect row scope, calendar binding, discovery, and the ten selector limit', () => {
+  const fields = [
+    { id: 'creator', name: 'Created by', type: FieldType.CreatedBy },
+    { id: 'editor', name: 'Editor', type: FieldType.LastEditedBy },
+    { id: 'title', name: 'Title', type: FieldType.RichText },
+  ];
+  const action: RuleAction = {
+    type: 'member_addressed_email',
+    connection_id: 'mail',
+    subject: 's',
+    message: 'm',
+    to: [{ type: 'person_field', field_id: 'creator' }],
+    reply_to: { type: 'person_field', field_id: 'editor' },
+  };
+  const saved = { ...rule, actions: [action], trigger: { type: 'scheduled' } };
+
+  expect(canEditRule(saved, extended)).toBe(true);
+  expect(
+    canEditRule(saved, { ...extended, actions: extended.actions.filter((a) => a !== 'member_addressed_email') })
+  ).toBe(false);
+  expect(
+    canEditRule({ ...saved, actions: [{ ...action, to: [{ type: 'actor', later: true } as never] }] }, extended)
+  ).toBe(false);
+  expect(validRule(saved, fields, true)).toBe(true);
+  expect(validRule(saved, fields)).toBe(false);
+  expect(validRule({ ...saved, actions: [{ ...action, to: [{ type: 'actor' }] }] }, fields, true)).toBe(false);
+  expect(
+    validRule({ ...saved, actions: [{ ...action, to: [{ type: 'person_field', field_id: 'title' }] }] }, fields, true)
+  ).toBe(false);
+  expect(
+    validRule({ ...saved, trigger: { type: 'row_events', match: 'any', triggers: [{ type: 'row_deleted' }] } }, fields)
+  ).toBe(false);
+  expect(
+    validRule(
+      {
+        ...saved,
+        actions: [
+          { ...action, to: Array(11).fill({ type: 'address', value: 'member@example.test' }), reply_to: undefined },
+        ],
+      },
+      fields
+    )
+  ).toBe(false);
+  expect(
+    validRule(
+      { ...saved, actions: [{ ...action, to: [{ type: 'workspace_user', user_id: 'invalid' }], reply_to: undefined }] },
+      fields
+    )
+  ).toBe(false);
+  expect(validRule({ ...saved, actions: [{ ...action, to: [], reply_to: undefined }] }, fields)).toBe(false);
+  const first: RuleAction = { type: 'create_row' },
+    second: RuleAction = { type: 'create_row' };
+  const indirect: RuleAction = {
+    ...action,
+    bcc: [{ type: 'address', value: { parts: [{ type: 'step_row_id', action_index: 0 }] } }],
+  };
+  const reordered = reorderActions([first, second, indirect], [second, first, indirect]);
+
+  expect(reordered[2]).toEqual({
+    ...indirect,
+    bcc: [{ type: 'address', value: { parts: [{ type: 'step_row_id', action_index: 1 }] } }],
+  });
 });
 
 test('a person assignment uses a member UUID and explicitly adds to the existing value', async () => {
