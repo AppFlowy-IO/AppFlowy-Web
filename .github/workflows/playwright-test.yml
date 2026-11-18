@@ -202,7 +202,8 @@ jobs:
     # Match the browser binaries to the Playwright version in pnpm-lock.yaml.
     container:
       image: mcr.microsoft.com/playwright:v1.58.2-noble
-      options: --shm-size=1g
+      # The hosted runner owns the mounted workspace and home as uid 1001.
+      options: --user pwuser --shm-size=1g
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
