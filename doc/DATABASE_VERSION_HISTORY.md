@@ -51,7 +51,12 @@ Ordinary sync shares restore authority by `(server, user, workspace, database ID
 within the tab. Opening the first database root checks authority; subsequent
 messages and additional views reuse that result for five minutes. Row pages share
 their root's generation and join pending recovery without starting routine checks.
-One timer per database verifies idle open root editors and stops when the root closes.
+In a visible tab, one timer per database verifies idle open root editors. If a check
+comes due while the tab is hidden, it waits until the tab becomes visible. Only roots
+that are still open and stale need a request then. Sync traffic and restore notifications
+can still trigger verification while hidden. Global Trash binds each affected database
+once per action and releases it after the Folder operation. A database with pending
+edits remains available for HTTP fallback without an editor holding it open for polling.
 Reopening and coming back online check again. Restore notifications and generation/version mismatches
 bypass freshness, and checks after a reset still verify that no newer restore won
 during reload. Failed checks defer sync and share the recovery cooldown, including

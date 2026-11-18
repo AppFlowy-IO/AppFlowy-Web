@@ -48,6 +48,12 @@ interface BackgroundDirtyEdit {
   seq: number;
   editedAt: number;
   retryRetainUntil?: number;
+  retryAt?: number;
+}
+
+function isEligibleForHttpSync(dirty: BackgroundDirtyEdit, now: number) {
+  return now - dirty.editedAt <= BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS ||
+    (dirty.retryRetainUntil !== undefined && now <= dirty.retryRetainUntil);
 }
 
 /**
@@ -118,7 +124,11 @@ export function useBatchSync(
     const admitted = checkedItems.filter((item): item is typeof items[number] => item !== null);
 
     if (signal.aborted) throw signal.reason;
-    return admitted.length ? collabFullSyncBatch(workspaceId, admitted, { signal }) : [];
+    if (!admitted.length) return [];
+    const admittedTypes = new Map(admitted.map((item) => [item.objectId, item.collabType]));
+    const results = await collabFullSyncBatch(workspaceId, admitted, { signal });
+
+    return results.filter((result) => admittedTypes.get(result.objectId) === result.collabType);
   }, []);
   const batchSyncAbortRef = useRef<AbortController | null>(null);
   const explicitSyncsRef = useRef(new Map<string, { seq: number; promise: Promise<void> }>());
@@ -134,6 +144,43 @@ export function useBatchSync(
   const workspaceIdRef = useRef<string | undefined>(options?.workspaceId);
   const runBackgroundHttpSyncRef = useRef<() => Promise<void>>(async () => undefined);
 
+  const needsContextForHttpSync = useCallback((objectId: string) => {
+    const dirty = backgroundDirtyEditsRef.current.get(objectId);
+
+    return Boolean(dirty && (backgroundHttpSyncInFlightRef.current || isEligibleForHttpSync(dirty, Date.now())));
+  }, []);
+
+  const recordHttpSyncResults = useCallback((
+    results: Awaited<ReturnType<typeof collabFullSyncBatch>>, sentSequences: Map<string, number | undefined>
+  ) => {
+    const byId = new Map(results.map((result) => [result.objectId, result]));
+    const now = Date.now();
+
+    for (const [objectId, seq] of sentSequences) {
+      const dirty = backgroundDirtyEditsRef.current.get(objectId);
+
+      if (!dirty || dirty.seq !== seq) continue;
+      const result = byId.get(objectId);
+
+      if (result && !result.error) {
+        backgroundDirtyEditsRef.current.delete(objectId);
+      } else if (result?.error === 'permission_denied') {
+        // Keep the outbox edit until access changes. A new edit, reconnect, or
+        // explicit sync can recheck it without hammering a denied object.
+        dirty.retryAt = Infinity;
+      } else {
+        // The restore guard can defer an item independently of the others.
+        // A missing acknowledgment or a per-item error also needs a later attempt.
+        dirty.retryAt = now + BACKGROUND_HTTP_SYNC_ERROR_PAUSE_MS;
+        // A locally blocked item can remain denied indefinitely. Only an explicit
+        // transient server result extends the normal recent-edit retention window.
+        if (result?.error === 'retry_later') {
+          dirty.retryRetainUntil = dirty.retryAt + BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS;
+        }
+      }
+    }
+  }, []);
+
   const clearBackgroundHttpSyncTimer = useCallback(() => {
     if (backgroundHttpSyncTimerRef.current) {
       clearTimeout(backgroundHttpSyncTimerRef.current);
@@ -141,7 +188,7 @@ export function useBatchSync(
     }
   }, []);
 
-  const scheduleBackgroundHttpSyncTimer = useCallback(() => {
+  const scheduleBackgroundHttpSyncTimer = useCallback((minimumDelayMs = BACKGROUND_HTTP_SYNC_DELAY_MS) => {
     const workspaceId = workspaceIdRef.current;
     const readyState = wsReadyStateRef.current;
 
@@ -150,7 +197,7 @@ export function useBatchSync(
     // Honour an active busy pause: local edits keep marking docs dirty, but
     // the next request waits until the pause expires instead of every 5s.
     const pauseRemainingMs = backgroundHttpSyncPausedUntilRef.current - Date.now();
-    const delayMs = Math.max(BACKGROUND_HTTP_SYNC_DELAY_MS, pauseRemainingMs);
+    const delayMs = Math.max(minimumDelayMs, pauseRemainingMs);
 
     clearBackgroundHttpSyncTimer();
     backgroundHttpSyncTimerRef.current = setTimeout(() => {
@@ -177,6 +224,10 @@ export function useBatchSync(
     if (options?.wsReadyState === WS_READY_STATE_OPEN) {
       clearBackgroundHttpSyncTimer();
       backgroundHttpSyncAbortRef.current?.abort();
+      for (const dirty of backgroundDirtyEditsRef.current.values()) {
+        if (dirty.retryAt === Infinity) dirty.retryAt = undefined;
+      }
+
       return;
     }
 
@@ -302,20 +353,25 @@ export function useBatchSync(
     if (!workspaceId || readyState === undefined || readyState === WS_READY_STATE_OPEN) return;
 
     const now = Date.now();
+    let nextRetryAt = Infinity;
     const dirtySnapshot = Array.from(backgroundDirtyEditsRef.current.entries()).filter(([objectId, dirty]) => {
-      const isRecentEdit = now - dirty.editedAt <= BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS;
-      const isRetainedForRetry = dirty.retryRetainUntil !== undefined && now <= dirty.retryRetainUntil;
-
-      if (isRecentEdit || isRetainedForRetry) return true;
-
-      if (backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
+      if (!isEligibleForHttpSync(dirty, now)) {
         backgroundDirtyEditsRef.current.delete(objectId);
+        return false;
       }
 
-      return false;
+      if (dirty.retryAt !== undefined && dirty.retryAt > now) {
+        nextRetryAt = Math.min(nextRetryAt, dirty.retryAt);
+        return false;
+      }
+
+      return true;
     });
 
-    if (dirtySnapshot.length === 0) return;
+    if (dirtySnapshot.length === 0) {
+      if (Number.isFinite(nextRetryAt)) scheduleBackgroundHttpSyncTimer(nextRetryAt - now);
+      return;
+    }
 
     const items = buildBackgroundHttpSyncItems(dirtySnapshot.map(([objectId]) => objectId));
     const itemIds = new Set(items.map((item) => item.objectId));
@@ -347,11 +403,7 @@ export function useBatchSync(
       backgroundHttpSyncPausedUntilRef.current = 0;
       await applyFullSyncResults(results, items);
 
-      for (const [objectId, dirty] of dirtySnapshot) {
-        if (itemIds.has(objectId) && backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
-          backgroundDirtyEditsRef.current.delete(objectId);
-        }
-      }
+      recordHttpSyncResults(results, new Map(dirtySnapshot.map(([id, dirty]) => [id, dirty.seq])));
 
       Log.debug('[sync] background HTTP full-sync completed', {
         workspaceId,
@@ -399,7 +451,7 @@ export function useBatchSync(
         scheduleBackgroundHttpSyncTimer();
       }
     }
-  }, [applyFullSyncResults, buildBackgroundHttpSyncItems, scheduleBackgroundHttpSyncTimer, guardedBatchSync]);
+  }, [applyFullSyncResults, buildBackgroundHttpSyncItems, scheduleBackgroundHttpSyncTimer, guardedBatchSync, recordHttpSyncResults]);
 
   useEffect(() => {
     runBackgroundHttpSyncRef.current = runBackgroundHttpSync;
@@ -468,6 +520,7 @@ export function useBatchSync(
       }> = [];
 
       const registeredObjectIds = new Set<string>();
+      const dirtySeqBeforeSync = new Map<string, number | undefined>();
 
       refs.registeredContexts.current.forEach((context) => {
         const { doc, collabType } = context;
@@ -480,6 +533,8 @@ export function useBatchSync(
         const docState = Y.encodeStateAsUpdate(doc);
         const stateVector = Y.encodeStateVector(doc);
 
+        // More edits can arrive while the remaining row docs load from IndexedDB.
+        dirtySeqBeforeSync.set(doc.guid, backgroundDirtyEditsRef.current.get(doc.guid)?.seq);
         Log.debug('Adding collab to batch sync', {
           objectId: doc.guid,
           collabType,
@@ -695,9 +750,6 @@ export function useBatchSync(
       const controller = new AbortController();
 
       batchSyncAbortRef.current = controller;
-      const dirtySeqBeforeSync = new Map(
-        items.map((item) => [item.objectId, backgroundDirtyEditsRef.current.get(item.objectId)?.seq])
-      );
 
       try {
         const results = await withRetry(() => guardedBatchSync(workspaceId, items, controller.signal), {
@@ -706,13 +758,7 @@ export function useBatchSync(
         });
 
         await applyFullSyncResults(results, items);
-        for (const item of items) {
-          const seq = dirtySeqBeforeSync.get(item.objectId);
-
-          if (seq !== undefined && backgroundDirtyEditsRef.current.get(item.objectId)?.seq === seq) {
-            backgroundDirtyEditsRef.current.delete(item.objectId);
-          }
-        }
+        recordHttpSyncResults(results, dirtySeqBeforeSync);
 
         Log.debug('Batch sync completed successfully');
       } catch (error) {
@@ -720,7 +766,7 @@ export function useBatchSync(
         // Don't throw - we still want to attempt the duplicate
       }
     },
-    [refs, flushAllSync, applyFullSyncResults, guardedBatchSync]
+    [refs, flushAllSync, applyFullSyncResults, guardedBatchSync, recordHttpSyncResults]
   );
 
   // Duplicate/publish callers can overlap. Join the same captured upload rather
@@ -769,5 +815,5 @@ export function useBatchSync(
     };
   }, [refs, clearBackgroundHttpSyncTimer]);
 
-  return { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync };
+  return { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync, needsContextForHttpSync };
 }

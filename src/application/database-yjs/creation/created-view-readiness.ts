@@ -8,7 +8,7 @@ function retryableRead(error: unknown): boolean {
 
   return failure.code === ERROR_CODE.RETRY_LATER || failure.code === ERROR_CODE.TOO_MANY_REQUESTS ||
     failure.code === ERROR_CODE.RECORD_NOT_FOUND || failure.transportFailure === 'timeout' ||
-    failure.transportFailure === 'network' || [502, 503, 504].includes(Number(failure.httpStatus));
+    failure.transportFailure === 'network' || [429, 502, 503, 504].includes(Number(failure.httpStatus));
 }
 
 /** Only current reads retry after an acknowledged commit. Identity/access failures are final. */

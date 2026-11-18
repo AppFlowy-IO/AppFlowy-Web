@@ -26,10 +26,83 @@ jest.mock('@/application/sync-outbox', () => ({ waitForDrain: async () => true }
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(collabFullSyncBatch).mockResolvedValue([]);
+  jest.mocked(collabFullSyncBatch).mockImplementation(async (_workspace, items) => items.map((item) => ({
+    objectId: item.objectId, collabType: item.collabType,
+    serverStateVector: item.stateVector, missingUpdate: new Uint8Array(),
+  })));
   jest.mocked(withRetry).mockImplementation((fn) => fn());
 });
 afterEach(() => jest.useRealTimers());
+
+test.each(['background', 'explicit'])('%s sync retains only unacknowledged edits for a bounded retry', async (firstSync) => {
+  jest.useFakeTimers();
+  const ids = ['accepted', 'deferred', 'busy', 'missing', 'denied'];
+  const docs = ids.map((guid) => new Y.Doc({ guid }));
+  let recovered = false;
+  const beforeSend = jest.fn(async (id: string) => id !== 'deferred' || recovered);
+  const reply = (objectId: string, error?: string) => ({
+    objectId, collabType: Types.Database, missingUpdate: new Uint8Array(), serverStateVector: new Uint8Array(), error,
+  });
+
+  jest.mocked(collabFullSyncBatch).mockImplementation(async (_workspace, items) => items.map((item) => reply(item.objectId)));
+  jest.mocked(collabFullSyncBatch).mockResolvedValueOnce([
+    reply('accepted'), reply('busy', 'retry_later'), reply('denied', 'permission_denied'),
+    // Even an unexpected result cannot acknowledge an item excluded by the restore guard.
+    reply('deferred'),
+  ]);
+  const { result, unmount } = renderHook(() => {
+    const refs = useSyncRefs();
+
+    for (const doc of docs) refs.registeredContexts.current.set(doc.guid, { doc, collabType: Types.Database, emit: jest.fn() });
+    return useBatchSync(refs, { workspaceId: 'workspace', wsReadyState: 0, beforeSend });
+  });
+
+  try {
+    for (const id of ids) result.current.notifyLocalEdit(id);
+    await act(async () => {
+      if (firstSync === 'background') await jest.advanceTimersByTimeAsync(5_000);
+      else await result.current.syncAllToServer('workspace');
+    });
+    expect(jest.mocked(collabFullSyncBatch).mock.calls[0][1].map(item => item.objectId)).toEqual(['accepted', 'busy', 'missing', 'denied']);
+    expect(result.current.needsContextForHttpSync('accepted')).toBe(false);
+    for (const id of ids.slice(1)) expect(result.current.needsContextForHttpSync(id)).toBe(true);
+
+    recovered = true;
+    await act(async () => { await jest.advanceTimersByTimeAsync(299_999); });
+    expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+    await act(async () => { await jest.advanceTimersByTimeAsync(1); });
+    expect(collabFullSyncBatch).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(collabFullSyncBatch).mock.calls[1][1].map(item => item.objectId)).toEqual(['deferred', 'busy', 'missing']);
+    for (const id of ids.slice(0, -1)) expect(result.current.needsContextForHttpSync(id)).toBe(false);
+    expect(result.current.needsContextForHttpSync('denied')).toBe(true);
+  } finally {
+    unmount();
+    docs.forEach(doc => doc.destroy());
+  }
+});
+
+test('a persistently denied restore guard cannot prolong dirty retention for an ownerless database', async () => {
+  jest.useFakeTimers();
+  const doc = new Y.Doc({ guid: 'database' });
+  const guard = jest.fn(async () => false);
+  const { result, unmount } = renderHook(() => {
+    const refs = useSyncRefs();
+
+    refs.registeredContexts.current.set(doc.guid, { doc, collabType: Types.Database, emit: jest.fn() });
+    return useBatchSync(refs, { workspaceId: 'workspace', wsReadyState: 0, beforeSend: guard });
+  });
+
+  try {
+    result.current.notifyLocalEdit(doc.guid);
+    await act(async () => { await jest.advanceTimersByTimeAsync(610_000); });
+    expect(guard).toHaveBeenCalledTimes(2);
+    expect(collabFullSyncBatch).not.toHaveBeenCalled();
+    expect(result.current.needsContextForHttpSync(doc.guid)).toBe(false);
+  } finally {
+    unmount();
+    doc.destroy();
+  }
+});
 
 test.each([false, true])('overlapping explicit syncs share an upload unless newer edits require another: %s', async (edit) => {
   const doc: YDoc = new Y.Doc({ guid: 'document' });
@@ -150,9 +223,12 @@ test('unregistered row bytes retain their captured generation when root replacem
   });
   let sync!: Promise<void>;
 
+  result.current.notifyLocalEdit(root.guid);
   await act(async () => { sync = result.current.syncAllToServer('workspace'); });
   expect(openRowCollabDBWithProvider).toHaveBeenCalled();
   root.databaseRestoreId = 'after-restore';
+  root.getMap('data').set('newer-local-edit', true);
+  result.current.notifyLocalEdit(root.guid);
   await act(async () => {
     finishOpen({ doc: rowDoc, provider: { destroy: async () => undefined } } as never);
     await sync;
@@ -160,6 +236,8 @@ test('unregistered row bytes retain their captured generation when root replacem
   const row = jest.mocked(collabFullSyncBatch).mock.calls[0][1].find((item) => item.objectId === 'row');
 
   expect(row?.databaseRestoreId).toBe('before-restore');
+  // The response covers the root state encoded before the asynchronous row read.
+  expect(result.current.needsContextForHttpSync(root.guid)).toBe(true);
   root.destroy();
 });
 
