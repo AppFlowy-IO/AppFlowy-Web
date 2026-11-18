@@ -446,7 +446,7 @@ export function hasSourceRow(trigger: RuleTrigger, calendarHasRow: boolean) {
 }
 
 export function validRowId(id?: string) {
-  return !!id && id !== NIL && isUuid(id);
+  return !!id && id !== NIL && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id);
 }
 
 export function compatibleCreateSteps(previous: RuleAction[], databaseId?: string) {

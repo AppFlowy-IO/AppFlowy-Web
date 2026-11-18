@@ -1166,6 +1166,7 @@ test('legacy mismatched row targets survive metadata changes and require repair 
   for (const [id, valid] of [
     ['', false],
     ['bad-id', false],
+    ['ABCD0000-0000-0000-0000-000000000001', true],
     ['00000000-0000-0000-0000-000000000000', false],
     [row, true],
   ] as const) {
