@@ -138,6 +138,7 @@
     "remove": "Remove action",
     "addAction": "Add action",
     "unsupported": "This rule uses a newer feature. You can rename or disable it here.",
+    "incompatibleOptions": "Choose options that belong to the property using this variable.",
     "saveError": "Could not save your change. Your edits are still here.",
     "conflict": "Someone changed this rule. Reload to review the latest version before editing again.",
     "reload": "Reload saved version",

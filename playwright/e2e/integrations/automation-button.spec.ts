@@ -330,3 +330,84 @@ test('a workflow editor saves a destination step and an explicitly bound calenda
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => submittedSchedule?.row_id).toBe(row);
 });
+
+test('a select variable is authored from destination property options and preserved through its consumers', async ({
+  page,
+  integrationsURL,
+}) => {
+  const base = '/api/workspace/team/database';
+  const endpoint = base + '/tasks/automation';
+  const definition = { type: 'define_variable', name: 'stage', value: { kind: 'text', value: '' } };
+  const actions = [
+    definition,
+    {
+      type: 'create_row',
+      database_id: 'dest',
+      view_id: 'v',
+      properties: [{ field_id: 'stage', value: { kind: 'variable', name: 'stage' } }],
+    },
+  ];
+  const stored = {
+    id: 'copy',
+    revision: 2,
+    enabled: true,
+    name: 'Plan a task',
+    timezone: 'UTC',
+    trigger: { type: 'scheduled' },
+    conditions: [],
+    actions,
+    status: 'active',
+  };
+  const catalog = ['stage', 'other'].map((id) => ({
+    id,
+    name: id,
+    field_type_id: 3,
+    type_option: { content: { options: [{ id: id + '-ready', name: 'Ready' }] } },
+  }));
+  let posted: Record<string, unknown> | undefined;
+
+  await page.route('**/__fixtures__/automation-button?workflow', (route) =>
+    route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
+  );
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const respond = (data: unknown) => route.fulfill({ json: { code: 0, data } });
+
+    if (path === endpoint + '/copy' && route.request().method() === 'PATCH') {
+      posted = route.request().postDataJSON();
+      return respond(stored);
+    }
+
+    if (path === endpoint) return respond({ items: [stored] });
+    if (path === endpoint + '/copy') return respond(stored);
+    if (path === endpoint + '/copy/schedule') return route.fulfill({ json: { code: -2, message: 'Missing schedule' } });
+    if (path === base + '/dest/fields') return respond(catalog);
+    if (path === base)
+      return respond({
+        databases: [{ database_id: 'dest', views: [{ view_id: 'v', name: 'Archive' }] }],
+        has_more: false,
+      });
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto(new URL('/__fixtures__/automation-button?workflow', integrationsURL).href, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: stored.name }).click({ timeout: 60_000 });
+  const variable = page.getByRole('group', { name: 'Action 1', exact: true });
+
+  await variable.getByLabel('Value source').selectOption('single_select');
+  await variable.getByLabel('Target database').selectOption('dest');
+  await variable.getByLabel('Property', { exact: true }).selectOption('other');
+  await variable.getByLabel('Option', { exact: true }).selectOption('other-ready');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Choose options that belong to the property');
+  expect(posted).toBeUndefined();
+  await variable.getByLabel('Property', { exact: true }).selectOption('stage');
+  await expect(variable.getByLabel('Value', { exact: true })).toHaveText('other-ready');
+  await variable.getByLabel('Option', { exact: true }).selectOption('stage-ready');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect
+    .poll(() => posted)
+    .toEqual({
+      expected_revision: 2,
+      actions: [{ ...definition, value: { kind: 'single_select', value: 'stage-ready' } }, actions[1]],
+    });
+});

@@ -40,7 +40,9 @@ import {
   triggerTypes,
   validRule,
   valueKinds,
+  workflowVariableChoices,
 } from '../model';
+import { selectAssignmentsFit } from '../select-variable';
 import { validPropertyEvent } from '../property-trigger';
 
 jest.mock('react-i18next', () => ({
@@ -1195,6 +1197,271 @@ test('legacy mismatched row targets survive metadata changes and require repair 
       'd'
     )
   ).toBe(false);
+});
+
+test.each(['single_select', 'multi_select'])(
+  'authors a %s constant from an explicitly selected remote property',
+  async (kind) => {
+    const multi = kind === 'multi_select';
+    const definition = { type: 'define_variable', name: 'choice', value: { kind: 'text', value: 'before' } };
+    const saved = { ...rule, trigger: { type: 'scheduled' }, actions: [definition] };
+    const target = (id: string, type: number) => ({
+      id,
+      name: id,
+      field_type_id: type,
+      type_option: {
+        content: {
+          options: [
+            { id: id + '-ready', name: 'Ready' },
+            { id: id + '-done', name: 'Done' },
+          ],
+        },
+      },
+    });
+
+    api.list.mockResolvedValue({ items: [saved] });
+    api.get.mockResolvedValue(saved);
+    api.getSchedule.mockRejectedValue({ code: -2 });
+    api.databases.mockResolvedValue({
+      has_more: false,
+      databases: [{ database_id: 'dest', views: [{ view_id: 'v', name: 'Archive' }] }],
+    });
+    api.fields.mockResolvedValue([target('stage', 3), target('tags', 4), target('another', multi ? 4 : 3)]);
+    api.patch.mockResolvedValue(saved);
+    fullManager();
+    fireEvent.click(await screen.findByText('Existing'));
+    fireEvent.change(await screen.findByLabelText('Value source'), { target: { value: kind } });
+    expect(screen.queryByLabelText('Option')).toBeNull();
+    const database = screen.getByLabelText('Target database');
+
+    await within(database).findByText('Archive');
+    fireEvent.change(database, { target: { value: 'dest' } });
+    const property = screen.getByLabelText('Property');
+    const id = multi ? 'tags' : 'stage';
+
+    await within(property).findByText(id);
+    expect(within(property).queryByText(multi ? 'stage' : 'tags')).toBeNull();
+    expect(screen.queryByLabelText('Option')).toBeNull();
+    fireEvent.change(property, { target: { value: id } });
+    const options = screen.getByLabelText('Option');
+
+    if (multi) {
+      for (const option of Array.from(options.options)) option.selected = true;
+      fireEvent.change(options);
+    } else {
+      fireEvent.change(options, { target: { value: id + '-ready' } });
+    }
+
+    fireEvent.change(property, { target: { value: 'another' } });
+    expect(screen.getByLabelText('Value').textContent).toContain(id + '-ready');
+    expect(within(screen.getByLabelText('Option')).getByText('Ready').value).toBe('another-ready');
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+        actions: [{ ...definition, value: { kind, value: multi ? [id + '-ready', id + '-done'] : id + '-ready' } }],
+      })
+    );
+  }
+);
+
+test('an unbound schedule chooses local property options even without permission to list other databases', async () => {
+  const action = { type: 'define_variable', name: 'pick', value: { kind: 'text', value: 'initial' } };
+  const saved = { ...rule, actions: [action], trigger: { type: 'scheduled' } };
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.getSchedule.mockRejectedValue({ code: -2 });
+  api.databases.mockRejectedValue({ code: 1012 });
+  api.patch.mockResolvedValue(saved);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  fireEvent.change(await screen.findByLabelText('Value source'), { target: { value: 'single_select' } });
+  fireEvent.change(screen.getByLabelText('Target database'), { target: { value: 'd' } });
+  fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'state' } });
+  fireEvent.change(screen.getByLabelText('Option'), { target: { value: 'done' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+      actions: [{ ...action, value: { kind: 'single_select', value: 'done' } }],
+    })
+  );
+  expect(api.fields).not.toHaveBeenCalled();
+});
+
+test('a saved Person variable preserves an unavailable member while choosing an authorized person', async () => {
+  const missing = 'dc7c50db-1fcc-4c22-af9e-6126e41b81ac';
+  const member = '825119c1-c9e1-4bcd-b54c-b31ba43ee9de';
+  const definition = { type: 'define_variable', name: 'reviewers', value: { kind: 'person', value: [missing] } };
+  const saved = { ...rule, actions: [definition] };
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.patch.mockResolvedValue(saved);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  expect((await screen.findByLabelText('Value source')).value).toBe('person');
+  expect(screen.getByText(missing)).toBeTruthy();
+  const picker = screen.getByLabelText('Workspace members');
+
+  within(picker).getByText('Morgan').selected = true;
+  fireEvent.change(picker);
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+      actions: [{ ...definition, value: { kind: 'person', value: [missing, member] } }],
+    })
+  );
+});
+
+test('legacy select constants retain saved IDs when the destination catalog is unavailable', async () => {
+  const constant = { kind: 'multi_select_delta', operation: 'remove' as const, value: ['old-option'] };
+  const definition = { type: 'define_variable', name: 'tags', value: constant };
+  const saved = { ...rule, actions: [definition] };
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.databases.mockRejectedValue({ code: 1012 });
+  api.patch.mockResolvedValue(saved);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  expect(await screen.findByText('old-option')).toBeTruthy();
+  expect(screen.getByLabelText('Operation').value).toBe('remove');
+  expect(await screen.findByText('Retry')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Variable name'), { target: { value: 'archived_tags' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+      actions: [{ ...definition, name: 'archived_tags', value: constant }],
+    })
+  );
+});
+
+test('downstream select assignments use authorized option IDs for constants and aliases and look up each destination once', async () => {
+  const define = (name: string, value: PropertyValue): RuleAction => ({ type: 'define_variable', name, value });
+  const steps = [
+    define('direct', { kind: 'multi_select', value: ['one'] }),
+    define('alias', { kind: 'variable', name: 'direct' }),
+    define('people', { kind: 'person', value: [row] }),
+  ];
+  const options = (id: string) => [{ id, name: 'Same label' }];
+  const names = (kind: string, id: string) => workflowVariableChoices(steps, [], [kind], options(id)).map((v) => v.name);
+
+  expect(names('multi_select', 'one')).toEqual(['direct', 'alias']);
+  expect(names('multi_select', 'other')).toEqual([]);
+  expect(names('single_select', 'one')).toEqual([]);
+  expect(names('person', 'one')).toEqual(['people']);
+  const assignment = { field_id: 'tags', value: { kind: 'variable', name: 'alias' } };
+  const actions = [
+    ...steps,
+    { type: 'set_property', ...assignment },
+    { type: 'create_row', database_id: 'dest', properties: [assignment, { ...assignment, field_id: 'priorities' }] },
+  ];
+  const catalog = jest.fn(async (_db: string, ids: string[]) =>
+    ids.map((id) => ({ id, type: 4, options: options('one') }))
+  );
+
+  expect(await selectAssignmentsFit('d', actions, catalog)).toBe(true);
+  expect(catalog.mock.calls).toEqual([
+    ['d', ['tags']],
+    ['dest', ['tags', 'priorities']],
+  ]);
+  expect(
+    await selectAssignmentsFit('d', actions, async () => [{ id: 'tags', type: 4, options: options('other') }])
+  ).toBe(false);
+});
+
+test('saving a changed select constant rechecks the field consuming its alias before sending the patch', async () => {
+  const first = { type: 'define_variable', name: 'label', value: { kind: 'single_select', value: 'old' } };
+  const alias = { type: 'define_variable', name: 'alias', value: { kind: 'variable', name: 'label' } };
+  const create = {
+    type: 'create_row',
+    database_id: 'dest',
+    view_id: 'v',
+    properties: [{ field_id: 'stage', value: { kind: 'variable', name: 'alias' } }],
+  };
+  const saved = { ...rule, actions: [first, alias, create] };
+  const target = (id: string, ids: string[]) => ({
+    id,
+    name: id,
+    field_type_id: 3,
+    type_option: { content: { options: ids.map((option) => ({ id: option, name: 'Review' })) } },
+  });
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.databases.mockResolvedValue({
+    has_more: false,
+    databases: [{ database_id: 'dest', views: [{ view_id: 'v', name: 'Archive' }] }],
+  });
+  api.fields.mockResolvedValue([target('stage', ['old', 'good']), target('other', ['bad'])]);
+  api.patch.mockResolvedValue(saved);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  const editor = within(await screen.findByRole('group', { name: 'Action 1' }));
+  const db = editor.getByLabelText('Target database');
+
+  await within(db).findByText('Archive');
+  fireEvent.change(db, { target: { value: 'dest' } });
+  const property = editor.getByLabelText('Property');
+
+  await within(property).findByText('other');
+  fireEvent.change(property, { target: { value: 'other' } });
+  fireEvent.change(editor.getByLabelText('Option'), { target: { value: 'bad' } });
+  fireEvent.click(screen.getByText('Save'));
+  await screen.findByRole('alert');
+  expect(api.patch).not.toHaveBeenCalled();
+  fireEvent.change(property, { target: { value: 'stage' } });
+  fireEvent.change(editor.getByLabelText('Option'), { target: { value: 'good' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+      actions: [{ ...first, value: { kind: 'single_select', value: 'good' } }, alias, create],
+    })
+  );
+});
+
+test('leaving the form during destination verification prevents a late rule write', async () => {
+  const variable = { type: 'define_variable', name: 'value', value: { kind: 'single_select', value: 'ready' } };
+  const create = {
+    type: 'create_row',
+    database_id: 'dest',
+    view_id: 'v',
+    properties: [{ field_id: 'stage', value: { kind: 'variable', name: 'value' } }],
+  };
+  const saved = { ...rule, actions: [variable, create] };
+  const fields = [
+    {
+      id: 'stage',
+      name: 'Stage',
+      field_type_id: 3,
+      type_option: { content: { options: [{ id: 'ready', name: 'Ready' }] } },
+    },
+  ];
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.databases.mockResolvedValue({
+    has_more: false,
+    databases: [{ database_id: 'dest', views: [{ view_id: 'v', name: 'Archive' }] }],
+  });
+  let resolve!: (result: typeof fields) => void;
+
+  api.fields.mockResolvedValueOnce(fields).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  const page = fullManager();
+
+  fireEvent.click(await screen.findByText('Existing'));
+  await screen.findByDisplayValue('Stage');
+  fireEvent.change(screen.getByLabelText('Time zone'), { target: { value: 'Europe/Paris' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.fields).toHaveBeenCalledTimes(2));
+  page.unmount();
+  await act(async () => resolve(fields));
+  expect(api.patch).not.toHaveBeenCalled();
 });
 
 test('a cross-database formula uses source field IDs and retains the target database, row and field', async () => {

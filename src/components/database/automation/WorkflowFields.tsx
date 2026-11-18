@@ -7,8 +7,6 @@ import {
   RuleAction,
   recipientText,
   ruleApi,
-  TargetDatabase,
-  TargetField,
 } from '@/application/services/js-services/http/automation-api';
 import { listConnections, queryIntegration } from '@/application/services/js-services/http/integration-api';
 import { useMentionableUsers } from '@/components/database/components/cell/person/useMentionableUsers';
@@ -16,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import { ConditionFields } from './ConditionFields';
+import { DatabasePicker, useDestinationSchema, VariableSelectOptions } from './DestinationSchema';
 import { EndpointControls, ConnectAccount } from './DestinationSettings';
 import { TextFields } from './TextFields';
 import { MemberEmailFields } from './MemberEmailFields';
@@ -40,6 +39,7 @@ export function SourceValue({
   options = [],
   extended = true,
   definition = false,
+  optionContext,
   expressionFields,
 }: {
   expressionFields?: RuleField[];
@@ -51,6 +51,7 @@ export function SourceValue({
   options?: Item[];
   extended?: boolean;
   definition?: boolean;
+  optionContext?: { workspace: string; source: string; fields: RuleField[] };
 }) {
   const { t } = useTranslation();
   const multiSelect = value.kind === 'multi_select' || value.kind === 'multi_select_delta';
@@ -58,7 +59,12 @@ export function SourceValue({
     valueKinds(field.type).some((kind) => definition || literals.includes(kind))
   );
   const operators = arithmetic.filter((op) => literals.includes(op === 'add_days' ? 'date_time' : 'number'));
-  const names = workflowVariableChoices(previous, fields, definition ? undefined : literals);
+  const names = workflowVariableChoices(
+    previous,
+    fields,
+    definition ? undefined : literals,
+    definition ? undefined : options
+  );
   const sources = extended
     ? [
         ...literals,
@@ -139,6 +145,8 @@ export function SourceValue({
         />
       ) : ['person', 'relation'].includes(value.kind) ? (
         <IdentityValue value={value} change={change} definition={definition} />
+      ) : definition && optionContext && (value.kind === 'single_select' || multiSelect) ? (
+        <VariableSelectOptions key={value.kind} {...optionContext} value={value} change={change} />
       ) : value.kind === 'single_select' || multiSelect ? (
         <>
           {multiSelect && extended && (
@@ -218,6 +226,9 @@ export function IdentityValue({
   const [entry, setEntry] = useState('');
   const ids = Array.isArray(value.value) ? value.value : [];
 
+  const missing =
+    definition && value.kind === 'person' ? ids.filter((id) => !users.some((user) => user.person_id === id)) : [];
+
   useEffect(() => {
     if (value.kind === 'person') void fetchUsers();
   }, [value.kind, fetchUsers]);
@@ -235,13 +246,27 @@ export function IdentityValue({
         />
       )}
       {value.kind === 'person' ? (
-        <Select
-          label={t('databaseAutomation.people')}
-          multiple
-          value={ids}
-          options={users.map((u) => ({ id: u.person_id, name: u.name || u.email }))}
-          change={(valueIds) => change({ ...value, value: valueIds })}
-        />
+        <>
+          {missing.map((id) => (
+            <div key={id}>
+              {id}
+              <Button
+                type='button'
+                variant='ghost'
+                onClick={() => change({ ...value, value: ids.filter((person) => person !== id) })}
+              >
+                {t('databaseAutomation.remove')}
+              </Button>
+            </div>
+          ))}
+          <Select
+            label={t('databaseAutomation.people')}
+            multiple
+            value={ids}
+            options={users.map((u) => ({ id: u.person_id, name: u.name || u.email }))}
+            change={(valueIds) => change({ ...value, value: [...missing, ...valueIds] })}
+          />
+        </>
       ) : (
         <>
           <ul>
@@ -356,44 +381,8 @@ function TargetFields({
 }) {
   const { t } = useTranslation();
   const relationNames = extended ? relationVariables(previous, fields) : [];
-  const [dbs, setDbs] = useState<TargetDatabase[]>([]);
-  const [more, setMore] = useState(false);
-  const [offset, setOffset] = useState(0);
-  const [target, setTarget] = useState<TargetField[]>([]);
-  const [err, setErr] = useState(false);
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    const ac = new AbortController();
-
-    ruleApi
-      .databases(workspace, offset, ac.signal)
-      .then((p) => {
-        if (!ac.signal.aborted) {
-          setDbs((old) => (offset ? [...old, ...p.databases] : p.databases));
-          setMore(p.has_more);
-        }
-      })
-      .catch(() => {
-        if (!ac.signal.aborted) setErr(true);
-      });
-    return () => ac.abort();
-  }, [workspace, offset, retry]);
-  useEffect(() => {
-    const ac = new AbortController();
-
-    setTarget([]);
-    if (action.database_id)
-      ruleApi
-        .fields(workspace, action.database_id, ac.signal)
-        .then((f) => {
-          if (!ac.signal.aborted) setTarget(f);
-        })
-        .catch(() => {
-          if (!ac.signal.aborted) setErr(true);
-        });
-    return () => ac.abort();
-  }, [workspace, action.database_id, retry]);
+  const schema = useDestinationSchema(workspace, action.database_id);
+  const { dbs, fields: target } = schema;
   const steps = compatibleCreateSteps(previous, action.database_id);
 
   function selectDatabase(id: string) {
@@ -429,29 +418,7 @@ function TargetFields({
 
   return (
     <>
-      <Select
-        label={t('databaseAutomation.targetDatabase')}
-        value={action.database_id || ''}
-        options={dbs.map((d) => ({ id: d.database_id, name: d.views[0]?.name || d.database_id }))}
-        change={([id]) => selectDatabase(id)}
-      />
-      {more && (
-        <Button type='button' variant='ghost' onClick={() => setOffset(dbs.length)}>
-          {t('databaseAutomation.more')}
-        </Button>
-      )}
-      {err && (
-        <Button
-          type='button'
-          variant='ghost'
-          onClick={() => {
-            setErr(false);
-            setRetry((n) => n + 1);
-          }}
-        >
-          {t('databaseAutomation.retry')}
-        </Button>
-      )}
+      <DatabasePicker schema={schema} value={action.database_id || ''} change={selectDatabase} />
       {action.type === 'create_row' ? (
         <Select
           label={t('databaseAutomation.view')}
@@ -583,6 +550,7 @@ function TargetFields({
 }
 
 export function WorkflowFields({
+  schemaFields,
   sourceDatabase,
   workspace,
   action,
@@ -595,6 +563,7 @@ export function WorkflowFields({
   hasRow,
   expressionFields,
 }: {
+  schemaFields: RuleField[];
   sourceDatabase: string;
   workspace: string;
   action: RuleAction;
@@ -704,7 +673,18 @@ export function WorkflowFields({
           previous={previous}
           definition
           expressionFields={expressionFields}
-          literals={['text', 'number', 'checkbox', 'date_time', 'event_time', 'relation']}
+          optionContext={{ workspace, source: sourceDatabase, fields: schemaFields }}
+          literals={[
+            'text',
+            'number',
+            'checkbox',
+            'date_time',
+            'event_time',
+            'person',
+            'single_select',
+            'multi_select',
+            'relation',
+          ]}
           change={(value) => change({ ...action, value })}
         />
       </>

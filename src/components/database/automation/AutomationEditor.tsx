@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 
-import { useDatabaseView, usePropertiesSelector } from '@/application/database-yjs';
+import { useDatabaseFields, useDatabaseView, usePropertiesSelector } from '@/application/database-yjs';
 import {
   DatabaseRule,
   isRuleConflict,
@@ -10,6 +10,7 @@ import {
   RuleDefinition,
   RuleRun,
 } from '@/application/services/js-services/http/automation-api';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { toIntlLocale } from '@/i18n/intl-locale';
 
 import { ConditionFields } from './ConditionFields';
+import { selectAssignmentsFit } from './select-variable';
 import { prepareCopy, saveCopy } from './duplicate';
 import { InvocationFields } from './InvocationFields';
 import {
@@ -275,11 +277,12 @@ export function RuleForm({
   saved: () => void;
 }) {
   const { t } = useTranslation();
+  const sourceFields = useDatabaseFields();
   const [original, setOriginal] = useState(base);
   const [draft, setDraft] = useState<RuleDefinition>(
     () => base || { ...newRule(caps), ...(buttonScope && { trigger: { type: 'button', field_id: buttonScope.field } }) }
   );
-  const [error, setError] = useState<'saveError' | 'conflict'>();
+  const [error, setError] = useState<'saveError' | 'conflict' | 'incompatibleOptions'>();
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editingConditions, setEditingConditions] = useState(false);
@@ -306,6 +309,9 @@ export function RuleForm({
   }, [workspace, database, scheduledRule, original?.revision]);
 
   const running = useRef(false);
+  const verification = useRef<AbortController>();
+
+  useEffect(() => () => verification.current?.abort(), [workspace, database, id, rowScope]);
   const supported = !original || canEditRule(original, caps);
   const change = (changes: Partial<RuleDefinition>) => setDraft((prev) => ({ ...prev, ...changes }));
   const updateActions = (index: number, next: RuleDefinition['actions'][number]) =>
@@ -324,19 +330,56 @@ export function RuleForm({
   async function submit(remove: boolean) {
     if (running.current || (!remove && !canSave)) return;
     running.current = true;
+    const controller = new AbortController();
+
+    verification.current = controller;
     setBusy(true);
     setError(undefined);
     try {
+      if (!remove && supported && !metadataOnly) {
+        const valid = await selectAssignmentsFit(database, draft.actions, async (destination, fieldIds) => {
+          if (destination === database) {
+            return fieldIds.flatMap((id) => {
+              const field = sourceFields?.get(id);
+
+              return field
+                ? [
+                    {
+                      id,
+                      type: Number(field.get(YjsDatabaseKey.type)),
+                      options: parseSelectOptionTypeOptions(field).options ?? [],
+                    },
+                  ]
+                : [];
+            });
+          }
+
+          const remote = await ruleApi.fields(workspace, destination, controller.signal);
+
+          return remote.map((field) => ({
+            id: field.id,
+            type: field.field_type_id,
+            options: field.type_option?.content?.options ?? [],
+          }));
+        });
+
+        if (controller.signal.aborted) return;
+        if (!valid) {
+          setError('incompatibleOptions');
+          return;
+        }
+      }
+
       if (remove && original) await ruleApi.remove(workspace, database, id, original.revision, ...scope);
       else if (original)
         await ruleApi.patch(workspace, database, id, original.revision, ruleChanges(original, draft), ...scope);
       else await ruleApi.create(workspace, database, id, draft, ...scope);
-      saved();
+      if (!controller.signal.aborted) saved();
     } catch (e) {
-      setError(isRuleConflict(e) ? 'conflict' : 'saveError');
+      if (!controller.signal.aborted) setError(isRuleConflict(e) ? 'conflict' : 'saveError');
     } finally {
       running.current = false;
-      setBusy(false);
+      if (!controller.signal.aborted) setBusy(false);
     }
   }
 

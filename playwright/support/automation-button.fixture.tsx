@@ -27,7 +27,7 @@ const info = {
   self_hosted: true,
   enable_database_automations: true,
   database_automation_triggers: ['row_created', 'manual', 'button', ...(workflow ? ['scheduled'] : [])],
-  database_automation_actions: ['notify', ...(workflow ? ['create_row', 'edit_row'] : [])],
+  database_automation_actions: ['notify', ...(workflow ? ['create_row', 'edit_row', 'define_variable'] : [])],
   database_automation_scope_features: [
     'row_scoped_v1',
     ...(new URLSearchParams(location.search).has('interactions') ? ['button_interactions_v1'] : []),

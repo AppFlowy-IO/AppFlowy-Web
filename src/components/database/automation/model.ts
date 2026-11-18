@@ -17,6 +17,7 @@ import type {
   TextPart,
 } from '@/application/services/js-services/http/automation-api';
 
+import { selectVariableConstants, optionIdsFit } from './select-variable';
 import { propertyOperand, validPropertyEvent } from './property-trigger';
 
 export const triggerTypes = [
@@ -98,8 +99,14 @@ export function valueKinds(type?: FieldType): string[] {
 }
 
 /** A shared expression's exact scalar result is checked against the live schema on the server. */
-export function workflowVariableChoices(actions: RuleAction[], fields: RuleField[], accepted?: string[]) {
+export function workflowVariableChoices(
+  actions: RuleAction[],
+  fields: RuleField[],
+  accepted?: string[],
+  destinationOptions?: { id: string }[]
+) {
   const outputs = new Map<string, string[]>();
+  const selectConstants = selectVariableConstants(actions);
 
   for (const { type, name, value } of actions) {
     if (type !== 'define_variable' || !name || !value) continue;
@@ -135,7 +142,11 @@ export function workflowVariableChoices(actions: RuleAction[], fields: RuleField
   }
 
   return [...outputs]
-    .filter(([, kinds]) => kinds.some((kind) => !accepted || accepted.includes(kind)))
+    .filter(
+      ([name, kinds]) =>
+        kinds.some((kind) => !accepted || accepted.includes(kind)) &&
+        (!destinationOptions || optionIdsFit(selectConstants.get(name), destinationOptions))
+    )
     .map(([name]) => ({ id: name, name }));
 }
 

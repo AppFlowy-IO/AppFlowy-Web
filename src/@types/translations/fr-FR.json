@@ -138,6 +138,7 @@
     "remove": "Retirer l’action",
     "addAction": "Ajouter une action",
     "unsupported": "Cette règle utilise une fonctionnalité plus récente. Vous pouvez la renommer ou la désactiver ici.",
+    "incompatibleOptions": "Choisissez des options appartenant à la propriété qui utilise cette variable.",
     "saveError": "La modification n’a pas pu être enregistrée. Vos changements sont conservés ici.",
     "conflict": "Cette règle a été modifiée. Rechargez sa dernière version avant de reprendre.",
     "reload": "Recharger la version enregistrée",

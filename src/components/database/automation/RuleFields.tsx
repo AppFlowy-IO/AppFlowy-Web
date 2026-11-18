@@ -462,6 +462,7 @@ export function ActionFields({
         <WorkflowFields
           scheduled={scheduled}
           hasRow={expressionRow}
+          schemaFields={fields}
           expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           webhookHeaders={caps.webhookHeaders}
           {...{ workspace, sourceDatabase, action, previous, change }}
