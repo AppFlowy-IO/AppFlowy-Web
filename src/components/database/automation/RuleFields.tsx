@@ -406,6 +406,7 @@ function PropertyFields({
 
 export function ActionFields({
   workspace,
+  sourceDatabase,
   previous,
   action,
   fields,
@@ -418,6 +419,7 @@ export function ActionFields({
   action: RuleAction;
   fields: RuleField[];
   deleted: boolean;
+  sourceDatabase: string;
   expressionRow: boolean;
   scheduled: boolean;
   caps: Capabilities;
@@ -462,7 +464,7 @@ export function ActionFields({
           hasRow={expressionRow}
           expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           webhookHeaders={caps.webhookHeaders}
-          {...{ workspace, action, previous, change }}
+          {...{ workspace, sourceDatabase, action, previous, change }}
           fields={expressionRow ? fields : []}
           extended={caps.actions.includes('define_variable')}
         />

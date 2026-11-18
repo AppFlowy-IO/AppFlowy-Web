@@ -20,7 +20,15 @@ import { EndpointControls, ConnectAccount } from './DestinationSettings';
 import { TextFields } from './TextFields';
 import { MemberEmailFields } from './MemberEmailFields';
 import { ExpressionFields } from './ExpressionFields';
-import { arithmetic, formula, relationVariables, RuleField, valueKinds, workflowVariableChoices } from './model';
+import {
+  arithmetic,
+  compatibleCreateSteps,
+  formula,
+  relationVariables,
+  RuleField,
+  valueKinds,
+  workflowVariableChoices,
+} from './model';
 import { Select, Item } from './Select';
 
 export function SourceValue({
@@ -326,6 +334,8 @@ function FormulaFields({
 }
 
 function TargetFields({
+  sourceDatabase,
+  hasRow,
   expressionFields,
   workspace,
   action,
@@ -339,6 +349,8 @@ function TargetFields({
   change: (a: RuleAction) => void;
   fields: RuleField[];
   previous: RuleAction[];
+  sourceDatabase: string;
+  hasRow: boolean;
   extended: boolean;
   expressionFields?: RuleField[];
 }) {
@@ -382,6 +394,36 @@ function TargetFields({
         });
     return () => ac.abort();
   }, [workspace, action.database_id, retry]);
+  const steps = compatibleCreateSteps(previous, action.database_id);
+
+  function selectDatabase(id: string) {
+    if (id === action.database_id) return;
+    if (action.type === 'create_row') {
+      change({
+        ...action,
+        database_id: id,
+        view_id: dbs.find((db) => db.database_id === id)?.views[0]?.view_id || '',
+        properties: [],
+      });
+      return;
+    }
+
+    // Row IDs and filters refer to the old database. Choosing a different database must not reuse them.
+    const trigger = hasRow && id === sourceDatabase;
+    const [created] = compatibleCreateSteps(previous, id);
+
+    change({
+      ...action,
+      database_id: id,
+      properties: [],
+      row: trigger
+        ? { type: 'trigger' }
+        : created !== undefined
+        ? { type: 'step', action_index: created }
+        : { type: 'id', row_id: '' },
+    });
+  }
+
   const chosen = dbs.find((d) => d.database_id === action.database_id);
   const props = action.properties || [];
 
@@ -391,16 +433,7 @@ function TargetFields({
         label={t('databaseAutomation.targetDatabase')}
         value={action.database_id || ''}
         options={dbs.map((d) => ({ id: d.database_id, name: d.views[0]?.name || d.database_id }))}
-        change={([id]) =>
-          change({
-            ...action,
-            database_id: id,
-            ...(action.type === 'create_row'
-              ? { view_id: dbs.find((d) => d.database_id === id)?.views[0]?.view_id || '' }
-              : {}),
-            properties: [],
-          })
-        }
+        change={([id]) => selectDatabase(id)}
       />
       {more && (
         <Button type='button' variant='ghost' onClick={() => setOffset(dbs.length)}>
@@ -432,11 +465,11 @@ function TargetFields({
             label={t('databaseAutomation.targetRow')}
             value={action.row?.type || ''}
             options={[
-              'trigger',
+              ...(hasRow && action.database_id === sourceDatabase ? ['trigger'] : []),
               'id',
               'matching',
               ...(relationNames.length ? ['variable'] : []),
-              ...(previous.some((a) => a.type === 'create_row') ? ['step'] : []),
+              ...(steps.length ? ['step'] : []),
             ].map((id) => ({
               id,
               name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }),
@@ -452,7 +485,7 @@ function TargetFields({
                     : type === 'trigger'
                     ? { type }
                     : type === 'step'
-                    ? { type, action_index: previous.findIndex((a) => a.type === 'create_row') }
+                    ? { type, action_index: steps[0] }
                     : { type: 'id', row_id: '' },
               })
             }
@@ -492,9 +525,7 @@ function TargetFields({
             <Select
               label={t('databaseAutomation.stepResult')}
               value={String(action.row.action_index)}
-              options={previous.flatMap((a, i) =>
-                a.type === 'create_row' ? [{ id: String(i), name: t('databaseAutomation.step', { n: i + 1 }) }] : []
-              )}
+              options={steps.map((i) => ({ id: String(i), name: t('databaseAutomation.step', { n: i + 1 }) }))}
               change={([i]) => change({ ...action, row: { type: 'step', action_index: Number(i) } })}
             />
           )}
@@ -552,6 +583,7 @@ function TargetFields({
 }
 
 export function WorkflowFields({
+  sourceDatabase,
   workspace,
   action,
   change,
@@ -563,6 +595,7 @@ export function WorkflowFields({
   hasRow,
   expressionFields,
 }: {
+  sourceDatabase: string;
   workspace: string;
   action: RuleAction;
   change: (a: RuleAction) => void;
@@ -653,7 +686,11 @@ export function WorkflowFields({
     return () => ac.abort();
   }, [workspace, action.type, action.connection_id, retry]);
   if (action.type === 'create_row' || action.type === 'edit_row')
-    return <TargetFields {...{ workspace, action, change, fields, previous, extended, expressionFields }} />;
+    return (
+      <TargetFields
+        {...{ workspace, sourceDatabase, hasRow, action, change, fields, previous, extended, expressionFields }}
+      />
+    );
   if (action.type === 'define_variable')
     return (
       <>

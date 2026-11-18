@@ -215,3 +215,118 @@ test('two rapid activations of a plain Button submit once and reopening the cell
   expect(submitted).toHaveLength(2);
   expect(submitted[0]).not.toBe(submitted[1]);
 });
+
+test('a workflow editor saves a destination step and an explicitly bound calendar from the browser', async ({
+  page,
+  integrationsURL,
+}) => {
+  const base = '/api/workspace/team/database';
+  const rules = base + '/tasks/automation';
+  const row = 'd2ba21ea-2604-4acf-8feb-5dc766b3b512';
+  const stored = {
+    id: 'workflow',
+    revision: 3,
+    name: 'Update the new row',
+    enabled: true,
+    status: 'active',
+    timezone: 'UTC',
+    conditions: [],
+    trigger: { type: 'row_created' },
+    actions: [
+      { type: 'create_row', database_id: 'dest', view_id: 'v', properties: [] },
+      {
+        type: 'edit_row',
+        database_id: 'tasks',
+        row: { type: 'trigger' },
+        properties: [{ field_id: 'title', value: { kind: 'text', value: 'Initial title' } }],
+      },
+    ],
+  };
+  const scheduled = {
+    ...stored,
+    id: 'calendar',
+    name: 'Weekly update',
+    trigger: { type: 'scheduled' },
+    requires_source_row: true,
+  };
+  const calendar = {
+    revision: 3,
+    starts_on: '2026-11-18',
+    local_time: '09:00:00',
+    frequency: 'weekly',
+    timezone: 'UTC',
+    next_due_at: null,
+  };
+  let submittedRule: Record<string, unknown> | undefined;
+  let submittedSchedule: Record<string, unknown> | undefined;
+
+  await page.route('**/__fixtures__/automation-button?workflow', (route) =>
+    route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
+  );
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    const respond = (data: unknown) => route.fulfill({ json: { code: 0, data } });
+
+    if (method === 'PATCH' && path === rules + '/workflow') {
+      submittedRule = route.request().postDataJSON();
+      return respond(stored);
+    }
+
+    if (method === 'PUT' && path === rules + '/calendar/schedule') {
+      submittedSchedule = route.request().postDataJSON();
+      return respond(calendar);
+    }
+
+    if (path === rules) return respond({ items: [stored, scheduled] });
+    if (path === rules + '/workflow') return respond(stored);
+    if (path === rules + '/calendar') return respond(scheduled);
+    if (path === rules + '/calendar/schedule') return respond(calendar);
+    if (path.endsWith('/fields')) return respond([{ id: 'title', name: 'Title', field_type_id: 0 }]);
+    if (path === base)
+      return respond({
+        databases: ['tasks', 'dest', 'other'].map((database_id) => ({
+          database_id,
+          views: [{ view_id: 'v', name: database_id }],
+        })),
+        has_more: false,
+      });
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto(new URL('/__fixtures__/automation-button?workflow', integrationsURL).href, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: stored.name }).click({ timeout: 60_000 });
+  const destination = page.getByLabel('Target database').last();
+  const target = page.getByLabel('Target row');
+
+  await expect(target).toHaveValue('trigger');
+  await destination.selectOption('other');
+  await expect(target).toHaveValue('id');
+  await expect(target.getByRole('option', { name: 'Triggering row' })).toHaveCount(0);
+  await destination.selectOption('dest');
+  await expect(target).toHaveValue('step');
+  await expect(page.getByLabel('Row from action')).toHaveValue('0');
+  await page.getByRole('button', { name: 'Add a property' }).last().click();
+  await page.getByLabel('Property', { exact: true }).selectOption('title');
+  await page.getByLabel('Value', { exact: true }).fill('Updated title');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect
+    .poll(() => submittedRule)
+    .toEqual({
+      expected_revision: 3,
+      actions: [
+        stored.actions[0],
+        {
+          type: 'edit_row',
+          database_id: 'dest',
+          row: { type: 'step', action_index: 0 },
+          properties: [{ field_id: 'title', value: { kind: 'text', value: 'Updated title' } }],
+        },
+      ],
+    });
+
+  await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByLabel('Row ID', { exact: true }).fill(row);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => submittedSchedule?.row_id).toBe(row);
+});

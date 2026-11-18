@@ -8,6 +8,8 @@ import { DatabaseContext, type DatabaseContextState } from '@/application/databa
 import { FieldType } from '@/application/database-yjs/database.type';
 import { initAPIService } from '@/application/services/js-services/http/core';
 import { type User, type YDoc, YjsEditorKey } from '@/application/types';
+import { RuleManager } from '@/components/database/automation/AutomationEditor';
+import { ruleCapabilities } from '@/components/database/automation/model';
 import { Cell } from '@/components/database/components/cell/Cell';
 import { CenterPeekHeader } from '@/components/database/components/database-row/RowPeekHeader';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -19,20 +21,20 @@ const language = createInstance();
 
 await language.use(initReactI18next).init({ lng: 'en', resources: { en: { translation: en } } });
 initAPIService({ baseURL: location.origin, gotrueURL: location.origin, wsURL: '' });
-updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
-  status: 'available',
-  info: {
-    enable_page_history: false,
-    self_hosted: true,
-    enable_database_automations: true,
-    database_automation_triggers: ['row_created', 'manual', 'button'],
-    database_automation_actions: ['notify'],
-    database_automation_scope_features: [
-      'row_scoped_v1',
-      ...(new URLSearchParams(location.search).has('interactions') ? ['button_interactions_v1'] : []),
-    ],
-  },
-});
+const workflow = new URLSearchParams(location.search).has('workflow');
+const info = {
+  enable_page_history: false,
+  self_hosted: true,
+  enable_database_automations: true,
+  database_automation_triggers: ['row_created', 'manual', 'button', ...(workflow ? ['scheduled'] : [])],
+  database_automation_actions: ['notify', ...(workflow ? ['create_row', 'edit_row'] : [])],
+  database_automation_scope_features: [
+    'row_scoped_v1',
+    ...(new URLSearchParams(location.search).has('interactions') ? ['button_interactions_v1'] : []),
+  ],
+};
+
+updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), { status: 'available', info });
 const rowSetup = new URLSearchParams(location.search).has('row-setup');
 const doc = new Y.Doc() as YDoc;
 const options = new Y.Map([['20', new Y.Map([['label', 'Request review']])]]);
@@ -78,7 +80,9 @@ createRoot(document.getElementById('root')!).render(
       }}
     >
       <DatabaseContext.Provider value={context}>
-        {rowSetup ? (
+        {workflow ? (
+          <RuleManager workspace='team' database='tasks' caps={ruleCapabilities(info)} />
+        ) : rowSetup ? (
           <CenterPeekHeader rowId='second' onClose={() => undefined} />
         ) : (
           ['first', 'second'].map((rowId) => <Cell key={rowId} rowId={rowId} fieldId='review' wrap={false} />)

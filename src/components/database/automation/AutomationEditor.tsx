@@ -22,6 +22,7 @@ import { InvocationFields } from './InvocationFields';
 import {
   canEditRule,
   Capabilities,
+  hasSourceRow,
   newAction,
   newRule,
   reorderActions,
@@ -357,12 +358,15 @@ export function RuleForm({
     }
   }
 
-  const hasChanges = !original || Object.keys(ruleChanges(original, draft)).length > 0;
+  const changedKeys = original ? Object.keys(ruleChanges(original, draft)) : [];
+  const hasChanges = !original || changedKeys.length > 0;
+  const metadataOnly = !!original && changedKeys.every((key) => key === 'name' || (key === 'enabled' && !draft.enabled));
+  const boundRow = !!rowScope || calendarHasRow;
   const canSave =
     error !== 'conflict' &&
     hasChanges &&
     !!draft.name.trim() &&
-    (!supported || validRule(draft, fields, !!rowScope || calendarHasRow));
+    (!supported || metadataOnly || validRule(draft, fields, boundRow, database));
 
   return (
     <form
@@ -433,15 +437,12 @@ export function RuleForm({
                 <legend>{t('databaseAutomation.step', { n: index + 1 })}</legend>
                 <ActionFields
                   workspace={workspace}
+                  sourceDatabase={database}
                   previous={draft.actions.slice(0, index)}
                   action={action}
                   fields={fields}
                   caps={caps}
-                  expressionRow={
-                    (draft.trigger.type !== 'scheduled' || !!rowScope || calendarHasRow) &&
-                    draft.trigger.type !== 'row_deleted' &&
-                    !draft.trigger.triggers?.some((event) => event.type === 'row_deleted')
-                  }
+                  expressionRow={hasSourceRow(draft.trigger, boundRow)}
                   scheduled={draft.trigger.type === 'scheduled'}
                   deleted={draft.trigger.type === 'row_deleted'}
                   change={(a) => updateActions(index, a)}

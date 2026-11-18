@@ -1,10 +1,13 @@
-import { validate as isUuid } from 'uuid';
+import { NIL, validate as isUuid } from 'uuid';
 
 import { FieldType } from '@/application/database-yjs';
+import { formulaReadsSourceRow } from '@/application/database-yjs/fields/formula/ast';
+import { parseFormula } from '@/application/database-yjs/fields/formula/parser';
 import { isMemberRecipient } from '@/application/services/js-services/http/automation-api';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import type {
   AutomationText,
+  DatabaseRule,
   EmailRecipient,
   Formula,
   PropertyValue,
@@ -365,16 +368,99 @@ export function canEditRule(rule: RuleDefinition, caps: Capabilities) {
 export const isRecipientField = (field: RuleField) =>
   [FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(field.type);
 
-export function needsRecipientRow(a: RuleAction) {
+/** Older servers omit the scheduled rule's authoritative row requirement. */
+export function scheduleRequiresSourceRow(rule: DatabaseRule) {
+  if (rule.requires_source_row !== undefined) return rule.requires_source_row;
+  if (rule.conditions.length) return true;
+
+  const text = (value?: AutomationText) =>
+    typeof value === 'object' && value?.parts?.some((part) => part.type === 'field');
+  const recipient = (value?: EmailRecipient): boolean => {
+    if (value === undefined) return false;
+    if (!isMemberRecipient(value)) return !!text(value);
+    return value.type === 'person_field' || (value.type === 'address' && !!text(value.value));
+  };
+
+  function property(value?: PropertyValue): boolean {
+    switch (value?.kind) {
+      case 'field':
+        return true;
+      case 'template':
+        return !!value.parts?.some((part) => part.type === 'field');
+      case 'formula': {
+        const arithmetic = formula(value);
+
+        return !arithmetic || property(arithmetic.left) || property(arithmetic.right);
+      }
+
+      case 'expression':
+        try {
+          return formulaReadsSourceRow(parseFormula(value.expression || ''));
+        } catch {
+          return true;
+        }
+
+      default:
+        return false;
+    }
+  }
+
+  return rule.actions.some((action) => {
+    switch (action.type) {
+      case 'set_property':
+      case 'webhook_properties':
+        return true;
+      case 'notify':
+        return action.notify_actor || !!action.person_field_ids?.length || text(action.message_template);
+      case 'define_variable':
+        return property(action.value);
+      case 'edit_row':
+      case 'create_row':
+        return action.row?.type === 'trigger' || action.properties?.some((assignment) => property(assignment.value));
+      case 'member_addressed_email':
+      case 'addressed_email':
+      case 'connected_email':
+        return (
+          [...(action.to ?? []), ...(action.cc ?? []), ...(action.bcc ?? []), action.reply_to].some(recipient) ||
+          text(action.sender_name) ||
+          text(action.subject) ||
+          text(action.message)
+        );
+      case 'email':
+        return text(action.subject) || text(action.message);
+      case 'slack':
+      case 'webhook':
+        return text(action.message);
+      default:
+        return true;
+    }
+  });
+}
+
+export function hasSourceRow(trigger: RuleTrigger, calendarHasRow: boolean) {
   return (
-    a.type === 'member_addressed_email' &&
-    [...(a.to || []), ...(a.cc || []), ...(a.bcc || []), a.reply_to].some(
-      (v) => v && isMemberRecipient(v) && v.type === 'person_field'
-    )
+    (trigger.type !== 'scheduled' || calendarHasRow) &&
+    trigger.type !== 'row_deleted' &&
+    !trigger.triggers?.some((event) => event.type === 'row_deleted')
   );
 }
 
-export function validRule(rule: RuleDefinition, fields: RuleField[] = [], calendarHasRow = false) {
+export function validRowId(id?: string) {
+  return !!id && id !== NIL && isUuid(id);
+}
+
+export function compatibleCreateSteps(previous: RuleAction[], databaseId?: string) {
+  return previous.flatMap((step, i) =>
+    databaseId && step.type === 'create_row' && step.database_id === databaseId ? [i] : []
+  );
+}
+
+export function validRule(
+  rule: RuleDefinition,
+  fields: RuleField[] = [],
+  calendarHasRow = false,
+  sourceDatabase?: string
+) {
   if (
     rule.trigger.type === 'button' &&
     !fields.some((f) => f.type === FieldType.Button && f.id === rule.trigger.field_id)
@@ -423,7 +509,10 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = [], calend
       !!v && validValue(v) && (v.kind !== 'variable' || named(v.name)) && (v.kind !== 'template' || parts(v.parts));
 
     if (a.row?.type === 'variable' && !relationVariables(previous, fields).includes(a.row.name)) return false;
-    if (a.row?.type === 'step' && !created(a.row.action_index)) return false;
+    if (a.row?.type === 'step' && !compatibleCreateSteps(previous, a.database_id).includes(a.row.action_index))
+      return false;
+    if (a.row?.type === 'trigger' && (!hasSourceRow(rule.trigger, calendarHasRow) || a.database_id !== sourceDatabase))
+      return false;
     const text = (v?: AutomationText) => (typeof v === 'string' ? !!v.trim() : !!v?.parts.length && parts(v.parts));
 
     switch (a.type) {
@@ -501,7 +590,7 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = [], calend
       case 'edit_row':
         return (
           !!a.database_id &&
-          (a.type === 'create_row' ? !!a.view_id : !!a.row && (a.row.type !== 'id' || !!a.row.row_id)) &&
+          (a.type === 'create_row' ? !!a.view_id : !!a.row && (a.row.type !== 'id' || validRowId(a.row.row_id))) &&
           (a.properties?.every((p) => !!p.field_id && resolved(p.value)) ?? false) &&
           (a.type !== 'edit_row' || !!a.properties?.length)
         );

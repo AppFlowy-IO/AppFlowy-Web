@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { v4 as uuid, validate as isUuid } from 'uuid';
+import { v4 as uuid } from 'uuid';
 
 import { useRowOrdersSelector } from '@/application/database-yjs';
 import {
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toIntlLocale } from '@/i18n/intl-locale';
 
-import { needsRecipientRow } from './model';
+import { scheduleRequiresSourceRow, validRowId } from './model';
 import { Select } from './Select';
 
 export function InvocationFields({
@@ -36,8 +36,8 @@ export function InvocationFields({
 }) {
   const { t, i18n } = useTranslation();
   const scheduled = rule.trigger.type === 'scheduled';
-  const rowRequired =
-    !scheduled || rule.actions.some((action) => action.type === 'webhook_properties' || needsRecipientRow(action));
+  const [currentRule, setCurrentRule] = useState(rule);
+  const rowRequired = useMemo(() => !scheduled || scheduleRequiresSourceRow(currentRule), [currentRule, scheduled]);
   const [revision, setRevision] = useState(rule.revision);
   const [schedule, setSchedule] = useState<RuleSchedule>(() => ({
     ...(fixedRow && { row_id: fixedRow }),
@@ -68,12 +68,24 @@ export function InvocationFields({
         const current = await ruleApi.get(workspace, database, rule.id, ac.signal, rowScope);
 
         if (ac.signal.aborted) return;
+        if (current.trigger.type !== rule.trigger.type) {
+          setError('loadError');
+          return;
+        }
+
+        setCurrentRule(current);
         setRevision(current.revision);
         if (scheduled) {
           try {
             const state = await ruleApi.getSchedule(workspace, database, rule.id, ac.signal, rowScope);
 
             if (ac.signal.aborted) return;
+            if (state.revision !== current.revision) {
+              // A concurrent edit can change the required row. Reload the rule and calendar together.
+              setError('conflict');
+              return;
+            }
+
             const { row_id, frequency, starts_on, ends_on, local_time, timezone, interval, weekdays } = state;
 
             if ((rowScope && row_id !== rowScope) || (!customRecurrence && isCustomSchedule(state))) {
@@ -106,11 +118,11 @@ export function InvocationFields({
 
     void load();
     return () => ac.abort();
-  }, [workspace, database, rule.id, scheduled, refresh, customRecurrence, rowScope]);
+  }, [workspace, database, rule.id, scheduled, refresh, customRecurrence, rowScope, rule.trigger.type]);
   const set = (updates: Partial<RuleSchedule>) => setSchedule((s) => ({ ...s, ...updates }));
 
   async function submit() {
-    if (sending.current) return;
+    if (sending.current || loading || !valid || error === 'conflict' || error === 'loadError') return;
     sending.current = true;
     setBusy(true);
     setError(undefined);
@@ -159,7 +171,7 @@ export function InvocationFields({
   }
 
   const valid =
-    ((!rowRequired && !schedule.row_id) || isUuid(schedule.row_id || '')) &&
+    ((!rowRequired && !schedule.row_id) || validRowId(schedule.row_id)) &&
     (!scheduled ||
       (!!schedule.starts_on &&
         !!schedule.local_time &&

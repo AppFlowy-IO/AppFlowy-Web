@@ -126,6 +126,7 @@ export interface RuleDefinition {
 }
 
 export interface DatabaseRule extends RuleDefinition {
+  requires_source_row?: boolean;
   id: string;
   revision: number;
   status: string;

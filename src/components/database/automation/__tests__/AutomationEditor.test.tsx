@@ -12,6 +12,7 @@ import {
   ruleApi,
   type RuleAction,
   type ScheduleState,
+  type TargetRow,
 } from '@/application/services/js-services/http/automation-api';
 import { listConnections } from '@/application/services/js-services/http/integration-api';
 import { Role, type YDatabaseField } from '@/application/types';
@@ -35,6 +36,7 @@ import {
   reorderActions,
   ruleCapabilities,
   ruleChanges,
+  scheduleRequiresSourceRow,
   triggerTypes,
   validRule,
   valueKinds,
@@ -415,7 +417,7 @@ test('a calendar loads its current revision and saves local wall time, frequency
   };
 
   api.list.mockResolvedValue({ items: [scheduled] });
-  api.get.mockResolvedValue(scheduled);
+  api.get.mockResolvedValue({ ...scheduled, revision: base.revision });
   api.getSchedule.mockResolvedValue(base);
   api.putSchedule.mockResolvedValue({ ...base, revision: 8 });
   fullManager();
@@ -440,7 +442,7 @@ test('a calendar loads its current revision and saves local wall time, frequency
 test.each([false, true])(
   'only a capable editor can replace an existing custom calendar with a simple one (%s)',
   async (customRecurrence) => {
-    const scheduled = { ...rule, trigger: { type: 'scheduled' } };
+    const scheduled = { ...rule, actions: [{ type: 'notify', user_ids: [row] }], trigger: { type: 'scheduled' } };
     const base = {
       revision: 6,
       frequency: 'weekly' as const,
@@ -453,7 +455,7 @@ test.each([false, true])(
     };
 
     api.list.mockResolvedValue({ items: [scheduled] });
-    api.get.mockResolvedValue(scheduled);
+    api.get.mockResolvedValue({ ...scheduled, revision: base.revision });
     api.getSchedule.mockResolvedValue(base);
     api.putSchedule.mockResolvedValue({ ...base, revision: 7 });
     render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence }} />);
@@ -481,6 +483,129 @@ test.each([false, true])(
   }
 );
 
+test.each([true, false])('calendar uses the fresh server row requirement (%s) through Save', async (required) => {
+  const scheduled = {
+    ...rule,
+    trigger: { type: 'scheduled' },
+    actions: [{ type: required ? 'create_row' : 'set_property' }],
+  };
+  const state: ScheduleState = {
+    frequency: 'daily',
+    local_time: '09:00:00',
+    timezone: 'UTC',
+    starts_on: '2026-11-18',
+    revision: 6,
+    next_due_at: null,
+  };
+
+  api.list.mockResolvedValue({ items: [{ ...scheduled, requires_source_row: !required }] });
+  api.get.mockResolvedValue({ ...scheduled, revision: 6, requires_source_row: required });
+  api.getSchedule.mockResolvedValue(state);
+  api.putSchedule.mockResolvedValue(state);
+  fullManager();
+  fireEvent.click(await screen.findByText('Schedule'));
+  await screen.findByDisplayValue(state.starts_on);
+  const rowInput = screen.getByLabelText(required ? 'Row ID' : 'Row ID (optional)');
+
+  expect(rowInput.required).toBe(required);
+  if (required) {
+    expect(screen.getByText('Save').disabled).toBe(true);
+    fireEvent.submit(screen.getByText('Save').closest('form')!);
+    expect(api.putSchedule).not.toHaveBeenCalled();
+    fireEvent.change(rowInput, { target: { value: '00000000-0000-0000-0000-000000000000' } });
+    expect(screen.getByText('Save').disabled).toBe(true);
+    fireEvent.change(rowInput, { target: { value: row } });
+  }
+
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.putSchedule).toHaveBeenCalledWith(
+      'w',
+      'd',
+      'rule',
+      6,
+      expect.objectContaining({ row_id: required ? row : undefined })
+    )
+  );
+});
+
+test('calendar reloads a concurrently edited rule before saving its new row requirement', async () => {
+  const scheduled = { ...rule, trigger: { type: 'scheduled' }, requires_source_row: false };
+  const state: ScheduleState = {
+    frequency: 'daily',
+    local_time: '09:00:00',
+    timezone: 'UTC',
+    starts_on: '2026-11-18',
+    revision: 6,
+    next_due_at: null,
+  };
+
+  api.list.mockResolvedValue({ items: [scheduled] });
+  api.get.mockResolvedValueOnce(scheduled).mockResolvedValue({ ...scheduled, revision: 6, requires_source_row: true });
+  api.getSchedule.mockResolvedValue(state);
+  fullManager();
+  fireEvent.click(await screen.findByText('Schedule'));
+  fireEvent.click(await screen.findByText('Reload saved version'));
+  await screen.findByDisplayValue(state.starts_on);
+  expect(screen.getByLabelText('Row ID').required).toBe(true);
+  expect(screen.getByText('Save').disabled).toBe(true);
+  expect(api.putSchedule).not.toHaveBeenCalled();
+});
+
+test('older calendars distinguish source fields and row IDs from row-independent actions, filters and formulas', () => {
+  const fieldText = { parts: [{ type: 'field' as const, field_id: 'title' }] };
+  const check = (action: RuleAction, conditions: unknown[] = []) =>
+    scheduleRequiresSourceRow({ ...rule, actions: [action], conditions, trigger: { type: 'scheduled' } });
+  const define = (value: PropertyValue) => check({ type: 'define_variable', value });
+  const literal = { kind: 'number', value: 1 };
+  const nested = (value: PropertyValue): PropertyValue => ({
+    kind: 'formula',
+    value: { operator: 'add', left: literal, right: value },
+  });
+
+  expect(check({ type: 'create_row' }, [{}])).toBe(true);
+  for (const action of [
+    { type: 'set_property' },
+    { type: 'webhook_properties' },
+    { type: 'notify', notify_actor: true },
+    { type: 'notify', person_field_ids: ['owner'] },
+    { type: 'notify', message_template: fieldText },
+    { type: 'edit_row', row: { type: 'trigger' as const } },
+    { type: 'create_row', properties: [{ field_id: 'dest', value: nested({ kind: 'field', field_id: 'source' }) }] },
+    { type: 'edit_row', properties: [{ field_id: 'dest', value: { kind: 'template', parts: fieldText.parts } }] },
+    { type: 'webhook', message: fieldText },
+    { type: 'slack', message: fieldText },
+    { type: 'email', subject: fieldText },
+    { type: 'connected_email', to: [fieldText] },
+    { type: 'addressed_email', sender_name: fieldText },
+    { type: 'addressed_email', bcc: [fieldText] },
+    { type: 'member_addressed_email', reply_to: { type: 'person_field' as const, field_id: 'owner' } },
+    { type: 'member_addressed_email', cc: [{ type: 'address' as const, value: fieldText }] },
+  ])
+    expect(check(action)).toBe(true);
+  for (const expression of ['prop("title")', 'if(false, id(), "x")', 'bad(']) {
+    expect(define(nested({ kind: 'expression', expression }))).toBe(true);
+  }
+
+  for (const expression of ['now()', '"prop() and id() are literals"', 'if(true, 1, 2)']) {
+    expect(define(nested({ kind: 'expression', expression }))).toBe(false);
+  }
+
+  const targets: TargetRow[] = [
+    { type: 'step', action_index: 0 },
+    { type: 'id', row_id: row },
+    { type: 'matching', conditions: [{}] },
+  ];
+
+  for (const target of targets) {
+    expect(check({ type: 'edit_row', row: target, properties: [{ field_id: 'dest', value: literal }] })).toBe(false);
+  }
+
+  expect(check({ type: 'notify', user_ids: [row] })).toBe(false);
+  expect(check({ type: 'future_action' })).toBe(true);
+  expect(check({ type: 'member_addressed_email', to: [{ type: 'workspace_user', user_id: row }] })).toBe(false);
+});
+
 test('selected webhook properties require a live source row for triggers and schedules', async () => {
   const webhook = { type: 'webhook_properties', endpoint_id: 'ep', message: 'Info', property_ids: ['field'] };
   const scheduled = { ...rule, actions: [webhook], trigger: { type: 'scheduled' } };
@@ -502,7 +627,7 @@ test('selected webhook properties require a live source row for triggers and sch
   ).toBe(false);
   expect(validRule({ ...scheduled, trigger: { type: 'manual' } })).toBe(true);
   api.list.mockResolvedValue({ items: [scheduled] });
-  api.get.mockResolvedValue(scheduled);
+  api.get.mockResolvedValue({ ...scheduled, revision: calendar.revision });
   api.getSchedule.mockResolvedValue(calendar);
   api.putSchedule.mockResolvedValue(calendar);
   fullManager();
@@ -519,7 +644,7 @@ test('selected webhook properties require a live source row for triggers and sch
 });
 
 test('custom calendars keep their anchor and selected ISO weekdays and clear weekdays on a yearly switch', async () => {
-  const scheduled = { ...rule, trigger: { type: 'scheduled' } };
+  const scheduled = { ...rule, actions: [{ type: 'notify', user_ids: [row] }], trigger: { type: 'scheduled' } };
   const base = {
     revision: 7,
     starts_on: '2026-11-18',
@@ -532,7 +657,7 @@ test('custom calendars keep their anchor and selected ISO weekdays and clear wee
   };
 
   api.list.mockResolvedValue({ items: [scheduled] });
-  api.get.mockResolvedValue(scheduled);
+  api.get.mockResolvedValue({ ...scheduled, revision: base.revision });
   api.getSchedule.mockResolvedValue(base);
   api.putSchedule.mockResolvedValue(base);
   render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence: true }} />);
@@ -603,7 +728,7 @@ test('duplicate retries the disabled scheduled copy under the same ID and never 
   expect(api.putSchedule.mock.calls[1]).toEqual(api.putSchedule.mock.calls[0]);
 });
 test('the first calendar can be saved after the API returns record not found', async () => {
-  const scheduled = { ...rule, trigger: { type: 'scheduled' } };
+  const scheduled = { ...rule, actions: [{ type: 'notify', user_ids: [row] }], trigger: { type: 'scheduled' } };
 
   api.list.mockResolvedValue({ items: [scheduled] });
   api.get.mockResolvedValue(scheduled);
@@ -961,6 +1086,116 @@ test.each([false, true])(
   }
 );
 
+test('editing a row offers only the trigger database and rows created in the selected database', async () => {
+  const create = (id: string): RuleAction => ({ type: 'create_row', database_id: id, view_id: 'v', properties: [] });
+  const edit: RuleAction = {
+    type: 'edit_row',
+    database_id: 'd',
+    row: { type: 'trigger' },
+    properties: [{ field_id: 'title', value: { kind: 'text', value: 'Ready' } }],
+  };
+  const steps = [create('d'), create('dest'), create('d')];
+  const saved = { ...rule, actions: [...steps, edit] };
+  const dbs = ['d', 'dest', 'empty'].map((database_id) => ({
+    database_id,
+    views: [{ view_id: 'v', name: database_id }],
+  }));
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.databases.mockResolvedValue({ databases: dbs, has_more: false });
+  api.fields.mockResolvedValue([{ id: 'title', name: 'Title', field_type_id: 0 }]);
+  api.patch.mockResolvedValue(saved);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  await screen.findByDisplayValue('Ready');
+  const targetRow = screen.getByLabelText('Target row');
+  const destination = screen.getAllByLabelText('Target database')[3];
+
+  expect(targetRow.value).toBe('trigger');
+  fireEvent.change(targetRow, { target: { value: 'step' } });
+  const indices = () => Array.from(screen.getByLabelText('Row from action').options, (o) => o.value).filter(Boolean);
+
+  expect(indices()).toEqual(['0', '2']);
+  fireEvent.change(destination, { target: { value: 'empty' } });
+  expect(within(targetRow).queryByText('Triggering row')).toBeNull();
+  expect(targetRow.value).toBe('id');
+  expect(screen.getByLabelText('Row ID').value).toBe('');
+  expect(within(targetRow).queryByRole('option', { name: 'Row from an earlier action' })).toBeNull();
+  fireEvent.change(destination, { target: { value: 'dest' } });
+  expect(targetRow.value).toBe('step');
+  expect(indices()).toEqual(['1']);
+  fireEvent.click(screen.getAllByText('Add a property')[3]);
+  await waitFor(() => expect(within(screen.getByLabelText('Property')).getByText('Title')).toBeTruthy());
+  fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'title' } });
+  fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'Assigned' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+      actions: [...steps, expect.objectContaining({ database_id: 'dest', row: { type: 'step', action_index: 1 } })],
+    })
+  );
+});
+
+test('legacy mismatched row targets survive metadata changes and require repair for behavioral saves', async () => {
+  const edit: RuleAction = {
+    type: 'edit_row',
+    database_id: 'dest',
+    row: { type: 'trigger' },
+    properties: [{ field_id: 'title', value: { kind: 'text', value: 'Before' } }],
+  };
+  const saved = { ...rule, actions: [edit] };
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.databases.mockResolvedValue({
+    databases: [{ database_id: 'dest', views: [{ view_id: 'v', name: 'Tasks' }] }],
+    has_more: false,
+  });
+  api.fields.mockResolvedValue([{ id: 'title', name: 'Title', field_type_id: 0 }]);
+  api.patch.mockResolvedValue(saved);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  fireEvent.change(await screen.findByDisplayValue('Before'), { target: { value: 'After' } });
+  expect(screen.getByText('Save').disabled).toBe(true);
+  fireEvent.change(screen.getByDisplayValue('After'), { target: { value: 'Before' } });
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New name' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, { name: 'New name' }));
+
+  for (const [id, valid] of [
+    ['', false],
+    ['bad-id', false],
+    ['00000000-0000-0000-0000-000000000000', false],
+    [row, true],
+  ] as const) {
+    expect(validRule({ ...saved, actions: [{ ...edit, row: { type: 'id', row_id: id } }] }, [], false, 'd')).toBe(valid);
+  }
+
+  const sameDb = { ...edit, database_id: 'd' };
+  const triggerValid = (type: string, bound = false) =>
+    validRule({ ...saved, trigger: { type }, actions: [sameDb] }, [], bound, 'd');
+
+  expect(triggerValid('row_created')).toBe(true);
+  expect(triggerValid('row_deleted')).toBe(false);
+  expect(triggerValid('scheduled')).toBe(false);
+  expect(triggerValid('scheduled', true)).toBe(true);
+  expect(
+    validRule(
+      {
+        ...saved,
+        actions: [
+          { type: 'create_row', database_id: 'd', view_id: 'v', properties: [] },
+          { ...edit, row: { type: 'step', action_index: 0 } },
+        ],
+      },
+      [],
+      false,
+      'd'
+    )
+  ).toBe(false);
+});
+
 test('a cross-database formula uses source field IDs and retains the target database, row and field', async () => {
   const saved = {
     ...rule,
@@ -968,7 +1203,7 @@ test('a cross-database formula uses source field IDs and retains the target data
       {
         type: 'edit_row',
         database_id: 'dest',
-        row: { type: 'trigger' as const },
+        row: { type: 'id' as const, row_id: row },
         properties: [{ field_id: 'total', value: { kind: 'number', value: 1 } }],
       },
     ],
@@ -1420,7 +1655,7 @@ test('edits a saved cross-database selection delta without changing its target o
     {
       type: 'edit_row',
       database_id: 'target',
-      row: { type: 'trigger' },
+      row: { type: 'id', row_id: row },
       properties: [
         {
           field_id: 'tags',
@@ -2122,7 +2357,7 @@ test('typed operands, aliases and template parts offer values the Worker can act
     <SourceValue {...{ fields, previous, literals, value, change, definition }} expressionFields={row ? fields : []} />
   );
   const options = (label: string) =>
-    Array.from((screen.getByLabelText(label)).options)
+    Array.from(screen.getByLabelText(label).options)
       .map((o) => o.value)
       .filter(Boolean);
   const typed = (operator: 'add' | 'add_days'): PropertyValue => ({
