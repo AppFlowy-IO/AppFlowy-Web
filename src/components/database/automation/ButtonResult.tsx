@@ -64,7 +64,8 @@ export function ButtonResult({ workspace, database, row, field, requestId, onNav
 
         if (databaseId !== target.database_id || navigation.current?.workspaceId !== workspace)
           throw Error('Database unavailable');
-        await nav.navigateToRow(target.row_id, target.view_id);
+        // The grid callback loads cross-database peeks asynchronously. Other contexts open immediately.
+        await Promise.resolve(nav.navigateToRow(target.row_id, target.view_id));
       } else throw Error('Row unavailable');
       if (!signal.aborted) onNavigated?.();
     }
@@ -88,6 +89,7 @@ export function ButtonResult({ workspace, database, row, field, requestId, onNav
           } catch {
             if (!signal.aborted) setState('unavailable');
           }
+
           return;
         }
 

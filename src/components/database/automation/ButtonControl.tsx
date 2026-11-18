@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 
@@ -27,6 +27,7 @@ type Scope = {
   field: string;
   caps: Capabilities;
   onNavigated?: () => void;
+  initialClickId?: string;
 };
 type Destinations = Partial<Record<ButtonConnector['kind'], Item[]>>;
 
@@ -61,7 +62,7 @@ async function destinations(workspace: string, binding: ButtonBinding, signal: A
   return items;
 }
 
-export function ButtonControl({ workspace, database, row, field, caps, onNavigated }: Scope) {
+export function ButtonControl({ workspace, database, row, field, caps, onNavigated, initialClickId }: Scope) {
   const { t } = useTranslation();
   const { properties } = usePropertiesSelector(false);
   const [reload, setReload] = useState(0);
@@ -76,6 +77,38 @@ export function ButtonControl({ workspace, database, row, field, caps, onNavigat
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
   const pending = useRef<ButtonInvocation>();
+
+  const consumedClick = useRef<string>();
+  const submit = useCallback(
+    async (binding: ButtonBinding, connections: Record<number, string>, clickId?: string) => {
+      if (!binding.enabled || sending.current) return;
+      sending.current = true;
+      setBusy(true);
+      setSendError(undefined);
+      try {
+        const request = (pending.current ??= {
+          request_id: clickId ?? uuid(),
+          ...(caps.buttonInteractions &&
+            binding.presentation_digest && { presentation_digest: binding.presentation_digest }),
+          automation_id: binding.automation_id,
+          expected_revision: binding.revision,
+          connections: binding.connectors.map((c) => ({
+            action_index: c.action_index,
+            connection_id: connections[c.action_index],
+          })),
+        });
+
+        await ruleApi.invokeButton(workspace, database, row, field, request);
+        setDone(true);
+      } catch (e) {
+        setSendError(isRuleConflict(e) ? 'conflict' : 'saveError');
+      } finally {
+        sending.current = false;
+        setBusy(false);
+      }
+    },
+    [caps.buttonInteractions, workspace, database, row, field]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -105,6 +138,18 @@ export function ButtonControl({ workspace, database, row, field, caps, onNavigat
 
         if (selected.enabled) publish(setOptions, await destinations(workspace, selected, signal));
         publish(setBinding, selected);
+        if (!signal.aborted && reload === 0 && initialClickId && consumedClick.current !== initialClickId) {
+          consumedClick.current = initialClickId;
+          if (
+            caps.buttonInteractions &&
+            selected.enabled &&
+            (selected.confirmation === undefined || selected.confirmation === '') &&
+            Array.isArray(selected.connectors) &&
+            !selected.connectors.length
+          ) {
+            void submit(selected, {}, initialClickId);
+          }
+        }
       } catch (e) {
         if (isRecordNotFoundError(e)) publish(setBinding, null);
         else publish(setLoadFailed, true);
@@ -113,10 +158,11 @@ export function ButtonControl({ workspace, database, row, field, caps, onNavigat
 
     void read();
     return () => controller.abort();
-  }, [workspace, database, row, field, reload]);
+  }, [workspace, database, row, field, reload, initialClickId, caps.buttonInteractions, submit]);
 
   async function setup() {
     if (!rules || sending.current) return;
+    consumedClick.current = initialClickId;
     sending.current = true;
     setBusy(true);
     try {
@@ -127,34 +173,6 @@ export function ButtonControl({ workspace, database, row, field, caps, onNavigat
       );
     } catch {
       setLoadFailed(true);
-    } finally {
-      sending.current = false;
-      setBusy(false);
-    }
-  }
-
-  async function run() {
-    if (!binding?.enabled || sending.current || done) return;
-    sending.current = true;
-    setBusy(true);
-    setSendError(undefined);
-    try {
-      const request = (pending.current ??= {
-        request_id: uuid(),
-        ...(caps.buttonInteractions &&
-          binding.presentation_digest && { presentation_digest: binding.presentation_digest }),
-        automation_id: binding.automation_id,
-        expected_revision: binding.revision,
-        connections: binding.connectors.map((c) => ({
-          action_index: c.action_index,
-          connection_id: selected[c.action_index],
-        })),
-      });
-
-      await ruleApi.invokeButton(workspace, database, row, field, request);
-      setDone(true);
-    } catch (e) {
-      setSendError(isRuleConflict(e) ? 'conflict' : 'saveError');
     } finally {
       sending.current = false;
       setBusy(false);
@@ -214,7 +232,7 @@ export function ButtonControl({ workspace, database, row, field, caps, onNavigat
           <Button
             type='button'
             disabled={busy || !binding.connectors.every((c) => selected[c.action_index])}
-            onClick={() => void run()}
+            onClick={() => void submit(binding, selected)}
           >
             {t(sendError ? 'databaseAutomation.retry' : 'databaseAutomation.run')}
           </Button>

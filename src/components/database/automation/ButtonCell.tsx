@@ -1,5 +1,6 @@
-import { lazy, Suspense, useCallback, useState } from 'react';
+import { lazy, Suspense, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { v4 as uuid } from 'uuid';
 
 import { useDatabase, useDatabaseContextOptional } from '@/application/database-yjs';
 import { getTypeOptions } from '@/application/database-yjs/fields/type_option';
@@ -16,6 +17,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
+import { type Capabilities } from './model';
 import { useAutomationCapabilities } from './useAutomationCapabilities';
 
 const ButtonControl = lazy(() => import('./ButtonControl').then((mod) => ({ default: mod.ButtonControl })));
@@ -31,10 +33,9 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
     (typeof configuredLabel === 'string' && configuredLabel.trim()) ||
     field.get(YjsDatabaseKey.name) ||
     t('databaseAutomation.run');
-  const [open, setOpen] = useState(false);
-  const dismiss = useCallback(() => setOpen(false), []);
   const database = db?.get(YjsDatabaseKey.id);
   const workspace = context?.workspaceId;
+  const scope = [workspace, database, rowId, fieldId, user?.uuid].join('/');
 
   if (
     !caps.enabled ||
@@ -45,15 +46,53 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
     context?.dataSource?.type === 'history'
   )
     return <span className='truncate'>{label}</span>;
+  return <ActiveButtonCell key={scope} {...{ workspace, database, rowId, fieldId, caps, label }} />;
+}
+
+function ActiveButtonCell({
+  workspace,
+  database,
+  rowId,
+  fieldId,
+  caps,
+  label,
+}: {
+  workspace: string;
+  database: string;
+  rowId: string;
+  fieldId: string;
+  caps: Capabilities;
+  label: string;
+}) {
+  const { t } = useTranslation();
+  const [gesture, setGesture] = useState<string>();
+  const active = useRef(false);
+  const open = gesture !== undefined;
+  const dismiss = useCallback(() => {
+    active.current = false;
+    setGesture(undefined);
+  }, []);
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) dismiss();
+      }}
+    >
       <DialogTrigger asChild>
         <Button
           size='sm'
           variant='outline'
           type='button'
           onDoubleClick={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (active.current) return;
+            active.current = true;
+            setGesture(uuid());
+          }}
         >
           {label}
         </Button>
@@ -69,7 +108,7 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
         {open && (
           <Suspense fallback={<p role='status'>{t('databaseAutomation.loading')}</p>}>
             <ButtonControl
-              key={[workspace, database, rowId, fieldId, user?.uuid].join('/')}
+              initialClickId={gesture}
               onNavigated={dismiss}
               {...{ workspace, database, row: rowId, field: fieldId, caps }}
             />

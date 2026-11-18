@@ -47,7 +47,7 @@ test('run a real Button cell using the clicker’s account and replay an interru
       });
     return route.fulfill({ status: 404, json: { code: -2, message: 'unexpected request' } });
   });
-  await page.goto(new URL('/__fixtures__/automation-button', integrationsURL).href);
+  await page.goto(new URL('/__fixtures__/automation-button', integrationsURL).href, { waitUntil: 'commit' });
   const cell = page.getByRole('button', { name: 'Request review' });
 
   await expect(cell).toHaveCount(2, { timeout: 60_000 });
@@ -96,8 +96,8 @@ test('a guest configures a rule from the row header without database management 
 
     return route.fulfill({ json: { code: 0, data: { items: [] } } });
   });
-  await page.goto(new URL('/__fixtures__/automation-button?row-setup', integrationsURL).href);
-  await page.getByRole('button', { name: 'Automations for this row' }).click();
+  await page.goto(new URL('/__fixtures__/automation-button?row-setup', integrationsURL).href, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: 'Automations for this row' }).click({ timeout: 60_000 });
   const dialog = page.getByRole('dialog', { name: 'Automations for this row' });
 
   await dialog.getByRole('button', { name: 'New automation' }).click();
@@ -159,12 +159,59 @@ test('review the authored Button message and open only a completed, authorized n
 
     return route.fulfill({ json: { code: 1012, message: 'Denied' } });
   });
-  await page.goto(new URL('/__fixtures__/automation-button?interactions', integrationsURL).href);
-  await page.getByRole('button', { name: 'Request review' }).nth(1).click();
+  await page.goto(new URL('/__fixtures__/automation-button?interactions', integrationsURL).href, {
+    waitUntil: 'commit',
+  });
+  await page.getByRole('button', { name: 'Request review' }).nth(1).click({ timeout: 60_000 });
   await expect(page.getByText('Send the review summary?')).toBeVisible();
   expect(submitted).toBeUndefined();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByRole('link', { name: 'Open link' })).toHaveAttribute('href', 'https://example.org/review');
   expect(submitted?.presentation_digest).toBe('reviewed');
   expect(resultReads).toBe(2);
+});
+
+test('two rapid activations of a plain Button submit once and reopening the cell creates a new click', async ({
+  page,
+  integrationsURL,
+}) => {
+  const submitted: string[] = [];
+
+  await page.route('**/__fixtures__/automation-button?interactions', (route) =>
+    route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
+  );
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.pathname.endsWith('/button/review/run')) {
+      const key = route.request().postDataJSON().request_id as string;
+
+      submitted.push(key);
+      await route.fulfill({ json: { code: 0, data: key } });
+    } else if (url.pathname.endsWith('/button/review')) {
+      await route.fulfill({
+        json: { code: 0, data: { automation_id: 'direct-rule', revision: 1, enabled: true, connectors: [] } },
+      });
+    } else if (url.pathname.endsWith('/automation')) await route.fulfill({ json: { code: 0, data: { items: [] } } });
+    else await route.abort();
+  });
+  await page.goto(new URL('/__fixtures__/automation-button?interactions', integrationsURL).href, {
+    waitUntil: 'commit',
+  });
+  const cell = page.getByRole('button', { name: 'Request review', exact: true }).nth(1);
+
+  await expect(cell).toBeVisible({ timeout: 60_000 });
+  expect(submitted).toHaveLength(0);
+  await cell.evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(page.getByRole('dialog').getByRole('status')).toHaveText('Run queued.');
+  expect(submitted).toHaveLength(1);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await cell.click();
+  await expect(page.getByRole('dialog').getByRole('status')).toHaveText('Run queued.');
+  expect(submitted).toHaveLength(2);
+  expect(submitted[0]).not.toBe(submitted[1]);
 });

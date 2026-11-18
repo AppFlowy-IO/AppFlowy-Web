@@ -1730,7 +1730,13 @@ test('stale confirmation is reloaded and requires a separate click with a new su
 test('a completed created row uses the granted destination view and an unmounted poll cannot navigate', async () => {
   const view = '670b1863-c608-4d2d-835e-282bca078e31',
     db = '31a17711-fb18-48f6-a5cf-6517a63768c0';
-  const navigateToRow = jest.fn(),
+  let opened!: () => void;
+  const navigateToRow = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          opened = resolve;
+        })
+    ),
     loadViewMeta = jest.fn().mockResolvedValue({ view_id: view, extra: { database_id: db } });
 
   jest
@@ -1747,6 +1753,9 @@ test('a completed created row uses the granted destination view and an unmounted
 
   await waitFor(() => expect(navigateToRow).toHaveBeenCalledWith(row, view));
   expect(loadViewMeta).toHaveBeenCalledWith(view, undefined, { metadataOnly: true, authoritative: true });
+  expect(onNavigated).not.toHaveBeenCalled();
+  await act(async () => opened());
+  expect(onNavigated).toHaveBeenCalledTimes(1);
   ui.unmount();
   let resolve!: (value: { status: string; target: unknown }) => void;
 
@@ -1772,6 +1781,7 @@ test.each(['denied view', 'mismatched database', 'legacy view without a database
     const loadViewMeta = jest.fn(),
       navigateToRow = jest.fn(),
       loadView = jest.fn();
+
     if (reason === 'denied view') loadViewMeta.mockRejectedValue(new Error('No access'));
     else
       loadViewMeta.mockResolvedValue({
@@ -1925,3 +1935,159 @@ test('a pending Button only reads six times until the member checks the same rec
     jest.useRealTimers();
   }
 });
+
+function interactiveButtonField() {
+  const snapshot = {
+    status: 'ready',
+    info: {
+      enable_database_automations: true,
+      database_automation_triggers: ['button'],
+      database_automation_actions: ['notify'],
+      database_automation_scope_features: ['row_scoped_v1', 'button_interactions_v1'],
+    },
+  } as ReturnType<typeof getServerInfoSnapshot>;
+
+  jest.mocked(getServerInfoSnapshot).mockReturnValue(snapshot);
+  jest.mocked(useCurrentUserOptional).mockReturnValue({ uuid: 'clicker' } as ReturnType<typeof useCurrentUserOptional>);
+  jest
+    .mocked(useDatabaseContextOptional)
+    .mockReturnValue({ workspaceId: 'w' } as ReturnType<typeof useDatabaseContextOptional>);
+  const field = { get: (key: string) => (key === 'name' ? 'Approve' : undefined) } as unknown as YDatabaseField;
+
+  return field;
+}
+
+test('only an intentional connector-free cell click runs the Button once; a later click has a fresh UUID', async () => {
+  const field = interactiveButtonField();
+  const binding = { automation_id: 'bound', revision: 7, enabled: true, connectors: [] };
+
+  api.list.mockResolvedValue({ items: [] });
+  api.resolveButton.mockResolvedValue(binding);
+  api.invokeButton.mockRejectedValueOnce(new Error('lost response')).mockResolvedValue('accepted');
+  render(<ButtonCell field={field} fieldId='send' rowId='one' />);
+  expect(api.invokeButton).not.toHaveBeenCalled();
+  const cell = screen.getByRole('button', { name: 'Approve' });
+
+  act(() => {
+    fireEvent.click(cell);
+    fireEvent.click(cell);
+  });
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+
+  expect(api.invokeButton).toHaveBeenCalledTimes(1);
+  const first = api.invokeButton.mock.calls[0][4];
+
+  fireEvent.click(retry);
+  await screen.findByText('Run queued.');
+  expect(api.invokeButton).toHaveBeenCalledTimes(2);
+  expect(api.invokeButton.mock.calls[1][4]).toEqual(first);
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+  await screen.findByText('Run queued.');
+  expect(api.invokeButton).toHaveBeenCalledTimes(3);
+  expect(api.invokeButton.mock.calls[2][4].request_id).not.toBe(first.request_id);
+  expect(api.resolveButton).toHaveBeenCalledTimes(2);
+});
+
+test('a settings mount and a saved-rule reload never arm a one-click invocation', async () => {
+  api.list.mockResolvedValue({ items: [] });
+  api.resolveButton.mockResolvedValue({ automation_id: 'shared', revision: 1, enabled: true, connectors: [] });
+  render(
+    <ButtonControl workspace='w' database='d' row='one' field='send' caps={{ ...extended, buttonInteractions: true }} />
+  );
+  await screen.findByText('Run now');
+  fireEvent.click(screen.getByText('Set up for this row'));
+  await screen.findByLabelText('Name');
+  expect(api.invokeButton).not.toHaveBeenCalled();
+});
+
+test('stale one-click metadata must be reviewed and clicked again even when the current Button has no prompt', async () => {
+  api.list.mockResolvedValue({ items: [] });
+  api.resolveButton.mockResolvedValue({ automation_id: 'r', enabled: true, revision: 9, connectors: [] });
+  api.invokeButton
+    .mockRejectedValueOnce({ code: 1008, diagnosticMessage: 'Invalid request:automation_revision_conflict:r:9' })
+    .mockResolvedValue('accepted');
+  render(
+    <ButtonControl
+      workspace='w'
+      database='d'
+      row='one'
+      field='send'
+      initialClickId='gesture'
+      caps={{ ...extended, buttonInteractions: true }}
+    />
+  );
+  fireEvent.click(await screen.findByText('Reload saved version'));
+  const reviewed = await screen.findByText('Run now');
+
+  expect(api.invokeButton).toHaveBeenCalledTimes(1);
+  fireEvent.click(reviewed);
+  await screen.findByText('Run queued.');
+  expect(api.invokeButton.mock.calls[0][4].request_id).toBe('gesture');
+  expect(api.invokeButton.mock.calls[1][4].request_id).not.toBe('gesture');
+});
+
+test.each(['declined capability', 'requires confirmation', 'requires connection', 'disabled'])(
+  'a cell gesture waits for review when %s',
+  async (variant) => {
+    api.list.mockResolvedValue({ items: [] });
+    api.resolveButton.mockResolvedValue({
+      automation_id: 'r',
+      enabled: variant !== 'disabled',
+      revision: 1,
+      connectors: variant === 'requires connection' ? [{ action_index: 0, kind: 'gmail' }] : [],
+      ...(variant === 'requires confirmation' ? { confirmation: 'Review?' } : {}),
+    });
+    jest.mocked(listConnections).mockResolvedValue([]);
+    render(
+      <ButtonControl
+        workspace='w'
+        database='d'
+        row='one'
+        field='send'
+        initialClickId='click'
+        caps={{ ...extended, buttonInteractions: variant !== 'declined capability' }}
+      />
+    );
+    await screen.findByText(variant === 'disabled' ? 'This automation is disabled.' : 'Run now');
+    expect(api.invokeButton).not.toHaveBeenCalled();
+  }
+);
+
+test.each(['close', 'row', 'member'])(
+  'changing %s during resolution discards the original cell click',
+  async (change) => {
+    const field = interactiveButtonField();
+    const binding = { automation_id: 'bound', revision: 1, enabled: true, connectors: [] };
+    let resolve!: (value: typeof binding) => void;
+
+    api.list.mockResolvedValue({ items: [] });
+    api.resolveButton.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        })
+    );
+    const view = (row: string) => <ButtonCell field={field} fieldId='send' rowId={row} />;
+    const { rerender } = render(view('one'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(api.resolveButton).toHaveBeenCalledTimes(1));
+    if (change === 'member') {
+      jest
+        .mocked(useCurrentUserOptional)
+        .mockReturnValue({ uuid: 'new member' } as ReturnType<typeof useCurrentUserOptional>);
+      rerender(view('one'));
+    } else if (change === 'row') {
+      rerender(view('two'));
+    } else {
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    }
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await act(async () => resolve(binding));
+    expect(api.invokeButton).not.toHaveBeenCalled();
+    expect(api.resolveButton).toHaveBeenCalledTimes(1);
+  }
+);
