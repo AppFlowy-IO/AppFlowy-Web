@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import strings from '@/@types/translations/en.json';
-import { FieldType, useDatabaseContextOptional } from '@/application/database-yjs';
+import { readButtonOpenTarget, readButtonResultTarget, validButtonUrl } from '@/application/automation/button';
+import { FieldType, useDatabaseContextOptional, useFieldSelector } from '@/application/database-yjs';
+import { useUpdateButtonTypeOption } from '@/application/database-yjs/dispatch';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import type { ScheduleState } from '@/application/services/js-services/http/automation-api';
 import {
@@ -18,9 +20,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { getServerInfoSnapshot } from '@/utils/server-info';
 
 import AutomationButton from '../AutomationButton';
-import { ButtonControl } from '../ButtonControl';
-import { ButtonCell } from '../ButtonCell';
 import { RuleManager } from '../AutomationEditor';
+import { ButtonCell } from '../ButtonCell';
+import { ButtonControl } from '../ButtonControl';
+import { ButtonDefaults } from '../ButtonDefaults';
+import { ButtonResult } from '../ButtonResult';
 import {
   actionTypes,
   canEditRule,
@@ -68,6 +72,7 @@ jest.mock('@/application/database-yjs', () => ({
     Button: 20,
     Formula: 19,
   },
+  useFieldSelector: jest.fn(),
   useDatabaseFields: () => undefined,
   useDatabaseContextOptional: jest.fn(),
   useDatabase: () => ({ get: () => 'd' }),
@@ -88,6 +93,7 @@ jest.mock('@/application/database-yjs', () => ({
   useSelectFieldOptions: () => [{ id: 'done', name: 'Done' }],
   useDatabaseView: () => ({ get: () => ({ toJSON: () => [] }) }),
 }));
+jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateButtonTypeOption: jest.fn() }));
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => {
   const fetchUsers = jest.fn();
 
@@ -118,6 +124,7 @@ jest.mock('@/application/services/js-services/http/automation-api', () => ({
   ruleApi: {
     list: jest.fn(),
     resolveButton: jest.fn(),
+    buttonResult: jest.fn(),
     invokeButton: jest.fn(),
     get: jest.fn(),
     create: jest.fn(),
@@ -237,6 +244,7 @@ test('pages run history under a POSIX locale using its cursor and deletes with t
 
 const extended = {
   rowScoped: false,
+  buttonInteractions: false,
   enabled: true,
   triggers: triggerTypes,
   actions: actionTypes,
@@ -1661,4 +1669,257 @@ test('renders 128 Button cells without resolving bindings or fetching the clicki
   render(<ButtonCell field={field} rowId='one' fieldId='send' />);
   expect(screen.queryByRole('button')).toBeNull();
   expect(api.resolveButton).toHaveBeenCalledTimes(1);
+});
+
+test('a negotiated confirmation is reviewed, bound to the click and retained across transport retry', async () => {
+  api.resolveButton.mockResolvedValue({
+    automation_id: 'bound',
+    revision: 5,
+    enabled: true,
+    connectors: [],
+    confirmation: 'Email the selected people?',
+    presentation_digest: 'v1',
+    has_open_target: true,
+  });
+  api.invokeButton.mockRejectedValueOnce(Error('interrupted')).mockResolvedValueOnce('ok');
+  api.buttonResult.mockResolvedValue({
+    status: 'succeeded',
+    target: { type: 'url', url: 'https://example.org/result' },
+  });
+  render(
+    <ButtonControl workspace='w' database='d' row='one' field='send' caps={{ ...extended, buttonInteractions: true }} />
+  );
+  await screen.findByText('Email the selected people?');
+  expect(api.invokeButton).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Run now'));
+  fireEvent.click(await screen.findByText('Retry'));
+  const link = await screen.findByRole('link', { name: 'Open link' });
+
+  expect(link.getAttribute('href')).toBe('https://example.org/result');
+  expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  const first = api.invokeButton.mock.calls[0];
+
+  expect(first[4]).toMatchObject({ expected_revision: 5, presentation_digest: 'v1' });
+  expect(api.invokeButton.mock.calls[1]).toEqual(first);
+  expect(api.buttonResult).toHaveBeenCalledWith('w', 'd', 'one', 'send', first[4].request_id, expect.any(AbortSignal));
+});
+
+test('stale confirmation is reloaded and requires a separate click with a new submission ID', async () => {
+  const b = { automation_id: 'bound', revision: 4, enabled: true, connectors: [] };
+
+  api.resolveButton
+    .mockResolvedValueOnce({ ...b, presentation_digest: 'first', confirmation: 'Original prompt' })
+    .mockResolvedValueOnce({ ...b, presentation_digest: 'next', confirmation: 'Current prompt' });
+  api.invokeButton
+    .mockRejectedValueOnce({ code: 1008, message: 'Invalid request:automation_revision_conflict:4' })
+    .mockResolvedValue('ok');
+  render(
+    <ButtonControl workspace='w' database='d' row='one' field='send' caps={{ ...extended, buttonInteractions: true }} />
+  );
+  await screen.findByText('Original prompt');
+  fireEvent.click(screen.getByText('Run now'));
+  fireEvent.click(await screen.findByText('Reload saved version'));
+  await screen.findByText('Current prompt');
+  expect(api.invokeButton).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText('Run now'));
+  await screen.findByText('Run queued.');
+  expect(api.invokeButton.mock.calls[1][4].presentation_digest).toBe('next');
+  expect(api.invokeButton.mock.calls[0][4].request_id).not.toBe(api.invokeButton.mock.calls[1][4].request_id);
+});
+
+test('a completed created row uses the granted destination view and an unmounted poll cannot navigate', async () => {
+  const view = '670b1863-c608-4d2d-835e-282bca078e31',
+    db = '31a17711-fb18-48f6-a5cf-6517a63768c0';
+  const navigateToRow = jest.fn(),
+    loadViewMeta = jest.fn().mockResolvedValue({ view_id: view, extra: { database_id: db } });
+
+  jest
+    .mocked(useDatabaseContextOptional)
+    .mockReturnValue({ workspaceId: 'w', navigateToRow, loadViewMeta } as unknown as ReturnType<
+      typeof useDatabaseContextOptional
+    >);
+  const target = { type: 'row', database_id: db, view_id: view, row_id: row };
+
+  api.buttonResult.mockResolvedValue({ status: 'succeeded', target });
+  const props = { workspace: 'w', database: 'd', row: 'one', field: 'send', requestId: 'key' };
+  const ui = render(<ButtonResult {...props} />);
+
+  await waitFor(() => expect(navigateToRow).toHaveBeenCalledWith(row, view));
+  expect(loadViewMeta).toHaveBeenCalledWith(view, undefined, { metadataOnly: true, authoritative: true });
+  ui.unmount();
+  let resolve!: (value: { status: string; target: unknown }) => void;
+
+  api.buttonResult.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  const closed = render(<ButtonResult {...props} />);
+
+  closed.unmount();
+  await act(async () => resolve({ status: 'succeeded', target }));
+  expect(navigateToRow).toHaveBeenCalledTimes(1);
+});
+
+test.each(['denied view', 'mismatched database', 'legacy view without a database'])(
+  'a successful created row stays unavailable for a %s',
+  async (reason) => {
+    const view = '670b1863-c608-4d2d-835e-282bca078e31';
+    const db = '31a17711-fb18-48f6-a5cf-6517a63768c0';
+    const loadViewMeta = jest.fn(),
+      navigateToRow = jest.fn(),
+      loadView = jest.fn();
+    if (reason === 'denied view') loadViewMeta.mockRejectedValue(new Error('No access'));
+    else
+      loadViewMeta.mockResolvedValue({
+        view_id: view,
+        extra: reason === 'mismatched database' ? { database_id: 'other' } : {},
+      });
+    jest.mocked(useDatabaseContextOptional).mockReturnValue({
+      workspaceId: 'w',
+      loadViewMeta,
+      loadView,
+      navigateToRow,
+    } as unknown as ReturnType<typeof useDatabaseContextOptional>);
+    api.buttonResult.mockResolvedValue({
+      status: 'succeeded',
+      target: { type: 'row', view_id: view, database_id: db, row_id: row },
+    });
+    render(<ButtonResult workspace='w' database='d' row='one' field='send' requestId='request' />);
+    await screen.findByText('The destination is unavailable.');
+    expect(navigateToRow).not.toHaveBeenCalled();
+    expect(screen.queryByText('Check again')).toBeNull();
+    expect(api.buttonResult).toHaveBeenCalledTimes(1);
+  }
+);
+
+test.each(['failed', 'skipped', 'cancelled', 'unknown'])(
+  'terminal or unknown result %s cannot open a supplied target',
+  async (status) => {
+    api.buttonResult.mockResolvedValue({ status, target: { type: 'url', url: 'https://example.com' } });
+    render(<ButtonResult workspace='w' database='d' row='one' field='send' requestId='key' />);
+    await screen.findByText(
+      status === 'unknown' ? 'The destination is unavailable.' : 'The automation did not complete.'
+    );
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(api.buttonResult).toHaveBeenCalledTimes(1);
+  }
+);
+
+test('navigation accepts bounded HTTP(S) destinations and non-nil stable typed targets', () => {
+  expect(validButtonUrl('https://example.org/a?b=2')).toBe(true);
+  for (const value of [
+    'https://example.org/a\u008fb',
+    'https://example.org/a\u00a0b',
+    'mailto:test@example.org',
+    '/app/x',
+    'https://user@example.org',
+    'https://@example.org',
+    'https://example.org/\nnext',
+    'https://e.org/' + 'é'.repeat(1024),
+    String.raw`https://example.org\path`,
+  ])
+    expect(validButtonUrl(value)).toBe(false);
+  expect(readButtonOpenTarget({ type: 'created_row', action_index: 4 })).toBeDefined();
+  expect(readButtonOpenTarget({ type: 'created_row', action_index: 5 })).toBeUndefined();
+  expect(readButtonResultTarget({ type: 'created_row', action_index: 0 })).toBeUndefined();
+  expect(readButtonResultTarget({ type: 'page', view_id: '00000000-0000-0000-0000-000000000000' })).toBeUndefined();
+});
+
+test('field authors can save, clear and preserve negotiated Button confirmation and destinations', async () => {
+  const save = jest.fn();
+
+  jest.mocked(useUpdateButtonTypeOption).mockReturnValue(save);
+  jest
+    .mocked(useDatabaseContextOptional)
+    .mockReturnValue({ workspaceId: 'w', canWrite: true } as ReturnType<typeof useDatabaseContextOptional>);
+  const setup = (features: string[], options: Record<string, unknown>) => {
+    const snapshot = {
+      status: 'ready',
+      info: {
+        enable_database_automations: true,
+        database_automation_triggers: ['button'],
+        database_automation_actions: ['notify'],
+        database_automation_scope_features: features,
+      },
+    } as ReturnType<typeof getServerInfoSnapshot>;
+
+    jest.mocked(getServerInfoSnapshot).mockReturnValue(snapshot);
+    jest
+      .mocked(useFieldSelector)
+      .mockReturnValue({ field: { get: () => ({ get: () => ({ toJSON: () => options }) }) } } as unknown as ReturnType<
+        typeof useFieldSelector
+      >);
+    return render(<ButtonDefaults fieldId='send' />);
+  };
+
+  const base = ['row_scoped_v1'],
+    advanced = [...base, 'button_interactions_v1'];
+  const future = { type: 'url', url: 'https://example.org', extra: 1 };
+  const first = setup(base, { label: 'Schedule', confirmation: 'Original', open_target: future });
+
+  await waitFor(() => expect(screen.getByText('Save').disabled).toBe(false));
+  expect(screen.queryByLabelText('Confirmation message')).toBeNull();
+  fireEvent.click(screen.getByText('Save'));
+  expect(save).toHaveBeenLastCalledWith({ label: 'Schedule', automation_id: '' });
+  first.unmount();
+  const unknown = setup(advanced, { label: 'Schedule', confirmation: 'Original', open_target: future });
+
+  await screen.findByText('The destination is unavailable.');
+  await waitFor(() => expect(screen.getByText('Save').disabled).toBe(false));
+  fireEvent.change(screen.getByLabelText('Confirmation message'), { target: { value: 'Changed' } });
+  fireEvent.click(screen.getByText('Save'));
+  expect(save).toHaveBeenLastCalledWith({ label: 'Schedule', automation_id: '', confirmation: 'Changed' });
+  unknown.unmount();
+  setup(advanced, {});
+  await waitFor(() => expect(screen.getByText('Save').disabled).toBe(false));
+  const confirmation = screen.getByLabelText('Confirmation message');
+
+  fireEvent.change(confirmation, { target: { value: '🌿'.repeat(257) } });
+  expect(screen.getByText('Save').disabled).toBe(true);
+  fireEvent.change(confirmation, { target: { value: '🌿'.repeat(256) } });
+  fireEvent.change(screen.getByLabelText(strings.databaseAutomation.afterSuccess), { target: { value: 'url' } });
+  const url = screen.getByLabelText(strings.databaseAutomation.openKind.url);
+
+  fireEvent.change(url, { target: { value: 'file:///tmp/example' } });
+  expect(screen.getByText('Save').disabled).toBe(true);
+  fireEvent.change(url, { target: { value: 'https://example.org' } });
+  fireEvent.click(screen.getByText('Save'));
+  expect(save).toHaveBeenLastCalledWith({
+    label: '',
+    automation_id: '',
+    confirmation: '🌿'.repeat(256),
+    open_target: { type: 'url', url: 'https://example.org' },
+  });
+  fireEvent.change(confirmation, { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText(strings.databaseAutomation.afterSuccess), { target: { value: '' } });
+  fireEvent.click(screen.getByText('Save'));
+  expect(save).toHaveBeenLastCalledWith({ label: '', automation_id: '', confirmation: '', open_target: null });
+});
+
+test('a pending Button only reads six times until the member checks the same receipt again', async () => {
+  jest.useFakeTimers();
+  try {
+    api.buttonResult.mockResolvedValue({ status: 'running', target: { type: 'url', url: 'https://example.org/' } });
+    render(<ButtonResult workspace='w' database='d' row='one' field='send' requestId='receipt' />);
+    await act(async () => undefined);
+    for (const delay of [1000, 2000, 4000, 8000, 8000])
+      await act(async () => {
+        jest.advanceTimersByTime(delay);
+      });
+    expect(api.buttonResult).toHaveBeenCalledTimes(6);
+    await act(async () => {
+      jest.advanceTimersByTime(120_000);
+    });
+    expect(api.buttonResult).toHaveBeenCalledTimes(6);
+    api.buttonResult.mockResolvedValue({ status: 'succeeded', target: { type: 'url', url: 'https://example.org/' } });
+    fireEvent.click(screen.getByText('Check again'));
+    await act(async () => undefined);
+    expect(screen.getByRole('link').getAttribute('href')).toBe('https://example.org/');
+    expect(api.buttonResult).toHaveBeenLastCalledWith('w', 'd', 'one', 'send', 'receipt', expect.any(AbortSignal));
+    expect(api.invokeButton).not.toHaveBeenCalled();
+  } finally {
+    jest.useRealTimers();
+  }
 });

@@ -8,8 +8,8 @@ import { DatabaseContext, type DatabaseContextState } from '@/application/databa
 import { FieldType } from '@/application/database-yjs/database.type';
 import { initAPIService } from '@/application/services/js-services/http/core';
 import { type User, type YDoc, YjsEditorKey } from '@/application/types';
-import { CenterPeekHeader } from '@/components/database/components/database-row/RowPeekHeader';
 import { Cell } from '@/components/database/components/cell/Cell';
+import { CenterPeekHeader } from '@/components/database/components/database-row/RowPeekHeader';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
@@ -27,7 +27,10 @@ updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.clou
     enable_database_automations: true,
     database_automation_triggers: ['row_created', 'manual', 'button'],
     database_automation_actions: ['notify'],
-    database_automation_scope_features: ['row_scoped_v1'],
+    database_automation_scope_features: [
+      'row_scoped_v1',
+      ...(new URLSearchParams(location.search).has('interactions') ? ['button_interactions_v1'] : []),
+    ],
   },
 });
 const rowSetup = new URLSearchParams(location.search).has('row-setup');

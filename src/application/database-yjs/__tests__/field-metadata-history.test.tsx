@@ -337,6 +337,21 @@ describe('field metadata production hooks use database history', () => {
     act(() => hooks.result.current.save({ label: 'Approve', automation_id: 'de5d2db5-f27a-4914-99d9-468701412053' }));
     const original = f.fields.get(textFieldId);
 
+    const presentation = original.get(YjsDatabaseKey.type_option).get(String(FieldType.Button));
+
+    act(() =>
+      hooks.result.current.save({
+        label: 'Approve',
+        automation_id: 'de5d2db5-f27a-4914-99d9-468701412053',
+        confirmation: 'Send now?',
+        open_target: { type: 'created_row', action_index: 0 },
+      })
+    );
+    act(() => hooks.result.current.save({ label: 'Approve', automation_id: 'de5d2db5-f27a-4914-99d9-468701412053' }));
+    expect(presentation.toJSON()).toMatchObject({
+      confirmation: 'Send now?',
+      open_target: { type: 'created_row', action_index: 0 },
+    });
     expect(parseYDatabaseCellToCell(cell, original).data).toBeNull();
     let status;
 
@@ -349,7 +364,13 @@ describe('field metadata production hooks use database history', () => {
     act(() => {
       copy = hooks.result.current.duplicate(textFieldId);
     });
-    expect(f.fields.get(copy).get(YjsDatabaseKey.type_option).get('20')?.toJSON()).toEqual({ label: 'Approve' });
+    expect(f.fields.get(copy).get(YjsDatabaseKey.type_option).get('20')?.toJSON()).toEqual({
+      label: 'Approve',
+      confirmation: 'Send now?',
+    });
+    act(() => hooks.result.current.save({ label: 'Approve', automation_id: '', confirmation: '', open_target: null }));
+    expect(presentation.has('confirmation')).toBe(false);
+    expect(presentation.has('open_target')).toBe(false);
     expect(getRow(f).get(YjsDatabaseKey.cells).has(copy)).toBe(false);
     const options = original.get(YjsDatabaseKey.type_option).get(String(FieldType.Button));
 

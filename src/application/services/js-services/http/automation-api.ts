@@ -156,8 +156,17 @@ const buttonPath = (w: string, d: string, row: string, field: string) =>
   `${rowPath(w, d, row)}/button/${encodeURIComponent(field)}`;
 
 export type ButtonConnector = { action_index: number; kind: 'gmail' | 'slack' | 'webhook' };
-export type ButtonBinding = { automation_id: string; revision: number; enabled: boolean; connectors: ButtonConnector[] };
+export type ButtonBinding = {
+  automation_id: string;
+  revision: number;
+  enabled: boolean;
+  connectors: ButtonConnector[];
+  confirmation?: string;
+  has_open_target?: boolean;
+  presentation_digest?: string;
+};
 export type ButtonInvocation = {
+  presentation_digest?: string;
   automation_id: string;
   expected_revision: number;
   request_id: string;
@@ -190,6 +199,10 @@ export const ruleApi = {
     executeAPIVoidRequest(() => getAxios()?.delete(item(w, d, id, row), { params: { expected_revision: revision } })),
   resolveButton: (w: string, d: string, row: string, field: string, signal?: AbortSignal) =>
     executeAPIRequest<ButtonBinding>(() => getAxios()?.get(buttonPath(w, d, row, field), { signal })),
+  buttonResult: (w: string, d: string, row: string, field: string, request: string, signal?: AbortSignal) =>
+    executeAPIRequest<{ status: string; target?: unknown }>(() =>
+      getAxios()?.get(buttonPath(w, d, row, field) + '/run/' + encodeURIComponent(request), { signal })
+    ),
   invokeButton: (w: string, d: string, row: string, field: string, body: ButtonInvocation) =>
     executeAPIRequest<string>(() => getAxios()?.post(buttonPath(w, d, row, field) + '/run', body)),
   run: (w: string, d: string, id: string, revision: number, row_id: string, request_id: string, row?: string) =>

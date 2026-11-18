@@ -109,3 +109,62 @@ test('a guest configures a rule from the row header without database management 
   expect(calls.some((call) => call.includes('/button/'))).toBe(false);
   await expect(page.getByTestId('row-detail-duplicate')).toHaveCount(0);
 });
+
+test('review the authored Button message and open only a completed, authorized navigation result', async ({
+  page,
+  integrationsURL,
+}) => {
+  const endpoint = '/api/workspace/team/database/tasks/row/second/button/review';
+  let submitted: { request_id: string; presentation_digest: string } | undefined;
+  let resultReads = 0;
+
+  await page.route('**/__fixtures__/automation-button?interactions', (route) =>
+    route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
+  );
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+
+    if (path === endpoint)
+      return route.fulfill({
+        json: {
+          code: 0,
+          data: {
+            automation_id: 'bound',
+            revision: 9,
+            enabled: true,
+            connectors: [],
+            confirmation: 'Send the review summary?',
+            has_open_target: true,
+            presentation_digest: 'reviewed',
+          },
+        },
+      });
+    if (path === endpoint + '/run') {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: { code: 0, data: submitted?.request_id } });
+    }
+
+    if (submitted && path === endpoint + '/run/' + submitted.request_id) {
+      resultReads++;
+      return route.fulfill({
+        json: {
+          code: 0,
+          data:
+            resultReads === 1
+              ? { status: 'running', target: { type: 'url', url: 'https://example.org/early' } }
+              : { status: 'succeeded', target: { type: 'url', url: 'https://example.org/review' } },
+        },
+      });
+    }
+
+    return route.fulfill({ json: { code: 1012, message: 'Denied' } });
+  });
+  await page.goto(new URL('/__fixtures__/automation-button?interactions', integrationsURL).href);
+  await page.getByRole('button', { name: 'Request review' }).nth(1).click();
+  await expect(page.getByText('Send the review summary?')).toBeVisible();
+  expect(submitted).toBeUndefined();
+  await page.getByRole('button', { name: 'Run now' }).click();
+  await expect(page.getByRole('link', { name: 'Open link' })).toHaveAttribute('href', 'https://example.org/review');
+  expect(submitted?.presentation_digest).toBe('reviewed');
+  expect(resultReads).toBe(2);
+});

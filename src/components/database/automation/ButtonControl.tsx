@@ -16,6 +16,7 @@ import { isRecordNotFoundError } from '@/application/utils/error-utils';
 import { Button } from '@/components/ui/button';
 
 import { RuleForm } from './AutomationEditor';
+import { ButtonResult } from './ButtonResult';
 import { Capabilities } from './model';
 import { Item, Select } from './Select';
 
@@ -133,6 +134,8 @@ export function ButtonControl({ workspace, database, row, field, caps }: Scope) 
     try {
       const request = (pending.current ??= {
         request_id: uuid(),
+        ...(caps.buttonInteractions &&
+          binding.presentation_digest && { presentation_digest: binding.presentation_digest }),
         automation_id: binding.automation_id,
         expected_revision: binding.revision,
         connections: binding.connectors.map((c) => ({
@@ -143,7 +146,6 @@ export function ButtonControl({ workspace, database, row, field, caps }: Scope) 
 
       await ruleApi.invokeButton(workspace, database, row, field, request);
       setDone(true);
-      pending.current = undefined;
     } catch (e) {
       setSendError(isRuleConflict(e) ? 'conflict' : 'saveError');
     } finally {
@@ -181,9 +183,16 @@ export function ButtonControl({ workspace, database, row, field, caps }: Scope) 
       ) : binding === null || !binding.enabled ? (
         <p>{t(binding === null ? 'databaseAutomation.buttonUnconfigured' : 'databaseAutomation.buttonDisabled')}</p>
       ) : done ? (
-        <p role='status'>{t('databaseAutomation.buttonQueued')}</p>
+        caps.buttonInteractions && binding.has_open_target && pending.current ? (
+          <ButtonResult {...{ workspace, database, row, field }} requestId={pending.current.request_id} />
+        ) : (
+          <p role='status'>{t('databaseAutomation.buttonQueued')}</p>
+        )
       ) : (
         <>
+          {caps.buttonInteractions && binding.confirmation && (
+            <p className='whitespace-pre-wrap'>{binding.confirmation}</p>
+          )}
           {binding.connectors.map((c) => (
             <fieldset key={c.action_index} disabled={busy || !!pending.current}>
               <Select

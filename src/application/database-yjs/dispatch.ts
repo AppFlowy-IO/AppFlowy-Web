@@ -1,3 +1,4 @@
+import type { ButtonOpenTarget } from '@/application/automation/button';
 import dayjs from 'dayjs';
 import { t } from 'i18next';
 import { nanoid } from 'nanoid';
@@ -2523,7 +2524,20 @@ export function useDuplicatePropertyDispatch() {
 
                 sourceFieldTypeOption.forEach((value, key) => {
                   // A binding belongs to its original stable field ID.
-                  if (typeOptionFieldType === FieldType.Button && key === 'automation_id') return;
+                  if (typeOptionFieldType === FieldType.Button) {
+                    if (key === 'automation_id') return;
+
+                    const target = value instanceof Y.Map ? value.toJSON() : value;
+
+                    if (
+                      key === 'open_target' &&
+                      target &&
+                      typeof target === 'object' &&
+                      'type' in target &&
+                      target.type === 'created_row'
+                    ) return;
+                  }
+
                   // Reciprocal metadata is owned by the original field. Copying it
                   // would let a deletion of the duplicate orphan or remove the
                   // original's reciprocal in the related database, so the duplicate
@@ -4676,7 +4690,7 @@ export function useUpdateButtonTypeOption(fieldId: string) {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (updates: { label: string; automation_id: string }) => {
+    (updates: { label: string; automation_id: string; confirmation?: string; open_target?: ButtonOpenTarget | null }) => {
       executeOperations(
         sharedRoot,
         [
