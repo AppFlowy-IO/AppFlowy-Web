@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import strings from '@/@types/translations/en.json';
-import { FieldType } from '@/application/database-yjs';
+import { FieldType, useDatabaseContextOptional } from '@/application/database-yjs';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import type { ScheduleState } from '@/application/services/js-services/http/automation-api';
 import {
@@ -18,6 +18,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { getServerInfoSnapshot } from '@/utils/server-info';
 
 import AutomationButton from '../AutomationButton';
+import { ButtonControl } from '../ButtonControl';
+import { ButtonCell } from '../ButtonCell';
 import { RuleManager } from '../AutomationEditor';
 import {
   actionTypes,
@@ -63,13 +65,18 @@ jest.mock('@/application/database-yjs', () => ({
     URL: 6,
     CreatedBy: 17,
     LastEditedBy: 18,
+    Button: 20,
+    Formula: 19,
   },
   useDatabaseFields: () => undefined,
+  useDatabaseContextOptional: jest.fn(),
+  useFieldSelector: () => ({ field: { get: (key: string) => (key === 'name' ? 'Request review' : undefined) } }),
   useDatabase: () => ({ get: () => 'd' }),
   useDatabaseContext: () => ({ workspaceId: 'w', databasePageId: 'page' }),
   useDatabaseViewsSelector: () => ({ viewIds: ['board'], childViews: [{ get: () => 'Work board' }] }),
   usePropertiesSelector: () => ({
     properties: [
+      { id: 'send', name: 'Request review', type: 20 },
       { id: 'state', name: 'Status', type: 3 },
       { id: 'labels', name: 'Labels', type: 4 },
       { id: 'stamp', name: 'Completed', type: 2 },
@@ -111,6 +118,8 @@ jest.mock('@/application/services/js-services/http/automation-api', () => ({
   ...jest.requireActual('@/application/services/js-services/http/automation-api'),
   ruleApi: {
     list: jest.fn(),
+    resolveButton: jest.fn(),
+    invokeButton: jest.fn(),
     get: jest.fn(),
     create: jest.fn(),
     patch: jest.fn(),
@@ -1431,4 +1440,162 @@ test('selects an earlier relation variable, saves the stable name and reopens it
       extended
     )
   ).toBe(false);
+});
+
+test('native Button resolution uses the clicked field and row, offers caller-owned accounts, and retries the same payload', async () => {
+  const userGrants = [
+    {
+      id: 'mine',
+      provider: 'gmail' as const,
+      connected_at: 'now',
+      status: 'active' as const,
+      account_identifier: 'My Gmail',
+    },
+    {
+      id: 'stale',
+      provider: 'gmail' as const,
+      connected_at: 'now',
+      status: 'revoked' as never,
+      account_identifier: 'Old Gmail',
+    },
+  ];
+
+  jest.mocked(listConnections).mockResolvedValue(userGrants);
+  api.webhooks.mockResolvedValue({
+    items: [
+      { id: 'my-hook', name: 'My endpoint', disabled: false },
+      { id: 'old', name: 'disabled', disabled: true },
+    ],
+  });
+  api.list.mockRejectedValue({ code: 1004 });
+  api.resolveButton.mockResolvedValue({
+    automation_id: 'scoped',
+    revision: 7,
+    enabled: true,
+    connectors: [
+      { action_index: 1, kind: 'gmail' },
+      { action_index: 2, kind: 'webhook' },
+    ],
+  });
+  api.invokeButton.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce('request');
+  const ui = render(<ButtonControl workspace='w' database='d' row='row-1' field='send' caps={extended} />);
+  const send = await screen.findByText('Run now');
+
+  expect((send as HTMLButtonElement).disabled).toBe(true);
+  expect(api.resolveButton).toHaveBeenCalledWith('w', 'd', 'row-1', 'send', expect.any(AbortSignal));
+  expect(screen.queryByText('Set up for this row')).toBeNull();
+  expect(screen.queryByText('Old Gmail')).toBeNull();
+  expect(screen.queryByText('disabled')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Step 2 · gmail account'), { target: { value: 'mine' } });
+  fireEvent.change(screen.getByLabelText('Step 3 · webhook account'), { target: { value: 'my-hook' } });
+  fireEvent.click(send);
+  fireEvent.click(await screen.findByText('Retry'));
+  await screen.findByText('Run queued.');
+  const first = api.invokeButton.mock.calls[0];
+
+  expect(first).toEqual([
+    'w',
+    'd',
+    'row-1',
+    'send',
+    {
+      request_id: expect.any(String),
+      automation_id: 'scoped',
+      expected_revision: 7,
+      connections: [
+        { action_index: 1, connection_id: 'mine' },
+        { action_index: 2, connection_id: 'my-hook' },
+      ],
+    },
+  ]);
+  expect(api.invokeButton.mock.calls[1]).toEqual(first);
+  expect(api.run).not.toHaveBeenCalled();
+  ui.unmount();
+  api.resolveButton.mockResolvedValue({ automation_id: 'shared', revision: 1, enabled: true, connectors: [] });
+  api.invokeButton.mockResolvedValue('new');
+  render(<ButtonControl workspace='w' database='d' row='row-2' field='send' caps={extended} />);
+  fireEvent.click(await screen.findByText('Run now'));
+  await screen.findByText('Run queued.');
+  expect(api.invokeButton.mock.calls[2][4].request_id).not.toBe(first[4].request_id);
+});
+test('a row editor can create the first override without changing the shared definition or schema', async () => {
+  api.list.mockResolvedValue({ items: [] });
+  api.resolveButton.mockRejectedValue({ code: -2 });
+  api.create.mockResolvedValue(rule);
+  render(<ButtonControl workspace='w' database='d' row='row-1' field='send' caps={extended} />);
+  fireEvent.click(await screen.findByText('Set up for this row'));
+  expect(screen.queryByLabelText('Trigger')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Local review' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create).toHaveBeenCalledWith(
+    'w',
+    'd',
+    expect.any(String),
+    expect.objectContaining({ trigger: { type: 'button', field_id: 'send' }, name: 'Local review' }),
+    'row-1'
+  );
+  expect(api.patch).not.toHaveBeenCalled();
+});
+test('the Button trigger requires both discovery signals and an actual Button property', () => {
+  const info = {
+    enable_database_automations: true,
+    database_automation_triggers: ['row_created', 'button'],
+    database_automation_actions: ['notify'],
+  } as ServerInfo;
+  const old = ruleCapabilities(info);
+  const current = ruleCapabilities({ ...info, database_automation_scope_features: ['row_scoped_v1'] });
+  const saved = { ...rule, trigger: { type: 'button', field_id: 'send' } };
+
+  expect(canEditRule(saved, old)).toBe(false);
+  expect(canEditRule(saved, current)).toBe(true);
+  expect(validRule(saved, [{ id: 'send', name: 'Send', type: FieldType.Button }])).toBe(true);
+  expect(validRule(saved, [{ id: 'send', name: 'Send', type: FieldType.RichText }])).toBe(false);
+});
+
+test('renders 128 Button cells without resolving bindings or fetching the clicking member’s accounts', async () => {
+  const enabled = {
+    enable_database_automations: true,
+    database_automation_triggers: ['button'],
+    database_automation_scope_features: ['row_scoped_v1'],
+    database_automation_actions: ['notify'],
+  } as ServerInfo;
+  const view = { workspaceId: 'w' } as ReturnType<typeof useDatabaseContextOptional>;
+  const server = { status: 'ready', info: enabled } as ReturnType<typeof getServerInfoSnapshot>;
+
+  jest.mocked(useDatabaseContextOptional).mockReturnValue(view);
+  jest.mocked(useCurrentUserOptional).mockReturnValue({ uuid: 'clicker' } as ReturnType<typeof useCurrentUserOptional>);
+  jest.mocked(getServerInfoSnapshot).mockReturnValue(server);
+  const cells = Array.from({ length: 128 }, (_, i) => <ButtonCell key={i} rowId={String(i)} fieldId='send' />);
+  const ui = render(<>{cells}</>);
+
+  expect(screen.getAllByRole('button', { name: 'Request review' })).toHaveLength(128);
+  expect(api.resolveButton).not.toHaveBeenCalled();
+  expect(api.list).not.toHaveBeenCalled();
+  expect(listConnections).not.toHaveBeenCalled();
+  expect(api.webhooks).not.toHaveBeenCalled();
+  api.list.mockResolvedValue({ items: [] });
+  api.resolveButton.mockResolvedValue({ automation_id: 'bound', revision: 1, enabled: true, connectors: [] });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Request review' })[64]);
+  await screen.findByText('Run now');
+  expect(api.resolveButton).toHaveBeenCalledTimes(1);
+  expect(api.resolveButton).toHaveBeenCalledWith('w', 'd', '64', 'send', expect.any(AbortSignal));
+  expect(listConnections).not.toHaveBeenCalled();
+  ui.unmount();
+  const old = { status: 'ready', info: { ...enabled, database_automation_scope_features: [] } } as ReturnType<
+    typeof getServerInfoSnapshot
+  >;
+
+  jest.mocked(getServerInfoSnapshot).mockReturnValue(old);
+  const legacy = render(<ButtonCell rowId='one' fieldId='send' />);
+
+  expect(screen.getByText('Request review').tagName).toBe('SPAN');
+  legacy.unmount();
+  jest.mocked(getServerInfoSnapshot).mockReturnValue(server);
+  jest
+    .mocked(useDatabaseContextOptional)
+    .mockReturnValue({ ...view, dataSource: { type: 'history' } } as ReturnType<typeof useDatabaseContextOptional>);
+  render(<ButtonCell rowId='one' fieldId='send' />);
+  expect(screen.queryByRole('button')).toBeNull();
+  expect(api.resolveButton).toHaveBeenCalledTimes(1);
 });

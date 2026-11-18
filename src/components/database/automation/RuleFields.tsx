@@ -81,7 +81,8 @@ export function TriggerFields({
                   triggers: [
                     {
                       type:
-                        caps.triggers.find((t) => !['manual', 'scheduled', 'row_events'].includes(t)) || 'row_created',
+                        caps.triggers.find((t) => !['manual', 'scheduled', 'row_events', 'button'].includes(t)) ||
+                        'row_created',
                     },
                   ],
                 }
@@ -95,6 +96,22 @@ export function TriggerFields({
           </option>
         ))}
       </Choice>
+      {trigger.type === 'button' && (
+        <Choice
+          label={t('databaseAutomation.buttonProperty')}
+          value={trigger.field_id || ''}
+          onChange={([field_id]) => onChange({ type: 'button', field_id })}
+        >
+          <option value=''>{t('databaseAutomation.chooseProperty')}</option>
+          {fields
+            .filter((f) => f.type === FieldType.Button)
+            .map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+        </Choice>
+      )}
       {trigger.type === 'row_events' && <EventGroup {...{ trigger, fields, caps, onChange }} />}
       {trigger.type === 'property_edited' && (
         <PropertyEditedFields trigger={trigger} fields={fields} choices={options} change={onChange} />
@@ -163,7 +180,7 @@ function EventGroup({
   const { viewIds, childViews } = useDatabaseViewsSelector(databasePageId || '');
   const children = trigger.triggers || [];
   const events = [
-    ...caps.triggers.filter((id) => !['row_events', 'manual', 'scheduled'].includes(id)),
+    ...caps.triggers.filter((id) => !['row_events', 'manual', 'scheduled', 'button'].includes(id)),
     ...(caps.propertyEdited ? ['property_edited'] : []),
   ];
 

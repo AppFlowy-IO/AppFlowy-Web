@@ -235,7 +235,7 @@ export function RuleManager({
   );
 }
 
-function RuleForm({
+export function RuleForm({
   workspace,
   database,
   id,
@@ -243,6 +243,7 @@ function RuleForm({
   fields,
   caps,
   copyFilters,
+  buttonScope,
   back,
   saved,
 }: {
@@ -253,12 +254,15 @@ function RuleForm({
   fields: RuleField[];
   caps: Capabilities;
   copyFilters: () => unknown[];
+  buttonScope?: { row: string; field: string };
   back: () => void;
   saved: () => void;
 }) {
   const { t } = useTranslation();
   const [original, setOriginal] = useState(base);
-  const [draft, setDraft] = useState<RuleDefinition>(() => base || newRule(caps));
+  const [draft, setDraft] = useState<RuleDefinition>(
+    () => base || { ...newRule(caps), ...(buttonScope && { trigger: { type: 'button', field_id: buttonScope.field } }) }
+  );
   const [error, setError] = useState<'saveError' | 'conflict'>();
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -302,15 +306,18 @@ function RuleForm({
     change({ actions: reorderActions(draft.actions, actions) });
   };
 
+  const scope: [] | [string] = buttonScope ? [buttonScope.row] : [];
+
   async function submit(remove: boolean) {
     if (running.current || (!remove && !canSave)) return;
     running.current = true;
     setBusy(true);
     setError(undefined);
     try {
-      if (remove && original) await ruleApi.remove(workspace, database, id, original.revision);
-      else if (original) await ruleApi.patch(workspace, database, id, original.revision, ruleChanges(original, draft));
-      else await ruleApi.create(workspace, database, id, draft);
+      if (remove && original) await ruleApi.remove(workspace, database, id, original.revision, ...scope);
+      else if (original)
+        await ruleApi.patch(workspace, database, id, original.revision, ruleChanges(original, draft), ...scope);
+      else await ruleApi.create(workspace, database, id, draft, ...scope);
       saved();
     } catch (e) {
       setError(isRuleConflict(e) ? 'conflict' : 'saveError');
@@ -323,7 +330,9 @@ function RuleForm({
   async function reload() {
     setBusy(true);
     try {
-      const latest = await ruleApi.get(workspace, database, id);
+      const latest = buttonScope
+        ? await ruleApi.get(workspace, database, id, undefined, buttonScope.row)
+        : await ruleApi.get(workspace, database, id);
 
       setOriginal(latest);
       setDraft(latest);
@@ -367,19 +376,21 @@ function RuleForm({
         </label>
         {supported ? (
           <>
-            <TriggerFields
-              trigger={draft.trigger}
-              fields={fields}
-              caps={caps}
-              onChange={(trigger) => change({ trigger })}
-            />
+            {!buttonScope && (
+              <TriggerFields
+                trigger={draft.trigger}
+                fields={fields}
+                caps={caps}
+                onChange={(trigger) => change({ trigger })}
+              />
+            )}
             <label>
               {t('databaseAutomation.timezone')}
               <Input required value={draft.timezone} onChange={(e) => change({ timezone: e.target.value })} />
             </label>
             <div className='flex flex-wrap items-center gap-2'>
               <span>{t('databaseAutomation.filterCount', { count: draft.conditions.length })}</span>
-              {draft.trigger.type !== 'row_deleted' && (
+              {!buttonScope && draft.trigger.type !== 'row_deleted' && (
                 <Button type='button' variant='ghost' size='sm' onClick={() => change({ conditions: copyFilters() })}>
                   {t('databaseAutomation.useFilters')}
                 </Button>

@@ -59,6 +59,8 @@ export function parseYDatabaseCellToCell(
 
   let value = parseYDatabaseCommonCellToCell(cell, targetType);
 
+  if (targetType === FieldType.Button || storedType === FieldType.Button) return { ...value, data: null };
+
   if (storedType !== targetType) {
     value.data = isCellDataTransformable(storedType, targetType)
       ? transformCellData(cell, storedType, targetType, field)
@@ -415,6 +417,7 @@ export function parseYDatabaseRelationCellToCell(cell: YDatabaseCell): Cell {
 }
 
 export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, currentUser?: User): string {
+  if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Button) return '';
   const { targetType: type } = getCellFieldTypeContext(cell, field);
   const parsedCell = parseYDatabaseCellToCell(cell, field);
   const data = parsedCell.data;

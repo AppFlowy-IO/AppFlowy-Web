@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
@@ -9,17 +9,16 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { getServerInfoSnapshot, SERVER_INFO_LOADING, subscribeToServerInfo } from '@/utils/server-info';
 
-import { Capabilities, ruleCapabilities } from './model';
+import { Capabilities } from './model';
+import { useAutomationCapabilities } from './useAutomationCapabilities';
 
 const RuleManager = lazy(() => import('./AutomationEditor').then((module) => ({ default: module.RuleManager })));
 
 type Props = { rowId?: string; prepare?: () => Promise<boolean> };
 
 export default function AutomationButton(props: Props = {}) {
-  const { info } = useSyncExternalStore(subscribeToServerInfo, getServerInfoSnapshot, () => SERVER_INFO_LOADING);
-  const caps = ruleCapabilities(info);
+  const caps = useAutomationCapabilities();
 
   if (!caps.enabled || (props.rowId !== undefined && !caps.triggers.includes('manual'))) return null;
   return <AvailableAutomationButton {...props} caps={caps} />;

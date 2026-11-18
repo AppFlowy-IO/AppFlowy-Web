@@ -8,6 +8,7 @@ import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useCellSelector, useFieldSelector, useRowDataSelector } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { ButtonCell } from '@/components/database/automation/ButtonCell';
 import { AITextCell } from '@/components/database/components/cell/ai-text/AITextCell';
 import { AttributionCell } from '@/components/database/components/cell/attribution';
 import { CheckboxCell } from '@/components/database/components/cell/checkbox';
@@ -135,6 +136,7 @@ function ComputedCellValue({ rowId, fieldId, children }: Omit<CellValueProps, 'f
  * changes.
  */
 export function CellValue({ fieldType, ...props }: CellValueProps) {
+  if (fieldType === FieldType.Button) return <>{props.children(undefined)}</>;
   return isComputedCellType(fieldType) ? <ComputedCellValue {...props} /> : <StoredCellValue {...props} />;
 }
 
@@ -194,6 +196,7 @@ export function Cell(props: CellProps<CellType>) {
     }
   }, [fieldType]) as FC<CellProps<CellType>>;
 
+  if (fieldType === FieldType.Button) return <ButtonCell {...{ rowId, fieldId }} />;
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
     const attrName = fieldType === FieldType.CreatedTime ? YjsDatabaseKey.created_at : YjsDatabaseKey.last_modified;
 

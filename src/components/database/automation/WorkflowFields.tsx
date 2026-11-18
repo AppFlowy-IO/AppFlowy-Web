@@ -695,7 +695,9 @@ export function WorkflowFields({
         <Select
           multiple
           label={t('databaseAutomation.webhookProperties')}
-          options={fields.map(({ id, name }) => ({ id, name }))}
+          options={fields
+            .filter((f) => f.type >= 0 && f.type <= FieldType.Formula)
+            .map(({ id, name }) => ({ id, name }))}
           value={action.property_ids ?? []}
           change={(property_ids) => change({ ...action, property_ids })}
         />

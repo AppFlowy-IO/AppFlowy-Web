@@ -144,10 +144,25 @@ export interface RuleRun {
 }
 
 type RunPage = { items: RuleRun[]; next_cursor?: number };
-const path = (workspace: string, database: string) =>
-  `/api/workspace/${encodeURIComponent(workspace)}/database/${encodeURIComponent(database)}/automation`;
-const item = (workspace: string, database: string, id: string) =>
-  `${path(workspace, database)}/${encodeURIComponent(id)}`;
+const databasePath = (workspace: string, database: string) =>
+  `/api/workspace/${encodeURIComponent(workspace)}/database/${encodeURIComponent(database)}`;
+const rowPath = (workspace: string, database: string, row: string) =>
+  `${databasePath(workspace, database)}/row/${encodeURIComponent(row)}`;
+const path = (workspace: string, database: string, row?: string) =>
+  `${row ? rowPath(workspace, database, row) : databasePath(workspace, database)}/automation`;
+const item = (workspace: string, database: string, id: string, row?: string) =>
+  `${path(workspace, database, row)}/${encodeURIComponent(id)}`;
+const buttonPath = (w: string, d: string, row: string, field: string) =>
+  `${rowPath(w, d, row)}/button/${encodeURIComponent(field)}`;
+
+export type ButtonConnector = { action_index: number; kind: 'gmail' | 'slack' | 'webhook' };
+export type ButtonBinding = { automation_id: string; revision: number; enabled: boolean; connectors: ButtonConnector[] };
+export type ButtonInvocation = {
+  automation_id: string;
+  expected_revision: number;
+  request_id: string;
+  connections: { action_index: number; connection_id: string }[];
+};
 
 /** Keep the owning member's i64 exact when old browsers parse an unquoted JSON integer. */
 export function parseRuleList(data: unknown): unknown {
@@ -159,20 +174,24 @@ export function parseRuleList(data: unknown): unknown {
 }
 
 export const ruleApi = {
-  list: (w: string, d: string, signal?: AbortSignal) =>
+  list: (w: string, d: string, signal?: AbortSignal, row?: string) =>
     executeAPIRequest<{ items: DatabaseRule[] }>(() =>
-      getAxios()?.get(path(w, d), { signal, transformResponse: [parseRuleList] })
+      getAxios()?.get(path(w, d, row), { signal, transformResponse: [parseRuleList] })
     ),
-  get: (w: string, d: string, id: string, signal?: AbortSignal) =>
-    executeAPIRequest<DatabaseRule>(() => getAxios()?.get(item(w, d, id), { signal })),
-  create: (w: string, d: string, id: string, draft: RuleDefinition) =>
-    executeAPIRequest<DatabaseRule>(() => getAxios()?.post(path(w, d), { id, ...draft })),
-  patch: (w: string, d: string, id: string, revision: number, changes: Partial<RuleDefinition>) =>
+  get: (w: string, d: string, id: string, signal?: AbortSignal, row?: string) =>
+    executeAPIRequest<DatabaseRule>(() => getAxios()?.get(item(w, d, id, row), { signal })),
+  create: (w: string, d: string, id: string, draft: RuleDefinition, row?: string) =>
+    executeAPIRequest<DatabaseRule>(() => getAxios()?.post(path(w, d, row), { id, ...draft })),
+  patch: (w: string, d: string, id: string, revision: number, changes: Partial<RuleDefinition>, row?: string) =>
     executeAPIRequest<DatabaseRule>(() =>
-      getAxios()?.patch(item(w, d, id), { expected_revision: revision, ...changes })
+      getAxios()?.patch(item(w, d, id, row), { expected_revision: revision, ...changes })
     ),
-  remove: (w: string, d: string, id: string, revision: number) =>
-    executeAPIVoidRequest(() => getAxios()?.delete(item(w, d, id), { params: { expected_revision: revision } })),
+  remove: (w: string, d: string, id: string, revision: number, row?: string) =>
+    executeAPIVoidRequest(() => getAxios()?.delete(item(w, d, id, row), { params: { expected_revision: revision } })),
+  resolveButton: (w: string, d: string, row: string, field: string, signal?: AbortSignal) =>
+    executeAPIRequest<ButtonBinding>(() => getAxios()?.get(buttonPath(w, d, row, field), { signal })),
+  invokeButton: (w: string, d: string, row: string, field: string, body: ButtonInvocation) =>
+    executeAPIRequest<string>(() => getAxios()?.post(buttonPath(w, d, row, field) + '/run', body)),
   run: (w: string, d: string, id: string, revision: number, row_id: string, request_id: string) =>
     executeAPIRequest<string>(() =>
       getAxios()?.post(item(w, d, id) + '/run', { row_id, request_id, expected_revision: revision })

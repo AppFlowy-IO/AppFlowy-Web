@@ -16,6 +16,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAutomationCapabilities } from '@/components/database/automation/useAutomationCapabilities';
 import { Log } from '@/utils/log';
 
 const properties = [
@@ -35,6 +36,7 @@ const properties = [
   FieldType.Relation,
   FieldType.Rollup,
   FieldType.Formula,
+  FieldType.Button,
   FieldType.Summary,
   FieldType.Translate,
   FieldType.Person,
@@ -61,9 +63,11 @@ export function PropertySelectTrigger({
   const { t } = useTranslation();
   const switchType = useSwitchPropertyType();
   const aiEnabled = useAIEnabled();
+  const caps = useAutomationCapabilities();
+  const allowButton = caps.enabled && caps.triggers.includes('button');
   const selectableProperties = useMemo(
-    () => (aiEnabled ? properties : properties.filter((property) => !isAIFieldType(property))),
-    [aiEnabled]
+    () => properties.filter((p) => (aiEnabled || !isAIFieldType(p)) && (p !== FieldType.Button || allowButton)),
+    [aiEnabled, allowButton]
   );
 
   /** Resolves to whether the field switched to `property`. */
@@ -98,6 +102,7 @@ export function PropertySelectTrigger({
       [FieldType.LastEditedBy]: t('tooltip.lastEditedByField'),
       [FieldType.Relation]: t('tooltip.relationField'),
       [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
+      [FieldType.Button]: t('databaseAutomation.buttonTooltip'),
       [FieldType.Formula]: t('tooltip.formulaField', {
         defaultValue: 'Compute a value from other properties with a formula',
       }),

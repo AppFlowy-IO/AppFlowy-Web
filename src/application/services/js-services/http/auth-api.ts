@@ -36,6 +36,7 @@ export interface ServerInfo {
   enable_database_automations?: boolean;
   database_automation_triggers?: string[];
   database_automation_value_features?: string[];
+  database_automation_scope_features?: string[];
   database_automation_trigger_features?: string[];
   database_automation_actions?: string[];
   database_automation_webhook_features?: string[];

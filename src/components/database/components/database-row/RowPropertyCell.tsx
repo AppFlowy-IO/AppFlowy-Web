@@ -53,7 +53,7 @@ function RowPropertyCell({
   }, [isChecklist, isFileMedia]) as React.FC<CellProps<CellType>>;
 
   const placeholder = useMemo(() => {
-    if (fieldType === FieldType.Rollup) return '';
+    if (fieldType === FieldType.Rollup || fieldType === FieldType.Button) return '';
     if (fieldType === FieldType.Formula) return t('grid.formula.editFormula', { defaultValue: 'Edit formula' });
     return `${t('button.add')} ${fieldName}`;
   }, [fieldName, t, fieldType]);

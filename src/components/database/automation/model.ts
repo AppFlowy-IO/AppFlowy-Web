@@ -25,6 +25,7 @@ export const triggerTypes = [
   'row_events',
   'manual',
   'scheduled',
+  'button',
 ];
 export const actionTypes = [
   'notify',
@@ -43,7 +44,11 @@ export const actionTypes = [
 const propertyKinds = ['text', 'number', 'checkbox', 'date_time', 'event_time', 'single_select', 'multi_select'];
 
 export function ruleCapabilities(info?: ServerInfo) {
-  const triggers = triggerTypes.filter((type) => info?.database_automation_triggers?.includes(type));
+  const triggers = triggerTypes.filter(
+    (type) =>
+      info?.database_automation_triggers?.includes(type) &&
+      (type !== 'button' || info.database_automation_scope_features?.includes('row_scoped_v1'))
+  );
   const actions = actionTypes.filter(
     (type) =>
       info?.database_automation_actions?.includes(type) &&
@@ -160,9 +165,10 @@ function supportedTrigger(trigger: RuleTrigger, caps: Capabilities): boolean {
               knownKeys(child, ['type', 'field_id', 'ty', 'condition', 'content']) &&
               !!propertyOperand(child.ty, child.condition) &&
               typeof child.content === 'string'
-            : !['row_events', 'manual', 'scheduled'].includes(child.type) && supportedTrigger(child, caps))
+            : !['row_events', 'manual', 'scheduled', 'button'].includes(child.type) && supportedTrigger(child, caps))
       )
     );
+  if (trigger.type === 'button') return knownKeys(trigger, ['type', 'field_id']) && typeof trigger.field_id === 'string';
   const keys =
     trigger.type === 'status_set_to'
       ? ['type', 'field_id', 'option_id']
@@ -325,6 +331,11 @@ export function needsRecipientRow(a: RuleAction) {
 }
 
 export function validRule(rule: RuleDefinition, fields: RuleField[] = [], calendarHasRow = false) {
+  if (
+    rule.trigger.type === 'button' &&
+    !fields.some((f) => f.type === FieldType.Button && f.id === rule.trigger.field_id)
+  )
+    return false;
   if (!rule.name.trim() || !rule.timezone.trim() || rule.actions.length < 1 || rule.actions.length > 5) return false;
   const validEvent = (tr: RuleTrigger) =>
     tr.type === 'property_edited'

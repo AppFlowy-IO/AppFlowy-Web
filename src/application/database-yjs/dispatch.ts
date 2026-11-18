@@ -2410,12 +2410,14 @@ export function useClearCellsWithFieldDispatch() {
         sharedRoot,
         [
           () => {
+            const fieldType = Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type));
+
+            if (fieldType === FieldType.Button) return;
             if (!rowMap) {
-              throw new Error(`Row docs not found`);
+              throw new Error('Row docs not found');
             }
 
             const rows = Object.keys(rowMap);
-            const fieldType = Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type));
 
             if (!rows) {
               throw new Error(`Row orders not found`);
@@ -2520,6 +2522,8 @@ export function useDuplicatePropertyDispatch() {
                 const sourceFieldTypeOption = fieldTypeOption as YMapFieldTypeOption;
 
                 sourceFieldTypeOption.forEach((value, key) => {
+                  // A binding belongs to its original stable field ID.
+                  if (typeOptionFieldType === FieldType.Button && key === 'automation_id') return;
                   // Reciprocal metadata is owned by the original field. Copying it
                   // would let a deletion of the duplicate orphan or remove the
                   // original's reciprocal in the related database, so the duplicate
@@ -2613,7 +2617,7 @@ export function useDuplicatePropertyDispatch() {
 
       // Duplicating an attribution column creates another projection of the
       // same row metadata; it must not create editable per-field cells.
-      if (isAttributionFieldType(sourceFieldType)) return newId;
+      if (isAttributionFieldType(sourceFieldType) || sourceFieldType === FieldType.Button) return newId;
 
       if (!rowMap) {
         throw new Error(`Row docs not found`);
@@ -3450,7 +3454,8 @@ export function useSwitchPropertyType() {
 
       if (sourceType === fieldType) return Promise.resolve();
 
-      const rowIds = collectDatabaseRowIds(database, rowMap);
+      const buttonSwitch = sourceType === FieldType.Button || fieldType === FieldType.Button;
+      const rowIds = buttonSwitch ? [] : collectDatabaseRowIds(database, rowMap);
 
       const performSwitch = (resolvedRowMap: Record<RowId, YDoc>, formulaContexts?: Map<RowId, ReadFieldValueContext>) => {
         const rows = Object.keys(resolvedRowMap);
@@ -3469,7 +3474,7 @@ export function useSwitchPropertyType() {
         // every row while the field is still a formula.
         const formulaResults = new Map<RowId, FormulaCellResult>();
 
-        if (fieldBefore && oldFieldTypeBefore === FieldType.Formula) {
+        if (fieldBefore && oldFieldTypeBefore === FieldType.Formula && !buttonSwitch) {
           const schema = readFormulaSchema(database.get(YjsDatabaseKey.fields));
 
           rows.forEach((rowId) => {
@@ -3524,6 +3529,7 @@ export function useSwitchPropertyType() {
                   FieldType.Translate,
                   FieldType.Rollup,
                   FieldType.Formula,
+                  FieldType.Button,
                 ].includes(fieldType)
               ) {
                 // Ensure the type option map is created
@@ -3823,6 +3829,12 @@ export function useSwitchPropertyType() {
           });
         }
       };
+
+      // Button has no persisted value: keep prior typed cells dormant and avoid hydrating a database.
+      if (buttonSwitch) {
+        performSwitch({});
+        return Promise.resolve();
+      }
 
       const requiresEveryRow = fieldSwitchRequiresEveryRow(sourceType, fieldType);
       const everyRowIsLoaded = rowIds.every((rowId) => Boolean(getFieldSwitchDatabaseRow(rowMap[rowId])));
@@ -4656,6 +4668,49 @@ export function useUpdateRollupTypeOption(fieldId: string) {
       );
     },
     [database, fieldId, sharedRoot]
+  );
+}
+
+export function useUpdateButtonTypeOption(fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (updates: { label: string; automation_id: string }) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+            if (!field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Button)
+              throw new Error('Button field changed');
+            let options = field.get(YjsDatabaseKey.type_option);
+
+            if (!options) {
+              options = new Y.Map() as YDatabaseFieldTypeOption;
+              field.set(YjsDatabaseKey.type_option, options);
+            }
+
+            let button = options.get(String(FieldType.Button));
+
+            if (!button) {
+              button = new Y.Map() as YMapFieldTypeOption;
+              options.set(String(FieldType.Button), button);
+            }
+
+            for (const [key, value] of Object.entries(updates)) {
+              if (value) button.set(key, value);
+              else button.delete(key);
+            }
+
+            field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+          },
+        ],
+        'updateButtonTypeOption'
+      );
+    },
+    [database, sharedRoot, fieldId]
   );
 }
 
