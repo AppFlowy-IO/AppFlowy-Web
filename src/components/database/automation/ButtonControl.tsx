@@ -20,7 +20,14 @@ import { ButtonResult } from './ButtonResult';
 import { Capabilities } from './model';
 import { Item, Select } from './Select';
 
-type Scope = { workspace: string; database: string; row: string; field: string; caps: Capabilities };
+type Scope = {
+  workspace: string;
+  database: string;
+  row: string;
+  field: string;
+  caps: Capabilities;
+  onNavigated?: () => void;
+};
 type Destinations = Partial<Record<ButtonConnector['kind'], Item[]>>;
 
 async function destinations(workspace: string, binding: ButtonBinding, signal: AbortSignal) {
@@ -54,7 +61,7 @@ async function destinations(workspace: string, binding: ButtonBinding, signal: A
   return items;
 }
 
-export function ButtonControl({ workspace, database, row, field, caps }: Scope) {
+export function ButtonControl({ workspace, database, row, field, caps, onNavigated }: Scope) {
   const { t } = useTranslation();
   const { properties } = usePropertiesSelector(false);
   const [reload, setReload] = useState(0);
@@ -184,7 +191,7 @@ export function ButtonControl({ workspace, database, row, field, caps }: Scope) 
         <p>{t(binding === null ? 'databaseAutomation.buttonUnconfigured' : 'databaseAutomation.buttonDisabled')}</p>
       ) : done ? (
         caps.buttonInteractions && binding.has_open_target && pending.current ? (
-          <ButtonResult {...{ workspace, database, row, field }} requestId={pending.current.request_id} />
+          <ButtonResult {...{ workspace, database, row, field, onNavigated }} requestId={pending.current.request_id} />
         ) : (
           <p role='status'>{t('databaseAutomation.buttonQueued')}</p>
         )

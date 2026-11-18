@@ -1741,7 +1741,8 @@ test('a completed created row uses the granted destination view and an unmounted
   const target = { type: 'row', database_id: db, view_id: view, row_id: row };
 
   api.buttonResult.mockResolvedValue({ status: 'succeeded', target });
-  const props = { workspace: 'w', database: 'd', row: 'one', field: 'send', requestId: 'key' };
+  const onNavigated = jest.fn();
+  const props = { workspace: 'w', database: 'd', row: 'one', field: 'send', requestId: 'key', onNavigated };
   const ui = render(<ButtonResult {...props} />);
 
   await waitFor(() => expect(navigateToRow).toHaveBeenCalledWith(row, view));
@@ -1760,6 +1761,7 @@ test('a completed created row uses the granted destination view and an unmounted
   closed.unmount();
   await act(async () => resolve({ status: 'succeeded', target }));
   expect(navigateToRow).toHaveBeenCalledTimes(1);
+  expect(onNavigated).toHaveBeenCalledTimes(1);
 });
 
 test.each(['denied view', 'mismatched database', 'legacy view without a database'])(

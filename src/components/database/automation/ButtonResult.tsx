@@ -7,9 +7,16 @@ import { ruleApi } from '@/application/services/js-services/http/automation-api'
 import { YjsDatabaseKey, YjsEditorKey, type YDatabase } from '@/application/types';
 import { Button } from '@/components/ui/button';
 
-type Props = { workspace: string; database: string; row: string; field: string; requestId: string };
+type Props = {
+  workspace: string;
+  database: string;
+  row: string;
+  field: string;
+  requestId: string;
+  onNavigated?: () => void;
+};
 
-export function ButtonResult({ workspace, database, row, field, requestId }: Props) {
+export function ButtonResult({ workspace, database, row, field, requestId, onNavigated }: Props) {
   const { t } = useTranslation();
   const context = useDatabaseContextOptional();
   const navigation = useRef(context);
@@ -57,8 +64,9 @@ export function ButtonResult({ workspace, database, row, field, requestId }: Pro
 
         if (databaseId !== target.database_id || navigation.current?.workspaceId !== workspace)
           throw Error('Database unavailable');
-        nav.navigateToRow(target.row_id, target.view_id);
+        await nav.navigateToRow(target.row_id, target.view_id);
       } else throw Error('Row unavailable');
+      if (!signal.aborted) onNavigated?.();
     }
 
     async function poll() {
@@ -103,7 +111,7 @@ export function ButtonResult({ workspace, database, row, field, requestId }: Pro
       controller.abort();
       clearTimeout(timer);
     };
-  }, [workspace, database, row, field, requestId, check]);
+  }, [workspace, database, row, field, requestId, check, onNavigated]);
   const messages = {
     waiting: 'buttonQueued',
     retry: 'checkRun',

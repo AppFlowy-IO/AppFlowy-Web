@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabase, useDatabaseContextOptional } from '@/application/database-yjs';
@@ -32,6 +32,7 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
     field.get(YjsDatabaseKey.name) ||
     t('databaseAutomation.run');
   const [open, setOpen] = useState(false);
+  const dismiss = useCallback(() => setOpen(false), []);
   const database = db?.get(YjsDatabaseKey.id);
   const workspace = context?.workspaceId;
 
@@ -69,6 +70,7 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
           <Suspense fallback={<p role='status'>{t('databaseAutomation.loading')}</p>}>
             <ButtonControl
               key={[workspace, database, rowId, fieldId, user?.uuid].join('/')}
+              onNavigated={dismiss}
               {...{ workspace, database, row: rowId, field: fieldId, caps }}
             />
           </Suspense>
