@@ -84,6 +84,7 @@ export function RuleManager({ workspace, database, caps }: { workspace: string; 
         workspace={workspace}
         database={database}
         rule={invoke}
+        customRecurrence={caps.customRecurrence}
         back={() => {
           setInvoke(undefined);
           setRefresh((n) => n + 1);

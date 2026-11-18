@@ -41,6 +41,7 @@ export function ruleCapabilities(info?: ServerInfo) {
     enabled: info?.enable_database_automations === true && triggers.length > 0 && actions.length > 0,
     triggers,
     actions,
+    customRecurrence: info?.database_automation_schedule_features?.includes('custom_recurrence_v1') === true,
   };
 }
 

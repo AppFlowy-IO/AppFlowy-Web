@@ -1,5 +1,7 @@
 {
   "databaseAutomation": {
+    "interval": "Intervalle de répétition",
+    "weekdays": "Jours de la semaine",
     "gmail": "Compte Gmail",
     "connectGmail": "Connecter Gmail",
     "recipient": "Adresse du destinataire",
@@ -105,6 +107,7 @@
     "more": "Charger la suite",
     "back": "Retour",
     "kinds": {
+      "yearly": "Annuel",
       "connected_email": "Envoyer depuis Gmail",
       "person": "Personnes",
       "relation": "Lignes associées",

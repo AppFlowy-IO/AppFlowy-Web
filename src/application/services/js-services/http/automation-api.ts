@@ -38,7 +38,9 @@ export type TargetRow =
 export type Assignment = { field_id: string; value: PropertyValue };
 export interface RuleSchedule {
   row_id?: string;
-  frequency: 'daily' | 'weekly' | 'monthly';
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval?: number;
+  weekdays?: number[];
   starts_on: string;
   ends_on?: string;
   local_time: string;

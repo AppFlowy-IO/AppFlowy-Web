@@ -197,7 +197,7 @@ test('pages run history under a POSIX locale using its cursor and deletes with t
   await waitFor(() => expect(api.remove).toHaveBeenCalledWith('w', 'd', 'rule', 5));
 });
 
-const extended = { enabled: true, triggers: triggerTypes, actions: actionTypes };
+const extended = { enabled: true, triggers: triggerTypes, actions: actionTypes, customRecurrence: false };
 const fullManager = () => render(<RuleManager workspace='w' database='d' caps={extended} />);
 const row = 'e5e8c286-c7c7-4c44-8e15-12f6e4987004';
 
@@ -235,6 +235,7 @@ test('a calendar loads its current revision and saves local wall time, frequency
   fullManager();
   fireEvent.click(await screen.findByText('Schedule'));
   await screen.findByDisplayValue('Europe/Paris');
+  expect(screen.queryByLabelText('Repeat interval')).toBeNull();
   fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'weekly' } });
   fireEvent.change(screen.getByLabelText('Local time'), { target: { value: '10:30' } });
   fireEvent.click(screen.getByText('Save'));
@@ -247,6 +248,43 @@ test('a calendar loads its current revision and saves local wall time, frequency
       local_time: '10:30:00',
       timezone: 'Europe/Paris',
     })
+  );
+});
+
+test('custom calendars keep their anchor and selected ISO weekdays and clear weekdays on a yearly switch', async () => {
+  const scheduled = { ...rule, trigger: { type: 'scheduled' } };
+  const base = {
+    revision: 7,
+    starts_on: '2026-11-18',
+    local_time: '09:00:00',
+    timezone: 'Europe/Paris',
+    frequency: 'weekly' as const,
+    interval: 2,
+    weekdays: [1, 5],
+    next_due_at: null,
+  };
+  api.list.mockResolvedValue({ items: [scheduled] });
+  api.get.mockResolvedValue(scheduled);
+  api.getSchedule.mockResolvedValue(base);
+  api.putSchedule.mockResolvedValue(base);
+  render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence: true }} />);
+  fireEvent.click(await screen.findByText('Schedule'));
+  await waitFor(() => expect((screen.getByLabelText('Repeat interval') as HTMLInputElement).value).toBe('2'));
+  expect(Array.from((screen.getByLabelText('Weekdays') as HTMLSelectElement).selectedOptions, o => o.value)).toEqual(['1', '5']);
+  fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '1000' } });
+  expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '3' } });
+  fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'yearly' } });
+  expect(screen.queryByLabelText('Weekdays')).toBeNull();
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.putSchedule).toHaveBeenCalledWith(
+      'w',
+      'd',
+      'rule',
+      7,
+      expect.objectContaining({ frequency: 'yearly', interval: 3, starts_on: '2026-11-18', weekdays: undefined })
+    )
   );
 });
 

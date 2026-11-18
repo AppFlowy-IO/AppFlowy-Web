@@ -12,6 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+import { toIntlLocale } from '@/i18n/intl-locale';
+
 import { Select } from './Select';
 
 export function InvocationFields({
@@ -19,13 +21,15 @@ export function InvocationFields({
   database,
   rule,
   back,
+  customRecurrence,
 }: {
   workspace: string;
   database: string;
   rule: DatabaseRule;
   back: () => void;
+  customRecurrence: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const scheduled = rule.trigger.type === 'scheduled';
   const [revision, setRevision] = useState(rule.revision);
   const [schedule, setSchedule] = useState<RuleSchedule>(() => ({
@@ -61,9 +65,20 @@ export function InvocationFields({
             const state = await ruleApi.getSchedule(workspace, database, rule.id, ac.signal);
 
             if (ac.signal.aborted) return;
-            const { row_id, frequency, starts_on, ends_on, local_time, timezone } = state;
+            const { row_id, frequency, starts_on, ends_on, local_time, timezone, interval, weekdays } = state;
+            if (!customRecurrence && (frequency === 'yearly' || (interval ?? 1) !== 1 || weekdays?.length)) {
+              throw new Error('Calendar requires a newer server capability');
+            }
 
-            setSchedule({ row_id, frequency, starts_on, ends_on, local_time, timezone });
+            setSchedule({
+              row_id,
+              frequency,
+              starts_on,
+              ends_on,
+              local_time,
+              timezone,
+              ...(customRecurrence && { interval: interval ?? 1, weekdays: weekdays ?? [] }),
+            });
             setNext(state.next_due_at);
             setRevision(state.revision);
           } catch (e) {
@@ -79,7 +94,7 @@ export function InvocationFields({
 
     void load();
     return () => ac.abort();
-  }, [workspace, database, rule.id, scheduled, refresh]);
+  }, [workspace, database, rule.id, scheduled, refresh, customRecurrence]);
   const set = (updates: Partial<RuleSchedule>) => setSchedule((s) => ({ ...s, ...updates }));
 
   async function submit() {
@@ -119,6 +134,10 @@ export function InvocationFields({
       (!!schedule.starts_on &&
         !!schedule.local_time &&
         !!schedule.timezone &&
+        (!customRecurrence ||
+          (Number.isInteger(schedule.interval ?? 1) &&
+            (schedule.interval ?? 1) >= 1 &&
+            (schedule.interval ?? 1) <= 999)) &&
         (!schedule.ends_on || schedule.ends_on >= schedule.starts_on)));
 
   return (
@@ -150,12 +169,47 @@ export function InvocationFields({
             <Select
               label={t('databaseAutomation.frequency')}
               value={schedule.frequency}
-              options={(['daily', 'weekly', 'monthly'] as const).map((id) => ({
+              options={(customRecurrence
+                ? ['daily', 'weekly', 'monthly', 'yearly']
+                : ['daily', 'weekly', 'monthly']
+              ).map((id) => ({
                 id,
                 name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }),
               }))}
-              change={([f]) => set({ frequency: f as RuleSchedule['frequency'] })}
+              change={([f]) => {
+                if (f)
+                  set({ frequency: f as RuleSchedule['frequency'], ...(f !== 'weekly' && { weekdays: undefined }) });
+              }}
             />
+            {customRecurrence && (
+              <label>
+                {t('databaseAutomation.interval')}
+                <Input
+                  type='number'
+                  min={1}
+                  max={999}
+                  step={1}
+                  required
+                  value={schedule.interval === 0 ? '' : schedule.interval ?? 1}
+                  onChange={(e) => set({ interval: Number(e.target.value) })}
+                />
+              </label>
+            )}
+            {customRecurrence && schedule.frequency === 'weekly' && (
+              <Select
+                multiple
+                label={t('databaseAutomation.weekdays')}
+                value={(schedule.weekdays ?? []).map(String)}
+                options={Array.from({ length: 7 }, (_, i) => ({
+                  id: String(i + 1),
+                  name: new Intl.DateTimeFormat(toIntlLocale(i18n.language), {
+                    weekday: 'long',
+                    timeZone: 'UTC',
+                  }).format(Date.UTC(2024, 0, i + 1)),
+                }))}
+                change={(ids) => set({ weekdays: ids.map(Number) })}
+              />
+            )}
             <label>
               {t('databaseAutomation.startsOn')}
               <Input

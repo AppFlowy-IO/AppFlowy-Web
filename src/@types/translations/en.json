@@ -1,5 +1,7 @@
 {
   "databaseAutomation": {
+    "interval": "Repeat interval",
+    "weekdays": "Weekdays",
     "gmail": "Gmail account",
     "connectGmail": "Connect Gmail",
     "recipient": "Recipient address",
@@ -105,6 +107,7 @@
     "more": "Load more",
     "back": "Back",
     "kinds": {
+      "yearly": "Yearly",
       "connected_email": "Send from Gmail",
       "person": "People",
       "relation": "Related rows",

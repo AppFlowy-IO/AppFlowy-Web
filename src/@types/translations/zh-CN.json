@@ -1,5 +1,7 @@
 {
   "databaseAutomation": {
+    "interval": "重复间隔",
+    "weekdays": "每周重复日",
     "gmail": "Gmail 帐号",
     "connectGmail": "连接 Gmail",
     "recipient": "收件人地址",
@@ -105,6 +107,7 @@
     "more": "加载更多",
     "back": "返回",
     "kinds": {
+      "yearly": "每年",
       "connected_email": "使用 Gmail 发送",
       "person": "人员",
       "relation": "关联行",

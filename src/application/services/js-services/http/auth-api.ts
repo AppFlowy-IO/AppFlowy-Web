@@ -36,6 +36,7 @@ export interface ServerInfo {
   enable_database_automations?: boolean;
   database_automation_triggers?: string[];
   database_automation_actions?: string[];
+  database_automation_schedule_features?: string[];
   /**
    * Rollout authorization for the relative_date filter format. Only advertise
    * this after incompatible clients are excluded from the shared data; server
