@@ -26,6 +26,7 @@ export type Formula = {
 };
 export type PropertyValue = {
   kind: string;
+  expression?: string;
   operation?: 'replace' | 'add' | 'remove';
   value?: string | number | boolean | string[] | Formula;
   field_id?: string;

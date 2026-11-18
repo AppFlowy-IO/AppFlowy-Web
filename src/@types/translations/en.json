@@ -1,5 +1,6 @@
 {
   "databaseAutomation": {
+    "insertFormulaProperty": "Insert source property",
     "duplicate": "Duplicate",
     "copyOf": "Copy of {{name}}",
     "copyError": "Could not finish copying the rule. Retry Duplicate to continue.",
@@ -121,6 +122,7 @@
     "more": "Load more",
     "back": "Back",
     "kinds": {
+      "expression": "Formula expression",
       "webhook_properties": "Send selected properties to webhook",
       "addressed_email": "Send addressed Gmail",
       "yearly": "Yearly",

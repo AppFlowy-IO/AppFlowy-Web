@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import strings from '@/@types/translations/en.json';
 import { FieldType } from '@/application/database-yjs';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
+import type { ScheduleState } from '@/application/services/js-services/http/automation-api';
 import {
   DatabaseRule,
   parseRuleList,
@@ -223,6 +224,7 @@ const extended = {
   triggers: triggerTypes,
   actions: actionTypes,
   propertyEdited: false,
+  formulaExpression: false,
   customRecurrence: false,
   webhookHeaders: false,
 };
@@ -808,6 +810,155 @@ test('authors multiple row triggers in a view without losing their field identit
       triggers: [{ type: 'row_updated' }, { type: 'status_set_to', field_id: 'state', option_id: 'done' }],
     })
   );
+});
+
+test('creates a formula assignment with a stable source property and preserves the selected text range', async () => {
+  const caps = { ...extended, formulaExpression: true };
+
+  api.create.mockResolvedValue(rule);
+  render(<RuleManager workspace='w' database='d' caps={caps} />);
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Label the task' } });
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'set_property' } });
+  fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'title' } });
+  fireEvent.change(screen.getByLabelText('Value source'), { target: { value: 'expression' } });
+  expect(screen.getByText('Save').disabled).toBe(true);
+  const source = screen.getByLabelText('Formula expression');
+  const chooser = screen.getByLabelText('Insert source property');
+
+  expect(within(chooser).queryByText('Assignee')).toBeNull();
+  fireEvent.change(source, { target: { value: 'upper(task)' } });
+  source.setSelectionRange(6, 10);
+  fireEvent.change(chooser, { target: { value: 'title' } });
+  expect(source.value).toBe('upper(prop("title"))');
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.create.mock.calls[0][3].actions).toEqual([
+      { type: 'set_property', field_id: 'title', value: { kind: 'expression', expression: 'upper(prop("title"))' } },
+    ])
+  );
+});
+
+test.each([false, true])(
+  'formula variables preserve their date expression and respect scheduled row scope (bound=%s)',
+  async (rowBound) => {
+    const caps = { ...extended, formulaExpression: true };
+    const action = { type: 'define_variable', name: 'year', value: { kind: 'expression', expression: 'year(now())' } };
+    const saved = { ...rule, trigger: { type: 'scheduled' }, actions: [action] };
+
+    expect(canEditRule(saved, extended)).toBe(false);
+    expect(canEditRule(saved, caps)).toBe(true);
+    expect(canEditRule({ ...saved, actions: [{ ...action, value: { ...action.value, options: true } }] }, caps)).toBe(
+      false
+    );
+    api.getSchedule.mockResolvedValue({ row_id: rowBound ? row : undefined } as ScheduleState);
+    api.list.mockResolvedValue({ items: [saved] });
+    api.get.mockResolvedValue(saved);
+    api.patch.mockResolvedValue({ ...saved, revision: 6 });
+    render(<RuleManager workspace='w' database='d' caps={caps} />);
+    fireEvent.click(await screen.findByText('Existing'));
+    const input = await screen.findByLabelText('Formula expression');
+
+    expect(input.value).toBe('year(now())');
+    await waitFor(() => expect(api.getSchedule).toHaveBeenCalled());
+    if (rowBound) expect(await screen.findByLabelText('Insert source property')).toBeTruthy();
+    else expect(screen.queryByLabelText('Insert source property')).toBeNull();
+    fireEvent.change(input, { target: { value: 'formatDate(now(), "YYYY")' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+        actions: [{ ...action, value: { kind: 'expression', expression: 'formatDate(now(), "YYYY")' } }],
+      })
+    );
+  }
+);
+
+test('a cross-database formula uses source field IDs and retains the target database, row and field', async () => {
+  const saved = {
+    ...rule,
+    actions: [
+      {
+        type: 'edit_row',
+        database_id: 'dest',
+        row: { type: 'trigger' as const },
+        properties: [{ field_id: 'total', value: { kind: 'number', value: 1 } }],
+      },
+    ],
+  };
+
+  api.list.mockResolvedValue({ items: [saved] });
+  api.get.mockResolvedValue(saved);
+  api.patch.mockResolvedValue(saved);
+  api.databases.mockResolvedValue({
+    databases: [{ database_id: 'dest', views: [{ view_id: 'v', name: 'Summary' }] }],
+    has_more: false,
+  });
+  api.fields.mockResolvedValue([{ id: 'total', name: 'Target total', field_type_id: 1 }]);
+  render(<RuleManager workspace='w' database='d' caps={{ ...extended, formulaExpression: true }} />);
+  fireEvent.click(await screen.findByText('Existing'));
+  await screen.findByDisplayValue('Target total');
+  fireEvent.change(screen.getByLabelText('Value source'), { target: { value: 'expression' } });
+  const chooser = screen.getByLabelText('Insert source property');
+
+  expect(within(chooser).queryByText('Target total')).toBeNull();
+  fireEvent.change(chooser, { target: { value: 'title' } });
+  fireEvent.change(screen.getByLabelText('Formula expression'), { target: { value: 'length(prop("title"))' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch.mock.calls[0][4]).toEqual({
+      actions: [
+        {
+          ...saved.actions[0],
+          properties: [{ field_id: 'total', value: { kind: 'expression', expression: 'length(prop("title"))' } }],
+        },
+      ],
+    })
+  );
+});
+
+test('formula capability, UTF-8 limits, nested operands and cross-database assignments use the same contract', () => {
+  const caps = ruleCapabilities({
+    enable_database_automations: true,
+    database_automation_triggers: ['row_created'],
+    database_automation_actions: ['create_row', 'edit_row', 'set_property', 'define_variable'],
+    database_automation_value_features: ['formula_expression_v1'],
+  } as ServerInfo);
+  const expression = { kind: 'expression', expression: 'prop("cost") * 2' };
+  const literal = { kind: 'number', value: 1 };
+  const legacy = { kind: 'formula', value: { operator: 'add' as const, left: literal, right: literal } };
+  const mixed = { ...legacy, value: { ...legacy.value, right: expression } };
+  const valid = (value: typeof expression) =>
+    validRule({ ...rule, actions: [{ type: 'define_variable', name: 'x', value }] });
+
+  expect(caps.formulaExpression).toBe(true);
+  expect(ruleCapabilities().formulaExpression).toBe(false);
+  for (const type of ['create_row', 'edit_row']) {
+    const saved = {
+      ...rule,
+      actions: [
+        {
+          type,
+          database_id: 'dest',
+          ...(type === 'create_row' ? { view_id: 'view' } : { row: { type: 'trigger' as const } }),
+          properties: [{ field_id: 'total', value: mixed }],
+        },
+      ],
+    };
+
+    expect(canEditRule(saved, caps)).toBe(true);
+    expect(canEditRule(saved, extended)).toBe(false);
+    expect(
+      canEditRule(
+        { ...saved, actions: [{ ...saved.actions[0], properties: [{ field_id: 'total', value: legacy }] }] },
+        extended
+      )
+    ).toBe(true);
+  }
+
+  expect(valid({ ...expression, expression: '界'.repeat(1365) + '0' })).toBe(true);
+  expect(valid({ ...expression, expression: '界'.repeat(1366) })).toBe(false);
+  expect(valid({ ...expression, expression: '  ' })).toBe(false);
+  expect(valid({ ...expression, expression: 'a\0b' })).toBe(false);
 });
 
 test('authors a matching-row numerical assignment from a checked expression and retains its filter group', async () => {

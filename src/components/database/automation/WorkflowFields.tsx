@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 
 import { ConditionFields } from './ConditionFields';
 import { EndpointControls, ConnectAccount } from './DestinationSettings';
+import { ExpressionFields } from './ExpressionFields';
 import { arithmetic, formula, relationVariables, RuleField, valueKinds } from './model';
 import { Select, Item } from './Select';
 
@@ -150,7 +151,9 @@ export function SourceValue({
   options = [],
   extended = true,
   definition = false,
+  expressionFields,
 }: {
+  expressionFields?: RuleField[];
   value: PropertyValue;
   change: (v: PropertyValue) => void;
   fields: RuleField[];
@@ -165,7 +168,7 @@ export function SourceValue({
   const names = previous
     .filter((a) => a.type === 'define_variable' && a.name)
     .map((a) => ({ id: a.name!, name: a.name! }));
-  const kinds = extended
+  const sources = extended
     ? [
         ...literals,
         'field',
@@ -174,16 +177,21 @@ export function SourceValue({
         ...(literals.some((k) => k === 'number' || k === 'date_time') ? ['formula'] : []),
       ]
     : literals;
+  const kinds =
+    expressionFields && literals.some((kind) => ['text', 'number', 'checkbox', 'date_time'].includes(kind))
+      ? [...sources, 'expression']
+      : sources;
 
   return (
     <>
       {kinds.length > 1 && (
         <Select
-          label={t(extended ? 'databaseAutomation.source' : 'databaseAutomation.dateSource')}
+          label={t(extended || expressionFields ? 'databaseAutomation.source' : 'databaseAutomation.dateSource')}
           value={multiSelect ? 'multi_select' : value.kind}
           options={kinds.map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
           change={([kind]) => {
-            if (kind === 'field') change({ kind, field_id: fields[0]?.id || '' });
+            if (kind === 'expression') change({ kind, expression: '' });
+            else if (kind === 'field') change({ kind, field_id: fields[0]?.id || '' });
             else if (kind === 'variable') change({ kind, name: names[0]?.id || '' });
             else if (kind === 'formula')
               change({
@@ -204,8 +212,15 @@ export function SourceValue({
           }}
         />
       )}
-      {value.kind === 'formula' && formula(value) ? (
+      {value.kind === 'expression' && expressionFields ? (
+        <ExpressionFields
+          source={value.expression || ''}
+          fields={expressionFields}
+          change={(expression) => change({ kind: 'expression', expression })}
+        />
+      ) : value.kind === 'formula' && formula(value) ? (
         <FormulaFields
+          expressionFields={expressionFields}
           value={formula(value)!}
           fields={fields}
           previous={previous}
@@ -373,11 +388,13 @@ export function IdentityValue({
 }
 
 function FormulaFields({
+  expressionFields,
   value,
   fields,
   previous,
   change,
 }: {
+  expressionFields?: RuleField[];
   value: NonNullable<ReturnType<typeof formula>>;
   fields: RuleField[];
   previous: RuleAction[];
@@ -400,6 +417,7 @@ function FormulaFields({
         <fieldset key={side}>
           <legend>{t(side === 'left' ? 'databaseAutomation.firstOperand' : 'databaseAutomation.secondOperand')}</legend>
           <SourceValue
+            expressionFields={expressionFields}
             value={value[side]}
             literals={side === 'left' && value.operator === 'add_days' ? ['date_time', 'event_time'] : ['number']}
             fields={fields}
@@ -413,6 +431,7 @@ function FormulaFields({
 }
 
 function TargetFields({
+  expressionFields,
   workspace,
   action,
   change,
@@ -426,6 +445,7 @@ function TargetFields({
   fields: RuleField[];
   previous: RuleAction[];
   extended: boolean;
+  expressionFields?: RuleField[];
 }) {
   const { t } = useTranslation();
   const relationNames = extended ? relationVariables(previous, fields) : [];
@@ -603,6 +623,7 @@ function TargetFields({
             {f && (
               <SourceValue
                 extended={extended}
+                expressionFields={expressionFields}
                 fields={fields}
                 previous={previous}
                 value={p.value}
@@ -643,6 +664,7 @@ export function WorkflowFields({
   previous,
   extended,
   webhookHeaders,
+  expressionFields,
 }: {
   workspace: string;
   action: RuleAction;
@@ -651,6 +673,7 @@ export function WorkflowFields({
   previous: RuleAction[];
   extended: boolean;
   webhookHeaders: boolean;
+  expressionFields?: RuleField[];
 }) {
   const { t } = useTranslation();
   const { users, fetchUsers } = useMentionableUsers();
@@ -731,7 +754,7 @@ export function WorkflowFields({
     return () => ac.abort();
   }, [workspace, action.type, action.connection_id, retry]);
   if (action.type === 'create_row' || action.type === 'edit_row')
-    return <TargetFields {...{ workspace, action, change, fields, previous, extended }} />;
+    return <TargetFields {...{ workspace, action, change, fields, previous, extended, expressionFields }} />;
   if (action.type === 'define_variable')
     return (
       <>
@@ -744,6 +767,7 @@ export function WorkflowFields({
           fields={fields}
           previous={previous}
           definition
+          expressionFields={expressionFields}
           literals={['text', 'number', 'checkbox', 'date_time', 'event_time', 'relation']}
           change={(value) => change({ ...action, value })}
         />

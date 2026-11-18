@@ -327,6 +327,7 @@ function initialValue(kind: string): PropertyValue {
 }
 
 function PropertyFields({
+  expressionFields,
   extended,
   previous,
   action,
@@ -337,6 +338,7 @@ function PropertyFields({
   fields: RuleField[];
   change: (a: RuleAction) => void;
   extended: boolean;
+  expressionFields?: RuleField[];
   previous: RuleAction[];
 }) {
   const { t } = useTranslation();
@@ -376,6 +378,7 @@ function PropertyFields({
           options={options}
           value={current}
           change={set}
+          expressionFields={expressionFields}
           extended={extended}
         />
       )}
@@ -389,12 +392,14 @@ export function ActionFields({
   action,
   fields,
   deleted,
+  expressionRow,
   caps,
   change,
 }: {
   action: RuleAction;
   fields: RuleField[];
   deleted: boolean;
+  expressionRow: boolean;
   caps: Capabilities;
   workspace: string;
   previous: RuleAction[];
@@ -424,6 +429,7 @@ export function ActionFields({
         />
       ) : action.type === 'set_property' ? (
         <PropertyFields
+          expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           action={action}
           fields={fields}
           change={change}
@@ -432,6 +438,7 @@ export function ActionFields({
         />
       ) : (
         <WorkflowFields
+          expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           webhookHeaders={caps.webhookHeaders}
           {...{ workspace, action, fields, previous, change }}
           extended={caps.actions.includes('define_variable')}

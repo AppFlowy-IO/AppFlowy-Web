@@ -50,6 +50,7 @@ export function ruleCapabilities(info?: ServerInfo) {
     triggers,
     actions,
     webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,
+    formulaExpression: info?.database_automation_value_features?.includes('formula_expression_v1') === true,
     propertyEdited: info?.database_automation_trigger_features?.includes('property_edited_v1') === true,
     customRecurrence: info?.database_automation_schedule_features?.includes('custom_recurrence_v1') === true,
   };
@@ -193,8 +194,10 @@ export function formula(v?: PropertyValue): Formula | undefined {
   return v?.kind === 'formula' && v.value && typeof v.value === 'object' && 'operator' in v.value ? v.value : undefined;
 }
 
-function knownValue(v?: PropertyValue): boolean {
+function knownValue(v: PropertyValue | undefined, expressions: boolean): boolean {
   if (!v) return false;
+  if (v.kind === 'expression')
+    return expressions && knownKeys(v, ['kind', 'expression']) && typeof v.expression === 'string';
   if (v.kind === 'formula') {
     const f = formula(v);
 
@@ -203,8 +206,8 @@ function knownValue(v?: PropertyValue): boolean {
       knownKeys(v, ['kind', 'value']) &&
       knownKeys(f, ['operator', 'left', 'right']) &&
       arithmetic.includes(f.operator) &&
-      knownValue(f.left) &&
-      knownValue(f.right)
+      knownValue(f.left, expressions) &&
+      knownValue(f.right, expressions)
     );
   }
 
@@ -254,7 +257,7 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
   return (
     !!keys[a.type] &&
     knownKeys(a, ['type', ...keys[a.type]]) &&
-    (!a.value || knownValue(a.value)) &&
+    (!a.value || knownValue(a.value, caps.formulaExpression)) &&
     (!row || (!!rowKeys && knownKeys(row, rowKeys))) &&
     (row?.type !== 'variable' ||
       (caps.actions.includes('define_variable') && typeof row.name === 'string' && !!row.name)) &&
@@ -273,7 +276,7 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
       a.properties.every(
         (p) =>
           knownKeys(p, ['field_id', 'value']) &&
-          knownValue(p.value) &&
+          knownValue(p.value, caps.formulaExpression) &&
           (p.value.kind !== 'multi_select_delta' || caps.actions.includes('define_variable'))
       ))
   );
@@ -397,6 +400,13 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
 export function validValue(v?: PropertyValue): boolean {
   if (!v) return false;
   switch (v.kind) {
+    case 'expression':
+      return (
+        typeof v.expression === 'string' &&
+        !!v.expression.trim() &&
+        !v.expression.includes('\0') &&
+        new Blob([v.expression]).size <= 4096
+      );
     case 'formula': {
       const f = formula(v);
 

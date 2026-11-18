@@ -1,5 +1,6 @@
 {
   "databaseAutomation": {
+    "insertFormulaProperty": "插入来源属性",
     "duplicate": "复制",
     "copyOf": "{{name}}的副本",
     "copyError": "无法完成复制。请再次选择复制以继续。",
@@ -121,6 +122,7 @@
     "more": "加载更多",
     "back": "返回",
     "kinds": {
+      "expression": "公式表达式",
       "webhook_properties": "将指定属性发送到 Webhook",
       "addressed_email": "发送带收件人设置的 Gmail 邮件",
       "yearly": "每年",

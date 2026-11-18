@@ -125,7 +125,9 @@ export function RuleManager({
   }
 
   const visibleRules = row
-    ? rules?.filter((rule) => rule.trigger.type === 'manual' && rule.enabled && canonicalizeUserUid(rule.owner_uid) === row.owner)
+    ? rules?.filter(
+        (rule) => rule.trigger.type === 'manual' && rule.enabled && canonicalizeUserUid(rule.owner_uid) === row.owner
+      )
     : rules;
 
   if (invoke)
@@ -261,6 +263,28 @@ function RuleForm({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editingConditions, setEditingConditions] = useState(false);
+  const [calendarHasRow, setCalendarHasRow] = useState(false);
+  const scheduledRule = caps.formulaExpression && original?.trigger.type === 'scheduled' ? original.id : undefined;
+
+  useEffect(() => {
+    setCalendarHasRow(false);
+    if (!scheduledRule) return;
+    const controller = new AbortController();
+
+    async function loadRowBinding(ruleId: string) {
+      try {
+        const calendar = await ruleApi.getSchedule(workspace, database, ruleId, controller.signal);
+
+        if (!controller.signal.aborted) setCalendarHasRow(!!calendar.row_id);
+      } catch {
+        if (!controller.signal.aborted) setCalendarHasRow(false);
+      }
+    }
+
+    void loadRowBinding(scheduledRule);
+    return () => controller.abort();
+  }, [workspace, database, scheduledRule, original?.revision]);
+
   const running = useRef(false);
   const supported = !original || canEditRule(original, caps);
   const change = (changes: Partial<RuleDefinition>) => setDraft((prev) => ({ ...prev, ...changes }));
@@ -383,6 +407,11 @@ function RuleForm({
                   action={action}
                   fields={fields}
                   caps={caps}
+                  expressionRow={
+                    (draft.trigger.type !== 'scheduled' || calendarHasRow) &&
+                    draft.trigger.type !== 'row_deleted' &&
+                    !draft.trigger.triggers?.some((event) => event.type === 'row_deleted')
+                  }
                   deleted={draft.trigger.type === 'row_deleted'}
                   change={(a) => updateActions(index, a)}
                 />

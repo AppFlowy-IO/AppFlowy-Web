@@ -1,5 +1,6 @@
 {
   "databaseAutomation": {
+    "insertFormulaProperty": "Insérer une propriété source",
     "duplicate": "Dupliquer",
     "copyOf": "Copie de {{name}}",
     "copyError": "La copie a échoué. Réessayez avec Dupliquer.",
@@ -121,6 +122,7 @@
     "more": "Charger la suite",
     "back": "Retour",
     "kinds": {
+      "expression": "Expression de formule",
       "webhook_properties": "Envoyer les propriétés au webhook",
       "addressed_email": "Envoyer un Gmail avec destinataires",
       "yearly": "Annuel",
