@@ -1,5 +1,5 @@
 import { FieldType } from '@/application/database-yjs';
 
-// Desktop parity (`FieldType.canCreateFilter`): Time fields cannot be filtered.
+// Neither Time nor Button has a filter editor in Desktop.
 // Summary / Translate / Media are already excluded by PropertiesMenu defaults.
-export const FILTER_EXCLUDED_FIELD_TYPES = [FieldType.Time];
+export const FILTER_EXCLUDED_FIELD_TYPES = [FieldType.Time, FieldType.Button];
