@@ -351,6 +351,15 @@ describe('field metadata production hooks use database history', () => {
     });
     expect(f.fields.get(copy).get(YjsDatabaseKey.type_option).get('20')?.toJSON()).toEqual({ label: 'Approve' });
     expect(getRow(f).get(YjsDatabaseKey.cells).has(copy)).toBe(false);
+    const options = original.get(YjsDatabaseKey.type_option).get(String(FieldType.Button));
+
+    act(() => {
+      options.set('future_display_option', 'preserve-me');
+      hooks.result.current.save({ label: 'Approve', automation_id: '' });
+    });
+    expect(options.toJSON()).toEqual({ label: 'Approve', future_display_option: 'preserve-me' });
+    act(() => hooks.result.current.save({ label: '', automation_id: '' }));
+    expect(options.toJSON()).toEqual({ future_display_option: 'preserve-me' });
     expect(Y.encodeStateAsUpdate(f.rowDoc)).toEqual(before);
     await act(async () => {
       await hooks.result.current.changeType(textFieldId, FieldType.RichText);

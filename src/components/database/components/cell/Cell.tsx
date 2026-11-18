@@ -196,7 +196,7 @@ export function Cell(props: CellProps<CellType>) {
     }
   }, [fieldType]) as FC<CellProps<CellType>>;
 
-  if (fieldType === FieldType.Button) return <ButtonCell {...{ rowId, fieldId }} />;
+  if (fieldType === FieldType.Button && field) return <ButtonCell {...{ rowId, fieldId, field }} />;
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
     const attrName = fieldType === FieldType.CreatedTime ? YjsDatabaseKey.created_at : YjsDatabaseKey.last_modified;
 

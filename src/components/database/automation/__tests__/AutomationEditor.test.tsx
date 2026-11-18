@@ -11,7 +11,7 @@ import {
   RuleAction,
 } from '@/application/services/js-services/http/automation-api';
 import { listConnections } from '@/application/services/js-services/http/integration-api';
-import { Role } from '@/application/types';
+import { Role, type YDatabaseField } from '@/application/types';
 import { useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -70,7 +70,6 @@ jest.mock('@/application/database-yjs', () => ({
   },
   useDatabaseFields: () => undefined,
   useDatabaseContextOptional: jest.fn(),
-  useFieldSelector: () => ({ field: { get: (key: string) => (key === 'name' ? 'Request review' : undefined) } }),
   useDatabase: () => ({ get: () => 'd' }),
   useDatabaseContext: () => ({ workspaceId: 'w', databasePageId: 'page' }),
   useDatabaseViewsSelector: () => ({ viewIds: ['board'], childViews: [{ get: () => 'Work board' }] }),
@@ -1566,7 +1565,10 @@ test('renders 128 Button cells without resolving bindings or fetching the clicki
   jest.mocked(useDatabaseContextOptional).mockReturnValue(view);
   jest.mocked(useCurrentUserOptional).mockReturnValue({ uuid: 'clicker' } as ReturnType<typeof useCurrentUserOptional>);
   jest.mocked(getServerInfoSnapshot).mockReturnValue(server);
-  const cells = Array.from({ length: 128 }, (_, i) => <ButtonCell key={i} rowId={String(i)} fieldId='send' />);
+  const field = { get: (key: string) => (key === 'name' ? 'Request review' : undefined) } as unknown as YDatabaseField;
+  const cells = Array.from({ length: 128 }, (_, i) => (
+    <ButtonCell field={field} key={i} rowId={String(i)} fieldId='send' />
+  ));
   const ui = render(<>{cells}</>);
 
   expect(screen.getAllByRole('button', { name: 'Request review' })).toHaveLength(128);
@@ -1587,7 +1589,7 @@ test('renders 128 Button cells without resolving bindings or fetching the clicki
   >;
 
   jest.mocked(getServerInfoSnapshot).mockReturnValue(old);
-  const legacy = render(<ButtonCell rowId='one' fieldId='send' />);
+  const legacy = render(<ButtonCell field={field} rowId='one' fieldId='send' />);
 
   expect(screen.getByText('Request review').tagName).toBe('SPAN');
   legacy.unmount();
@@ -1595,7 +1597,7 @@ test('renders 128 Button cells without resolving bindings or fetching the clicki
   jest
     .mocked(useDatabaseContextOptional)
     .mockReturnValue({ ...view, dataSource: { type: 'history' } } as ReturnType<typeof useDatabaseContextOptional>);
-  render(<ButtonCell rowId='one' fieldId='send' />);
+  render(<ButtonCell field={field} rowId='one' fieldId='send' />);
   expect(screen.queryByRole('button')).toBeNull();
   expect(api.resolveButton).toHaveBeenCalledTimes(1);
 });

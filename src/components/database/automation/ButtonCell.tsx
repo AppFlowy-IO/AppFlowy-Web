@@ -1,10 +1,10 @@
 import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabase, useDatabaseContextOptional, useFieldSelector } from '@/application/database-yjs';
+import { useDatabase, useDatabaseContextOptional } from '@/application/database-yjs';
 import { getTypeOptions } from '@/application/database-yjs/fields/type_option';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { YjsDatabaseKey } from '@/application/types';
+import { type YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,13 +20,12 @@ import { useAutomationCapabilities } from './useAutomationCapabilities';
 
 const ButtonControl = lazy(() => import('./ButtonControl').then((mod) => ({ default: mod.ButtonControl })));
 
-export function ButtonCell({ rowId, fieldId }: { rowId: string; fieldId: string }) {
+export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: string; field: YDatabaseField }) {
   const { t } = useTranslation();
   const caps = useAutomationCapabilities();
   const db = useDatabase();
   const context = useDatabaseContextOptional();
   const user = useCurrentUserOptional();
-  const { field } = useFieldSelector(fieldId);
   const options = field && getTypeOptions(field, FieldType.Button)?.toJSON();
   const label =
     (typeof options?.label === 'string' && options.label.trim()) ||
