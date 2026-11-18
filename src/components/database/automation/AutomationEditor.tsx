@@ -1,3 +1,4 @@
+import { toIntlLocale } from '@/i18n/intl-locale';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
@@ -464,7 +465,7 @@ function History({
       {runs.map((run) => (
         <div key={run.id} className='border-b border-border-primary py-2'>
           <span>
-            {new Date(run.event_observed_at).toLocaleString(i18n.language)} ·{' '}
+            {new Date(run.event_observed_at).toLocaleString(toIntlLocale(i18n.language))} ·{' '}
             {t(`databaseAutomation.status.${run.status}`, { defaultValue: run.status })}
           </span>
           <div className='text-sm text-text-secondary'>

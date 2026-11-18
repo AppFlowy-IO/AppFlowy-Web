@@ -33,7 +33,7 @@ jest.mock('react-i18next', () => ({
 
       return String(translation).replace(/{{(\w+)}}/g, (_, name) => String(args[name]));
     },
-    i18n: { language: 'en' },
+    i18n: { language: 'en-US@posix' },
   }),
 }));
 jest.mock('@/application/database-yjs', () => ({
@@ -167,7 +167,7 @@ test('conflicts retain unsaved edits until explicit reload and preserve unknown 
   fireEvent.click(screen.getByText('Reload saved version'));
   await screen.findByDisplayValue('Other author');
 });
-test('pages run history using its cursor and deletes with the current revision after confirmation', async () => {
+test('pages run history under a POSIX locale using its cursor and deletes with the current revision after confirmation', async () => {
   const result = {
     id: 'a',
     row_id: 'r',
