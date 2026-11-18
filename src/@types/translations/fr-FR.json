@@ -1,5 +1,11 @@
 {
   "databaseAutomation": {
+    "to": "À",
+    "cc": "Cc",
+    "bcc": "Cci",
+    "reply_to": "Répondre à",
+    "sender_name": "Nom de l’expéditeur",
+    "addAddress": "Ajouter un destinataire {{group}}",
     "interval": "Intervalle de répétition",
     "weekdays": "Jours de la semaine",
     "gmail": "Compte Gmail",
@@ -107,6 +113,7 @@
     "more": "Charger la suite",
     "back": "Retour",
     "kinds": {
+      "addressed_email": "Envoyer un Gmail avec destinataires",
       "yearly": "Annuel",
       "connected_email": "Envoyer depuis Gmail",
       "person": "Personnes",

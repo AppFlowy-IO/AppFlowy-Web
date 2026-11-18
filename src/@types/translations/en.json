@@ -1,5 +1,11 @@
 {
   "databaseAutomation": {
+    "to": "To",
+    "cc": "Cc",
+    "bcc": "Bcc",
+    "reply_to": "Reply-To",
+    "sender_name": "Sender name",
+    "addAddress": "Add {{group}} recipient",
     "interval": "Repeat interval",
     "weekdays": "Weekdays",
     "gmail": "Gmail account",
@@ -107,6 +113,7 @@
     "more": "Load more",
     "back": "Back",
     "kinds": {
+      "addressed_email": "Send addressed Gmail",
       "yearly": "Yearly",
       "connected_email": "Send from Gmail",
       "person": "People",

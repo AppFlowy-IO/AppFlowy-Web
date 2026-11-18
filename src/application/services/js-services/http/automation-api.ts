@@ -84,6 +84,10 @@ export interface RuleAction {
   name?: string;
   recipient_id?: string;
   to?: AutomationText[];
+  cc?: AutomationText[];
+  bcc?: AutomationText[];
+  sender_name?: AutomationText;
+  reply_to?: AutomationText;
   connection_id?: string;
   channel_id?: string;
   endpoint_id?: string;

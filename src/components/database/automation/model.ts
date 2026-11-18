@@ -28,6 +28,7 @@ export const actionTypes = [
   'define_variable',
   'email',
   'connected_email',
+  'addressed_email',
   'slack',
   'webhook',
 ];
@@ -101,6 +102,7 @@ export function newAction(type: string): RuleAction {
       return { type, name: '', value: { kind: 'text', value: '' } };
     case 'email':
       return { type, recipient_id: '', subject: '', message: '' };
+    case 'addressed_email':
     case 'connected_email':
       return { type, connection_id: '', to: [''], subject: '', message: '' };
     case 'slack':
@@ -211,6 +213,7 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
     create_row: ['database_id', 'view_id', 'properties'],
     edit_row: ['database_id', 'row', 'properties'],
     email: ['recipient_id', 'subject', 'message'],
+    addressed_email: ['connection_id', 'to', 'cc', 'bcc', 'reply_to', 'sender_name', 'subject', 'message'],
     connected_email: ['connection_id', 'to', 'subject', 'message'],
     slack: ['connection_id', 'channel_id', 'message'],
     webhook: ['endpoint_id', 'message'],
@@ -241,7 +244,9 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
       (caps.actions.includes('define_variable') && a.message === undefined && knownText(a.message_template))) &&
     knownText(a.message) &&
     knownText(a.subject) &&
-    (!a.to || a.to.every(knownText)) &&
+    [a.to, a.cc, a.bcc].every((group) => group === undefined || (Array.isArray(group) && group.every(knownText))) &&
+    knownText(a.reply_to) &&
+    knownText(a.sender_name) &&
     (!a.properties ||
       a.properties.every(
         (p) =>
@@ -303,6 +308,20 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
           (a.message_template === undefined || text(a.message_template)) &&
           (typeof a.message !== 'string' || a.message.length <= 500)
         );
+      case 'addressed_email': {
+        const groups = [a.to ?? [], a.cc ?? [], a.bcc ?? []];
+        const addresses = groups.flat();
+        return (
+          !!a.connection_id &&
+          addresses.length > 0 &&
+          addresses.length <= 10 &&
+          addresses.every(text) &&
+          (a.sender_name === undefined || text(a.sender_name)) &&
+          (a.reply_to === undefined || text(a.reply_to)) &&
+          text(a.subject) &&
+          text(a.message)
+        );
+      }
       case 'connected_email':
         return (
           !!a.connection_id &&
@@ -399,6 +418,10 @@ export function reorderActions(original: RuleAction[], ordered: RuleAction[]): R
     ...(action.properties ? { properties: action.properties.map((p) => ({ ...p, value: property(p.value) })) } : {}),
     ...(action.subject ? { subject: text(action.subject) } : {}),
     ...(action.to ? { to: action.to.map(text) } : {}),
+    ...(action.cc ? { cc: action.cc.map(text) } : {}),
+    ...(action.bcc ? { bcc: action.bcc.map(text) } : {}),
+    ...(action.reply_to ? { reply_to: text(action.reply_to) } : {}),
+    ...(action.sender_name ? { sender_name: text(action.sender_name) } : {}),
     ...(action.message ? { message: text(action.message) } : {}),
     ...(action.message_template ? { message_template: text(action.message_template) } : {}),
   }));

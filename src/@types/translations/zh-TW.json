@@ -1,5 +1,11 @@
 {
   "databaseAutomation": {
+    "to": "收件人",
+    "cc": "副本",
+    "bcc": "密件副本",
+    "reply_to": "回覆地址",
+    "sender_name": "寄件人姓名",
+    "addAddress": "新增{{group}}",
     "interval": "重複間隔",
     "weekdays": "每週重複日",
     "gmail": "Gmail 帳號",
@@ -107,6 +113,7 @@
     "more": "載入更多",
     "back": "返回",
     "kinds": {
+      "addressed_email": "傳送含收件人設定的 Gmail 郵件",
       "yearly": "每年",
       "connected_email": "使用 Gmail 傳送",
       "person": "人員",

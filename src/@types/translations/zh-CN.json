@@ -1,5 +1,11 @@
 {
   "databaseAutomation": {
+    "to": "收件人",
+    "cc": "抄送",
+    "bcc": "密送",
+    "reply_to": "回复地址",
+    "sender_name": "发件人姓名",
+    "addAddress": "添加{{group}}",
     "interval": "重复间隔",
     "weekdays": "每周重复日",
     "gmail": "Gmail 帐号",
@@ -107,6 +113,7 @@
     "more": "加载更多",
     "back": "返回",
     "kinds": {
+      "addressed_email": "发送带收件人设置的 Gmail 邮件",
       "yearly": "每年",
       "connected_email": "使用 Gmail 发送",
       "person": "人员",

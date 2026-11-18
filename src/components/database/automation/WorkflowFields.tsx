@@ -677,9 +677,9 @@ export function WorkflowFields({
         return results;
       }
 
-      if (['slack', 'connected_email'].includes(action.type))
+      if (['slack', 'connected_email', 'addressed_email'].includes(action.type))
         return (await listConnections(workspace, ac.signal))
-          .filter((c) => c.provider === (action.type === 'connected_email' ? 'gmail' : 'slack') && c.status === 'active')
+          .filter((c) => c.provider === (action.type === 'slack' ? 'slack' : 'gmail') && c.status === 'active')
           .map((c) => ({ id: c.id, name: c.account_identifier || c.id }));
       if (action.type === 'email') await fetchUsers();
       return [];
@@ -804,7 +804,7 @@ export function WorkflowFields({
           />
         </>
       )}
-      {action.type === 'connected_email' && (
+      {['connected_email', 'addressed_email'].includes(action.type) && (
         <>
           <Select
             label={t('databaseAutomation.gmail')}
@@ -820,33 +820,55 @@ export function WorkflowFields({
               setRetry((n) => n + 1);
             }}
           />
-          {(action.to || []).map((v, i) => (
-            <div key={i}>
+          {(action.type === 'addressed_email' ? (['to', 'cc', 'bcc'] as const) : (['to'] as const)).map((group) => {
+            const values = action[group] ?? [];
+            const label =
+              action.type === 'addressed_email' ? t(`databaseAutomation.${group}`) : t('databaseAutomation.recipient');
+            return (
+              <div key={group}>
+                {values.map((value, i) => (
+                  <div key={i}>
+                    <TextFields
+                      label={label}
+                      value={value}
+                      fields={fields}
+                      previous={previous}
+                      change={(next) => change({ ...action, [group]: values.map((v, n) => (i === n ? next : v)) })}
+                    />
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      onClick={() => change({ ...action, [group]: values.filter((_, n) => i !== n) })}
+                    >
+                      {t('databaseAutomation.removeRecipient')}
+                    </Button>
+                  </div>
+                ))}
+                {(action.to?.length ?? 0) + (action.cc?.length ?? 0) + (action.bcc?.length ?? 0) < 10 && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    onClick={() => change({ ...action, [group]: [...values, ''] })}
+                  >
+                    {action.type === 'addressed_email'
+                      ? t('databaseAutomation.addAddress', { group: label })
+                      : t('databaseAutomation.addRecipient')}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+          {action.type === 'addressed_email' &&
+            (['reply_to', 'sender_name'] as const).map((key) => (
               <TextFields
-                label={t('databaseAutomation.recipient')}
-                value={v}
-                fields={fields}
+                key={key}
+                label={t(`databaseAutomation.${key}`)}
+                value={action[key]}
                 previous={previous}
-                change={(v) => change({ ...action, to: action.to?.map((p, n) => (i === n ? v : p)) })}
+                fields={fields}
+                change={(value) => change({ ...action, [key]: value || undefined })}
               />
-              <Button
-                type='button'
-                variant='ghost'
-                onClick={() => change({ ...action, to: action.to?.filter((_, n) => n !== i) })}
-              >
-                {t('databaseAutomation.removeRecipient')}
-              </Button>
-            </div>
-          ))}
-          {(action.to?.length || 0) < 10 && (
-            <Button
-              type='button'
-              variant='outline'
-              onClick={() => change({ ...action, to: [...(action.to || []), ''] })}
-            >
-              {t('databaseAutomation.addRecipient')}
-            </Button>
-          )}
+            ))}
           <TextFields
             label={t('databaseAutomation.subject')}
             value={action.subject}

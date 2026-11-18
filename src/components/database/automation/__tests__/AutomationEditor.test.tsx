@@ -270,7 +270,10 @@ test('custom calendars keep their anchor and selected ISO weekdays and clear wee
   render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence: true }} />);
   fireEvent.click(await screen.findByText('Schedule'));
   await waitFor(() => expect((screen.getByLabelText('Repeat interval') as HTMLInputElement).value).toBe('2'));
-  expect(Array.from((screen.getByLabelText('Weekdays') as HTMLSelectElement).selectedOptions, o => o.value)).toEqual(['1', '5']);
+  expect(Array.from((screen.getByLabelText('Weekdays') as HTMLSelectElement).selectedOptions, (o) => o.value)).toEqual([
+    '1',
+    '5',
+  ]);
   fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '1000' } });
   expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '3' } });
@@ -512,6 +515,51 @@ test('the Gmail action stores a selected sender and templated or literal externa
   expect(api.create.mock.calls[0][3].actions).toEqual([
     {
       type: 'connected_email',
+      connection_id: 'mail',
+      to: ['reviewer@example.test'],
+      subject: 'Update',
+      message: 'Ready',
+    },
+  ]);
+});
+
+test('addressed Gmail saves visible and private recipients on the selected grant', async () => {
+  (listConnections as jest.MockedFunction<typeof listConnections>).mockResolvedValue([
+    { id: 'mail', provider: 'gmail', connected_at: '2026-01-01', status: 'active', account_identifier: 'Work Gmail' },
+    {
+      id: 'slack',
+      provider: 'slack',
+      connected_at: '2026-01-01',
+      status: 'active',
+      account_identifier: 'Slack account',
+    },
+  ]);
+  api.create.mockResolvedValue(rule);
+  fullManager();
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Customer update' } });
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'addressed_email' } });
+  await within(screen.getByLabelText('Gmail account')).findByText('Work Gmail');
+  expect(within(screen.getByLabelText('Gmail account')).queryByText('Slack account')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Gmail account'), { target: { value: 'mail' } });
+  fireEvent.change(screen.getByLabelText('To'), { target: { value: 'reviewer@example.test' } });
+  fireEvent.click(screen.getByText('Add Cc recipient'));
+  fireEvent.change(screen.getByLabelText('Cc'), { target: { value: 'team@example.test' } });
+  fireEvent.click(screen.getByText('Add Bcc recipient'));
+  fireEvent.change(screen.getByLabelText('Bcc'), { target: { value: 'private@example.test' } });
+  fireEvent.change(screen.getByLabelText('Reply-To'), { target: { value: 'reply@example.test' } });
+  fireEvent.change(screen.getByLabelText('Sender name'), { target: { value: 'Review team' } });
+  fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Update' } });
+  fireEvent.change(screen.getByLabelText('Notification message'), { target: { value: 'Ready' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create.mock.calls[0][3].actions).toEqual([
+    {
+      type: 'addressed_email',
+      cc: ['team@example.test'],
+      bcc: ['private@example.test'],
+      reply_to: 'reply@example.test',
+      sender_name: 'Review team',
       connection_id: 'mail',
       to: ['reviewer@example.test'],
       subject: 'Update',
