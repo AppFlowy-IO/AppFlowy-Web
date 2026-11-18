@@ -20,7 +20,7 @@ import { EndpointControls, ConnectAccount } from './DestinationSettings';
 import { TextFields } from './TextFields';
 import { MemberEmailFields } from './MemberEmailFields';
 import { ExpressionFields } from './ExpressionFields';
-import { arithmetic, formula, relationVariables, RuleField, valueKinds } from './model';
+import { arithmetic, formula, relationVariables, RuleField, valueKinds, workflowVariableChoices } from './model';
 import { Select, Item } from './Select';
 
 export function SourceValue({
@@ -46,13 +46,15 @@ export function SourceValue({
 }) {
   const { t } = useTranslation();
   const multiSelect = value.kind === 'multi_select' || value.kind === 'multi_select_delta';
-  const names = previous
-    .filter((a) => a.type === 'define_variable' && a.name)
-    .map((a) => ({ id: a.name!, name: a.name! }));
+  const sourceFields = (expressionFields ?? fields).filter((field) =>
+    valueKinds(field.type).some((kind) => definition || literals.includes(kind))
+  );
+  const operators = arithmetic.filter((op) => literals.includes(op === 'add_days' ? 'date_time' : 'number'));
+  const names = workflowVariableChoices(previous, fields, definition ? undefined : literals);
   const sources = extended
     ? [
         ...literals,
-        'field',
+        ...(sourceFields.length ? ['field'] : []),
         ...(names.length ? ['variable'] : []),
         ...(literals.includes('text') ? ['template'] : []),
         ...(literals.some((k) => k === 'number' || k === 'date_time') ? ['formula'] : []),
@@ -72,7 +74,7 @@ export function SourceValue({
           options={kinds.map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
           change={([kind]) => {
             if (kind === 'expression') change({ kind, expression: '' });
-            else if (kind === 'field') change({ kind, field_id: fields[0]?.id || '' });
+            else if (kind === 'field') change({ kind, field_id: sourceFields[0]?.id || '' });
             else if (kind === 'variable') change({ kind, name: names[0]?.id || '' });
             else if (kind === 'formula')
               change({
@@ -101,6 +103,7 @@ export function SourceValue({
         />
       ) : value.kind === 'formula' && formula(value) ? (
         <FormulaFields
+          operators={operators}
           expressionFields={expressionFields}
           value={formula(value)!}
           fields={fields}
@@ -111,7 +114,7 @@ export function SourceValue({
         <TextFields
           label={t('databaseAutomation.value')}
           value={{ parts: value.parts || [] }}
-          fields={fields}
+          fields={expressionFields ?? fields}
           previous={previous}
           change={(v) =>
             change(typeof v === 'string' ? { kind: 'text', value: v } : { kind: 'template', parts: v.parts })
@@ -121,7 +124,7 @@ export function SourceValue({
         <Select
           label={t('databaseAutomation.value')}
           value={value.field_id || value.name || ''}
-          options={value.kind === 'field' ? fields : names}
+          options={value.kind === 'field' ? sourceFields : names}
           change={([id]) =>
             change(value.kind === 'field' ? { kind: 'field', field_id: id } : { kind: 'variable', name: id })
           }
@@ -269,6 +272,7 @@ export function IdentityValue({
 }
 
 function FormulaFields({
+  operators,
   expressionFields,
   value,
   fields,
@@ -280,6 +284,7 @@ function FormulaFields({
   fields: RuleField[];
   previous: RuleAction[];
   change: (f: NonNullable<ReturnType<typeof formula>>) => void;
+  operators: (typeof arithmetic)[number][];
 }) {
   const { t } = useTranslation();
 
@@ -288,10 +293,19 @@ function FormulaFields({
       <Select
         label={t('databaseAutomation.operator')}
         value={value.operator}
-        options={arithmetic.map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
+        options={operators.map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
         change={([op]) => {
-          if (arithmetic.includes(op as typeof value.operator))
-            change({ ...value, operator: op as typeof value.operator });
+          if (!operators.includes(op as typeof value.operator)) return;
+          // Switching between date math and arithmetic needs a different left operand.
+          const changedLeftType =
+            ['number', 'date_time', 'event_time'].includes(value.left.kind) &&
+            (value.operator === 'add_days') !== (op === 'add_days');
+
+          change({
+            ...value,
+            operator: op as typeof value.operator,
+            ...(changedLeftType && { left: op === 'add_days' ? { kind: 'event_time' } : { kind: 'number', value: 0 } }),
+          });
         }}
       />
       {(['left', 'right'] as const).map((side) => (

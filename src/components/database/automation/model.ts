@@ -94,6 +94,48 @@ export function valueKinds(type?: FieldType): string[] {
   }
 }
 
+/** A shared expression's exact scalar result is checked against the live schema on the server. */
+export function workflowVariableChoices(actions: RuleAction[], fields: RuleField[], accepted?: string[]) {
+  const outputs = new Map<string, string[]>();
+
+  for (const { type, name, value } of actions) {
+    if (type !== 'define_variable' || !name || !value) continue;
+    let kinds: string[];
+
+    switch (value.kind) {
+      case 'field':
+        kinds = valueKinds(fields.find((f) => f.id === value.field_id)?.type);
+        break;
+      case 'variable':
+        kinds = outputs.get(value.name || '') || [];
+        break;
+      case 'expression':
+        kinds = ['text', 'number', 'checkbox', 'date_time'];
+        break;
+      case 'formula':
+        kinds = [formula(value)?.operator === 'add_days' ? 'date_time' : 'number'];
+        break;
+      case 'event_time':
+        kinds = ['date_time'];
+        break;
+      case 'template':
+        kinds = ['text'];
+        break;
+      case 'multi_select_delta':
+        kinds = ['multi_select'];
+        break;
+      default:
+        kinds = [value.kind];
+    }
+
+    outputs.set(name, kinds);
+  }
+
+  return [...outputs]
+    .filter(([, kinds]) => kinds.some((kind) => !accepted || accepted.includes(kind)))
+    .map(([name]) => ({ id: name, name }));
+}
+
 export function relationVariables(actions: RuleAction[], fields: RuleField[]) {
   const names = new Set<string>();
 

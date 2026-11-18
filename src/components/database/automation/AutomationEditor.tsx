@@ -283,12 +283,7 @@ export function RuleForm({
   const [deleting, setDeleting] = useState(false);
   const [editingConditions, setEditingConditions] = useState(false);
   const [calendarHasRow, setCalendarHasRow] = useState(false);
-  const scheduledRule =
-    !rowScope &&
-    (caps.formulaExpression || caps.actions.includes('member_addressed_email')) &&
-    original?.trigger.type === 'scheduled'
-      ? original.id
-      : undefined;
+  const scheduledRule = !rowScope && original?.trigger.type === 'scheduled' ? original.id : undefined;
 
   useEffect(() => {
     setCalendarHasRow(false);

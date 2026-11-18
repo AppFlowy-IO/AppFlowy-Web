@@ -5,12 +5,13 @@ import { readButtonOpenTarget, readButtonResultTarget, validButtonUrl } from '@/
 import { FieldType, useDatabaseContextOptional, useFieldSelector } from '@/application/database-yjs';
 import { useUpdateButtonTypeOption } from '@/application/database-yjs/dispatch';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
-import type { ScheduleState } from '@/application/services/js-services/http/automation-api';
 import {
-  DatabaseRule,
+  type DatabaseRule,
   parseRuleList,
+  type PropertyValue,
   ruleApi,
-  RuleAction,
+  type RuleAction,
+  type ScheduleState,
 } from '@/application/services/js-services/http/automation-api';
 import { listConnections } from '@/application/services/js-services/http/integration-api';
 import { Role, type YDatabaseField } from '@/application/types';
@@ -21,6 +22,8 @@ import { getServerInfoSnapshot } from '@/utils/server-info';
 
 import AutomationButton from '../AutomationButton';
 import { RuleManager } from '../AutomationEditor';
+import { SourceValue } from '../WorkflowFields';
+import { TextFields } from '../TextFields';
 import { ButtonCell } from '../ButtonCell';
 import { ButtonControl } from '../ButtonControl';
 import { ButtonDefaults } from '../ButtonDefaults';
@@ -2091,3 +2094,80 @@ test.each(['close', 'row', 'member'])(
     expect(api.resolveButton).toHaveBeenCalledTimes(1);
   }
 );
+
+test('typed operands, aliases and template parts offer values the Worker can actually read', () => {
+  const fields = [
+    { id: 'button', name: 'Run', type: FieldType.Button },
+    { id: 'title', name: 'Task', type: FieldType.RichText },
+    { id: 'cost', name: 'Cost', type: FieldType.Number },
+    { id: 'due', name: 'Due', type: FieldType.DateTime },
+    { id: 'related', name: 'Related rows', type: FieldType.Relation },
+    { id: 'virtual', name: 'Calculated', type: FieldType.Formula },
+  ];
+  const previous = [
+    { type: 'define_variable', name: 'pages', value: { kind: 'field', field_id: 'related' } },
+    { type: 'define_variable', name: 'renamedPages', value: { kind: 'variable', name: 'pages' } },
+    {
+      type: 'define_variable',
+      name: 'total',
+      value: {
+        kind: 'formula',
+        value: { operator: 'add', left: { kind: 'number', value: 1 }, right: { kind: 'number', value: 2 } },
+      },
+    },
+    { type: 'define_variable', name: 'scalar', value: { kind: 'expression', expression: '1 + 2' } },
+  ] as RuleAction[];
+  const change = jest.fn();
+  const editor = (literals: string[], value: PropertyValue, row = true, definition = false) => (
+    <SourceValue {...{ fields, previous, literals, value, change, definition }} expressionFields={row ? fields : []} />
+  );
+  const options = (label: string) =>
+    Array.from((screen.getByLabelText(label)).options)
+      .map((o) => o.value)
+      .filter(Boolean);
+  const typed = (operator: 'add' | 'add_days'): PropertyValue => ({
+    kind: 'formula',
+    value: { operator, left: { kind: 'number', value: 1 }, right: { kind: 'number', value: 2 } },
+  });
+  const ui = render(editor(['number'], { kind: 'field', field_id: 'cost' }));
+
+  expect(options('Value')).toEqual(['cost']);
+  ui.rerender(editor(['number'], { kind: 'variable', name: 'total' }));
+  expect(options('Value')).toEqual(['total', 'scalar']);
+  ui.rerender(editor(['relation'], { kind: 'variable', name: 'pages' }));
+  expect(options('Value')).toEqual(['pages', 'renamedPages']);
+  ui.rerender(editor(['text'], { kind: 'text', value: '' }, false));
+  expect(options('Value source')).not.toContain('field');
+  ui.rerender(editor(['text'], { kind: 'field', field_id: 'related' }, true, true));
+  expect(options('Value')).toEqual(['title', 'cost', 'due', 'related']);
+  ui.rerender(editor(['number'], typed('add')));
+  expect(options(strings.databaseAutomation.operator)).toEqual(['add', 'subtract', 'multiply', 'divide']);
+  ui.rerender(editor(['date_time'], typed('add_days')));
+  expect(options(strings.databaseAutomation.operator)).toEqual(['add_days']);
+  ui.rerender(editor(['number', 'date_time'], typed('add'), true, true));
+  fireEvent.change(screen.getByLabelText(strings.databaseAutomation.operator), { target: { value: 'add_days' } });
+  expect(change).toHaveBeenLastCalledWith({
+    kind: 'formula',
+    value: { operator: 'add_days', left: { kind: 'event_time' }, right: { kind: 'number', value: 2 } },
+  });
+  ui.rerender(
+    <TextFields
+      label='Message'
+      value={{ parts: [{ type: 'field', field_id: 'title' }] }}
+      fields={fields}
+      previous={previous}
+      change={change}
+    />
+  );
+  expect(options('Value')).toEqual(['title', 'cost', 'due', 'related']);
+  ui.rerender(
+    <TextFields
+      label='Message'
+      value={{ parts: [{ type: 'text', value: '' }] }}
+      fields={[]}
+      previous={previous}
+      change={change}
+    />
+  );
+  expect(options('Value source')).not.toContain('field');
+});

@@ -441,7 +441,7 @@ export function ActionFields({
       {action.type === 'notify' ? (
         <NotifyFields
           action={action}
-          fields={fields}
+          fields={expressionRow ? fields : []}
           deleted={deleted}
           change={change}
           previous={previous}
@@ -462,7 +462,8 @@ export function ActionFields({
           hasRow={expressionRow}
           expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           webhookHeaders={caps.webhookHeaders}
-          {...{ workspace, action, fields, previous, change }}
+          {...{ workspace, action, previous, change }}
+          fields={expressionRow ? fields : []}
           extended={caps.actions.includes('define_variable')}
         />
       )}

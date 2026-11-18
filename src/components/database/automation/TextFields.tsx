@@ -4,7 +4,7 @@ import type { AutomationText, RuleAction, TextPart } from '@/application/service
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-import type { RuleField } from './model';
+import { type RuleField, valueKinds } from './model';
 import { Select } from './Select';
 
 export function TextFields({
@@ -40,6 +40,7 @@ export function TextFields({
       </div>
     );
   const parts = value.parts;
+  const readable = fields.filter((field) => valueKinds(field.type).length > 0);
   const variables = previous
     .filter((a) => a.type === 'define_variable' && a.name)
     .map((a) => ({ id: a.name!, name: a.name! }));
@@ -61,12 +62,12 @@ export function TextFields({
             value={p.type}
             options={[
               'text',
-              'field',
+              ...(readable.length ? ['field'] : []),
               ...(variables.length ? ['variable'] : []),
               ...(steps.length ? ['step_row_id'] : []),
             ].map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
             change={([type]) => {
-              if (type === 'field') write(i, { type, field_id: fields[0]?.id || '' });
+              if (type === 'field') write(i, { type, field_id: readable[0]?.id || '' });
               else if (type === 'variable') write(i, { type, name: variables[0]?.id || '' });
               else if (type === 'step_row_id') write(i, { type, action_index: Number(steps[0]?.id) });
               else write(i, { type: 'text', value: '' });
@@ -82,7 +83,7 @@ export function TextFields({
             <Select
               label={t('databaseAutomation.value')}
               value={p.type === 'field' ? p.field_id : p.type === 'variable' ? p.name : String(p.action_index)}
-              options={p.type === 'field' ? fields : p.type === 'variable' ? variables : steps}
+              options={p.type === 'field' ? readable : p.type === 'variable' ? variables : steps}
               change={([v]) =>
                 write(
                   i,
