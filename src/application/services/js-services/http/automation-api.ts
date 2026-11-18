@@ -33,7 +33,8 @@ export type TargetRow =
   | { type: 'id'; row_id: string }
   | { type: 'step'; action_index: number }
   | { type: 'trigger' }
-  | { type: 'matching'; conditions: unknown[] };
+  | { type: 'matching'; conditions: unknown[] }
+  | { type: 'variable'; name: string };
 export type Assignment = { field_id: string; value: PropertyValue };
 export interface RuleSchedule {
   row_id?: string;

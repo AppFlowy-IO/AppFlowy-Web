@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 
 import { ConditionFields } from './ConditionFields';
 import { EndpointControls, ConnectAccount } from './DestinationSettings';
-import { arithmetic, formula, RuleField, valueKinds } from './model';
+import { arithmetic, formula, relationVariables, RuleField, valueKinds } from './model';
 import { Select, Item } from './Select';
 
 export function TextFields({
@@ -149,6 +149,7 @@ export function SourceValue({
   literals,
   options = [],
   extended = true,
+  definition = false,
 }: {
   value: PropertyValue;
   change: (v: PropertyValue) => void;
@@ -157,6 +158,7 @@ export function SourceValue({
   literals: string[];
   options?: Item[];
   extended?: boolean;
+  definition?: boolean;
 }) {
   const { t } = useTranslation();
   const multiSelect = value.kind === 'multi_select' || value.kind === 'multi_select_delta';
@@ -229,7 +231,7 @@ export function SourceValue({
           }
         />
       ) : ['person', 'relation'].includes(value.kind) ? (
-        <IdentityValue value={value} change={change} />
+        <IdentityValue value={value} change={change} definition={definition} />
       ) : value.kind === 'single_select' || multiSelect ? (
         <>
           {multiSelect && extended && (
@@ -295,7 +297,15 @@ export function SourceValue({
   );
 }
 
-function IdentityValue({ value, change }: { value: PropertyValue; change: (v: PropertyValue) => void }) {
+function IdentityValue({
+  value,
+  change,
+  definition,
+}: {
+  value: PropertyValue;
+  change: (v: PropertyValue) => void;
+  definition: boolean;
+}) {
   const { t } = useTranslation();
   const { users, fetchUsers } = useMentionableUsers();
   const [entry, setEntry] = useState('');
@@ -306,15 +316,17 @@ function IdentityValue({ value, change }: { value: PropertyValue; change: (v: Pr
   }, [value.kind, fetchUsers]);
   return (
     <>
-      <Select
-        label={t('databaseAutomation.operator')}
-        value={value.operation || 'replace'}
-        options={['replace', 'add', 'remove'].map((id) => ({
-          id,
-          name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }),
-        }))}
-        change={([op]) => change({ ...value, operation: op as PropertyValue['operation'] })}
-      />
+      {!definition && (
+        <Select
+          label={t('databaseAutomation.operator')}
+          value={value.operation || 'replace'}
+          options={['replace', 'add', 'remove'].map((id) => ({
+            id,
+            name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }),
+          }))}
+          change={([op]) => change({ ...value, operation: op as PropertyValue['operation'] })}
+        />
+      )}
       {value.kind === 'person' ? (
         <Select
           label={t('databaseAutomation.people')}
@@ -416,6 +428,7 @@ function TargetFields({
   extended: boolean;
 }) {
   const { t } = useTranslation();
+  const relationNames = extended ? relationVariables(previous, fields) : [];
   const [dbs, setDbs] = useState<TargetDatabase[]>([]);
   const [more, setMore] = useState(false);
   const [offset, setOffset] = useState(0);
@@ -507,6 +520,7 @@ function TargetFields({
               'trigger',
               'id',
               'matching',
+              ...(relationNames.length ? ['variable'] : []),
               ...(previous.some((a) => a.type === 'create_row') ? ['step'] : []),
             ].map((id) => ({
               id,
@@ -516,7 +530,9 @@ function TargetFields({
               change({
                 ...action,
                 row:
-                  type === 'matching'
+                  type === 'variable'
+                    ? { type, name: relationNames[0] }
+                    : type === 'matching'
                     ? { type, conditions: [] }
                     : type === 'trigger'
                     ? { type }
@@ -526,6 +542,14 @@ function TargetFields({
               })
             }
           />
+          {action.row?.type === 'variable' && (
+            <Select
+              label={t('databaseAutomation.variableName')}
+              value={action.row.name}
+              options={relationNames.map((name) => ({ id: name, name }))}
+              change={([name]) => change({ ...action, row: { type: 'variable', name } })}
+            />
+          )}
           {action.row?.type === 'matching' && (
             <ConditionFields
               source={false}
@@ -717,7 +741,8 @@ export function WorkflowFields({
           value={action.value || { kind: 'text', value: '' }}
           fields={fields}
           previous={previous}
-          literals={['text', 'number', 'checkbox', 'date_time', 'event_time']}
+          definition
+          literals={['text', 'number', 'checkbox', 'date_time', 'event_time', 'relation']}
           change={(value) => change({ ...action, value })}
         />
       </>

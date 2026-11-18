@@ -10,6 +10,7 @@ import { RuleManager } from '../AutomationEditor';
 import {
   actionTypes,
   canEditRule,
+  relationVariables,
   reorderActions,
   ruleCapabilities,
   ruleChanges,
@@ -44,6 +45,7 @@ jest.mock('@/application/database-yjs', () => ({
     SingleSelect: 3,
     MultiSelect: 4,
     Checkbox: 5,
+    Relation: 10,
     Person: 16,
     CreatedBy: 17,
     LastEditedBy: 18,
@@ -57,6 +59,7 @@ jest.mock('@/application/database-yjs', () => ({
       { id: 'labels', name: 'Labels', type: 4 },
       { id: 'stamp', name: 'Completed', type: 2 },
       { id: 'assignee', name: 'Assignee', type: 16 },
+      { id: 'subtasks', name: 'Subtasks', type: 10 },
     ],
   }),
   useRowOrdersSelector: () => [{ id: 'e5e8c286-c7c7-4c44-8e15-12f6e4987004' }],
@@ -582,7 +585,7 @@ test('edits a saved cross-database selection delta without changing its target o
   ]);
   fullManager();
   fireEvent.click(await screen.findByText('Existing'));
-  expect(((await screen.findByLabelText('Operation'))).value).toBe('remove');
+  expect((await screen.findByLabelText('Operation')).value).toBe('remove');
   fireEvent.change(screen.getByLabelText('Operation'), { target: { value: 'replace' } });
   fireEvent.click(screen.getByText('Save'));
   await waitFor(() => expect(api.patch).toHaveBeenCalled());
@@ -590,4 +593,64 @@ test('edits a saved cross-database selection delta without changing its target o
     ...actions[0],
     properties: [{ field_id: 'tags', value: { kind: 'multi_select', value: ['one'] } }],
   });
+});
+
+test('selects an earlier relation variable, saves the stable name and reopens it', async () => {
+  const source: RuleAction = {
+    type: 'define_variable',
+    name: 'children',
+    value: { kind: 'field', field_id: 'subtasks' },
+  };
+  const alias: RuleAction = { type: 'define_variable', name: 'members', value: { kind: 'variable', name: 'children' } };
+  const scalar: RuleAction = { type: 'define_variable', name: 'count', value: { kind: 'number', value: 2 } };
+  const edit: RuleAction = {
+    type: 'edit_row',
+    database_id: 'dst',
+    row: { type: 'trigger' },
+    properties: [{ field_id: 'title', value: { kind: 'text', value: 'Reviewed' } }],
+  };
+  const stored = { ...rule, actions: [source, scalar, alias, edit] };
+  const changed = { ...edit, row: { type: 'variable' as const, name: 'members' } };
+  const saved = { ...stored, revision: 5, actions: [source, scalar, alias, changed] };
+
+  api.list.mockResolvedValue({ items: [stored] });
+  api.get.mockResolvedValueOnce(stored).mockResolvedValue(saved);
+  api.patch.mockResolvedValue(saved);
+  api.databases.mockResolvedValue({
+    has_more: false,
+    databases: [{ database_id: 'dst', views: [{ view_id: 'v', name: 'Tasks' }] }],
+  });
+  api.fields.mockResolvedValue([{ id: 'title', name: 'Title', field_type_id: 0 }]);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  fireEvent.change(await screen.findByLabelText('Target row'), { target: { value: 'variable' } });
+  const select = screen.getAllByLabelText('Variable name').find((field) => field.tagName === 'SELECT')!;
+
+  expect(Array.from(select.options, (o) => o.value).filter(Boolean)).toEqual(['children', 'members']);
+  fireEvent.change(select, { target: { value: 'members' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.patch).toHaveBeenCalled());
+  expect(api.patch.mock.calls[0][4].actions).toEqual(saved.actions);
+  fireEvent.click(await screen.findByText('Existing'));
+  expect((await screen.findByLabelText('Target row')).value).toBe('variable');
+  expect(screen.getAllByLabelText('Variable name').find((field) => field.tagName === 'SELECT')?.value).toBe('members');
+  const fields = [{ id: 'subtasks', name: 'Subtasks', type: FieldType.Relation }];
+
+  expect(validRule(saved, fields)).toBe(true);
+  expect(validRule({ ...saved, actions: [source, changed, alias] }, fields)).toBe(false);
+  expect(validRule({ ...saved, actions: [scalar, { ...edit, row: { type: 'variable', name: 'count' } }] }, fields)).toBe(
+    false
+  );
+  expect(
+    relationVariables(
+      [{ type: 'define_variable', name: 'rows', value: { kind: 'relation', value: [] } }, source, scalar, alias],
+      fields
+    )
+  ).toEqual(['rows', 'children', 'members']);
+  expect(
+    canEditRule(
+      { ...saved, actions: [{ ...changed, row: { type: 'variable', name: 'members', future: true } as never }] },
+      extended
+    )
+  ).toBe(false);
 });

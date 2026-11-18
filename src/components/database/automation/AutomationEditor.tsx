@@ -1,4 +1,3 @@
-import { toIntlLocale } from '@/i18n/intl-locale';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
@@ -14,6 +13,7 @@ import {
 import { YjsDatabaseKey } from '@/application/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toIntlLocale } from '@/i18n/intl-locale';
 
 import { ConditionFields } from './ConditionFields';
 import { InvocationFields } from './InvocationFields';
@@ -210,7 +210,7 @@ function RuleForm({
   };
 
   async function submit(remove: boolean) {
-    if (running.current) return;
+    if (running.current || (!remove && !canSave)) return;
     running.current = true;
     setBusy(true);
     setError(undefined);
@@ -244,6 +244,7 @@ function RuleForm({
   }
 
   const hasChanges = !original || Object.keys(ruleChanges(original, draft)).length > 0;
+  const canSave = error !== 'conflict' && hasChanges && !!draft.name.trim() && (!supported || validRule(draft, fields));
 
   return (
     <form
@@ -398,12 +399,7 @@ function RuleForm({
           <Button variant='ghost' type='button' disabled={busy} onClick={back}>
             {t('databaseAutomation.cancel')}
           </Button>
-          <Button
-            type='submit'
-            disabled={
-              busy || error === 'conflict' || !hasChanges || !draft.name.trim() || (supported && !validRule(draft))
-            }
-          >
+          <Button type='submit' disabled={busy || !canSave}>
             {t('databaseAutomation.save')}
           </Button>
         </div>

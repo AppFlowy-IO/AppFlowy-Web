@@ -70,6 +70,22 @@ export function valueKinds(type?: FieldType): string[] {
   }
 }
 
+export function relationVariables(actions: RuleAction[], fields: RuleField[]) {
+  const names = new Set<string>();
+
+  for (const { type, name, value } of actions) {
+    if (type !== 'define_variable' || !name || !value) continue;
+    const relation =
+      (value.kind === 'relation' && (value.operation ?? 'replace') === 'replace') ||
+      (value.kind === 'field' && fields.some((f) => f.id === value.field_id && f.type === FieldType.Relation)) ||
+      (value.kind === 'variable' && !!value.name && names.has(value.name));
+
+    if (relation) names.add(name);
+  }
+
+  return [...names];
+}
+
 export function newAction(type: string): RuleAction {
   switch (type) {
     case 'notify':
@@ -201,15 +217,21 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
   const row = a.row;
   const rowKeys =
     row &&
-    { id: ['type', 'row_id'], step: ['type', 'action_index'], trigger: ['type'], matching: ['type', 'conditions'] }[
-      row.type
-    ];
+    {
+      id: ['type', 'row_id'],
+      step: ['type', 'action_index'],
+      trigger: ['type'],
+      matching: ['type', 'conditions'],
+      variable: ['type', 'name'],
+    }[row.type];
 
   return (
     !!keys[a.type] &&
     knownKeys(a, ['type', ...keys[a.type]]) &&
     (!a.value || knownValue(a.value)) &&
     (!row || (!!rowKeys && knownKeys(row, rowKeys))) &&
+    (row?.type !== 'variable' ||
+      (caps.actions.includes('define_variable') && typeof row.name === 'string' && !!row.name)) &&
     (a.type !== 'notify' || a.message === undefined || typeof a.message === 'string') &&
     (a.value === undefined ||
       !['template', 'field', 'variable', 'formula', 'person', 'relation', 'multi_select_delta'].includes(a.value.kind) ||
@@ -233,7 +255,7 @@ export function canEditRule(rule: RuleDefinition, caps: Capabilities) {
   return supportedTrigger(rule.trigger, caps) && rule.actions.every((action) => supportedAction(action, caps));
 }
 
-export function validRule(rule: RuleDefinition) {
+export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
   if (!rule.name.trim() || !rule.timezone.trim() || rule.actions.length < 1 || rule.actions.length > 5) return false;
   const validEvent = (tr: RuleTrigger) => tr.type !== 'status_set_to' || (!!tr.field_id && !!tr.option_id);
 
@@ -269,6 +291,7 @@ export function validRule(rule: RuleDefinition) {
     const resolved = (v?: PropertyValue): boolean =>
       !!v && validValue(v) && (v.kind !== 'variable' || named(v.name)) && (v.kind !== 'template' || parts(v.parts));
 
+    if (a.row?.type === 'variable' && !relationVariables(previous, fields).includes(a.row.name)) return false;
     if (a.row?.type === 'step' && !created(a.row.action_index)) return false;
     const text = (v?: AutomationText) => (typeof v === 'string' ? !!v.trim() : !!v?.parts.length && parts(v.parts));
 
