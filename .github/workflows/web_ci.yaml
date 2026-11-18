@@ -95,6 +95,13 @@ jobs:
         run: |
           docker build -t appflowy-web-test:ci -f "${{ matrix.dockerfile }}" .
 
+      - name: Verify app recovers from an early SSR request
+        if: matrix.dockerfile == 'docker/Dockerfile.ssr'
+        run: |
+          docker run --rm -i --entrypoint python3 \
+            -e NODE_ENV=production -e APPFLOWY_BASE_URL=https://ci-backend.example.com \
+            appflowy-web-test:ci - < .github/scripts/test_ssr_startup.py
+
       - name: Test container fails without required env vars
         run: |
           set -e

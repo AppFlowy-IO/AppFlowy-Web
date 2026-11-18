@@ -37,6 +37,7 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
+import { normalizeAppRouteId } from '@/utils/url';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -920,17 +921,16 @@ export function useWorkspaceData() {
             return;
           }
 
-          const wId = window.location.pathname.split('/')[2];
-          const pageId = window.location.pathname.split('/')[3];
+          const [, , routeWorkspaceId, routeViewId] = window.location.pathname.split('/');
           const search = window.location.search;
 
           // Skip /app/trash and /app/*other-pages
-          if (wId && !uuidValidate(wId)) {
+          if (routeWorkspaceId && !normalizeAppRouteId(routeWorkspaceId)) {
             return;
           }
 
           // Skip /app/:workspaceId/:pageId
-          if (pageId && uuidValidate(pageId) && wId && uuidValidate(wId) && wId === workspaceId) {
+          if (routeWorkspaceId === workspaceId && routeViewId && normalizeAppRouteId(routeViewId)) {
             return;
           }
 
