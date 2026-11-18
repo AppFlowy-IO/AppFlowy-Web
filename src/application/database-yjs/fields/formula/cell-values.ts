@@ -23,6 +23,8 @@ import { bool, date, EMPTY, FormulaType, FormulaValue, list, listOf, num, text }
  */
 export function formulaTypeOfFieldType(fieldType: FieldType): FormulaType {
   switch (fieldType) {
+    case FieldType.Button:
+      return 'empty';
     case FieldType.RichText:
     case FieldType.URL:
     case FieldType.SingleSelect:
@@ -171,6 +173,8 @@ export function readFieldFormulaValue(
   row: YDatabaseRow,
   context: ReadFieldValueContext = {}
 ): FormulaValue {
+  // A Button performs an action. Dormant payloads from an earlier field type are never values.
+  if (entry.type === FieldType.Button) return EMPTY;
   const cell: YDatabaseCell | undefined = row.get(YjsDatabaseKey.cells)?.get(entry.id);
 
   switch (entry.type) {

@@ -259,10 +259,13 @@ describe('concrete field values in every ordered formula combination', () => {
   }, 120_000);
   afterAll(() => prepared?.destroy());
 
-  it('keeps explicit finite coverage guards for all 20 field types and 26 result contracts', () => {
+  it('keeps explicit finite coverage guards for all 20 value-bearing field types and 26 result contracts', () => {
     expect(dataset.version).toBe(1);
     expect(dataset.time_zone).toBe('UTC');
-    expect(Object.values(FieldType).filter((type) => typeof type === 'number')).toEqual(dataset.coverage.field_types);
+    // Native action Buttons cannot contribute a concrete value to these combinations.
+    expect(Object.values(FieldType).filter((type) => typeof type === 'number' && type !== FieldType.Button)).toEqual(
+      dataset.coverage.field_types
+    );
     expect(dataset.coverage).toEqual({
       field_types: Array.from({ length: 20 }, (_, i) => i),
       contracts: 26,

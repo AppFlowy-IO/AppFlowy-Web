@@ -1463,6 +1463,8 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
 
   get(
     key:
+      | 'label'
+      | 'automation_id'
       | YjsDatabaseKey.reciprocal_field_id
       | YjsDatabaseKey.reciprocal_field_name
       | YjsDatabaseKey.time_format

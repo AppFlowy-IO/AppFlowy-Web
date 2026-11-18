@@ -59,6 +59,7 @@ const NOW = dayjs('2024-03-01T12:00:00').valueOf();
 
 /** Every field type, with the name a formula uses. */
 const FIELDS: FieldSpec[] = [
+  { id: 'f-button', name: 'Approve', type: FieldType.Button },
   { id: 'f-text', name: 'Title', type: FieldType.RichText },
   { id: 'f-number', name: 'Price', type: FieldType.Number },
   { id: 'f-date', name: 'Due', type: FieldType.DateTime },
@@ -247,6 +248,7 @@ describe('formula field type coverage', () => {
   });
 
   it.each([
+    ['Approve', 'empty'],
     ['Title', 'text'],
     ['Price', 'number'],
     ['Due', 'date'],
@@ -269,6 +271,13 @@ describe('formula field type coverage', () => {
     ['Editor', 'list<text>'],
   ])('prop("%s") is typed %s', (name, type) => {
     expect(typeOf(`prop("${name}")`)).toBe(type);
+  });
+
+  it('keeps Button values empty even when a converted property retains an old cell', () => {
+    const { row } = createRow('dormant-button', { 'f-button': { type: FieldType.RichText, data: 'old text' } });
+
+    expect(run('empty(prop("Approve"))', row).rawBoolean).toBe(true);
+    expect(run('prop("Approve")', row).text).toBe('');
   });
 
   it('types a rollup by its settings', () => {
