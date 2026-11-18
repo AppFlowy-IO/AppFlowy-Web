@@ -198,7 +198,11 @@ jobs:
     if: github.event_name != 'schedule' && !inputs.interop_only
     name: 'Connections (Chromium, Firefox, WebKit)'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    # Match the browser binaries to the Playwright version in pnpm-lock.yaml.
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-noble
+      options: --shm-size=1g
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -209,8 +213,6 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install test browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Typecheck integration tests
         run: pnpm exec tsc --project playwright/tsconfig.integrations.json
       - name: Test connections and connected features

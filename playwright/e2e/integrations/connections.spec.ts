@@ -305,7 +305,7 @@ test('disconnect requires confirmation, preserves accounts on failure and remove
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByTestId(`connection-${drive.id}`)).toBeHidden();
   await expect(page.getByTestId(`connection-${calendar.id}`)).toBeVisible();
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId(`connection-${calendar.id}`)).toContainText(calendar.account_identifier!);
   await expect(page.getByTestId(`connection-${drive.id}`)).toBeHidden();
   expect(connectionApp.connections.map((connection) => connection.id)).toEqual([calendar.id]);
