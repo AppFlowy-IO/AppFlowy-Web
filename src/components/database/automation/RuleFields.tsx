@@ -424,7 +424,10 @@ export function ActionFields({
           extended={caps.actions.includes('define_variable')}
         />
       ) : (
-        <WorkflowFields {...{ workspace, action, fields, previous, change }} />
+        <WorkflowFields
+          {...{ workspace, action, fields, previous, change }}
+          extended={caps.actions.includes('define_variable')}
+        />
       )}
     </>
   );

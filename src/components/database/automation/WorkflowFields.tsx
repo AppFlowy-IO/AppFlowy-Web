@@ -159,6 +159,7 @@ export function SourceValue({
   extended?: boolean;
 }) {
   const { t } = useTranslation();
+  const multiSelect = value.kind === 'multi_select' || value.kind === 'multi_select_delta';
   const names = previous
     .filter((a) => a.type === 'define_variable' && a.name)
     .map((a) => ({ id: a.name!, name: a.name! }));
@@ -177,7 +178,7 @@ export function SourceValue({
       {kinds.length > 1 && (
         <Select
           label={t(extended ? 'databaseAutomation.source' : 'databaseAutomation.dateSource')}
-          value={value.kind}
+          value={multiSelect ? 'multi_select' : value.kind}
           options={kinds.map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
           change={([kind]) => {
             if (kind === 'field') change({ kind, field_id: fields[0]?.id || '' });
@@ -229,14 +230,35 @@ export function SourceValue({
         />
       ) : ['person', 'relation'].includes(value.kind) ? (
         <IdentityValue value={value} change={change} />
-      ) : ['single_select', 'multi_select'].includes(value.kind) ? (
-        <Select
-          label={t('databaseAutomation.option')}
-          value={(value.value as string | string[]) || ''}
-          options={options}
-          multiple={value.kind === 'multi_select'}
-          change={(ids) => change({ kind: value.kind, value: value.kind === 'multi_select' ? ids : ids[0] })}
-        />
+      ) : value.kind === 'single_select' || multiSelect ? (
+        <>
+          {multiSelect && extended && (
+            <Select
+              label={t('databaseAutomation.operator')}
+              value={value.operation || 'replace'}
+              options={['replace', 'add', 'remove'].map((id) => ({
+                id,
+                name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }),
+              }))}
+              change={([operation]) => {
+                const ids = Array.isArray(value.value) ? value.value : [];
+
+                change(
+                  operation === 'add' || operation === 'remove'
+                    ? { kind: 'multi_select_delta', operation, value: ids }
+                    : { kind: 'multi_select', value: ids }
+                );
+              }}
+            />
+          )}
+          <Select
+            label={t('databaseAutomation.option')}
+            value={(value.value as string | string[]) || (multiSelect ? [] : '')}
+            options={options}
+            multiple={multiSelect}
+            change={(ids) => change({ ...value, value: multiSelect ? ids : ids[0] })}
+          />
+        </>
       ) : value.kind === 'checkbox' ? (
         <label>
           <input
@@ -384,12 +406,14 @@ function TargetFields({
   change,
   fields,
   previous,
+  extended,
 }: {
   workspace: string;
   action: RuleAction;
   change: (a: RuleAction) => void;
   fields: RuleField[];
   previous: RuleAction[];
+  extended: boolean;
 }) {
   const { t } = useTranslation();
   const [dbs, setDbs] = useState<TargetDatabase[]>([]);
@@ -554,6 +578,7 @@ function TargetFields({
             />
             {f && (
               <SourceValue
+                extended={extended}
                 fields={fields}
                 previous={previous}
                 value={p.value}
@@ -592,12 +617,14 @@ export function WorkflowFields({
   change,
   fields,
   previous,
+  extended,
 }: {
   workspace: string;
   action: RuleAction;
   change: (a: RuleAction) => void;
   fields: RuleField[];
   previous: RuleAction[];
+  extended: boolean;
 }) {
   const { t } = useTranslation();
   const { users, fetchUsers } = useMentionableUsers();
@@ -678,7 +705,7 @@ export function WorkflowFields({
     return () => ac.abort();
   }, [workspace, action.type, action.connection_id, retry]);
   if (action.type === 'create_row' || action.type === 'edit_row')
-    return <TargetFields {...{ workspace, action, change, fields, previous }} />;
+    return <TargetFields {...{ workspace, action, change, fields, previous, extended }} />;
   if (action.type === 'define_variable')
     return (
       <>

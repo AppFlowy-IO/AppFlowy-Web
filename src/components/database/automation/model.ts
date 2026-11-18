@@ -168,6 +168,13 @@ function knownValue(v?: PropertyValue): boolean {
     );
   }
 
+  if (v.kind === 'multi_select_delta')
+    return (
+      knownKeys(v, ['kind', 'value', 'operation']) &&
+      (v.operation === 'add' || v.operation === 'remove') &&
+      Array.isArray(v.value)
+    );
+
   if (['person', 'relation'].includes(v.kind))
     return (
       knownKeys(v, ['kind', 'value', 'operation']) && ['replace', 'add', 'remove'].includes(v.operation || 'replace')
@@ -205,14 +212,20 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
     (!row || (!!rowKeys && knownKeys(row, rowKeys))) &&
     (a.type !== 'notify' || a.message === undefined || typeof a.message === 'string') &&
     (a.value === undefined ||
-      !['template', 'field', 'variable', 'formula', 'person', 'relation'].includes(a.value.kind) ||
+      !['template', 'field', 'variable', 'formula', 'person', 'relation', 'multi_select_delta'].includes(a.value.kind) ||
       caps.actions.includes('define_variable')) &&
     (a.message_template === undefined ||
       (caps.actions.includes('define_variable') && a.message === undefined && knownText(a.message_template))) &&
     knownText(a.message) &&
     knownText(a.subject) &&
     (!a.to || a.to.every(knownText)) &&
-    (!a.properties || a.properties.every((p) => knownKeys(p, ['field_id', 'value']) && knownValue(p.value)))
+    (!a.properties ||
+      a.properties.every(
+        (p) =>
+          knownKeys(p, ['field_id', 'value']) &&
+          knownValue(p.value) &&
+          (p.value.kind !== 'multi_select_delta' || caps.actions.includes('define_variable'))
+      ))
   );
 }
 
@@ -310,6 +323,15 @@ export function validValue(v?: PropertyValue): boolean {
       return true;
     case 'date_time':
       return typeof v.value === 'string' && Number.isFinite(Date.parse(v.value));
+    case 'multi_select_delta':
+      return (
+        (v.operation === 'add' || v.operation === 'remove') &&
+        Array.isArray(v.value) &&
+        v.value.length > 0 &&
+        v.value.length <= 128 &&
+        new Set(v.value).size === v.value.length &&
+        v.value.every((id) => typeof id === 'string' && !!id)
+      );
     case 'person':
     case 'relation':
       return Array.isArray(v.value) && (v.operation === undefined || ['replace', 'remove', 'add'].includes(v.operation));

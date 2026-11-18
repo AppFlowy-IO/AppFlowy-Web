@@ -54,6 +54,7 @@ jest.mock('@/application/database-yjs', () => ({
   usePropertiesSelector: () => ({
     properties: [
       { id: 'state', name: 'Status', type: 3 },
+      { id: 'labels', name: 'Labels', type: 4 },
       { id: 'stamp', name: 'Completed', type: 2 },
       { id: 'assignee', name: 'Assignee', type: 16 },
     ],
@@ -518,4 +519,75 @@ test('composes an in-app notification from a row field and preserves compatibili
   expect(
     canEditRule({ ...saved, actions: [{ type: 'notify', notify_actor: true, message: 'Old message' }] }, caps)
   ).toBe(true);
+});
+
+test('multi-select delta uses stable IDs and older servers retain the original replacement shape', async () => {
+  api.create.mockResolvedValue(rule);
+  fullManager();
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Add tag' } });
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'set_property' } });
+  fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'labels' } });
+  fireEvent.change(screen.getByLabelText('Operation'), { target: { value: 'add' } });
+  const option = within(screen.getByLabelText('Option')).getByText('Done');
+
+  option.selected = true;
+  fireEvent.change(screen.getByLabelText('Option'));
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  const saved = api.create.mock.calls[0][3];
+
+  expect(saved.actions).toEqual([
+    {
+      type: 'set_property',
+      field_id: 'labels',
+      value: { kind: 'multi_select_delta', operation: 'add', value: ['done'] },
+    },
+  ]);
+  expect(canEditRule(saved, caps)).toBe(false);
+  expect(canEditRule(saved, extended)).toBe(true);
+  expect(
+    canEditRule(
+      { ...saved, actions: [{ type: 'set_property', field_id: 'labels', value: { kind: 'multi_select', value: [] } }] },
+      caps
+    )
+  ).toBe(true);
+});
+
+test('edits a saved cross-database selection delta without changing its target or option IDs', async () => {
+  const actions: RuleAction[] = [
+    {
+      type: 'edit_row',
+      database_id: 'target',
+      row: { type: 'trigger' },
+      properties: [
+        {
+          field_id: 'tags',
+          value: { kind: 'multi_select_delta', operation: 'remove', value: ['one'] },
+        },
+      ],
+    },
+  ];
+  const stored = { ...rule, actions };
+
+  api.list.mockResolvedValue({ items: [stored] });
+  api.get.mockResolvedValue(stored);
+  api.patch.mockResolvedValue({ ...stored, revision: 6 });
+  api.databases.mockResolvedValue({
+    has_more: false,
+    databases: [{ database_id: 'target', views: [{ view_id: 'v', name: 'Tasks' }] }],
+  });
+  api.fields.mockResolvedValue([
+    { id: 'tags', name: 'Tags', field_type_id: 4, type_option: { content: { options: [{ id: 'one', name: 'One' }] } } },
+  ]);
+  fullManager();
+  fireEvent.click(await screen.findByText('Existing'));
+  expect(((await screen.findByLabelText('Operation'))).value).toBe('remove');
+  fireEvent.change(screen.getByLabelText('Operation'), { target: { value: 'replace' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.patch).toHaveBeenCalled());
+  expect(api.patch.mock.calls[0][4].actions?.[0]).toEqual({
+    ...actions[0],
+    properties: [{ field_id: 'tags', value: { kind: 'multi_select', value: ['one'] } }],
+  });
 });
