@@ -21,17 +21,20 @@ export function InvocationFields({
   rule,
   back,
   customRecurrence,
+  fixedRow,
 }: {
   workspace: string;
   database: string;
   rule: DatabaseRule;
   back: () => void;
   customRecurrence: boolean;
+  fixedRow?: string;
 }) {
   const { t, i18n } = useTranslation();
   const scheduled = rule.trigger.type === 'scheduled';
   const [revision, setRevision] = useState(rule.revision);
   const [schedule, setSchedule] = useState<RuleSchedule>(() => ({
+    ...(fixedRow && { row_id: fixedRow }),
     frequency: 'daily',
     starts_on: '',
     local_time: '09:00:00',
@@ -153,17 +156,20 @@ export function InvocationFields({
         <label>
           {t(scheduled ? 'databaseAutomation.optionalRow' : 'databaseAutomation.rowId')}
           <Input
-            list='automation-invocation-rows'
+            readOnly={!!fixedRow}
+            list={fixedRow ? undefined : 'automation-invocation-rows'}
             required={!scheduled}
             value={schedule.row_id || ''}
             onChange={(e) => set({ row_id: e.target.value })}
           />
         </label>
-        <datalist id='automation-invocation-rows'>
-          {rows?.map((r) => (
-            <option key={r.id} value={r.id} />
-          ))}
-        </datalist>
+        {!fixedRow && (
+          <datalist id='automation-invocation-rows'>
+            {rows?.map((r) => (
+              <option key={r.id} value={r.id} />
+            ))}
+          </datalist>
+        )}
         {scheduled && (
           <>
             <Select

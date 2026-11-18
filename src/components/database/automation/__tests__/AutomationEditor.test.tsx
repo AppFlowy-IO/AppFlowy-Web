@@ -3,9 +3,20 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import strings from '@/@types/translations/en.json';
 import { FieldType } from '@/application/database-yjs';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
-import { DatabaseRule, ruleApi, RuleAction } from '@/application/services/js-services/http/automation-api';
+import {
+  DatabaseRule,
+  parseRuleList,
+  ruleApi,
+  RuleAction,
+} from '@/application/services/js-services/http/automation-api';
 import { listConnections } from '@/application/services/js-services/http/integration-api';
+import { Role } from '@/application/types';
+import { useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { getServerInfoSnapshot } from '@/utils/server-info';
 
+import AutomationButton from '../AutomationButton';
 import { RuleManager } from '../AutomationEditor';
 import {
   actionTypes,
@@ -51,6 +62,8 @@ jest.mock('@/application/database-yjs', () => ({
     LastEditedBy: 18,
   },
   useDatabaseFields: () => undefined,
+  useDatabase: () => ({ get: () => 'd' }),
+  useDatabaseContextOptional: () => ({ workspaceId: 'w' }),
   useDatabaseContext: () => ({ databasePageId: 'page' }),
   useDatabaseViewsSelector: () => ({ viewIds: ['board'], childViews: [{ get: () => 'Work board' }] }),
   usePropertiesSelector: () => ({
@@ -76,6 +89,11 @@ jest.mock('@/application/services/js-services/http/integration-api', () => ({
   queryIntegration: jest.fn(),
   confirmConnection: jest.fn(),
 }));
+jest.mock('@/utils/server-info', () => ({
+  getServerInfoSnapshot: jest.fn(),
+  subscribeToServerInfo: () => () => undefined,
+}));
+jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: jest.fn() }));
 jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerInfoState: jest.fn() }));
 jest.mock('@/components/app/app.hooks', () => ({ useUserWorkspaceInfoOptional: jest.fn() }));
 jest.mock('@/application/services/js-services/http/automation-api', () => ({
@@ -222,6 +240,70 @@ test('manual invocation retries ambiguous requests with the same key and revisio
   expect(api.run.mock.calls[1]).toEqual(api.run.mock.calls[0]);
 });
 
+test('a row menu runs only enabled manual rules owned by the current member and binds retries to the open row', async () => {
+  const owner = '9007199254740993';
+  const raw = JSON.stringify({
+    items: [
+      { ...rule, name: 'Own "owner_uid":123', owner_uid: 'OWNER', trigger: { type: 'manual' } },
+      { ...rule, id: 'other', name: 'Other member', owner_uid: 'OTHER', trigger: { type: 'manual' } },
+      { ...rule, id: 'disabled', name: 'Paused', owner_uid: 'OWNER', enabled: false, trigger: { type: 'manual' } },
+      { ...rule, id: 'scheduled', name: 'Automatic', owner_uid: 'OWNER', trigger: { type: 'scheduled' } },
+    ],
+  })
+    .replace(/"OWNER"/g, owner)
+    .replace(/"OTHER"/g, '9007199254740992');
+
+  api.list.mockResolvedValue(parseRuleList(raw) as { items: DatabaseRule[] });
+  api.run.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce('run');
+  jest
+    .mocked(useCurrentUserOptional)
+    .mockReturnValue({ attributionUid: owner } as ReturnType<typeof useCurrentUserOptional>);
+  jest
+    .mocked(useUserWorkspaceInfoOptional)
+    .mockReturnValue({ workspaces: [{ id: 'w', role: Role.Member }] } as ReturnType<
+      typeof useUserWorkspaceInfoOptional
+    >);
+  const info = {
+    status: 'ready',
+    info: {
+      enable_database_automations: true,
+      database_automation_triggers: ['manual'],
+      database_automation_actions: ['notify'],
+    },
+  } as ReturnType<typeof getServerInfoSnapshot>;
+
+  jest.mocked(getServerInfoSnapshot).mockReturnValue(info);
+  const prepare = jest.fn().mockResolvedValue(true);
+
+  render(
+    <DropdownMenu defaultOpen>
+      <DropdownMenuTrigger>Actions</DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <AutomationButton rowId={row} prepare={prepare} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Run now' }));
+  const available = await screen.findByRole('button', { name: 'Own "owner_uid":123' });
+
+  expect(screen.queryByText('Other member')).toBeNull();
+  expect(screen.queryByText('Paused')).toBeNull();
+  expect(screen.queryByText('Automatic')).toBeNull();
+  expect(screen.queryByText('New automation')).toBeNull();
+  expect(prepare).toHaveBeenCalledTimes(1);
+  fireEvent.click(available);
+  const rowInput = screen.getByLabelText('Row ID');
+
+  expect(rowInput.readOnly).toBe(true);
+  expect(rowInput.value).toEqual(row);
+  fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+  await screen.findByText('Run queued.');
+  expect(api.run.mock.calls[0]).toEqual(['w', 'd', 'rule', 5, row, expect.any(String)]);
+  expect(api.run.mock.calls[1]).toEqual(api.run.mock.calls[0]);
+});
+
 test('a calendar loads its current revision and saves local wall time, frequency and timezone', async () => {
   const scheduled = { ...rule, trigger: { type: 'scheduled' } };
   const base = {
@@ -277,13 +359,10 @@ test('custom calendars keep their anchor and selected ISO weekdays and clear wee
   api.putSchedule.mockResolvedValue(base);
   render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence: true }} />);
   fireEvent.click(await screen.findByText('Schedule'));
-  await waitFor(() => expect((screen.getByLabelText('Repeat interval')).value).toBe('2'));
-  expect(Array.from((screen.getByLabelText('Weekdays')).selectedOptions, (o) => o.value)).toEqual([
-    '1',
-    '5',
-  ]);
+  await waitFor(() => expect(screen.getByLabelText('Repeat interval').value).toBe('2'));
+  expect(Array.from(screen.getByLabelText('Weekdays').selectedOptions, (o) => o.value)).toEqual(['1', '5']);
   fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '1000' } });
-  expect((screen.getByText('Save')).disabled).toBe(true);
+  expect(screen.getByText('Save').disabled).toBe(true);
   fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '3' } });
   fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'yearly' } });
   expect(screen.queryByLabelText('Weekdays')).toBeNull();

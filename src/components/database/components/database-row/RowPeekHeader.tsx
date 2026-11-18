@@ -11,6 +11,7 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/double_arrow_right.s
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import AutomationButton from '@/components/database/automation/AutomationButton';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -45,6 +46,7 @@ function RowActionsMenu({ rowId, onClose }: { rowId: string; onClose: () => void
       </Tooltip>
       <DropdownMenuContent className={' w-fit min-w-fit'}>
         <DropdownMenuGroup>
+          <AutomationButton key={rowId} rowId={rowId} />
           <DropdownMenuItem
             data-testid='row-detail-duplicate'
             onSelect={async () => {
@@ -185,7 +187,11 @@ export function SidePeekHeader({ rowId, onClose, openPage, onSwitchToCenter }: S
   return (
     <>
       <div className='flex flex-1 items-center gap-1'>
-        <HeaderButton label={t('button.close', { defaultValue: 'Close' })} onClick={onClose} testId='row-side-peek-close'>
+        <HeaderButton
+          label={t('button.close', { defaultValue: 'Close' })}
+          onClick={onClose}
+          testId='row-side-peek-close'
+        >
           <CloseIcon />
         </HeaderButton>
         {openPage ? (

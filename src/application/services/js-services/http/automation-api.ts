@@ -108,6 +108,7 @@ export interface DatabaseRule extends RuleDefinition {
   revision: number;
   status: string;
   disabled_reason?: string;
+  owner_uid?: string | number;
 }
 
 export interface RuleRun {
@@ -126,9 +127,20 @@ const path = (workspace: string, database: string) =>
 const item = (workspace: string, database: string, id: string) =>
   `${path(workspace, database)}/${encodeURIComponent(id)}`;
 
+/** Keep the owning member's i64 exact when old browsers parse an unquoted JSON integer. */
+export function parseRuleList(data: unknown): unknown {
+  if (typeof data !== 'string' || !data.trim()) return data;
+  // Consume whole JSON strings so escaped quotes in names or template text remain intact.
+  const tokens = /"(?:\\.|[^"\\])*"(?:\s*:\s*-?\d+(?=\s*[,}]))?/g;
+
+  return JSON.parse(data.replace(tokens, (token) => token.replace(/^("owner_uid"\s*:\s*)(-?\d+)$/, '$1"$2"')));
+}
+
 export const ruleApi = {
   list: (w: string, d: string, signal?: AbortSignal) =>
-    executeAPIRequest<{ items: DatabaseRule[] }>(() => getAxios()?.get(path(w, d), { signal })),
+    executeAPIRequest<{ items: DatabaseRule[] }>(() =>
+      getAxios()?.get(path(w, d), { signal, transformResponse: [parseRuleList] })
+    ),
   get: (w: string, d: string, id: string, signal?: AbortSignal) =>
     executeAPIRequest<DatabaseRule>(() => getAxios()?.get(item(w, d, id), { signal })),
   create: (w: string, d: string, id: string, draft: RuleDefinition) =>

@@ -11,6 +11,7 @@ import {
   RuleRun,
 } from '@/application/services/js-services/http/automation-api';
 import { YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toIntlLocale } from '@/i18n/intl-locale';
@@ -30,7 +31,17 @@ import {
 } from './model';
 import { ActionFields, TriggerFields } from './RuleFields';
 
-export function RuleManager({ workspace, database, caps }: { workspace: string; database: string; caps: Capabilities }) {
+export function RuleManager({
+  workspace,
+  database,
+  caps,
+  row,
+}: {
+  workspace: string;
+  database: string;
+  caps: Capabilities;
+  row?: { id: string; owner: string };
+}) {
   const { t } = useTranslation();
   const { properties } = usePropertiesSelector(false);
   const view = useDatabaseView();
@@ -113,12 +124,17 @@ export function RuleManager({ workspace, database, caps }: { workspace: string; 
     }
   }
 
+  const visibleRules = row
+    ? rules?.filter((rule) => rule.trigger.type === 'manual' && rule.enabled && canonicalizeUserUid(rule.owner_uid) === row.owner)
+    : rules;
+
   if (invoke)
     return (
       <InvocationFields
         workspace={workspace}
         database={database}
         rule={invoke}
+        fixedRow={row?.id}
         customRecurrence={caps.customRecurrence}
         back={() => {
           setInvoke(undefined);
@@ -166,45 +182,53 @@ export function RuleManager({ workspace, database, caps }: { workspace: string; 
         </p>
       ) : !rules ? (
         <p role='status'>{t('databaseAutomation.loading')}</p>
-      ) : !rules.length ? (
+      ) : !visibleRules?.length ? (
         <p>{t('databaseAutomation.empty')}</p>
       ) : null}
       {copyError && <p role='alert'>{t('databaseAutomation.copyError')}</p>}
-      {rules?.map((rule) => (
-        <div className='flex items-center gap-2 border-b border-border-primary py-2' key={rule.id}>
-          <button
-            className='min-w-0 flex-1 truncate text-left text-text-primary'
-            disabled={loading}
-            onClick={() => void edit(rule)}
-          >
+      {visibleRules?.map((rule) =>
+        row ? (
+          <Button key={rule.id} variant='ghost' onClick={() => setInvoke(rule)}>
             {rule.name}
-          </button>
-          <span className='text-xs text-text-secondary'>
-            {t(`databaseAutomation.status.${rule.status}`, { defaultValue: rule.status })}
-          </span>
-          {caps.triggers.includes(rule.trigger.type) && ['manual', 'scheduled'].includes(rule.trigger.type) && (
-            <Button
-              variant='ghost'
-              size='sm'
-              disabled={rule.trigger.type === 'manual' && !rule.enabled}
-              onClick={() => setInvoke(rule)}
-            >
-              {t(rule.trigger.type === 'manual' ? 'databaseAutomation.run' : 'databaseAutomation.schedule')}
-            </Button>
-          )}
-          {canEditRule(rule, caps) && (
-            <Button variant='ghost' size='sm' disabled={loading} onClick={() => void duplicate(rule)}>
-              {t('databaseAutomation.duplicate')}
-            </Button>
-          )}
-          <Button variant='ghost' size='sm' onClick={() => setHistory(rule)}>
-            {t('databaseAutomation.history')}
           </Button>
-        </div>
-      ))}
-      <Button disabled={loading} onClick={() => setSelected({ id: uuid() })}>
-        {t('databaseAutomation.create')}
-      </Button>
+        ) : (
+          <div className='flex items-center gap-2 border-b border-border-primary py-2' key={rule.id}>
+            <button
+              className='min-w-0 flex-1 truncate text-left text-text-primary'
+              disabled={loading}
+              onClick={() => void edit(rule)}
+            >
+              {rule.name}
+            </button>
+            <span className='text-xs text-text-secondary'>
+              {t(`databaseAutomation.status.${rule.status}`, { defaultValue: rule.status })}
+            </span>
+            {caps.triggers.includes(rule.trigger.type) && ['manual', 'scheduled'].includes(rule.trigger.type) && (
+              <Button
+                variant='ghost'
+                size='sm'
+                disabled={rule.trigger.type === 'manual' && !rule.enabled}
+                onClick={() => setInvoke(rule)}
+              >
+                {t(rule.trigger.type === 'manual' ? 'databaseAutomation.run' : 'databaseAutomation.schedule')}
+              </Button>
+            )}
+            {canEditRule(rule, caps) && (
+              <Button variant='ghost' size='sm' disabled={loading} onClick={() => void duplicate(rule)}>
+                {t('databaseAutomation.duplicate')}
+              </Button>
+            )}
+            <Button variant='ghost' size='sm' onClick={() => setHistory(rule)}>
+              {t('databaseAutomation.history')}
+            </Button>
+          </div>
+        )
+      )}
+      {!row && (
+        <Button disabled={loading} onClick={() => setSelected({ id: uuid() })}>
+          {t('databaseAutomation.create')}
+        </Button>
+      )}
     </div>
   );
 }
