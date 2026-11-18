@@ -66,6 +66,9 @@ test('a table default can become an admitted Chart, persist and be removed witho
   await expect(newWidget(page).getByTestId('database-grid')).toHaveCount(0);
   await closeDockedPicker(page);
   await leaveEditMode(page);
+  // Done flushes owned-view deletion separately from the collab outbox.
+  // Let it finish before reload can cancel its move-to-trash request.
+  await expect.poll(() => viewsOwnedBy(page, hostDatabase(page).databaseId)).toEqual([chart.view_id]);
   await waitForDashboardSync(page, request);
   await reloadDashboard(page);
   const widget = DashboardSelectors.widget(page, widgetId);

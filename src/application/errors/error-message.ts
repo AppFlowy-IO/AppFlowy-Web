@@ -199,12 +199,14 @@ function resolveReason(error: ErrorIdentity): string | undefined {
   }
 
   if (error.sourceDomain === 'gotrue') {
-    // A stable machine reason takes precedence. Only absent reasons may use an
-    // exact reviewed legacy string; arbitrary diagnostic text never becomes UI.
-    const reason = error.errorCode
-      ? lookup(catalog.gotrue_codes, error.errorCode)
-      : lookup(catalog.gotrue_legacy_messages, error.diagnosticMessage);
     const status = error.httpStatus ?? (error.code !== undefined && error.code >= 100 && error.code <= 599 ? error.code : undefined);
+    // GoTrue wraps a 403 hook rejection in the generic OAuth access_denied code.
+    // Only that wrapper (or an absent code) may use an exact reviewed message;
+    // specific and unknown provider codes retain their original meaning.
+    const allowLegacyMessage = !error.errorCode ||
+      (error.errorCode === 'access_denied' && (status === undefined || status === 403));
+    const reason = lookup(catalog.gotrue_codes, error.errorCode) ??
+      (allowLegacyMessage ? lookup(catalog.gotrue_legacy_messages, error.diagnosticMessage) : undefined);
 
     if (
       reason &&
@@ -232,10 +234,14 @@ function selectedErrorLocale(locale?: string): string {
 function serverCatalogPresentation(identity: ErrorIdentity, locale: string) {
   // Only Cloud identities may consume Cloud's numeric code mapping. HTTP,
   // GoTrue, transport and local validation errors retain their own namespaces.
-  const remoteCatalog = identity.sourceDomain === 'appflowy.server' ? getServerErrorCatalog(locale) : undefined;
+  const remoteCatalog = identity.sourceDomain === 'appflowy.server' || identity.sourceDomain === 'gotrue'
+    ? getServerErrorCatalog(locale)
+    : undefined;
   const catalogMatchesLocale = remoteCatalog?.locale === locale ||
     (remoteCatalog !== undefined && !remoteCatalog.locale.includes('-') && locale.startsWith(`${remoteCatalog.locale}-`));
-  const remoteReason = remoteCatalog ? lookup(remoteCatalog.codes, identity.code) : undefined;
+  const remoteReason = identity.sourceDomain === 'appflowy.server' && remoteCatalog
+    ? lookup(remoteCatalog.codes, identity.code)
+    : undefined;
   // Reviewed legacy diagnostics distinguish overloaded Cloud codes. Keep that
   // specificity, then let the server catalog own the selected reason's wording.
   const reason = identity.sourceDomain === 'appflowy.server' ? legacyCloudReason(identity) ?? remoteReason : undefined;
