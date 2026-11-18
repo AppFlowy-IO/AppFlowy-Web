@@ -141,13 +141,18 @@ function supportedTrigger(trigger: RuleTrigger, caps: Capabilities): boolean {
   if (trigger.type === 'row_events')
     return (
       knownKeys(trigger, ['type', 'match', 'triggers', 'view_id']) &&
-      !!trigger.triggers?.every((child) =>
-        child.type === 'property_edited'
-          ? caps.propertyEdited &&
-            knownKeys(child, ['type', 'field_id', 'ty', 'condition', 'content']) &&
-            !!propertyOperand(child.ty, child.condition) &&
-            typeof child.content === 'string'
-          : !['row_events', 'manual', 'scheduled'].includes(child.type) && supportedTrigger(child, caps)
+      Array.isArray(trigger.triggers) &&
+      trigger.triggers.length > 0 &&
+      trigger.triggers.every(
+        (child) =>
+          !!child &&
+          typeof child === 'object' &&
+          (child.type === 'property_edited'
+            ? caps.propertyEdited &&
+              knownKeys(child, ['type', 'field_id', 'ty', 'condition', 'content']) &&
+              !!propertyOperand(child.ty, child.condition) &&
+              typeof child.content === 'string'
+            : !['row_events', 'manual', 'scheduled'].includes(child.type) && supportedTrigger(child, caps))
       )
     );
   const keys =

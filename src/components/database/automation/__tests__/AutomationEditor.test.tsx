@@ -688,6 +688,8 @@ test('authoring a grouped property edit keeps the stable field ID, type, operato
 
   expect(canEditRule(stored, extended)).toBe(false);
   expect(canEditRule(stored, caps)).toBe(true);
+  expect(canEditRule({ ...stored, trigger: { ...trigger, triggers: [null] as never } }, caps)).toBe(false);
+  expect(canEditRule({ ...stored, trigger: { ...trigger, triggers: [] } }, caps)).toBe(false);
   expect(
     canEditRule({ ...stored, trigger: { ...trigger, triggers: [{ ...trigger.triggers[0], condition: 55 }] } }, caps)
   ).toBe(false);
