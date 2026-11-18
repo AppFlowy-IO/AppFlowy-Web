@@ -36,11 +36,15 @@ export function RuleManager({
   database,
   caps,
   row,
+  rowScope,
+  viewerUid,
 }: {
   workspace: string;
   database: string;
   caps: Capabilities;
   row?: { id: string; owner: string };
+  rowScope?: string;
+  viewerUid?: string;
 }) {
   const { t } = useTranslation();
   const { properties } = usePropertiesSelector(false);
@@ -72,12 +76,13 @@ export function RuleManager({
           rule.id,
           uuid(),
           (name) => t('databaseAutomation.copyOf', { name }),
-          caps
+          caps,
+          rowScope
         );
         pendingCopies.current.set(rule.id, copy);
       }
 
-      await saveCopy(workspace, database, copy, caps);
+      await saveCopy(workspace, database, copy, caps, rowScope);
       pendingCopies.current.delete(rule.id);
       setRefresh((n) => n + 1);
     } catch {
@@ -92,8 +97,9 @@ export function RuleManager({
     const ac = new AbortController();
 
     setError(false);
+    setRules(undefined);
     ruleApi
-      .list(workspace, database, ac.signal)
+      .list(workspace, database, ac.signal, rowScope)
       .then((r) => {
         if (!ac.signal.aborted) setRules(r.items);
       })
@@ -104,7 +110,7 @@ export function RuleManager({
       ac.abort();
       active.current?.abort();
     };
-  }, [workspace, database, refresh]);
+  }, [workspace, database, rowScope, refresh]);
 
   async function edit(rule: DatabaseRule) {
     active.current?.abort();
@@ -114,7 +120,7 @@ export function RuleManager({
     setLoading(true);
     setError(false);
     try {
-      const base = await ruleApi.get(workspace, database, rule.id, ac.signal);
+      const base = await ruleApi.get(workspace, database, rule.id, ac.signal, rowScope);
 
       if (!ac.signal.aborted) setSelected({ id: base.id, base });
     } catch {
@@ -136,7 +142,8 @@ export function RuleManager({
         workspace={workspace}
         database={database}
         rule={invoke}
-        fixedRow={row?.id}
+        fixedRow={rowScope || row?.id}
+        rowScope={rowScope}
         customRecurrence={caps.customRecurrence}
         back={() => {
           setInvoke(undefined);
@@ -147,7 +154,8 @@ export function RuleManager({
   if (history)
     return (
       <History
-        includeDatabase={caps.triggers.includes('scheduled')}
+        includeDatabase={!rowScope && caps.triggers.includes('scheduled')}
+        rowScope={rowScope}
         workspace={workspace}
         database={database}
         rule={history}
@@ -162,6 +170,7 @@ export function RuleManager({
         database={database}
         id={selected.id}
         base={selected.base}
+        rowScope={rowScope}
         fields={properties}
         caps={caps}
         copyFilters={() => view?.get(YjsDatabaseKey.filters)?.toJSON() || []}
@@ -205,17 +214,21 @@ export function RuleManager({
             <span className='text-xs text-text-secondary'>
               {t(`databaseAutomation.status.${rule.status}`, { defaultValue: rule.status })}
             </span>
-            {caps.triggers.includes(rule.trigger.type) && ['manual', 'scheduled'].includes(rule.trigger.type) && (
-              <Button
-                variant='ghost'
-                size='sm'
-                disabled={rule.trigger.type === 'manual' && !rule.enabled}
-                onClick={() => setInvoke(rule)}
-              >
-                {t(rule.trigger.type === 'manual' ? 'databaseAutomation.run' : 'databaseAutomation.schedule')}
-              </Button>
-            )}
-            {canEditRule(rule, caps) && (
+            {caps.triggers.includes(rule.trigger.type) &&
+              ['manual', 'scheduled'].includes(rule.trigger.type) &&
+              (!rowScope ||
+                rule.trigger.type !== 'manual' ||
+                (!!viewerUid && canonicalizeUserUid(rule.owner_uid) === viewerUid)) && (
+                <Button
+                  variant='ghost'
+                  size='sm'
+                  disabled={rule.trigger.type === 'manual' && !rule.enabled}
+                  onClick={() => setInvoke(rule)}
+                >
+                  {t(rule.trigger.type === 'manual' ? 'databaseAutomation.run' : 'databaseAutomation.schedule')}
+                </Button>
+              )}
+            {canEditRule(rule, caps) && !(rowScope && rule.trigger.type === 'button') && (
               <Button variant='ghost' size='sm' disabled={loading} onClick={() => void duplicate(rule)}>
                 {t('databaseAutomation.duplicate')}
               </Button>
@@ -226,7 +239,7 @@ export function RuleManager({
           </div>
         )
       )}
-      {!row && (
+      {!row && (!rowScope || (rules && !error)) && (
         <Button disabled={loading} onClick={() => setSelected({ id: uuid() })}>
           {t('databaseAutomation.create')}
         </Button>
@@ -244,6 +257,7 @@ export function RuleForm({
   caps,
   copyFilters,
   buttonScope,
+  rowScope = buttonScope?.row,
   back,
   saved,
 }: {
@@ -255,6 +269,7 @@ export function RuleForm({
   caps: Capabilities;
   copyFilters: () => unknown[];
   buttonScope?: { row: string; field: string };
+  rowScope?: string;
   back: () => void;
   saved: () => void;
 }) {
@@ -269,7 +284,9 @@ export function RuleForm({
   const [editingConditions, setEditingConditions] = useState(false);
   const [calendarHasRow, setCalendarHasRow] = useState(false);
   const scheduledRule =
-    (caps.formulaExpression || caps.actions.includes('member_addressed_email')) && original?.trigger.type === 'scheduled'
+    !rowScope &&
+    (caps.formulaExpression || caps.actions.includes('member_addressed_email')) &&
+    original?.trigger.type === 'scheduled'
       ? original.id
       : undefined;
 
@@ -306,7 +323,7 @@ export function RuleForm({
     change({ actions: reorderActions(draft.actions, actions) });
   };
 
-  const scope: [] | [string] = buttonScope ? [buttonScope.row] : [];
+  const scope: [] | [string] = rowScope ? [rowScope] : [];
 
   async function submit(remove: boolean) {
     if (running.current || (!remove && !canSave)) return;
@@ -330,8 +347,8 @@ export function RuleForm({
   async function reload() {
     setBusy(true);
     try {
-      const latest = buttonScope
-        ? await ruleApi.get(workspace, database, id, undefined, buttonScope.row)
+      const latest = rowScope
+        ? await ruleApi.get(workspace, database, id, undefined, rowScope)
         : await ruleApi.get(workspace, database, id);
 
       setOriginal(latest);
@@ -350,7 +367,7 @@ export function RuleForm({
     error !== 'conflict' &&
     hasChanges &&
     !!draft.name.trim() &&
-    (!supported || validRule(draft, fields, calendarHasRow));
+    (!supported || validRule(draft, fields, !!rowScope || calendarHasRow));
 
   return (
     <form
@@ -426,7 +443,7 @@ export function RuleForm({
                   fields={fields}
                   caps={caps}
                   expressionRow={
-                    (draft.trigger.type !== 'scheduled' || calendarHasRow) &&
+                    (draft.trigger.type !== 'scheduled' || !!rowScope || calendarHasRow) &&
                     draft.trigger.type !== 'row_deleted' &&
                     !draft.trigger.triggers?.some((event) => event.type === 'row_deleted')
                   }
@@ -524,12 +541,14 @@ export function RuleForm({
 
 function History({
   includeDatabase,
+  rowScope,
   workspace,
   database,
   rule,
   back,
 }: {
   includeDatabase: boolean;
+  rowScope?: string;
   workspace: string;
   database: string;
   rule: DatabaseRule;
@@ -550,7 +569,7 @@ function History({
     setBusy(true);
     setError(false);
     try {
-      const page = await ruleApi.runs(workspace, database, rule.id, before, ac.signal, includeDatabase);
+      const page = await ruleApi.runs(workspace, database, rule.id, before, ac.signal, includeDatabase, rowScope);
 
       if (!ac.signal.aborted) {
         setRuns((old) => (before === undefined ? page.items : [...old, ...page.items]));
@@ -566,7 +585,7 @@ function History({
   useEffect(() => {
     void load();
     return () => active.current?.abort();
-  }, [workspace, database, rule.id, includeDatabase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workspace, database, rule.id, includeDatabase, rowScope]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <section className='flex flex-col gap-3'>
       <h3>

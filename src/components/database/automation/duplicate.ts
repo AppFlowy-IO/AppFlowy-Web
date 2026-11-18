@@ -50,18 +50,24 @@ export async function prepareCopy(
   source: string,
   id: string,
   nameFor: (name: string) => string,
-  caps: Capabilities
+  caps: Capabilities,
+  row?: string
 ): Promise<Copy> {
-  const rule = await ruleApi.get(workspace, database, source);
+  const rule = row
+    ? await ruleApi.get(workspace, database, source, undefined, row)
+    : await ruleApi.get(workspace, database, source);
 
   if (!canEditRule(rule, caps)) throw Error('Unsupported rule');
   let calendar: RuleSchedule | undefined;
 
   if (rule.trigger.type === 'scheduled') {
     try {
-      const state = await ruleApi.getSchedule(workspace, database, source);
+      const state = row
+        ? await ruleApi.getSchedule(workspace, database, source, undefined, row)
+        : await ruleApi.getSchedule(workspace, database, source);
 
       if (state.revision !== rule.revision) throw Error('Source rule changed');
+      if (row && state.row_id !== row) throw Error('Source row changed');
       calendar = calendarDefinition(state, caps);
     } catch (e) {
       if (typeof e !== 'object' || !e || !('code' in e) || e.code !== -2) throw e;
@@ -84,14 +90,23 @@ export async function prepareCopy(
 }
 
 /** Retain Copy across ambiguous failures. Create replays by caller UUID, calendar writes use its original revision. */
-export async function saveCopy(workspace: string, database: string, copy: Copy, caps: Capabilities): Promise<void> {
-  const target: DatabaseRule = await ruleApi.create(workspace, database, copy.id, copy.definition);
+export async function saveCopy(
+  workspace: string,
+  database: string,
+  copy: Copy,
+  caps: Capabilities,
+  row?: string
+): Promise<void> {
+  const scope: [] | [string] = row ? [row] : [];
+  const target: DatabaseRule = await ruleApi.create(workspace, database, copy.id, copy.definition, ...scope);
 
   if (!copy.calendar) return;
   let current: ScheduleState | undefined;
 
   try {
-    current = await ruleApi.getSchedule(workspace, database, target.id);
+    current = row
+      ? await ruleApi.getSchedule(workspace, database, target.id, undefined, row)
+      : await ruleApi.getSchedule(workspace, database, target.id);
   } catch (e) {
     if (typeof e !== 'object' || !e || !('code' in e) || e.code !== -2) throw e;
   }
@@ -102,5 +117,5 @@ export async function saveCopy(workspace: string, database: string, copy: Copy, 
     return;
   }
 
-  await ruleApi.putSchedule(workspace, database, target.id, target.revision, copy.calendar);
+  await ruleApi.putSchedule(workspace, database, target.id, target.revision, copy.calendar, ...scope);
 }

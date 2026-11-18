@@ -24,6 +24,7 @@ export function InvocationFields({
   back,
   customRecurrence,
   fixedRow,
+  rowScope,
 }: {
   workspace: string;
   database: string;
@@ -31,6 +32,7 @@ export function InvocationFields({
   back: () => void;
   customRecurrence: boolean;
   fixedRow?: string;
+  rowScope?: string;
 }) {
   const { t, i18n } = useTranslation();
   const scheduled = rule.trigger.type === 'scheduled';
@@ -63,18 +65,18 @@ export function InvocationFields({
       setLoading(true);
       setError(undefined);
       try {
-        const current = await ruleApi.get(workspace, database, rule.id, ac.signal);
+        const current = await ruleApi.get(workspace, database, rule.id, ac.signal, rowScope);
 
         if (ac.signal.aborted) return;
         setRevision(current.revision);
         if (scheduled) {
           try {
-            const state = await ruleApi.getSchedule(workspace, database, rule.id, ac.signal);
+            const state = await ruleApi.getSchedule(workspace, database, rule.id, ac.signal, rowScope);
 
             if (ac.signal.aborted) return;
             const { row_id, frequency, starts_on, ends_on, local_time, timezone, interval, weekdays } = state;
 
-            if (!customRecurrence && isCustomSchedule(state)) {
+            if ((rowScope && row_id !== rowScope) || (!customRecurrence && isCustomSchedule(state))) {
               throw new Error('Calendar requires a newer server capability');
             }
 
@@ -104,7 +106,7 @@ export function InvocationFields({
 
     void load();
     return () => ac.abort();
-  }, [workspace, database, rule.id, scheduled, refresh, customRecurrence]);
+  }, [workspace, database, rule.id, scheduled, refresh, customRecurrence, rowScope]);
   const set = (updates: Partial<RuleSchedule>) => setSchedule((s) => ({ ...s, ...updates }));
 
   async function submit() {
@@ -113,13 +115,22 @@ export function InvocationFields({
     setBusy(true);
     setError(undefined);
     try {
+      const scope: [] | [string] = rowScope ? [rowScope] : [];
+
       if (scheduled) {
-        const saved = await ruleApi.putSchedule(workspace, database, rule.id, revision, {
-          ...schedule,
-          ...(customRecurrence && loadedCustom && !isCustomSchedule(schedule) && { replace_custom_recurrence: true }),
-          row_id: schedule.row_id || undefined,
-          local_time: schedule.local_time.length === 5 ? schedule.local_time + ':00' : schedule.local_time,
-        });
+        const saved = await ruleApi.putSchedule(
+          workspace,
+          database,
+          rule.id,
+          revision,
+          {
+            ...schedule,
+            ...(customRecurrence && loadedCustom && !isCustomSchedule(schedule) && { replace_custom_recurrence: true }),
+            row_id: rowScope || schedule.row_id || undefined,
+            local_time: schedule.local_time.length === 5 ? schedule.local_time + ':00' : schedule.local_time,
+          },
+          ...scope
+        );
 
         setRevision(saved.revision);
         setNext(saved.next_due_at);
@@ -127,7 +138,15 @@ export function InvocationFields({
       } else {
         if (!schedule.row_id) return;
         if (request.current?.row !== schedule.row_id) request.current = { row: schedule.row_id, id: uuid() };
-        const result = await ruleApi.run(workspace, database, rule.id, revision, schedule.row_id, request.current.id);
+        const result = await ruleApi.run(
+          workspace,
+          database,
+          rule.id,
+          revision,
+          schedule.row_id,
+          request.current.id,
+          ...scope
+        );
 
         setRunId(result);
       }

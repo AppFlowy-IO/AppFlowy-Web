@@ -57,6 +57,7 @@ export function ruleCapabilities(info?: ServerInfo) {
 
   return {
     enabled: info?.enable_database_automations === true && triggers.length > 0 && actions.length > 0,
+    rowScoped: info?.database_automation_scope_features?.includes('row_scoped_v1') === true,
     triggers,
     actions,
     webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,

@@ -8,7 +8,7 @@ jest.mock('../core', () => ({
 }));
 
 it('addresses row setup, resolution and invocation by escaped path segments and preserves ordinary rules', async () => {
-  const http = { get: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn() };
+  const http = { get: jest.fn(), post: jest.fn(), put: jest.fn(), patch: jest.fn(), delete: jest.fn() };
   jest.mocked(getAxios).mockReturnValue(http as unknown as ReturnType<typeof getAxios>);
   const rules = '/api/workspace/w%2Fx/database/d%20b/row/r%3F1/automation';
   const button = '/api/workspace/w%2Fx/database/d%20b/row/r%3F1/button/field%2F%23';
@@ -35,6 +35,28 @@ it('addresses row setup, resolution and invocation by escaped path segments and 
   };
   await ruleApi.invokeButton(workspace, database, row, field, body);
   expect(http.post).toHaveBeenCalledWith(button + '/run', body);
+  await ruleApi.get(workspace, database, 'rule', signal, row);
+  expect(http.get).toHaveBeenLastCalledWith(rules + '/rule', { signal });
+  await ruleApi.runs(workspace, database, 'rule', 53, signal, false, row);
+  expect(http.get).toHaveBeenLastCalledWith(rules + '/rule/runs', { params: { before: 53, limit: 25 }, signal });
+  await ruleApi.getSchedule(workspace, database, 'rule', signal, row);
+  expect(http.get).toHaveBeenLastCalledWith(rules + '/rule/schedule', { signal });
+  const calendar = {
+    row_id: row,
+    frequency: 'daily' as const,
+    starts_on: '2026-11-18',
+    local_time: '09:00:00',
+    timezone: 'UTC',
+  };
+
+  await ruleApi.putSchedule(workspace, database, 'rule', 7, calendar, row);
+  expect(http.put).toHaveBeenLastCalledWith(rules + '/rule/schedule', { ...calendar, expected_revision: 7 });
+  await ruleApi.run(workspace, database, 'rule', 9, row, 'retry', row);
+  expect(http.post).toHaveBeenLastCalledWith(rules + '/rule/run', {
+    row_id: row,
+    expected_revision: 9,
+    request_id: 'retry',
+  });
   await ruleApi.get(workspace, database, 'rule');
   expect(http.get).toHaveBeenLastCalledWith('/api/workspace/w%2Fx/database/d%20b/automation/rule', {
     signal: undefined,

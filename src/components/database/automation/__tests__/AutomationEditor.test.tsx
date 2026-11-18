@@ -236,6 +236,7 @@ test('pages run history under a POSIX locale using its cursor and deletes with t
 });
 
 const extended = {
+  rowScoped: false,
   enabled: true,
   triggers: triggerTypes,
   actions: actionTypes,
@@ -327,6 +328,66 @@ test('a row menu runs only enabled manual rules owned by the current member and 
   await screen.findByText('Run queued.');
   expect(api.run.mock.calls[0]).toEqual(['w', 'd', 'rule', 5, row, expect.any(String)]);
   expect(api.run.mock.calls[1]).toEqual(api.run.mock.calls[0]);
+});
+
+test.each([true, false])('a guest opens only the exact row where the server grants setup (%p)', async (allowed) => {
+  jest
+    .mocked(useCurrentUserOptional)
+    .mockReturnValue({ uuid: 'guest', attributionUid: '5' } as ReturnType<typeof useCurrentUserOptional>);
+  jest
+    .mocked(useUserWorkspaceInfoOptional)
+    .mockReturnValue({ workspaces: [{ id: 'w', role: Role.Guest }] } as ReturnType<typeof useUserWorkspaceInfoOptional>);
+  jest.mocked(getServerInfoSnapshot).mockReturnValue({
+    status: 'ready',
+    info: {
+      enable_database_automations: true,
+      database_automation_triggers: ['row_created', 'manual'],
+      database_automation_actions: ['notify'],
+      database_automation_scope_features: ['row_scoped_v1'],
+    },
+  } as ReturnType<typeof getServerInfoSnapshot>);
+  const mine = { ...rule, trigger: { type: 'manual' }, owner_uid: '5' };
+  const shared = { ...mine, id: 'other', name: 'Other owner', owner_uid: '6' };
+
+  api.list.mockImplementation(async (_workspace, _database, _signal, target) => {
+    if (target === row && allowed) return { items: [mine, shared] };
+    throw Error('Row access denied');
+  });
+  api.get.mockResolvedValue(mine);
+  render(<AutomationButton rowId={row} standaloneRow />);
+  await waitFor(() => expect(api.list).toHaveBeenCalledWith('w', 'd', expect.anything(), row));
+  if (!allowed) {
+    expect(screen.queryByText('Automations for this row')).toBeNull();
+    expect(screen.queryByText('New automation')).toBeNull();
+    return;
+  }
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Automations for this row' }));
+  await screen.findByText('Other owner');
+  expect(screen.getAllByRole('button', { name: 'Run now' })).toHaveLength(1);
+  fireEvent.click(screen.getByText('Existing'));
+  await screen.findByLabelText('Name');
+  expect(api.get).toHaveBeenCalledWith('w', 'd', 'rule', expect.anything(), row);
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'For this row' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, { name: 'For this row' }, row));
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Scoped creation' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.create).toHaveBeenCalledWith(
+      'w',
+      'd',
+      expect.any(String),
+      expect.objectContaining({ name: 'Scoped creation' }),
+      row
+    )
+  );
+  fireEvent.click(await screen.findByText('Existing'));
+  fireEvent.click(await screen.findByText('Delete'));
+  fireEvent.click(screen.getByText('Delete'));
+  await waitFor(() => expect(api.remove).toHaveBeenCalledWith('w', 'd', 'rule', 5, row));
+  expect(api.list.mock.calls.every((args) => args[3] === row)).toBe(true);
 });
 
 test('a calendar loads its current revision and saves local wall time, frequency and timezone', async () => {

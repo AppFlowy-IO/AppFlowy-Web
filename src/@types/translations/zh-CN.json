@@ -15,6 +15,7 @@
     "buttonDisabled": "此自动化已停用。",
     "buttonQueued": "运行已加入队列。",
     "buttonConnection": "步骤 {{step}} · {{provider}} 账号",
+    "rowRules": "此行的自动化",
     "setupRowButton": "为此行设置",
     "insertFormulaProperty": "插入来源属性",
     "duplicate": "复制",

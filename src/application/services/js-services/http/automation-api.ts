@@ -192,21 +192,22 @@ export const ruleApi = {
     executeAPIRequest<ButtonBinding>(() => getAxios()?.get(buttonPath(w, d, row, field), { signal })),
   invokeButton: (w: string, d: string, row: string, field: string, body: ButtonInvocation) =>
     executeAPIRequest<string>(() => getAxios()?.post(buttonPath(w, d, row, field) + '/run', body)),
-  run: (w: string, d: string, id: string, revision: number, row_id: string, request_id: string) =>
+  run: (w: string, d: string, id: string, revision: number, row_id: string, request_id: string, row?: string) =>
     executeAPIRequest<string>(() =>
-      getAxios()?.post(item(w, d, id) + '/run', { row_id, request_id, expected_revision: revision })
+      getAxios()?.post(item(w, d, id, row) + '/run', { row_id, request_id, expected_revision: revision })
     ),
-  getSchedule: (w: string, d: string, id: string, signal?: AbortSignal) =>
-    executeAPIRequest<ScheduleState>(() => getAxios()?.get(item(w, d, id) + '/schedule', { signal })),
+  getSchedule: (w: string, d: string, id: string, signal?: AbortSignal, row?: string) =>
+    executeAPIRequest<ScheduleState>(() => getAxios()?.get(item(w, d, id, row) + '/schedule', { signal })),
   putSchedule: (
     w: string,
     d: string,
     id: string,
     revision: number,
-    schedule: RuleSchedule & { replace_custom_recurrence?: true }
+    schedule: RuleSchedule & { replace_custom_recurrence?: true },
+    row?: string
   ) =>
     executeAPIRequest<ScheduleState>(() =>
-      getAxios()?.put(item(w, d, id) + '/schedule', { expected_revision: revision, ...schedule })
+      getAxios()?.put(item(w, d, id, row) + '/schedule', { expected_revision: revision, ...schedule })
     ),
   databases: (w: string, offset: number, signal?: AbortSignal) =>
     executeAPIRequest<{ databases: TargetDatabase[]; has_more: boolean }>(() =>
@@ -244,9 +245,17 @@ export const ruleApi = {
     executeAPIRequest<{ items: { id: string; name: string; disabled: boolean }[]; next_cursor?: string }>(() =>
       getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', { params: { after }, signal })
     ),
-  runs: (w: string, d: string, id: string, before?: number, signal?: AbortSignal, includeDatabase = false) =>
+  runs: (
+    w: string,
+    d: string,
+    id: string,
+    before?: number,
+    signal?: AbortSignal,
+    includeDatabase = false,
+    row?: string
+  ) =>
     executeAPIRequest<RunPage>(() =>
-      getAxios()?.get<APIResponse<RunPage>>(`${item(w, d, id)}/runs`, {
+      getAxios()?.get<APIResponse<RunPage>>(`${item(w, d, id, row)}/runs`, {
         params: { before, limit: 25, ...(includeDatabase ? { include_database_runs: true } : {}) },
         signal,
       })

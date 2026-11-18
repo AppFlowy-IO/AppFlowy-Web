@@ -8,6 +8,7 @@ import { DatabaseContext, type DatabaseContextState } from '@/application/databa
 import { FieldType } from '@/application/database-yjs/database.type';
 import { initAPIService } from '@/application/services/js-services/http/core';
 import { type User, type YDoc, YjsEditorKey } from '@/application/types';
+import { CenterPeekHeader } from '@/components/database/components/database-row/RowPeekHeader';
 import { Cell } from '@/components/database/components/cell/Cell';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -15,6 +16,7 @@ import { updateServerInfo } from '@/utils/server-info';
 import '@/styles/global.css';
 
 const language = createInstance();
+
 await language.use(initReactI18next).init({ lng: 'en', resources: { en: { translation: en } } });
 initAPIService({ baseURL: location.origin, gotrueURL: location.origin, wsURL: '' });
 updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
@@ -23,11 +25,12 @@ updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.clou
     enable_page_history: false,
     self_hosted: true,
     enable_database_automations: true,
-    database_automation_triggers: ['button'],
+    database_automation_triggers: ['row_created', 'manual', 'button'],
     database_automation_actions: ['notify'],
     database_automation_scope_features: ['row_scoped_v1'],
   },
 });
+const rowSetup = new URLSearchParams(location.search).has('row-setup');
 const doc = new Y.Doc() as YDoc;
 const options = new Y.Map([['20', new Y.Map([['label', 'Request review']])]]);
 const field = new Y.Map<unknown>([
@@ -39,14 +42,15 @@ const field = new Y.Map<unknown>([
 const view = new Y.Map<unknown>([
   ['id', 'grid'],
   ['row_orders', new Y.Array()],
-  ['field_orders', Y.Array.from([{ id: 'review' }])],
+  ['field_orders', Y.Array.from(rowSetup ? [] : [{ id: 'review' }])],
   ['field_settings', new Y.Map()],
 ]);
+
 doc.getMap(YjsEditorKey.data_section).set(
   YjsEditorKey.database,
   new Y.Map<unknown>([
     ['id', 'tasks'],
-    ['fields', new Y.Map([['review', field]])],
+    ['fields', new Y.Map(rowSetup ? [] : [['review', field]])],
     ['views', new Y.Map([['grid', view]])],
   ])
 );
@@ -56,9 +60,10 @@ const context: DatabaseContextState = {
   databasePageId: 'grid',
   workspaceId: 'team',
   rowMap: {},
-  readOnly: false,
+  readOnly: rowSetup,
   canWrite: false,
 };
+
 createRoot(document.getElementById('root')!).render(
   <I18nextProvider i18n={language}>
     <AFConfigContext.Provider
@@ -70,9 +75,11 @@ createRoot(document.getElementById('root')!).render(
       }}
     >
       <DatabaseContext.Provider value={context}>
-        {['first', 'second'].map((rowId) => (
-          <Cell key={rowId} rowId={rowId} fieldId='review' wrap={false} />
-        ))}
+        {rowSetup ? (
+          <CenterPeekHeader rowId='second' onClose={() => undefined} />
+        ) : (
+          ['first', 'second'].map((rowId) => <Cell key={rowId} rowId={rowId} fieldId='review' wrap={false} />)
+        )}
       </DatabaseContext.Provider>
     </AFConfigContext.Provider>
   </I18nextProvider>

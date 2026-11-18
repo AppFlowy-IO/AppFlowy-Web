@@ -243,7 +243,9 @@ function DatabaseRowModal({
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              ) : null}
+              ) : (
+                <AutomationButton key={rowId} rowId={rowId} standaloneRow />
+              )}
             </RowPeekHeader>
             {/* Each row starts at the top; the surrounding shell persists across rows. */}
             <AFScroller key={rowId} overflowXHidden className='appflowy-scroll-container w-full flex-1'>

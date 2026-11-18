@@ -1,8 +1,9 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { resolveUserAttributionUid } from '@/application/database-yjs/attribution';
+import { ruleApi } from '@/application/services/js-services/http/automation-api';
 import { Role, YjsDatabaseKey } from '@/application/types';
 import { useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -15,42 +16,74 @@ import { useAutomationCapabilities } from './useAutomationCapabilities';
 
 const RuleManager = lazy(() => import('./AutomationEditor').then((module) => ({ default: module.RuleManager })));
 
-type Props = { rowId?: string; prepare?: () => Promise<boolean> };
+type Props = { rowId?: string; prepare?: () => Promise<boolean>; standaloneRow?: boolean };
 
 export default function AutomationButton(props: Props = {}) {
   const caps = useAutomationCapabilities();
 
-  if (!caps.enabled || (props.rowId !== undefined && !caps.triggers.includes('manual'))) return null;
-  return <AvailableAutomationButton {...props} caps={caps} />;
+  if (!caps.enabled) return null;
+  if (props.rowId === undefined) return <AvailableAutomationButton {...props} caps={caps} />;
+  return (
+    <>
+      {caps.rowScoped && <AvailableAutomationButton {...props} caps={caps} scoped />}
+      {!props.standaloneRow && caps.triggers.includes('manual') && <AvailableAutomationButton {...props} caps={caps} />}
+    </>
+  );
 }
 
-function AvailableAutomationButton({ rowId, prepare, caps }: Props & { caps: Capabilities }) {
+function AvailableAutomationButton({
+  rowId,
+  prepare,
+  caps,
+  scoped,
+  standaloneRow,
+}: Props & { caps: Capabilities; scoped?: boolean }) {
   const { t } = useTranslation();
   const { workspaceId, readOnly, canWrite, dataSource } = useDatabaseContext();
   const account = useUserWorkspaceInfoOptional();
-  const owner = resolveUserAttributionUid(useCurrentUserOptional());
+  const user = useCurrentUserOptional();
+  const owner = resolveUserAttributionUid(user);
   const role = account?.workspaces.find((w) => w.id === workspaceId)?.role;
   const db = useDatabase();
   const databaseId = db?.get(YjsDatabaseKey.id);
   const [open, setOpen] = useState(false);
+  const [accessKey, setAccessKey] = useState<string>();
+  const eligible = !!(user && workspaceId && databaseId && rowId && dataSource?.type !== 'history');
+  const key = JSON.stringify([workspaceId, databaseId, rowId, user?.uuid || owner]);
+
+  useEffect(() => {
+    if (!scoped || !eligible || !workspaceId || !databaseId || !rowId) return;
+    const controller = new AbortController();
+
+    setAccessKey(undefined);
+    // A writable shared row can be inside a database the guest cannot manage.
+    void ruleApi
+      .list(workspaceId, databaseId, controller.signal, rowId)
+      .then(() => {
+        if (!controller.signal.aborted) setAccessKey(key);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setAccessKey(undefined);
+      });
+    return () => controller.abort();
+  }, [scoped, eligible, workspaceId, databaseId, rowId, key]);
 
   if (
-    (rowId !== undefined && (!rowId || !owner)) ||
-    !account ||
-    (role !== Role.Member && role !== Role.Owner) ||
+    (rowId !== undefined && (!rowId || (!scoped && !owner))) ||
+    (scoped ? accessKey !== key : !account) ||
+    (!scoped && role !== Role.Member && role !== Role.Owner) ||
     !workspaceId ||
     !databaseId ||
-    readOnly ||
-    canWrite === false ||
+    (!scoped && (readOnly || canWrite === false)) ||
     dataSource?.type === 'history'
   )
     return null;
-  const row = rowId && owner ? { id: rowId, owner } : undefined;
-  const label = t(row ? 'databaseAutomation.run' : 'databaseAutomation.title');
+  const row = !scoped && rowId && owner ? { id: rowId, owner } : undefined;
+  const label = t(scoped ? 'databaseAutomation.rowRules' : row ? 'databaseAutomation.run' : 'databaseAutomation.title');
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {row ? (
+      {rowId !== undefined && !standaloneRow ? (
         <DropdownMenuItem
           onSelect={(event) => {
             event.preventDefault();
@@ -78,6 +111,8 @@ function AvailableAutomationButton({ rowId, prepare, caps }: Props & { caps: Cap
           <Suspense fallback={<p role='status'>{t('databaseAutomation.loading')}</p>}>
             <RuleManager
               row={row}
+              viewerUid={owner || undefined}
+              rowScope={scoped ? rowId : undefined}
               key={[workspaceId, databaseId, owner, rowId].join('/')}
               workspace={workspaceId}
               database={databaseId}

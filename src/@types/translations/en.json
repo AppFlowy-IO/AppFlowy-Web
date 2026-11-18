@@ -15,6 +15,7 @@
     "buttonDisabled": "This automation is disabled.",
     "buttonQueued": "Run queued.",
     "buttonConnection": "Step {{step}} · {{provider}} account",
+    "rowRules": "Automations for this row",
     "setupRowButton": "Set up for this row",
     "insertFormulaProperty": "Insert source property",
     "duplicate": "Duplicate",

@@ -15,6 +15,7 @@
     "buttonDisabled": "此自動化已停用。",
     "buttonQueued": "執行已加入佇列。",
     "buttonConnection": "步驟 {{step}} · {{provider}} 帳號",
+    "rowRules": "此列的自動化",
     "setupRowButton": "為此列設定",
     "insertFormulaProperty": "插入來源屬性",
     "duplicate": "複製",

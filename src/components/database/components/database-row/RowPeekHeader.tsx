@@ -165,7 +165,11 @@ export function CenterPeekHeader({ rowId, onClose, openPage }: PeekHeaderProps) 
       {openPage ? (
         <FullPageButton onClose={onClose} openPage={openPage} rowId={rowId} testId='row-detail-open-full-page' />
       ) : null}
-      {!readOnly ? <RowActionsMenu onClose={onClose} rowId={rowId} /> : null}
+      {!readOnly ? (
+        <RowActionsMenu onClose={onClose} rowId={rowId} />
+      ) : (
+        <AutomationButton key={rowId} rowId={rowId} standaloneRow />
+      )}
     </>
   );
 }
@@ -207,7 +211,11 @@ export function SidePeekHeader({ rowId, onClose, openPage, onSwitchToCenter }: S
           </HeaderButton>
         ) : null}
       </div>
-      {!readOnly ? <RowActionsMenu onClose={onClose} rowId={rowId} /> : null}
+      {!readOnly ? (
+        <RowActionsMenu onClose={onClose} rowId={rowId} />
+      ) : (
+        <AutomationButton key={rowId} rowId={rowId} standaloneRow />
+      )}
     </>
   );
 }

@@ -15,6 +15,7 @@
     "buttonDisabled": "Cette automatisation est désactivée.",
     "buttonQueued": "Exécution en attente.",
     "buttonConnection": "Étape {{step}} · Compte {{provider}}",
+    "rowRules": "Automatisations pour cette ligne",
     "setupRowButton": "Configurer pour cette ligne",
     "insertFormulaProperty": "Insérer une propriété source",
     "duplicate": "Dupliquer",
