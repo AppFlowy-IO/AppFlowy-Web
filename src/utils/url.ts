@@ -29,6 +29,14 @@ const UUID_VALUE = new RegExp(`^${UUID_PATTERN}$`, 'i');
 const APPFLOWY_PAGE_PATH = new RegExp(`^/app/(${UUID_PATTERN})/(${UUID_PATTERN})/?$`, 'i');
 const APPFLOWY_WORKSPACE_PATH = new RegExp(`^/app/(${UUID_PATTERN})(?:/|$)`, 'i');
 
+/** Accept the UUID representations parsed by Cloud for workspace requests. */
+export function isWorkspaceRouteId(value: string): boolean {
+  if (value.startsWith('urn:uuid:')) return UUID_VALUE.test(value.slice('urn:uuid:'.length));
+  if (value.startsWith('{') && value.endsWith('}')) return UUID_VALUE.test(value.slice(1, -1));
+
+  return UUID_VALUE.test(value) || /^[0-9a-f]{32}$/i.test(value);
+}
+
 export interface AppFlowyPageLink {
   workspaceId: string;
   viewId: string;
