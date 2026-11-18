@@ -270,19 +270,20 @@ test('custom calendars keep their anchor and selected ISO weekdays and clear wee
     weekdays: [1, 5],
     next_due_at: null,
   };
+
   api.list.mockResolvedValue({ items: [scheduled] });
   api.get.mockResolvedValue(scheduled);
   api.getSchedule.mockResolvedValue(base);
   api.putSchedule.mockResolvedValue(base);
   render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence: true }} />);
   fireEvent.click(await screen.findByText('Schedule'));
-  await waitFor(() => expect((screen.getByLabelText('Repeat interval') as HTMLInputElement).value).toBe('2'));
-  expect(Array.from((screen.getByLabelText('Weekdays') as HTMLSelectElement).selectedOptions, (o) => o.value)).toEqual([
+  await waitFor(() => expect((screen.getByLabelText('Repeat interval')).value).toBe('2'));
+  expect(Array.from((screen.getByLabelText('Weekdays')).selectedOptions, (o) => o.value)).toEqual([
     '1',
     '5',
   ]);
   fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '1000' } });
-  expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByText('Save')).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText('Repeat interval'), { target: { value: '3' } });
   fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'yearly' } });
   expect(screen.queryByLabelText('Weekdays')).toBeNull();
@@ -298,6 +299,52 @@ test('custom calendars keep their anchor and selected ISO weekdays and clear wee
   );
 });
 
+test('duplicate retries the disabled scheduled copy under the same ID and never copies runtime or actor data', async () => {
+  const original = { ...rule, trigger: { type: 'scheduled' } };
+  const calendar = {
+    revision: 5,
+    frequency: 'weekly' as const,
+    starts_on: '2026-11-18',
+    local_time: '09:00:00',
+    timezone: 'UTC',
+    next_due_at: null,
+  };
+
+  api.list.mockResolvedValue({ items: [original] });
+  api.get.mockResolvedValue(original);
+  api.create.mockImplementation(async (_w, _d, id, data) => ({ ...rule, ...data, id, revision: 1 }));
+  api.getSchedule.mockImplementation(async (_w, _d, id) => {
+    if (id === original.id) return calendar;
+    throw Object.assign(new Error('Missing schedule'), { code: -2 });
+  });
+  api.putSchedule.mockRejectedValueOnce(Error('network')).mockResolvedValue({ ...calendar, revision: 2 });
+  fullManager();
+  fireEvent.click(await screen.findByText('Duplicate'));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByText('Duplicate'));
+  await waitFor(() => expect(api.putSchedule).toHaveBeenCalledTimes(2));
+  const [[, , id, draft], [, , retryId, retryDraft]] = api.create.mock.calls;
+
+  expect(id).toEqual(retryId);
+  expect(id).not.toEqual(original.id);
+  expect(retryDraft).toEqual(draft);
+  expect(draft).toEqual({
+    name: 'Copy of Existing',
+    enabled: false,
+    conditions: original.conditions,
+    timezone: original.timezone,
+    actions: original.actions,
+    trigger: original.trigger,
+  });
+  expect(api.putSchedule.mock.calls[0]).toEqual([
+    'w',
+    'd',
+    id,
+    1,
+    expect.objectContaining({ frequency: 'weekly', starts_on: '2026-11-18' }),
+  ]);
+  expect(api.putSchedule.mock.calls[1]).toEqual(api.putSchedule.mock.calls[0]);
+});
 test('the first calendar can be saved after the API returns record not found', async () => {
   const scheduled = { ...rule, trigger: { type: 'scheduled' } };
 
@@ -392,6 +439,7 @@ test('edits earlier variables and destination fields without changing a step res
 
 test('webhook property actions store selected IDs and write-only headers stay with endpoint registration', async () => {
   const endpoint = { id: 'owned', name: 'Review webhook', disabled: false };
+
   api.webhooks.mockResolvedValue({ items: [endpoint] });
   api.createWebhook.mockResolvedValue({ endpoint, signing_secret: 'signing-key' });
   api.create.mockResolvedValue(rule);
@@ -400,22 +448,26 @@ test('webhook property actions store selected IDs and write-only headers stay wi
     database_automation_triggers: ['row_created'],
     database_automation_actions: ['webhook', 'webhook_properties'],
   };
+
   expect(ruleCapabilities(info as ServerInfo).actions).toEqual(['webhook']);
   const server = ruleCapabilities({
     ...info,
     database_automation_webhook_features: ['headers_v1', 'selected_properties_v1'],
   } as ServerInfo);
+
   render(<RuleManager workspace='w' database='d' caps={server} />);
   fireEvent.click(await screen.findByText('New automation'));
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Publish review' } });
   fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'webhook_properties' } });
   fireEvent.click(screen.getByText('Register endpoint'));
   const names = screen.getAllByLabelText('Name');
+
   fireEvent.change(names[names.length - 1], { target: { value: 'Review webhook' } });
   fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org/review' } });
   fireEvent.click(screen.getByText('Add header'));
   fireEvent.change(screen.getByLabelText('Header name'), { target: { value: 'Authorization' } });
-  const header = screen.getByLabelText('Header value') as HTMLInputElement;
+  const header = screen.getByLabelText('Header value');
+
   expect(header.type).toBe('password');
   fireEvent.change(header, { target: { value: 'private-fixture' } });
   fireEvent.click(screen.getByText('Confirm'));
@@ -425,7 +477,8 @@ test('webhook property actions store selected IDs and write-only headers stay wi
     })
   );
   expect(screen.queryByDisplayValue('private-fixture')).toBeNull();
-  const property = screen.getByLabelText('Webhook properties') as HTMLSelectElement;
+  const property = screen.getByLabelText('Webhook properties');
+
   property.options[0].selected = true;
   fireEvent.change(property);
   fireEvent.change(screen.getByLabelText('Notification message'), { target: { value: 'Status' } });

@@ -1,5 +1,8 @@
 {
   "databaseAutomation": {
+    "duplicate": "複製",
+    "copyOf": "{{name}}的副本",
+    "copyError": "無法完成複製。請再次選擇複製以繼續。",
     "webhookProperties": "Webhook 屬性",
     "headerName": "標頭名稱",
     "headerValue": "標頭值",

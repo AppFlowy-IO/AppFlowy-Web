@@ -77,7 +77,9 @@ export function EndpointControls({
   const validHeaders =
     headers.every(
       ({ name, value }) =>
-        /^[a-zA-Z0-9!#$%&'*+.^_|~`-]{1,128}$/.test(name) && !/[\x00-\x1f\x7f]/.test(value) && value.length <= 2048
+        /^[a-zA-Z0-9!#$%&'*+.^_|~`-]{1,128}$/.test(name) &&
+        Array.from(value).every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127) &&
+        new Blob([value]).size <= 2048
     ) && new Set(headers.map((h) => h.name.toLowerCase())).size === headers.length;
 
   async function submit() {

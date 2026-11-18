@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { toIntlLocale } from '@/i18n/intl-locale';
 
 import { ConditionFields } from './ConditionFields';
+import { prepareCopy, saveCopy } from './duplicate';
 import { InvocationFields } from './InvocationFields';
 import {
   canEditRule,
@@ -41,6 +42,40 @@ export function RuleManager({ workspace, database, caps }: { workspace: string; 
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const active = useRef<AbortController>();
+  const pendingCopies = useRef(new Map<string, Awaited<ReturnType<typeof prepareCopy>>>());
+  const copying = useRef(false);
+  const [copyError, setCopyError] = useState(false);
+
+  async function duplicate(rule: DatabaseRule) {
+    if (copying.current) return;
+    copying.current = true;
+    setLoading(true);
+    setCopyError(false);
+    try {
+      let copy = pendingCopies.current.get(rule.id);
+
+      if (!copy) {
+        copy = await prepareCopy(
+          workspace,
+          database,
+          rule.id,
+          uuid(),
+          (name) => t('databaseAutomation.copyOf', { name }),
+          caps
+        );
+        pendingCopies.current.set(rule.id, copy);
+      }
+
+      await saveCopy(workspace, database, copy, caps);
+      pendingCopies.current.delete(rule.id);
+      setRefresh((n) => n + 1);
+    } catch {
+      setCopyError(true);
+    } finally {
+      copying.current = false;
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     const ac = new AbortController();
@@ -134,6 +169,7 @@ export function RuleManager({ workspace, database, caps }: { workspace: string; 
       ) : !rules.length ? (
         <p>{t('databaseAutomation.empty')}</p>
       ) : null}
+      {copyError && <p role='alert'>{t('databaseAutomation.copyError')}</p>}
       {rules?.map((rule) => (
         <div className='flex items-center gap-2 border-b border-border-primary py-2' key={rule.id}>
           <button
@@ -154,6 +190,11 @@ export function RuleManager({ workspace, database, caps }: { workspace: string; 
               onClick={() => setInvoke(rule)}
             >
               {t(rule.trigger.type === 'manual' ? 'databaseAutomation.run' : 'databaseAutomation.schedule')}
+            </Button>
+          )}
+          {canEditRule(rule, caps) && (
+            <Button variant='ghost' size='sm' disabled={loading} onClick={() => void duplicate(rule)}>
+              {t('databaseAutomation.duplicate')}
             </Button>
           )}
           <Button variant='ghost' size='sm' onClick={() => setHistory(rule)}>

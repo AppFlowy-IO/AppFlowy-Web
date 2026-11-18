@@ -1,5 +1,8 @@
 {
   "databaseAutomation": {
+    "duplicate": "Dupliquer",
+    "copyOf": "Copie de {{name}}",
+    "copyError": "La copie a échoué. Réessayez avec Dupliquer.",
     "webhookProperties": "Propriétés du webhook",
     "headerName": "Nom de l’en-tête",
     "headerValue": "Valeur de l’en-tête",

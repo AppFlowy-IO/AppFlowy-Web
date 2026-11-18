@@ -836,6 +836,7 @@ export function WorkflowFields({
             const values = action[group] ?? [];
             const label =
               action.type === 'addressed_email' ? t(`databaseAutomation.${group}`) : t('databaseAutomation.recipient');
+
             return (
               <div key={group}>
                 {values.map((value, i) => (

@@ -320,6 +320,7 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
       case 'addressed_email': {
         const groups = [a.to ?? [], a.cc ?? [], a.bcc ?? []];
         const addresses = groups.flat();
+
         return (
           !!a.connection_id &&
           addresses.length > 0 &&
@@ -331,6 +332,7 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
           text(a.message)
         );
       }
+
       case 'connected_email':
         return (
           !!a.connection_id &&

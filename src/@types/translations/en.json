@@ -1,5 +1,8 @@
 {
   "databaseAutomation": {
+    "duplicate": "Duplicate",
+    "copyOf": "Copy of {{name}}",
+    "copyError": "Could not finish copying the rule. Retry Duplicate to continue.",
     "webhookProperties": "Webhook properties",
     "headerName": "Header name",
     "headerValue": "Header value",

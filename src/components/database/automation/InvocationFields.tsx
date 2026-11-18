@@ -11,7 +11,6 @@ import {
 } from '@/application/services/js-services/http/automation-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-
 import { toIntlLocale } from '@/i18n/intl-locale';
 
 import { Select } from './Select';
@@ -66,6 +65,7 @@ export function InvocationFields({
 
             if (ac.signal.aborted) return;
             const { row_id, frequency, starts_on, ends_on, local_time, timezone, interval, weekdays } = state;
+
             if (!customRecurrence && (frequency === 'yearly' || (interval ?? 1) !== 1 || weekdays?.length)) {
               throw new Error('Calendar requires a newer server capability');
             }
