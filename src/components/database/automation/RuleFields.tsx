@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import { Capabilities, newAction, RuleField, valueKinds } from './model';
+import { PropertyEditedFields } from './PropertyEditedFields';
 import { SourceValue, TextFields, WorkflowFields } from './WorkflowFields';
 
 import type { ReactNode } from 'react';
@@ -94,6 +95,9 @@ export function TriggerFields({
         ))}
       </Choice>
       {trigger.type === 'row_events' && <EventGroup {...{ trigger, fields, caps, onChange }} />}
+      {trigger.type === 'property_edited' && (
+        <PropertyEditedFields trigger={trigger} fields={fields} choices={options} change={onChange} />
+      )}
       {trigger.type === 'status_set_to' && (
         <>
           <Choice
@@ -157,7 +161,10 @@ function EventGroup({
   const { databasePageId } = useDatabaseContext();
   const { viewIds, childViews } = useDatabaseViewsSelector(databasePageId || '');
   const children = trigger.triggers || [];
-  const events = caps.triggers.filter((id) => !['row_events', 'manual', 'scheduled'].includes(id));
+  const events = [
+    ...caps.triggers.filter((id) => !['row_events', 'manual', 'scheduled'].includes(id)),
+    ...(caps.propertyEdited ? ['property_edited'] : []),
+  ];
 
   return (
     <fieldset className='flex flex-col gap-2'>

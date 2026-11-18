@@ -129,6 +129,7 @@
       "relation": "關聯列",
       "replace": "取代",
       "remove": "移除",
+      "property_edited": "已編輯屬性",
       "row_events": "列事件",
       "matching": "符合條件的列",
       "formula": "公式",

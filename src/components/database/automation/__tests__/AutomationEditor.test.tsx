@@ -29,6 +29,7 @@ import {
   validRule,
   valueKinds,
 } from '../model';
+import { validPropertyEvent } from '../property-trigger';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -57,7 +58,8 @@ jest.mock('@/application/database-yjs', () => ({
     MultiSelect: 4,
     Checkbox: 5,
     Relation: 10,
-    Person: 16,
+    Person: 15,
+    URL: 6,
     CreatedBy: 17,
     LastEditedBy: 18,
   },
@@ -70,8 +72,9 @@ jest.mock('@/application/database-yjs', () => ({
       { id: 'state', name: 'Status', type: 3 },
       { id: 'labels', name: 'Labels', type: 4 },
       { id: 'stamp', name: 'Completed', type: 2 },
-      { id: 'assignee', name: 'Assignee', type: 16 },
+      { id: 'assignee', name: 'Assignee', type: 15 },
       { id: 'subtasks', name: 'Subtasks', type: 10 },
+      { id: 'title', name: 'Task title', type: 0 },
     ],
   }),
   useRowOrdersSelector: () => [{ id: 'e5e8c286-c7c7-4c44-8e15-12f6e4987004' }],
@@ -219,6 +222,7 @@ const extended = {
   enabled: true,
   triggers: triggerTypes,
   actions: actionTypes,
+  propertyEdited: false,
   customRecurrence: false,
   webhookHeaders: false,
 };
@@ -671,6 +675,113 @@ test('webhook selector follows the authorized pages, excludes disabled endpoints
   await waitFor(() =>
     expect(api.create.mock.calls[0][3].actions).toEqual([{ type: 'webhook', endpoint_id: 'approved', message: 'Done' }])
   );
+});
+
+test('authoring a grouped property edit keeps the stable field ID, type, operator, and value when saved', async () => {
+  const caps = { ...extended, propertyEdited: true };
+  const trigger = {
+    type: 'row_events',
+    match: 'all' as const,
+    triggers: [{ type: 'property_edited', field_id: 'title', ty: 0, condition: 4, content: 'Ship' }],
+  };
+  const stored = { ...rule, trigger };
+
+  expect(canEditRule(stored, extended)).toBe(false);
+  expect(canEditRule(stored, caps)).toBe(true);
+  expect(
+    canEditRule({ ...stored, trigger: { ...trigger, triggers: [{ ...trigger.triggers[0], condition: 55 }] } }, caps)
+  ).toBe(false);
+  expect(canEditRule({ ...stored, trigger: trigger.triggers[0] }, caps)).toBe(false);
+  api.list.mockResolvedValue({ items: [stored] });
+  api.get.mockResolvedValue(stored);
+  api.patch.mockResolvedValue({ ...stored, revision: 6 });
+  render(<RuleManager workspace='w' database='d' caps={caps} />);
+  fireEvent.click(await screen.findByText('Existing'));
+  expect((await screen.findByLabelText('Value')).value).toBe('Ship');
+  const when = screen.getAllByLabelText('When');
+
+  expect(Array.from(when[0].options, (o) => o.value)).not.toContain('property_edited');
+  expect(Array.from(when[1].options, (o) => o.value)).toContain('property_edited');
+  fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'labels' } });
+  const options = screen.getByLabelText('Value');
+
+  options.options[0].selected = true;
+  fireEvent.change(options);
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('w', 'd', 'rule', 5, {
+      trigger: {
+        ...trigger,
+        triggers: [{ type: 'property_edited', field_id: 'labels', ty: 4, condition: 2, content: 'done' }],
+      },
+    })
+  );
+});
+
+test('creates a property-trigger group from the toolbar and submits only after the operand is valid', async () => {
+  api.create.mockResolvedValue(rule);
+  render(<RuleManager workspace='w' database='d' caps={{ ...extended, propertyEdited: true }} />);
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ship notices' } });
+  fireEvent.change(screen.getByLabelText('When'), { target: { value: 'row_events' } });
+  fireEvent.change(screen.getAllByLabelText('When')[1], { target: { value: 'property_edited' } });
+  fireEvent.change(screen.getByLabelText('Property'), { target: { value: 'title' } });
+  fireEvent.change(screen.getByLabelText('Operation'), { target: { value: '4' } });
+  expect(screen.getByText('Save').disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'Ship' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create.mock.calls[0][3].trigger).toEqual({
+    type: 'row_events',
+    match: 'any',
+    triggers: [{ type: 'property_edited', field_id: 'title', ty: 0, condition: 4, content: 'Ship' }],
+  });
+});
+
+test('validates property edits using filter operator arity, UTF-8 size, member or row identity, option bounds and finite numbers', () => {
+  const valid = (ty: number, condition: number, content: string) =>
+    validPropertyEvent({ type: 'property_edited', field_id: 'f', ty, condition, content });
+
+  for (const [ty, op] of [
+    [0, 4],
+    [6, 2],
+    [1, 5],
+    [3, 0],
+    [4, 2],
+    [5, 0],
+    [10, 2],
+    [15, 1],
+  ]) {
+    const operand: Record<number, string> = {
+      0: 'Ship',
+      6: 'https',
+      1: '-1.5e2',
+      3: 'one',
+      4: 'one,two',
+      5: '',
+      10: JSON.stringify([row]),
+      15: JSON.stringify([row]),
+    };
+
+    expect(valid(ty, op, operand[ty])).toBe(true);
+  }
+
+  expect(valid(1, 0, '0x10')).toBe(false);
+  expect(valid(1, 4, 'Infinity')).toBe(false);
+  expect(valid(0, 4, '界'.repeat(1366))).toBe(false);
+  expect(valid(4, 0, 'one')).toBe(false);
+  expect(valid(3, 2, 'one')).toBe(false);
+  expect(valid(4, 2, 'one,one')).toBe(false);
+  expect(valid(4, 2, Array.from({ length: 33 }, (_, i) => String(i)).join(','))).toBe(false);
+  expect(valid(10, 6, '')).toBe(false);
+  expect(valid(10, 2, JSON.stringify(['not-a-row']))).toBe(false);
+  expect(valid(15, 0, '[]')).toBe(false);
+  expect(valid(15, 2, 'anything')).toBe(false);
+  expect(valid(5, 1, '')).toBe(true);
+  expect(
+    ruleCapabilities({ database_automation_trigger_features: ['property_edited_v1'] } as ServerInfo).propertyEdited
+  ).toBe(true);
+  expect(ruleCapabilities().propertyEdited).toBe(false);
 });
 
 test('authors multiple row triggers in a view without losing their field identities', async () => {

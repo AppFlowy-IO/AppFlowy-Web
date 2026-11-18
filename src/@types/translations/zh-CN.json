@@ -129,6 +129,7 @@
       "relation": "关联行",
       "replace": "替换",
       "remove": "移除",
+      "property_edited": "属性已编辑",
       "row_events": "行事件",
       "matching": "符合条件的行",
       "formula": "公式",

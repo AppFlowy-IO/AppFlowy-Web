@@ -297,7 +297,7 @@ export function SourceValue({
   );
 }
 
-function IdentityValue({
+export function IdentityValue({
   value,
   change,
   definition,

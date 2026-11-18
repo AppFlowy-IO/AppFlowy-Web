@@ -129,6 +129,7 @@
       "relation": "Lignes associées",
       "replace": "Remplacer",
       "remove": "Retirer",
+      "property_edited": "Propriété modifiée",
       "row_events": "Événements de ligne",
       "matching": "Lignes correspondant aux conditions",
       "formula": "Formule",

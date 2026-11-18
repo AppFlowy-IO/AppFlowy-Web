@@ -129,6 +129,7 @@
       "relation": "Related rows",
       "replace": "Replace",
       "remove": "Remove",
+      "property_edited": "Property edited",
       "row_events": "Row events",
       "matching": "Rows matching conditions",
       "formula": "Formula",

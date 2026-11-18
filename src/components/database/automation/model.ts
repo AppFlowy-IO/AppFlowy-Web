@@ -10,6 +10,8 @@ import type {
   TextPart,
 } from '@/application/services/js-services/http/automation-api';
 
+import { propertyOperand, validPropertyEvent } from './property-trigger';
+
 export const triggerTypes = [
   'row_created',
   'row_updated',
@@ -48,6 +50,7 @@ export function ruleCapabilities(info?: ServerInfo) {
     triggers,
     actions,
     webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,
+    propertyEdited: info?.database_automation_trigger_features?.includes('property_edited_v1') === true,
     customRecurrence: info?.database_automation_schedule_features?.includes('custom_recurrence_v1') === true,
   };
 }
@@ -138,8 +141,13 @@ function supportedTrigger(trigger: RuleTrigger, caps: Capabilities): boolean {
   if (trigger.type === 'row_events')
     return (
       knownKeys(trigger, ['type', 'match', 'triggers', 'view_id']) &&
-      !!trigger.triggers?.every(
-        (child) => !['row_events', 'manual', 'scheduled'].includes(child.type) && supportedTrigger(child, caps)
+      !!trigger.triggers?.every((child) =>
+        child.type === 'property_edited'
+          ? caps.propertyEdited &&
+            knownKeys(child, ['type', 'field_id', 'ty', 'condition', 'content']) &&
+            !!propertyOperand(child.ty, child.condition) &&
+            typeof child.content === 'string'
+          : !['row_events', 'manual', 'scheduled'].includes(child.type) && supportedTrigger(child, caps)
       )
     );
   const keys =
@@ -272,9 +280,13 @@ export function canEditRule(rule: RuleDefinition, caps: Capabilities) {
 
 export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
   if (!rule.name.trim() || !rule.timezone.trim() || rule.actions.length < 1 || rule.actions.length > 5) return false;
-  const validEvent = (tr: RuleTrigger) => tr.type !== 'status_set_to' || (!!tr.field_id && !!tr.option_id);
+  const validEvent = (tr: RuleTrigger) =>
+    tr.type === 'property_edited'
+      ? validPropertyEvent(tr) && fields.some((f) => f.id === tr.field_id && f.type === tr.ty)
+      : tr.type !== 'status_set_to' || (!!tr.field_id && !!tr.option_id);
 
   if (
+    rule.trigger.type === 'property_edited' ||
     !validEvent(rule.trigger) ||
     (rule.trigger.type === 'row_events' && (!rule.trigger.triggers?.length || !rule.trigger.triggers.every(validEvent)))
   )

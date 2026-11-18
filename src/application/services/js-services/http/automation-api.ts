@@ -3,6 +3,9 @@ import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from 
 export type RuleTrigger = {
   type: string;
   field_id?: string;
+  ty?: number;
+  condition?: number;
+  content?: string;
   option_id?: string;
   field_ids?: string[];
   triggers?: RuleTrigger[];
