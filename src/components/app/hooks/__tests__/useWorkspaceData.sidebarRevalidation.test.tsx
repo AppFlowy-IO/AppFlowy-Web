@@ -160,7 +160,7 @@ function createWrapper(
           email: typeof currentUserEmail === 'function' ? currentUserEmail() : currentUserEmail,
         },
       }}>
-        <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <MemoryRouter initialEntries={[window.location.pathname]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
           <AuthInternalContext.Provider value={activeAuthContext}>
             <SyncInternalContext.Provider value={syncContext}>{children}</SyncInternalContext.Provider>
           </AuthInternalContext.Provider>
@@ -2948,6 +2948,30 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(result.current.outline?.[0]?.name).toBe('workspace b fallback');
     expect(result.current.outline?.[0]?.view_id).toBe('space-b-fallback');
+  });
+
+  it.each([
+    ['opens the default page from the workspace root', '00000000-0000-0000-0000-000000000001', ''],
+    ['keeps the requested page on a deep link', '00000000-0000-4000-8000-000000000001', '/00000000-0000-0000-0000-000000000002'],
+  ])('%s for IDs accepted by Cloud regardless of UUID version bits', async (_scenario, workspace, page) => {
+    const defaultView = 'aac9c92a-5cee-4bea-a363-390b0492ec38';
+    const root = `/app/${workspace}`;
+    const previousPath = window.location.href;
+
+    window.history.replaceState(null, '', root + page);
+    try {
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [createView(defaultView)], folderRid: '1-1' });
+      const { result } = renderHook(() => {
+        const { outline } = useWorkspaceData();
+
+        return { outline, pathname: useLocation().pathname };
+      }, { wrapper: createWrapper(new EventEmitter(), () => workspace) });
+
+      await waitFor(() => expect(result.current.outline?.[0]?.view_id).toBe(defaultView));
+      expect(result.current.pathname).toBe(root + (page || `/${defaultView}`));
+    } finally {
+      window.history.replaceState(null, '', previousPath);
+    }
   });
 
   it('keeps forced navigation active when a newer background outline request starts', async () => {

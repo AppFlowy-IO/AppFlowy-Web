@@ -29,12 +29,19 @@ const UUID_VALUE = new RegExp(`^${UUID_PATTERN}$`, 'i');
 const APPFLOWY_PAGE_PATH = new RegExp(`^/app/(${UUID_PATTERN})/(${UUID_PATTERN})/?$`, 'i');
 const APPFLOWY_WORKSPACE_PATH = new RegExp(`^/app/(${UUID_PATTERN})(?:/|$)`, 'i');
 
-/** Accept the UUID representations parsed by Cloud for workspace requests. */
-export function isWorkspaceRouteId(value: string): boolean {
-  if (value.startsWith('urn:uuid:')) return UUID_VALUE.test(value.slice('urn:uuid:'.length));
-  if (value.startsWith('{') && value.endsWith('}')) return UUID_VALUE.test(value.slice(1, -1));
+/** Convert Cloud's supported UUID spellings to the IDs used in workspace navigation and caches. */
+export function normalizeAppRouteId(value: string): string | undefined {
+  let id = value;
 
-  return UUID_VALUE.test(value) || /^[0-9a-f]{32}$/i.test(value);
+  if (value.startsWith('urn:uuid:')) {
+    id = value.slice('urn:uuid:'.length);
+  } else if (value.startsWith('{') && value.endsWith('}')) {
+    id = value.slice(1, -1);
+  } else if (value.length === 32) {
+    id = [value.slice(0, 8), value.slice(8, 12), value.slice(12, 16), value.slice(16, 20), value.slice(20)].join('-');
+  }
+
+  return UUID_VALUE.test(id) ? id.toLowerCase() : undefined;
 }
 
 export interface AppFlowyPageLink {
