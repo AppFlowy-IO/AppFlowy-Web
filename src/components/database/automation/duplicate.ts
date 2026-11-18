@@ -1,5 +1,6 @@
 import {
   DatabaseRule,
+  isCustomSchedule,
   ruleApi,
   RuleDefinition,
   RuleSchedule,
@@ -28,7 +29,7 @@ function calendarDefinition(state: ScheduleState, caps: Capabilities): RuleSched
   if (
     Object.keys(unknown).length ||
     !['daily', 'weekly', 'monthly', ...(caps.customRecurrence ? ['yearly'] : [])].includes(frequency) ||
-    (!caps.customRecurrence && ((interval ?? 1) !== 1 || weekdays?.length))
+    (!caps.customRecurrence && isCustomSchedule(state))
   )
     throw Error('Unsupported schedule');
   return {

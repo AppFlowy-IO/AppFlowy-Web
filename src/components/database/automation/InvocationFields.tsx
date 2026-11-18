@@ -6,6 +6,7 @@ import { useRowOrdersSelector } from '@/application/database-yjs';
 import {
   DatabaseRule,
   isRuleConflict,
+  isCustomSchedule,
   ruleApi,
   RuleSchedule,
 } from '@/application/services/js-services/http/automation-api';
@@ -40,6 +41,7 @@ export function InvocationFields({
     local_time: '09:00:00',
     timezone: rule.timezone,
   }));
+  const [loadedCustom, setLoadedCustom] = useState(false);
   const [loading, setLoading] = useState(scheduled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<'loadError' | 'saveError' | 'conflict'>();
@@ -69,10 +71,11 @@ export function InvocationFields({
             if (ac.signal.aborted) return;
             const { row_id, frequency, starts_on, ends_on, local_time, timezone, interval, weekdays } = state;
 
-            if (!customRecurrence && (frequency === 'yearly' || (interval ?? 1) !== 1 || weekdays?.length)) {
+            if (!customRecurrence && isCustomSchedule(state)) {
               throw new Error('Calendar requires a newer server capability');
             }
 
+            setLoadedCustom(isCustomSchedule(state));
             setSchedule({
               row_id,
               frequency,
@@ -86,6 +89,7 @@ export function InvocationFields({
             setRevision(state.revision);
           } catch (e) {
             if (!e || typeof e !== 'object' || !('code' in e) || e.code !== -2) throw e;
+            setLoadedCustom(false);
           }
         }
       } catch {
@@ -109,6 +113,7 @@ export function InvocationFields({
       if (scheduled) {
         const saved = await ruleApi.putSchedule(workspace, database, rule.id, revision, {
           ...schedule,
+          ...(customRecurrence && loadedCustom && !isCustomSchedule(schedule) && { replace_custom_recurrence: true }),
           row_id: schedule.row_id || undefined,
           local_time: schedule.local_time.length === 5 ? schedule.local_time + ':00' : schedule.local_time,
         });

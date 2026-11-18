@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabase, useDatabaseContextOptional } from '@/application/database-yjs';
+import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { resolveUserAttributionUid } from '@/application/database-yjs/attribution';
 import { Role, YjsDatabaseKey } from '@/application/types';
 import { useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
@@ -11,25 +11,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { getServerInfoSnapshot, SERVER_INFO_LOADING, subscribeToServerInfo } from '@/utils/server-info';
 
-import { ruleCapabilities } from './model';
+import { Capabilities, ruleCapabilities } from './model';
 
 const RuleManager = lazy(() => import('./AutomationEditor').then((module) => ({ default: module.RuleManager })));
 
-export default function AutomationButton({ rowId, prepare }: { rowId?: string; prepare?: () => Promise<boolean> } = {}) {
-  const { t } = useTranslation();
+type Props = { rowId?: string; prepare?: () => Promise<boolean> };
+
+export default function AutomationButton(props: Props = {}) {
   const { info } = useSyncExternalStore(subscribeToServerInfo, getServerInfoSnapshot, () => SERVER_INFO_LOADING);
-  const { workspaceId, readOnly, canWrite, dataSource } = useDatabaseContextOptional() ?? {};
+  const caps = ruleCapabilities(info);
+  if (!caps.enabled || (props.rowId !== undefined && !caps.triggers.includes('manual'))) return null;
+  return <AvailableAutomationButton {...props} caps={caps} />;
+}
+
+function AvailableAutomationButton({ rowId, prepare, caps }: Props & { caps: Capabilities }) {
+  const { t } = useTranslation();
+  const { workspaceId, readOnly, canWrite, dataSource } = useDatabaseContext();
   const account = useUserWorkspaceInfoOptional();
   const owner = resolveUserAttributionUid(useCurrentUserOptional());
   const role = account?.workspaces.find((w) => w.id === workspaceId)?.role;
   const db = useDatabase();
   const databaseId = db?.get(YjsDatabaseKey.id);
-  const caps = ruleCapabilities(info);
   const [open, setOpen] = useState(false);
 
   if (
-    !caps.enabled ||
-    (rowId !== undefined && (!rowId || !owner || !caps.triggers.includes('manual'))) ||
+    (rowId !== undefined && (!rowId || !owner)) ||
     !account ||
     (role !== Role.Member && role !== Role.Owner) ||
     !workspaceId ||

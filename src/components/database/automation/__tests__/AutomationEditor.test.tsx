@@ -63,8 +63,7 @@ jest.mock('@/application/database-yjs', () => ({
   },
   useDatabaseFields: () => undefined,
   useDatabase: () => ({ get: () => 'd' }),
-  useDatabaseContextOptional: () => ({ workspaceId: 'w' }),
-  useDatabaseContext: () => ({ databasePageId: 'page' }),
+  useDatabaseContext: () => ({ workspaceId: 'w', databasePageId: 'page' }),
   useDatabaseViewsSelector: () => ({ viewIds: ['board'], childViews: [{ get: () => 'Work board' }] }),
   usePropertiesSelector: () => ({
     properties: [
@@ -339,6 +338,50 @@ test('a calendar loads its current revision and saves local wall time, frequency
     })
   );
 });
+
+test.each([false, true])(
+  'only a capable editor can replace an existing custom calendar with a simple one (%s)',
+  async (customRecurrence) => {
+    const scheduled = { ...rule, trigger: { type: 'scheduled' } };
+    const base = {
+      revision: 6,
+      frequency: 'weekly' as const,
+      interval: 1,
+      weekdays: [3],
+      starts_on: '2026-11-18',
+      local_time: '08:00:00',
+      timezone: 'UTC',
+      next_due_at: null,
+    };
+
+    api.list.mockResolvedValue({ items: [scheduled] });
+    api.get.mockResolvedValue(scheduled);
+    api.getSchedule.mockResolvedValue(base);
+    api.putSchedule.mockResolvedValue({ ...base, revision: 7 });
+    render(<RuleManager workspace='w' database='d' caps={{ ...extended, customRecurrence }} />);
+    fireEvent.click(await screen.findByText('Schedule'));
+    if (!customRecurrence) {
+      await screen.findByRole('alert');
+      expect(screen.getByText('Save').disabled).toBe(true);
+      expect(api.putSchedule).not.toHaveBeenCalled();
+      return;
+    }
+
+    await screen.findByLabelText('Weekdays');
+    await waitFor(() => expect(screen.getByLabelText('Repeat').value).toBe('weekly'));
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'daily' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() =>
+      expect(api.putSchedule).toHaveBeenCalledWith(
+        'w',
+        'd',
+        'rule',
+        6,
+        expect.objectContaining({ frequency: 'daily', interval: 1, replace_custom_recurrence: true })
+      )
+    );
+  }
+);
 
 test('custom calendars keep their anchor and selected ISO weekdays and clear weekdays on a yearly switch', async () => {
   const scheduled = { ...rule, trigger: { type: 'scheduled' } };

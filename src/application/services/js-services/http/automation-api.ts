@@ -46,6 +46,10 @@ export interface RuleSchedule {
   local_time: string;
   timezone: string;
 }
+export function isCustomSchedule(schedule: RuleSchedule): boolean {
+  return schedule.frequency === 'yearly' || (schedule.interval ?? 1) !== 1 || !!schedule.weekdays?.length;
+}
+
 export type ScheduleState = RuleSchedule & { revision: number; next_due_at: string | null };
 export interface WebhookMetadata {
   id: string;
@@ -157,7 +161,13 @@ export const ruleApi = {
     ),
   getSchedule: (w: string, d: string, id: string, signal?: AbortSignal) =>
     executeAPIRequest<ScheduleState>(() => getAxios()?.get(item(w, d, id) + '/schedule', { signal })),
-  putSchedule: (w: string, d: string, id: string, revision: number, schedule: RuleSchedule) =>
+  putSchedule: (
+    w: string,
+    d: string,
+    id: string,
+    revision: number,
+    schedule: RuleSchedule & { replace_custom_recurrence?: true }
+  ) =>
     executeAPIRequest<ScheduleState>(() =>
       getAxios()?.put(item(w, d, id) + '/schedule', { expected_revision: revision, ...schedule })
     ),
