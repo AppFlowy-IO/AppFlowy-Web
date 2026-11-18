@@ -229,7 +229,7 @@ export const useSync = (
   // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
   // notifyLocalEdit: debounced HTTP full-sync fallback while WebSocket is reconnecting.
   // notifyManifestSync: clears HTTP fallback markers after a WS manifest/state-vector exchange.
-  const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync } = useBatchSync(refs, {
+  const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync, needsContextForHttpSync } = useBatchSync(refs, {
     workspaceId,
     wsReadyState: readyState,
     beforeSend: beforeDatabaseSend,
@@ -248,7 +248,8 @@ export const useSync = (
     notifyManifestSync,
     historyOptions ? beforeDatabaseSend : undefined,
     prepareDatabaseContext,
-    canRetry
+    canRetry,
+    needsContextForHttpSync
   );
   const databaseRestore = useDatabaseHistoryRestoreSync({
     refs, workspaceId, eventEmitter, userId: currentUser?.uuid,

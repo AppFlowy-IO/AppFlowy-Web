@@ -69,7 +69,8 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     root?: SyncContext;
   }>());
   const retryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const checkTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // A null timer is a routine check that came due while the tab was hidden.
+  const checkTimers = useRef(new Map<string, ReturnType<typeof setTimeout> | null>());
   const deferredSync = useRef(new Set<string>());
   const restoreHints = useRef(new Set<string>());
   // A restore observed in this session must keep fencing later traffic even
@@ -263,6 +264,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       invalidateDatabaseDependenciesAfterRestore();
       completed = true;
       resetPlans.current.delete(planKey);
+      // Everyone awaiting this restore must drop stale frames, but only one caller
+      // needs to resume sync once the tracker has verified the reloaded database.
+      deferredSync.current.add(planKey);
       // Sidebar membership lives in Folder, separately from the replaced Database document.
       // Refresh it for both the initiating tab and followers that observed a restore marker.
       eventEmitter.emit(APP_EVENTS.DATABASE_RESTORED, {
@@ -368,8 +372,14 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
 
     checkTimers.current.set(databaseId, setTimeout(() => {
       checkTimers.current.delete(databaseId);
-      if (sessionActive.current && latest.current.workspaceId === workspaceId && latest.current.userId === userId &&
-          hasOpenDatabase(databaseId)) void retryReset.current?.(databaseId);
+      if (!sessionActive.current || latest.current.workspaceId !== workspaceId || latest.current.userId !== userId ||
+          !hasOpenDatabase(databaseId)) return;
+      if (document.visibilityState === 'hidden') {
+        checkTimers.current.set(databaseId, null);
+        return;
+      }
+
+      void retryReset.current?.(databaseId);
     }, tracker.nextCheckDelay(databaseId)));
   }, [hasOpenDatabase, tracker]);
 
@@ -440,9 +450,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       // A failed guard may have dropped the only manifest exchange. Recover
       // once per database even when its restore marker has not changed, and
       // consume this before binding because outgoing frames verify again.
-      const resumeDeferredSync = deferredSync.current.delete(retryKey);
-
-      if (!unchanged || resumeDeferredSync) {
+      if (deferredSync.current.delete(retryKey)) {
         for (const context of current.refs.registeredContexts.current.values()) {
           if (contextDatabaseId(context, rowDatabases.current) === databaseId) bindSyncContext(context);
         }
@@ -484,7 +492,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       if (latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId) {
         const timer = checkTimers.current.get(databaseId);
 
-        if (timer !== undefined) clearTimeout(timer);
+        if (timer !== undefined && timer !== null) clearTimeout(timer);
         checkTimers.current.delete(databaseId);
       }
 
@@ -550,18 +558,32 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     const deferred = deferredSync.current;
     const observed = observedRestores.current;
 
+    const resumeVisibleChecks = () => {
+      if (document.visibilityState !== 'visible') return;
+      for (const [databaseId, timer] of periodicChecks) {
+        if (timer !== null) continue;
+        periodicChecks.delete(databaseId);
+        if (hasOpenDatabase(databaseId)) void retryReset.current?.(databaseId);
+      }
+    };
+
     sessionActive.current = true;
+    document.addEventListener('visibilitychange', resumeVisibleChecks);
     return () => {
       sessionActive.current = false;
+      document.removeEventListener('visibilitychange', resumeVisibleChecks);
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
-      for (const timer of periodicChecks.values()) clearTimeout(timer);
+      for (const timer of periodicChecks.values()) {
+        if (timer !== null) clearTimeout(timer);
+      }
+
       periodicChecks.clear();
       hints.clear();
       deferred.clear();
       observed.clear();
     };
-  }, [deps.workspaceId, userId]);
+  }, [deps.workspaceId, userId, hasOpenDatabase]);
 
   const reloadDatabaseAfterRestore = useCallback(async (databaseId: string, restoreId: string) => {
     const scopeKey = `${latest.current.userId}:${latest.current.workspaceId}:${databaseId}`;

@@ -11,6 +11,7 @@ import {
   runAtomicCreation,
 } from '@/application/atomic-creation';
 import type { CreateDefaultDatabaseViewRequest } from '@/application/atomic-creation';
+import { ERROR_CODE } from '@/application/constants';
 import {
   captureDatabaseStorageFence,
   matchesDatabaseStorageFence,
@@ -34,6 +35,7 @@ import {
 
 const LAYOUTS = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.Chart,
   ViewLayout.List, ViewLayout.Gallery, ViewLayout.Feed, ViewLayout.Form, ViewLayout.Timeline];
+const RESTORE_RECHECK_INTERVAL_MS = 5_000;
 
 export interface DefaultDatabaseViewIntent {
   workspaceId: string;
@@ -118,6 +120,7 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
 
   const checkRestore = async (signal = controller.signal) => {
     assertNotAborted(signal);
+    assertCurrent();
     const state = await atomicRead<{ database_restore_id: string | null; version: string | null }>(owner,
       `/api/workspace/${workspaceId}/database/${databaseId}/restore-state`, undefined, signal);
 
@@ -127,17 +130,29 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
       (state.version ?? undefined) !== version || !(await matchesDatabaseStorageFence(capturedFence))) {
       throw new Error('Database source restore generation changed');
     }
+
+    return true;
+  };
+
+  // A second restore to the same version can remove captured edits or the newly created view.
+  // Check the first miss in each phase, then rate-limit reverification while normal sync catches up.
+  const createRestoreRetryGuard = () => {
+    let nextCheck = 0;
+
+    return async (signal: AbortSignal) => {
+      if (Date.now() < nextCheck) return;
+      await checkRestore(signal);
+      nextCheck = Date.now() + RESTORE_RECHECK_INTERVAL_MS;
+    };
   };
 
   const read = async (signal: AbortSignal, remainingMs: number) => {
-    await checkRestore(signal);
     const results = await readCollabStates(workspaceId, [{
       objectId: databaseId, collabType: Types.Database,
     }], { atomicCreationOwner: owner, signal, timeoutMs: Math.max(1, Math.min(remainingMs, deadline - Date.now())) });
 
     assertNotAborted(signal);
     assertCurrent();
-    await checkRestore(signal);
     if (results.length !== 1) throw new Error('Database source response is ambiguous');
     return results[0];
   };
@@ -154,7 +169,12 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
   };
 
   const beforeSubmit = async () => {
-    await waitForDatabaseViewSource(await capture(), { read, assertCurrent, signal: controller.signal, deadline });
+    await waitForDatabaseViewSource(await capture(), {
+      read, onMissingCoverage: createRestoreRetryGuard(), assertCurrent, signal: controller.signal, deadline,
+    });
+    // The server enforces this restore ID if a restore races the POST.
+    await checkRestore();
+    if (Date.now() >= deadline) throw new Error('Database creation readiness expired');
   };
 
   const hydrate = async () => {
@@ -168,6 +188,7 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
     timeout = setTimeout(() => controller.abort(new Error('Created Database view hydration expired')), 10_000);
     // A receipt's old delta is never replayed over current settings or rows.
     const captured = requirements ?? await capture();
+    const checkRestoreBeforeRetry = createRestoreRetryGuard();
     const ids = [request.view.view_id, ...(request.view.responses_view_id ? [request.view.responses_view_id] : [])];
     // Both reads describe the committed graph. Share their deadline, then verify
     // their identities and the restore/storage fences together before activation.
@@ -181,7 +202,9 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
 
         controller.signal.addEventListener('abort', cancel, { once: true });
         if (controller.signal.aborted) cancel();
-        const sourceRead = waitForDatabaseViewSource(captured, { read, assertCurrent, signal: attempt.signal, deadline });
+        const sourceRead = waitForDatabaseViewSource(captured, {
+          read, onMissingCoverage: checkRestoreBeforeRetry, assertCurrent, signal: attempt.signal, deadline,
+        });
         const folderReads = ids.map((id) => atomicRead<View>(owner,
           `/api/workspace/${workspaceId}/view/${id}`, { depth: 0 }, attempt.signal));
         const remote = new Y.Doc();
@@ -207,21 +230,30 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
               throw new Error('Created Database view is not currently readable in Folder and content');
             }
           });
-          return missing ? undefined : current;
+          if (!missing) return current;
         } catch (error) {
           attempt.abort(error);
-          await Promise.allSettled([sourceRead, ...folderReads]);
+          const [, ...folders] = await Promise.allSettled([sourceRead, ...folderReads]);
+
+          if ((error as { code?: number } | null)?.code === ERROR_CODE.RECORD_NOT_FOUND &&
+            folders.some((folder) => folder.status === 'rejected' && folder.reason === error)) {
+            await checkRestoreBeforeRetry(controller.signal);
+          }
+
           throw error;
         } finally {
           controller.signal.removeEventListener('abort', cancel);
           attempt.abort();
           remote.destroy();
         }
+
+        await checkRestoreBeforeRetry(controller.signal);
+        return undefined;
       },
     });
 
     assertCurrent();
-    await checkRestore();
+    await waitForCreatedDatabaseView({ read: () => checkRestore(), assertCurrent, signal: controller.signal, deadline });
     if (!remoteDatabaseCoversSource(captured, current)) throw new Error('Current Database does not cover its source');
     const published = await publishWithDatabaseStorageFence(capturedFence, () => {
       assertCurrent();

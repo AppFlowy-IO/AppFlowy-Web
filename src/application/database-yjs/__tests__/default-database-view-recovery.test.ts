@@ -39,6 +39,10 @@ jest.mock('@/application/database-yjs/creation/source-readiness', () => ({
   ...jest.requireActual('@/application/database-yjs/creation/source-readiness'), readPersistedDatabaseSource: jest.fn(),
 }));
 
+function restoreStateReads() {
+  return jest.mocked(atomicRead).mock.calls.filter(([, url]) => url.endsWith('/restore-state'));
+}
+
 function fixture() {
   const doc = new Y.Doc({ guid: 'db' }) as YDoc;
   const root = new Y.Map();
@@ -55,9 +59,10 @@ function fixture() {
 
   jest.mocked(readPersistedDatabaseSource).mockImplementation(async () => Y.encodeStateAsUpdate(doc));
   jest.mocked(readCollabStates).mockImplementation(async () => [{ objectId: 'db', collabType: Types.Database,
-    missingUpdate: Y.encodeStateAsUpdate(remote), serverStateVector: Y.encodeStateVector(remote) }]);
+    collabVersion: doc.version, missingUpdate: Y.encodeStateAsUpdate(remote), serverStateVector: Y.encodeStateVector(remote) }]);
   jest.mocked(atomicRead).mockImplementation(async (_owner, url) => url.endsWith('/restore-state')
-    ? { database_restore_id: null, version: null } as never : folder.get(url.split('/').pop()!) as never);
+    ? { database_restore_id: doc.databaseRestoreId ?? null, version: doc.version ?? null } as never
+    : folder.get(url.split('/').pop()!) as never);
   const publish = (request: CreateDefaultDatabaseViewRequest) => {
     posted = true;
     const view = new Y.Map();
@@ -71,7 +76,7 @@ function fixture() {
       layout: ViewLayout.Grid, extra: { database_id: 'db' } });
     return { request_id: request.request_id, outcome: 'applied', result: {
       view_id: request.view.view_id, view_ids: [request.view.view_id], database_id: 'db',
-      database_restore_id: request.database_restore_id, database_version: null,
+      database_restore_id: request.database_restore_id, database_version: doc.version ?? null,
       database_update_v1: 'AAA=', update_batch_id: '00000000-0000-4000-8000-000000000001',
     } };
   };
@@ -111,6 +116,7 @@ it('opens a view acknowledged near the write deadline without resubmitting its c
 
   expect(f.activate).toHaveBeenCalledWith(viewId);
   expect(postAtomicCreation).toHaveBeenCalledTimes(1);
+  expect(restoreStateReads()).toHaveLength(2);
   expect(await db.atomic_creation.count()).toBe(0);
   f.doc.destroy(); f.remote.destroy();
 });
@@ -131,9 +137,41 @@ it('waits for the created identity after ACK instead of accepting only the pre-c
   const viewId = await createDefaultDatabaseView(f.intent);
 
   expect(committedReads).toBe(2);
+  expect(restoreStateReads()).toHaveLength(3);
   expect(f.activate).toHaveBeenCalledWith(viewId);
   expect(postAtomicCreation).toHaveBeenCalledTimes(1);
   expect(await db.atomic_creation.count()).toBe(0);
+  f.doc.destroy(); f.remote.destroy();
+});
+
+it.each(['content', 'Folder'] as const)('detects a restore that removes the committed view from %s but covers the captured edits', async (missing) => {
+  const f = fixture();
+  const before = { objectId: 'db', collabType: Types.Database,
+    missingUpdate: Y.encodeStateAsUpdate(f.remote), serverStateVector: Y.encodeStateVector(f.remote) };
+  const content = jest.mocked(readCollabStates).getMockImplementation()!;
+  const atomic = jest.mocked(atomicRead).getMockImplementation()!;
+  let committedReads = 0;
+
+  jest.mocked(readCollabStates).mockImplementation(async (...args) => {
+    if (f.isPosted()) {
+      if (++committedReads > 1) throw new Error('Repeated full read of the restored database');
+      if (missing === 'content') return [before];
+    }
+    return content(...args);
+  });
+  jest.mocked(atomicRead).mockImplementation(async (...args) => {
+    if (f.isPosted()) {
+      if (args[1].endsWith('/restore-state')) return { database_restore_id: 'later-restore', version: null } as never;
+      if (missing === 'Folder') throw { code: -2 };
+    }
+    return atomic(...args);
+  });
+  await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: true });
+  expect(committedReads).toBe(1);
+  expect(restoreStateReads()).toHaveLength(2);
+  expect((await db.atomic_creation.toArray())[0].state).toBe('committed');
+  expect(postAtomicCreation).toHaveBeenCalledTimes(1);
+  expect(f.activate).not.toHaveBeenCalled();
   f.doc.destroy(); f.remote.destroy();
 });
 
@@ -151,6 +189,45 @@ it.each([-5, 1079, -2])('retries transient current-read code %s after ACK withou
   expect(committedReads).toBe(2);
   expect(f.activate).toHaveBeenCalledWith(viewId);
   expect(postAtomicCreation).toHaveBeenCalledTimes(1);
+  f.doc.destroy(); f.remote.destroy();
+});
+
+it.each([{ code: 1079 }, { code: 429, httpStatus: 429 }])('honors Retry-After on the final restore check for %j without rereading content or resubmitting', async (failure) => {
+  const f = fixture();
+  const atomic = jest.mocked(atomicRead).getMockImplementation()!;
+  const timers = jest.spyOn(globalThis, 'setTimeout');
+  let committedChecks = 0;
+
+  jest.mocked(atomicRead).mockImplementation(async (...args) => {
+    if (f.isPosted() && args[1].endsWith('/restore-state') && ++committedChecks === 1) {
+      throw { ...failure, retryAfterSecs: 1 };
+    }
+    return atomic(...args);
+  });
+  const viewId = await createDefaultDatabaseView(f.intent);
+
+  expect(timers).toHaveBeenCalledWith(expect.any(Function), 1_000);
+  expect(committedChecks).toBe(2);
+  expect(readCollabStates).toHaveBeenCalledTimes(2);
+  expect(postAtomicCreation).toHaveBeenCalledTimes(1);
+  expect(f.activate).toHaveBeenCalledWith(viewId);
+  f.doc.destroy(); f.remote.destroy();
+});
+
+it('does not submit when the final source marker arrives after the write deadline', async () => {
+  const f = fixture();
+  const atomic = jest.mocked(atomicRead).getMockImplementation()!;
+  let now = 1_000;
+
+  jest.spyOn(Date, 'now').mockImplementation(() => now);
+  jest.mocked(atomicRead).mockImplementation(async (...args) => {
+    if (args[1].endsWith('/restore-state')) now += 30_001;
+    return atomic(...args);
+  });
+  await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: false });
+  expect(restoreStateReads()).toHaveLength(1);
+  expect(postAtomicCreation).not.toHaveBeenCalled();
+  expect(f.activate).not.toHaveBeenCalled();
   f.doc.destroy(); f.remote.destroy();
 });
 
@@ -174,9 +251,126 @@ it('retains the receipt when its read-only budget expires and an explicit retry 
 
   expect(record.state).toBe('committed');
   jest.mocked(readCollabStates).mockImplementation(read);
+  jest.mocked(atomicRead).mockClear();
   await expect(createDefaultDatabaseView(f.intent)).resolves.toBe(command.view.view_id);
+  expect(restoreStateReads()).toHaveLength(1);
   expect(postAtomicCreation).toHaveBeenCalledTimes(1);
   expect(await db.atomic_creation.count()).toBe(0);
+  f.doc.destroy(); f.remote.destroy();
+});
+
+it('blocks submission when the restore ID changed but the versioned source still matches', async () => {
+  const f = fixture();
+
+  jest.mocked(atomicRead).mockResolvedValue({ database_restore_id: 'new-restore', version: null });
+  await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: false });
+  expect(readCollabStates).toHaveBeenCalledTimes(1);
+  expect(restoreStateReads()).toHaveLength(1);
+  expect(postAtomicCreation).not.toHaveBeenCalled();
+  expect(f.activate).not.toHaveBeenCalled();
+  f.doc.destroy(); f.remote.destroy();
+});
+
+it.each(['before submission', 'after commit'] as const)(
+  'stops polling incomplete content after a restore to the same version %s', async (phase) => {
+    const f = fixture();
+
+    f.doc.version = '00000000-0000-4000-8000-000000000001';
+    f.doc.databaseRestoreId = '00000000-0000-4000-8000-000000000002';
+    // Repeating the restore drops edits made since the earlier restore of this snapshot.
+    const restored = { objectId: 'db', collabType: Types.Database, collabVersion: f.doc.version,
+      missingUpdate: Y.encodeStateAsUpdate(f.remote), serverStateVector: Y.encodeStateVector(f.remote) };
+
+    f.doc.getMap('edits').set('since-restore', true);
+    Y.applyUpdate(f.remote, Y.encodeStateAsUpdate(f.doc));
+    const content = jest.mocked(readCollabStates).getMockImplementation()!;
+    const atomic = jest.mocked(atomicRead).getMockImplementation()!;
+    const restoredOnServer = () => phase === 'before submission' || f.isPosted();
+    let restoredReads = 0;
+
+    jest.mocked(readCollabStates).mockImplementation(async (...args) => {
+      if (!restoredOnServer()) return content(...args);
+      if (++restoredReads > 1) throw new Error('Repeated read of the obsolete source');
+      return [restored];
+    });
+    jest.mocked(atomicRead).mockImplementation(async (...args) => {
+      if (restoredOnServer() && args[1].endsWith('/restore-state')) {
+        return { database_restore_id: '00000000-0000-4000-8000-000000000003', version: f.doc.version } as never;
+      }
+      return atomic(...args);
+    });
+    const committed = phase === 'after commit';
+
+    await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed });
+    expect(restoredReads).toBe(1);
+    expect(restoreStateReads()).toHaveLength(committed ? 2 : 1);
+    if (committed) {
+      const [receipt] = await db.atomic_creation.toArray();
+
+      expect(receipt.state).toBe('committed');
+      restoredReads = 0;
+      jest.mocked(atomicRead).mockClear();
+      await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: true });
+      expect(restoredReads).toBe(1);
+      expect(restoreStateReads()).toHaveLength(1);
+    }
+    expect(postAtomicCreation).toHaveBeenCalledTimes(committed ? 1 : 0);
+    expect(f.activate).not.toHaveBeenCalled();
+    f.doc.destroy(); f.remote.destroy();
+  }
+);
+
+it.each([
+  { database_restore_id: 'new-restore', version: null },
+  { database_restore_id: null, version: 'new-version' },
+])('keeps the receipt when restore state changes to %j before an explicit reopen', async (state) => {
+  const f = fixture();
+  const read = jest.mocked(atomicRead).getMockImplementation()!;
+  let changed = false;
+
+  jest.mocked(atomicRead).mockImplementation(async (...args) => {
+    if (args[1].endsWith('/restore-state') && f.isPosted()) {
+      if (changed) return state as never;
+      throw new Error('Lost connectivity after commit');
+    }
+    return read(...args);
+  });
+  await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: true });
+  changed = true;
+  jest.mocked(atomicRead).mockClear();
+  await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: true });
+  expect(restoreStateReads()).toHaveLength(1);
+  expect(postAtomicCreation).toHaveBeenCalledTimes(1);
+  expect(f.activate).not.toHaveBeenCalled();
+  expect((await db.atomic_creation.toArray())[0].state).toBe('committed');
+  f.doc.destroy(); f.remote.destroy();
+});
+
+it('rate-limits restore checks while uncovered edits wait for sync and detects a later restore', async () => {
+  const f = fixture();
+
+  f.doc.getMap('edits').set('pending', true);
+  let now = 1_000;
+  let contentReads = 0;
+  const content = jest.mocked(readCollabStates).getMockImplementation()!;
+  const atomic = jest.mocked(atomicRead).getMockImplementation()!;
+
+  jest.spyOn(Date, 'now').mockImplementation(() => now);
+  jest.mocked(readCollabStates).mockImplementation(async (...args) => {
+    if (++contentReads > 3) throw new Error('Waiting for a retired source');
+    now += 3_000;
+    return content(...args);
+  });
+  jest.mocked(atomicRead).mockImplementation(async (...args) => {
+    if (contentReads >= 2 && args[1].endsWith('/restore-state')) {
+      return { database_restore_id: 'another-restore', version: null } as never;
+    }
+    return atomic(...args);
+  });
+  await expect(createDefaultDatabaseView(f.intent)).rejects.toMatchObject({ committed: false });
+  expect(contentReads).toBe(3);
+  expect(restoreStateReads()).toHaveLength(2);
+  expect(postAtomicCreation).not.toHaveBeenCalled();
   f.doc.destroy(); f.remote.destroy();
 });
 

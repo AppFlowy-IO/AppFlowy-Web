@@ -331,6 +331,113 @@ test('all views and rows share a database check on open and every five minutes, 
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
 });
 
+test('only idle polling pauses in hidden tabs and visible checks share the existing freshness deadline', async () => {
+  jest.useFakeTimers();
+  const visibility = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const f = fixture();
+  const show = (state: DocumentVisibilityState) => {
+    visibility.mockReturnValue(state);
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: null, version: null });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister, scheduleDeferredCleanup: jest.fn(),
+  }));
+  try {
+    const checkRoot = () => result.current.ensureDatabaseRestoreCurrent('database', Types.Database);
+
+    await act(async () => { await checkRoot(); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      show('hidden');
+      jest.advanceTimersByTime(240_000);
+      show('visible');
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+    await act(async () => { jest.advanceTimersByTime(60_000); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      show('hidden');
+      jest.advanceTimersByTime(1_800_000);
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      show('visible');
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+
+    // A writer in a hidden tab still needs current authority. Becoming visible then reuses it.
+    await act(async () => {
+      show('hidden');
+      jest.advanceTimersByTime(600_000);
+      expect(await checkRoot()).toBe(true);
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
+    await act(async () => { show('visible'); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
+    await act(async () => { jest.advanceTimersByTime(300_000); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(5);
+
+    // A deferred check cannot reopen a database whose last owner closed while hidden.
+    await act(async () => {
+      show('hidden');
+      jest.advanceTimersByTime(600_000);
+      f.refs.contextRefCounts.current.delete('database');
+      show('visible');
+    });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(5);
+  } finally {
+    unmount();
+    visibility.mockRestore();
+  }
+});
+
+test('visibility and focus recover a missed database restore with one manifest per context', async () => {
+  jest.useFakeTimers();
+  const visibility = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  const f = fixture();
+  const restored = { database_restore_id: 'restore-new', version: 'same-version' };
+
+  jest.mocked(getDatabaseRestoreState)
+    .mockResolvedValueOnce({ database_restore_id: null, version: 'same-version' })
+    .mockResolvedValue(restored);
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister, scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  try {
+    await act(async () => { await result.current.ensureDatabaseRestoreCurrent('database', Types.Database); });
+    await act(async () => { jest.advanceTimersByTime(300_000); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // One baseline read, one that discovers the restore, and one to verify the completed reload.
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+    for (const id of ['database', 'row']) {
+      const emit = f.contexts.get(id)!.emit;
+
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({
+        collabMessage: expect.objectContaining({ objectId: id, syncRequest: expect.anything() }),
+      }));
+    }
+
+    expect(startDrainAll).toHaveBeenCalledTimes(1);
+  } finally {
+    unmount();
+    visibility.mockRestore();
+  }
+});
+
 test.each([null, 'restore-current'])(
   'opening and syncing row pages in generation %s does not check restore state', async (marker) => {
     jest.useFakeTimers();

@@ -117,6 +117,7 @@ export async function waitForDatabaseViewSource(
   requirements: DatabaseViewSourceRequirements,
   options: {
     read: (signal: AbortSignal, remainingMs: number) => Promise<CollabFullSyncBatchResult>;
+    onMissingCoverage?: (signal: AbortSignal) => Promise<void>;
     assertCurrent: () => void;
     signal: AbortSignal;
     deadline: number;
@@ -136,6 +137,7 @@ export async function waitForDatabaseViewSource(
     options.assertCurrent();
     if (Date.now() >= options.deadline) throw new Error('Database source check expired');
     if (remoteDatabaseCoversSource(requirements, result)) return result;
+    await options.onMissingCoverage?.(options.signal);
     await new Promise<void>((resolve, reject) => {
       const done = () => { options.signal.removeEventListener('abort', abort); resolve(); };
 
@@ -145,7 +147,7 @@ export async function waitForDatabaseViewSource(
       options.signal.addEventListener('abort', abort, { once: true });
       if (options.signal.aborted) abort();
     });
-    // A slow sync must not turn each creation into ten authority reads/second.
+    // Back off content reads while waiting for local edits to reach the server.
     pollDelayMs = Math.min(pollDelayMs * 2, 2000);
   }
 
