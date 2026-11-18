@@ -10,6 +10,7 @@ import {
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
+import AutomationButton from '@/components/database/automation/AutomationButton';
 import { DatabaseSearchAction } from '@/components/database/components/conditions/DatabaseSearchAction';
 import FiltersButton from '@/components/database/components/conditions/FiltersButton';
 import SortsButton from '@/components/database/components/conditions/SortsButton';
@@ -56,6 +57,7 @@ export function DatabaseActions() {
   if (layout === DatabaseViewLayout.Dashboard) {
     return (
       <div className='flex min-w-fit items-center justify-end gap-1' data-testid='database-actions'>
+        {!readOnly && dataSource?.type !== 'history' && <AutomationButton />}
         <Suspense fallback={null}>
           <DashboardActions
             activeViewId={activeViewId}
@@ -104,6 +106,7 @@ export function DatabaseActions() {
       className={`flex min-w-fit items-center justify-end ${compact ? 'gap-0.5' : 'gap-1.5'}`}
       data-testid='database-actions'
     >
+      {!readOnly && dataSource?.type !== 'history' && <AutomationButton />}
       {has('filter') ? <FiltersButton compact={compact} /> : null}
       {has('sort') ? <SortsButton compact={compact} /> : null}
       {isDocumentBlock && (

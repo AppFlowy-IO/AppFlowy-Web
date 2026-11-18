@@ -70,7 +70,7 @@ export async function listConnections(workspaceId: string, signal?: AbortSignal)
   return response.connections;
 }
 
-export function connectProvider(workspaceId: string, provider: IntegrationProvider, signal?: AbortSignal) {
+export function connectProvider(workspaceId: string, provider: IntegrationProvider | 'slack' | 'gmail', signal?: AbortSignal) {
   return executeAPIRequest<ConnectProviderResponse>(
     () =>
       getAxios()?.post<APIResponse<ConnectProviderResponse>>(
@@ -84,7 +84,7 @@ export function connectProvider(workspaceId: string, provider: IntegrationProvid
 
 export function confirmConnection(
   workspaceId: string,
-  provider: IntegrationProvider,
+  provider: IntegrationProvider | 'slack' | 'gmail',
   connectionId: string,
   oauthQuery: string,
   signal?: AbortSignal
