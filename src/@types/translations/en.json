@@ -1,5 +1,10 @@
 {
   "databaseAutomation": {
+    "webhookProperties": "Webhook properties",
+    "headerName": "Header name",
+    "headerValue": "Header value",
+    "addHeader": "Add header",
+    "removeHeader": "Remove header",
     "to": "To",
     "cc": "Cc",
     "bcc": "Bcc",
@@ -113,6 +118,7 @@
     "more": "Load more",
     "back": "Back",
     "kinds": {
+      "webhook_properties": "Send selected properties to webhook",
       "addressed_email": "Send addressed Gmail",
       "yearly": "Yearly",
       "connected_email": "Send from Gmail",

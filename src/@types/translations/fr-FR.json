@@ -1,5 +1,10 @@
 {
   "databaseAutomation": {
+    "webhookProperties": "Propriétés du webhook",
+    "headerName": "Nom de l’en-tête",
+    "headerValue": "Valeur de l’en-tête",
+    "addHeader": "Ajouter un en-tête",
+    "removeHeader": "Supprimer l’en-tête",
     "to": "À",
     "cc": "Cc",
     "bcc": "Cci",
@@ -113,6 +118,7 @@
     "more": "Charger la suite",
     "back": "Retour",
     "kinds": {
+      "webhook_properties": "Envoyer les propriétés au webhook",
       "addressed_email": "Envoyer un Gmail avec destinataires",
       "yearly": "Annuel",
       "connected_email": "Envoyer depuis Gmail",

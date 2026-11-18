@@ -91,6 +91,7 @@ export interface RuleAction {
   connection_id?: string;
   channel_id?: string;
   endpoint_id?: string;
+  property_ids?: string[];
 }
 
 export interface RuleDefinition {
@@ -158,9 +159,14 @@ export const ruleApi = {
         signal,
       })
     ),
-  createWebhook: (w: string, name: string, url: string) =>
+  createWebhook: (w: string, name: string, url: string, headers?: Record<string, string>) =>
     executeAPIRequest<WebhookCreated>(
-      () => getAxios()?.post('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', { name, url }),
+      () =>
+        getAxios()?.post('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', {
+          name,
+          url,
+          ...(headers && { headers }),
+        }),
       { suppressResponseDataLogging: true }
     ),
   rotateWebhook: (w: string, id: string) =>

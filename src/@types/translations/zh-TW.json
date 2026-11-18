@@ -1,5 +1,10 @@
 {
   "databaseAutomation": {
+    "webhookProperties": "Webhook 屬性",
+    "headerName": "標頭名稱",
+    "headerValue": "標頭值",
+    "addHeader": "新增標頭",
+    "removeHeader": "移除標頭",
     "to": "收件人",
     "cc": "副本",
     "bcc": "密件副本",
@@ -113,6 +118,7 @@
     "more": "載入更多",
     "back": "返回",
     "kinds": {
+      "webhook_properties": "傳送指定屬性至 Webhook",
       "addressed_email": "傳送含收件人設定的 Gmail 郵件",
       "yearly": "每年",
       "connected_email": "使用 Gmail 傳送",

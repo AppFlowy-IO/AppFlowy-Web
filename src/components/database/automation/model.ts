@@ -31,17 +31,23 @@ export const actionTypes = [
   'addressed_email',
   'slack',
   'webhook',
+  'webhook_properties',
 ];
 const propertyKinds = ['text', 'number', 'checkbox', 'date_time', 'event_time', 'single_select', 'multi_select'];
 
 export function ruleCapabilities(info?: ServerInfo) {
   const triggers = triggerTypes.filter((type) => info?.database_automation_triggers?.includes(type));
-  const actions = actionTypes.filter((type) => info?.database_automation_actions?.includes(type));
+  const actions = actionTypes.filter(
+    (type) =>
+      info?.database_automation_actions?.includes(type) &&
+      (type !== 'webhook_properties' || info?.database_automation_webhook_features?.includes('selected_properties_v1'))
+  );
 
   return {
     enabled: info?.enable_database_automations === true && triggers.length > 0 && actions.length > 0,
     triggers,
     actions,
+    webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,
     customRecurrence: info?.database_automation_schedule_features?.includes('custom_recurrence_v1') === true,
   };
 }
@@ -105,6 +111,8 @@ export function newAction(type: string): RuleAction {
     case 'addressed_email':
     case 'connected_email':
       return { type, connection_id: '', to: [''], subject: '', message: '' };
+    case 'webhook_properties':
+      return { type, endpoint_id: '', property_ids: [], message: '' };
     case 'slack':
       return { type, connection_id: '', channel_id: '', message: '' };
     default:
@@ -217,6 +225,7 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
     connected_email: ['connection_id', 'to', 'subject', 'message'],
     slack: ['connection_id', 'channel_id', 'message'],
     webhook: ['endpoint_id', 'message'],
+    webhook_properties: ['endpoint_id', 'message', 'property_ids'],
   };
   const row = a.row;
   const rowKeys =
@@ -333,6 +342,15 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
         );
       case 'email':
         return !!a.recipient_id && text(a.subject) && text(a.message);
+      case 'webhook_properties':
+        return (
+          !!a.endpoint_id &&
+          text(a.message) &&
+          !!a.property_ids?.length &&
+          a.property_ids.length <= 32 &&
+          a.property_ids.every(Boolean) &&
+          new Set(a.property_ids).size === a.property_ids.length
+        );
       case 'webhook':
         return !!a.endpoint_id && text(a.message);
       case 'slack':

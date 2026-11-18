@@ -425,6 +425,7 @@ export function ActionFields({
         />
       ) : (
         <WorkflowFields
+          webhookHeaders={caps.webhookHeaders}
           {...{ workspace, action, fields, previous, change }}
           extended={caps.actions.includes('define_variable')}
         />

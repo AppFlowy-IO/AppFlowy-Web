@@ -642,6 +642,7 @@ export function WorkflowFields({
   fields,
   previous,
   extended,
+  webhookHeaders,
 }: {
   workspace: string;
   action: RuleAction;
@@ -649,6 +650,7 @@ export function WorkflowFields({
   fields: RuleField[];
   previous: RuleAction[];
   extended: boolean;
+  webhookHeaders: boolean;
 }) {
   const { t } = useTranslation();
   const { users, fetchUsers } = useMentionableUsers();
@@ -663,7 +665,7 @@ export function WorkflowFields({
     setTargets([]);
     setError(false);
     async function read() {
-      if (action.type === 'webhook') {
+      if (['webhook', 'webhook_properties'].includes(action.type)) {
         let after: string | undefined;
         const results: Item[] = [];
 
@@ -761,7 +763,7 @@ export function WorkflowFields({
           {t('databaseAutomation.retry')}
         </Button>
       )}
-      {action.type === 'webhook' && (
+      {['webhook', 'webhook_properties'].includes(action.type) && (
         <Select
           label={t('databaseAutomation.endpoint')}
           value={action.endpoint_id || ''}
@@ -769,14 +771,24 @@ export function WorkflowFields({
           change={([endpoint_id]) => change({ ...action, endpoint_id })}
         />
       )}
-      {action.type === 'webhook' && (
+      {['webhook', 'webhook_properties'].includes(action.type) && (
         <EndpointControls
+          allowHeaders={webhookHeaders}
           workspace={workspace}
           selected={action.endpoint_id}
           onChange={(endpoint_id) => {
             change({ ...action, endpoint_id });
             setRetry((n) => n + 1);
           }}
+        />
+      )}
+      {action.type === 'webhook_properties' && (
+        <Select
+          multiple
+          label={t('databaseAutomation.webhookProperties')}
+          options={fields.map(({ id, name }) => ({ id, name }))}
+          value={action.property_ids ?? []}
+          change={(property_ids) => change({ ...action, property_ids })}
         />
       )}
       {action.type === 'slack' && (

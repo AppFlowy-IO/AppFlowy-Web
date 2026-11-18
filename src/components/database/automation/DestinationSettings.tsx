@@ -56,10 +56,12 @@ export function ConnectAccount({
 export function EndpointControls({
   workspace,
   selected,
+  allowHeaders,
   onChange,
 }: {
   workspace: string;
   selected?: string;
+  allowHeaders: boolean;
   onChange: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -70,6 +72,13 @@ export function EndpointControls({
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
+  const [headers, setHeaders] = useState<{ id: number; name: string; value: string }[]>([]);
+  const nextHeaderId = useRef(0);
+  const validHeaders =
+    headers.every(
+      ({ name, value }) =>
+        /^[a-zA-Z0-9!#$%&'*+.^_|~`-]{1,128}$/.test(name) && !/[\x00-\x1f\x7f]/.test(value) && value.length <= 2048
+    ) && new Set(headers.map((h) => h.name.toLowerCase())).size === headers.length;
 
   async function submit() {
     if (running.current) return;
@@ -78,7 +87,15 @@ export function EndpointControls({
     setError(false);
     try {
       if (operation === 'new') {
-        const result = await ruleApi.createWebhook(workspace, name, url);
+        const result =
+          headers.length && allowHeaders
+            ? await ruleApi.createWebhook(
+                workspace,
+                name,
+                url,
+                Object.fromEntries(headers.map((h) => [h.name, h.value]))
+              )
+            : await ruleApi.createWebhook(workspace, name, url);
 
         setSecret(result.signing_secret);
         onChange(result.endpoint.id);
@@ -93,6 +110,7 @@ export function EndpointControls({
 
       setName('');
       setUrl('');
+      setHeaders([]);
       setOperation(undefined);
     } catch {
       setError(true);
@@ -162,6 +180,47 @@ export function EndpointControls({
                 {t('databaseAutomation.endpointUrl')}
                 <Input type='url' autoComplete='off' value={url} onChange={(e) => setUrl(e.target.value)} />
               </label>
+              {allowHeaders && (
+                <>
+                  {headers.map(({ id, name: field, value }) => (
+                    <div key={id} className='flex flex-wrap gap-2'>
+                      <Input
+                        aria-label={t('databaseAutomation.headerName')}
+                        maxLength={128}
+                        value={field}
+                        onChange={(e) =>
+                          setHeaders((items) => items.map((h) => (h.id === id ? { ...h, name: e.target.value } : h)))
+                        }
+                      />
+                      <Input
+                        aria-label={t('databaseAutomation.headerValue')}
+                        type='password'
+                        autoComplete='new-password'
+                        maxLength={2048}
+                        value={value}
+                        onChange={(e) =>
+                          setHeaders((items) => items.map((h) => (h.id === id ? { ...h, value: e.target.value } : h)))
+                        }
+                      />
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        onClick={() => setHeaders((items) => items.filter((h) => h.id !== id))}
+                      >
+                        {t('databaseAutomation.removeHeader')}
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={headers.length >= 16}
+                    onClick={() => setHeaders([...headers, { id: nextHeaderId.current++, name: '', value: '' }])}
+                  >
+                    {t('databaseAutomation.addHeader')}
+                  </Button>
+                </>
+              )}
             </>
           ) : (
             <p>
@@ -173,7 +232,7 @@ export function EndpointControls({
           <div className='flex gap-2'>
             <Button
               type='button'
-              disabled={operation === 'new' && (!name.trim() || !url.startsWith('https://'))}
+              disabled={operation === 'new' && (!name.trim() || !url.startsWith('https://') || !validHeaders)}
               onClick={() => void submit()}
             >
               {t('databaseAutomation.confirm')}
@@ -184,6 +243,7 @@ export function EndpointControls({
               onClick={() => {
                 setOperation(undefined);
                 setUrl('');
+                setHeaders([]);
                 setError(false);
               }}
             >

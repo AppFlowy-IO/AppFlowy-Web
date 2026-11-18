@@ -93,6 +93,7 @@ jest.mock('@/application/services/js-services/http/automation-api', () => ({
     databases: jest.fn(),
     fields: jest.fn(),
     webhooks: jest.fn(),
+    createWebhook: jest.fn(),
   },
 }));
 const api = ruleApi as jest.Mocked<typeof ruleApi>;
@@ -197,7 +198,13 @@ test('pages run history under a POSIX locale using its cursor and deletes with t
   await waitFor(() => expect(api.remove).toHaveBeenCalledWith('w', 'd', 'rule', 5));
 });
 
-const extended = { enabled: true, triggers: triggerTypes, actions: actionTypes, customRecurrence: false };
+const extended = {
+  enabled: true,
+  triggers: triggerTypes,
+  actions: actionTypes,
+  customRecurrence: false,
+  webhookHeaders: false,
+};
 const fullManager = () => render(<RuleManager workspace='w' database='d' caps={extended} />);
 const row = 'e5e8c286-c7c7-4c44-8e15-12f6e4987004';
 
@@ -381,6 +388,52 @@ test('edits earlier variables and destination fields without changing a step res
   expect(reordered[2].row).toEqual({ type: 'step', action_index: 0 });
   expect(reordered[2].properties?.[0].value.parts?.[1]).toEqual({ type: 'step_row_id', action_index: 0 });
   expect(validRule({ ...saved, actions: reordered })).toBe(false);
+});
+
+test('webhook property actions store selected IDs and write-only headers stay with endpoint registration', async () => {
+  const endpoint = { id: 'owned', name: 'Review webhook', disabled: false };
+  api.webhooks.mockResolvedValue({ items: [endpoint] });
+  api.createWebhook.mockResolvedValue({ endpoint, signing_secret: 'signing-key' });
+  api.create.mockResolvedValue(rule);
+  const info = {
+    enable_database_automations: true,
+    database_automation_triggers: ['row_created'],
+    database_automation_actions: ['webhook', 'webhook_properties'],
+  };
+  expect(ruleCapabilities(info as ServerInfo).actions).toEqual(['webhook']);
+  const server = ruleCapabilities({
+    ...info,
+    database_automation_webhook_features: ['headers_v1', 'selected_properties_v1'],
+  } as ServerInfo);
+  render(<RuleManager workspace='w' database='d' caps={server} />);
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Publish review' } });
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'webhook_properties' } });
+  fireEvent.click(screen.getByText('Register endpoint'));
+  const names = screen.getAllByLabelText('Name');
+  fireEvent.change(names[names.length - 1], { target: { value: 'Review webhook' } });
+  fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org/review' } });
+  fireEvent.click(screen.getByText('Add header'));
+  fireEvent.change(screen.getByLabelText('Header name'), { target: { value: 'Authorization' } });
+  const header = screen.getByLabelText('Header value') as HTMLInputElement;
+  expect(header.type).toBe('password');
+  fireEvent.change(header, { target: { value: 'private-fixture' } });
+  fireEvent.click(screen.getByText('Confirm'));
+  await waitFor(() =>
+    expect(api.createWebhook).toHaveBeenCalledWith('w', 'Review webhook', 'https://example.org/review', {
+      Authorization: 'private-fixture',
+    })
+  );
+  expect(screen.queryByDisplayValue('private-fixture')).toBeNull();
+  const property = screen.getByLabelText('Webhook properties') as HTMLSelectElement;
+  property.options[0].selected = true;
+  fireEvent.change(property);
+  fireEvent.change(screen.getByLabelText('Notification message'), { target: { value: 'Status' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create.mock.calls[0][3].actions).toEqual([
+    { type: 'webhook_properties', endpoint_id: 'owned', property_ids: ['state'], message: 'Status' },
+  ]);
 });
 
 test('webhook selector follows the authorized pages, excludes disabled endpoints, and saves the identifier', async () => {
