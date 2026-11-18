@@ -33,6 +33,7 @@ export function InvocationFields({
 }) {
   const { t, i18n } = useTranslation();
   const scheduled = rule.trigger.type === 'scheduled';
+  const rowRequired = !scheduled || rule.actions.some((action) => action.type === 'webhook_properties');
   const [revision, setRevision] = useState(rule.revision);
   const [schedule, setSchedule] = useState<RuleSchedule>(() => ({
     ...(fixedRow && { row_id: fixedRow }),
@@ -137,7 +138,7 @@ export function InvocationFields({
   }
 
   const valid =
-    ((scheduled && !schedule.row_id) || isUuid(schedule.row_id || '')) &&
+    ((!rowRequired && !schedule.row_id) || isUuid(schedule.row_id || '')) &&
     (!scheduled ||
       (!!schedule.starts_on &&
         !!schedule.local_time &&
@@ -159,11 +160,11 @@ export function InvocationFields({
       <h3>{rule.name}</h3>
       <fieldset disabled={loading || busy || !!runId} className='flex flex-col gap-3'>
         <label>
-          {t(scheduled ? 'databaseAutomation.optionalRow' : 'databaseAutomation.rowId')}
+          {t(rowRequired ? 'databaseAutomation.rowId' : 'databaseAutomation.optionalRow')}
           <Input
             readOnly={!!fixedRow}
             list={fixedRow ? undefined : 'automation-invocation-rows'}
-            required={!scheduled}
+            required={rowRequired}
             value={schedule.row_id || ''}
             onChange={(e) => set({ row_id: e.target.value })}
           />

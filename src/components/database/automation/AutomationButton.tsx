@@ -20,6 +20,7 @@ type Props = { rowId?: string; prepare?: () => Promise<boolean> };
 export default function AutomationButton(props: Props = {}) {
   const { info } = useSyncExternalStore(subscribeToServerInfo, getServerInfoSnapshot, () => SERVER_INFO_LOADING);
   const caps = ruleCapabilities(info);
+
   if (!caps.enabled || (props.rowId !== undefined && !caps.triggers.includes('manual'))) return null;
   return <AvailableAutomationButton {...props} caps={caps} />;
 }
@@ -75,7 +76,7 @@ function AvailableAutomationButton({ rowId, prepare, caps }: Props & { caps: Cap
           <DialogTitle>{label}</DialogTitle>
         </DialogHeader>
         {open && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<p role='status'>{t('databaseAutomation.loading')}</p>}>
             <RuleManager
               row={row}
               key={[workspaceId, databaseId, owner, rowId].join('/')}

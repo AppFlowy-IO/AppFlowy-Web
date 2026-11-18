@@ -284,6 +284,9 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
     (rule.conditions.length || rule.actions.some((a) => a.type === 'set_property' || a.person_field_ids?.length))
   )
     return false;
+  const deletesRow =
+    rule.trigger.type === 'row_deleted' || rule.trigger.triggers?.some((trigger) => trigger.type === 'row_deleted');
+
   return rule.actions.every((a, index) => {
     const previous = rule.actions.slice(0, index);
     const created = (i: number) => previous[i]?.type === 'create_row';
@@ -346,6 +349,7 @@ export function validRule(rule: RuleDefinition, fields: RuleField[] = []) {
         return !!a.recipient_id && text(a.subject) && text(a.message);
       case 'webhook_properties':
         return (
+          !deletesRow &&
           !!a.endpoint_id &&
           text(a.message) &&
           !!a.property_ids?.length &&

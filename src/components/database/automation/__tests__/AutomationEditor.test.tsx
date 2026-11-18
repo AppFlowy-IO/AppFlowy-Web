@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import strings from '@/@types/translations/en.json';
 import { FieldType } from '@/application/database-yjs';
@@ -282,8 +282,12 @@ test('a row menu runs only enabled manual rules owned by the current member and 
       </DropdownMenuContent>
     </DropdownMenu>
   );
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Run now' }));
-  const available = await screen.findByRole('button', { name: 'Own "owner_uid":123' });
+  const item = await screen.findByRole('menuitem', { name: 'Run now' });
+
+  await act(async () => {
+    fireEvent.click(item);
+  });
+  const available = await screen.findByRole('button', { name: 'Own "owner_uid":123' }, { timeout: 5000 });
 
   expect(screen.queryByText('Other member')).toBeNull();
   expect(screen.queryByText('Paused')).toBeNull();
@@ -382,6 +386,43 @@ test.each([false, true])(
     );
   }
 );
+
+test('selected webhook properties require a live source row for triggers and schedules', async () => {
+  const webhook = { type: 'webhook_properties', endpoint_id: 'ep', message: 'Info', property_ids: ['field'] };
+  const scheduled = { ...rule, actions: [webhook], trigger: { type: 'scheduled' } };
+  const calendar = {
+    revision: 6,
+    frequency: 'daily' as const,
+    starts_on: '2026-11-18',
+    local_time: '08:00:00',
+    timezone: 'UTC',
+    next_due_at: null,
+  };
+
+  expect(validRule({ ...scheduled, trigger: { type: 'row_deleted' } })).toBe(false);
+  expect(
+    validRule({
+      ...scheduled,
+      trigger: { type: 'row_events', match: 'any', triggers: [{ type: 'row_deleted' }, { type: 'row_created' }] },
+    })
+  ).toBe(false);
+  expect(validRule({ ...scheduled, trigger: { type: 'manual' } })).toBe(true);
+  api.list.mockResolvedValue({ items: [scheduled] });
+  api.get.mockResolvedValue(scheduled);
+  api.getSchedule.mockResolvedValue(calendar);
+  api.putSchedule.mockResolvedValue(calendar);
+  fullManager();
+  fireEvent.click(await screen.findByText('Schedule'));
+  const input = await screen.findByLabelText('Row ID');
+
+  await screen.findByDisplayValue(calendar.starts_on);
+  expect(screen.getByText('Save').disabled).toBe(true);
+  fireEvent.change(input, { target: { value: row } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.putSchedule).toHaveBeenCalledWith('w', 'd', 'rule', 6, expect.objectContaining({ row_id: row }))
+  );
+});
 
 test('custom calendars keep their anchor and selected ISO weekdays and clear weekdays on a yearly switch', async () => {
   const scheduled = { ...rule, trigger: { type: 'scheduled' } };
