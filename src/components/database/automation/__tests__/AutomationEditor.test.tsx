@@ -496,3 +496,26 @@ test('a person assignment uses a member UUID and explicitly adds to the existing
     { type: 'set_property', field_id: 'assignee', value: { kind: 'person', operation: 'add', value: ['person-id'] } },
   ]);
 });
+
+test('composes an in-app notification from a row field and preserves compatibility with literal notifications', async () => {
+  api.create.mockResolvedValue(rule);
+  fullManager();
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Notify with row title' } });
+  fireEvent.click(screen.getByText(strings.databaseAutomation.template));
+  fireEvent.change(screen.getByLabelText(strings.databaseAutomation.source), { target: { value: 'field' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  const saved = api.create.mock.calls[0][3];
+  const notification = saved.actions[0];
+
+  expect(notification).toEqual({
+    type: 'notify',
+    notify_actor: true,
+    message_template: { parts: [{ type: 'field', field_id: expect.any(String) }] },
+  });
+  expect(canEditRule(saved, caps)).toBe(false);
+  expect(
+    canEditRule({ ...saved, actions: [{ type: 'notify', notify_actor: true, message: 'Old message' }] }, caps)
+  ).toBe(true);
+});

@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import { Capabilities, newAction, RuleField, valueKinds } from './model';
-import { SourceValue, WorkflowFields } from './WorkflowFields';
+import { SourceValue, TextFields, WorkflowFields } from './WorkflowFields';
 
 import type { ReactNode } from 'react';
 
@@ -215,11 +215,15 @@ function NotifyFields({
   action,
   fields,
   deleted,
+  extended,
+  previous,
   change,
 }: {
   action: RuleAction;
   fields: RuleField[];
   deleted: boolean;
+  extended: boolean;
+  previous: RuleAction[];
   change: (a: RuleAction) => void;
 }) {
   const { t } = useTranslation();
@@ -273,14 +277,36 @@ function NotifyFields({
             ))}
         </Choice>
       )}
-      <label>
-        {t('databaseAutomation.message')}
-        <Input
-          maxLength={500}
-          value={typeof action.message === 'string' ? action.message : ''}
-          onChange={(e) => change({ ...action, message: e.target.value })}
+      {extended ? (
+        <TextFields
+          label={t('databaseAutomation.message')}
+          fields={deleted ? [] : fields}
+          previous={previous}
+          value={action.message_template ?? action.message}
+          change={(value) => {
+            const next = { ...action };
+
+            delete next.message_template;
+            delete next.message;
+            if (typeof value === 'string') {
+              if (value) next.message = value;
+            } else {
+              next.message_template = value;
+            }
+
+            change(next);
+          }}
         />
-      </label>
+      ) : (
+        <label>
+          {t('databaseAutomation.message')}
+          <Input
+            maxLength={500}
+            value={typeof action.message === 'string' ? action.message : ''}
+            onChange={(e) => change({ ...action, message: e.target.value })}
+          />
+        </label>
+      )}
     </>
   );
 }
@@ -381,7 +407,14 @@ export function ActionFields({
           ))}
       </Choice>
       {action.type === 'notify' ? (
-        <NotifyFields action={action} fields={fields} deleted={deleted} change={change} />
+        <NotifyFields
+          action={action}
+          fields={fields}
+          deleted={deleted}
+          change={change}
+          previous={previous}
+          extended={caps.actions.includes('define_variable')}
+        />
       ) : action.type === 'set_property' ? (
         <PropertyFields
           action={action}

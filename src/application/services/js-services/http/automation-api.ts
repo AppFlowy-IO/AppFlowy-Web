@@ -72,6 +72,7 @@ export interface RuleAction {
   person_field_ids?: string[];
   notify_actor?: boolean;
   message?: AutomationText;
+  message_template?: AutomationText;
   subject?: AutomationText;
   database_id?: string;
   view_id?: string;

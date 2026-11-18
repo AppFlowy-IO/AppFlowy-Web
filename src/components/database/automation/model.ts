@@ -181,7 +181,7 @@ function knownValue(v?: PropertyValue): boolean {
 function supportedAction(a: RuleAction, caps: Capabilities) {
   if (!caps.actions.includes(a.type)) return false;
   const keys: Record<string, string[]> = {
-    notify: ['message', 'user_ids', 'person_field_ids', 'notify_actor'],
+    notify: ['message', 'message_template', 'user_ids', 'person_field_ids', 'notify_actor'],
     set_property: ['field_id', 'value'],
     define_variable: ['name', 'value'],
     create_row: ['database_id', 'view_id', 'properties'],
@@ -207,6 +207,8 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
     (a.value === undefined ||
       !['template', 'field', 'variable', 'formula', 'person', 'relation'].includes(a.value.kind) ||
       caps.actions.includes('define_variable')) &&
+    (a.message_template === undefined ||
+      (caps.actions.includes('define_variable') && a.message === undefined && knownText(a.message_template))) &&
     knownText(a.message) &&
     knownText(a.subject) &&
     (!a.to || a.to.every(knownText)) &&
@@ -255,10 +257,15 @@ export function validRule(rule: RuleDefinition) {
       !!v && validValue(v) && (v.kind !== 'variable' || named(v.name)) && (v.kind !== 'template' || parts(v.parts));
 
     if (a.row?.type === 'step' && !created(a.row.action_index)) return false;
-    if (a.type === 'notify') return Boolean(a.notify_actor || a.user_ids?.length || a.person_field_ids?.length);
     const text = (v?: AutomationText) => (typeof v === 'string' ? !!v.trim() : !!v?.parts.length && parts(v.parts));
 
     switch (a.type) {
+      case 'notify':
+        return (
+          Boolean(a.notify_actor || a.user_ids?.length || a.person_field_ids?.length) &&
+          (a.message_template === undefined || text(a.message_template)) &&
+          (typeof a.message !== 'string' || a.message.length <= 500)
+        );
       case 'connected_email':
         return (
           !!a.connection_id &&
@@ -347,6 +354,7 @@ export function reorderActions(original: RuleAction[], ordered: RuleAction[]): R
     ...(action.subject ? { subject: text(action.subject) } : {}),
     ...(action.to ? { to: action.to.map(text) } : {}),
     ...(action.message ? { message: text(action.message) } : {}),
+    ...(action.message_template ? { message_template: text(action.message_template) } : {}),
   }));
 }
 
