@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { RAG_SOURCE_OWNERS_METADATA_KEY } from '@/components/ai-chat/rag-scope';
 import { Search } from '@/components/app/search/Search';
@@ -11,9 +11,12 @@ const mockGetViewNavigation = jest.fn();
 const mockFetchCompleteView = jest.fn();
 const mockUpdateChatSettings = jest.fn();
 const mockChatRequest = jest.fn();
+const mockLoadRecentViews = jest.fn();
+let mockWorkspaceId = 'workspace-id';
 
 jest.mock('@mui/material', () => ({
-  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
+  Dialog: ({ children, open, onClose }: { children: ReactNode; open: boolean; onClose: () => void }) =>
+    open ? <div onKeyDown={(event) => event.key === 'Escape' && onClose()}>{children}</div> : null,
   InputBase: ({ onChange, value }: { onChange: (event: ChangeEvent<HTMLInputElement>) => void; value: string }) => (
     <input aria-label='search-input' onChange={onChange} value={value} />
   ),
@@ -27,16 +30,26 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAIEnabled: () => true,
   useAppOperations: () => ({ addPage: mockAddPage }),
   useAppOutline: () => [],
-  useAppRecent: () => ({ recentViews: [], loadRecentViews: jest.fn() }),
+  useAppRecent: () => ({ recentViews: [], loadRecentViews: mockLoadRecentViews }),
   useAppViewId: () => 'current-page-id',
-  useCurrentWorkspaceId: () => 'workspace-id',
+  useCurrentWorkspaceId: () => mockWorkspaceId,
   useToView: () => mockToView,
 }));
 
 jest.mock('@/components/app/search/BestMatch', () => ({
   __esModule: true,
-  default: ({ onAskAI, searchValue }: { onAskAI: (query: string, sources: unknown[]) => void; searchValue: string }) => (
+  default: ({
+    onAskAI,
+    searchValue,
+    submitted,
+  }: {
+    onAskAI: (query: string, sources: unknown[]) => void;
+    searchValue: string;
+    submitted: boolean;
+  }) => (
     <button
+      data-query={searchValue}
+      data-submitted={submitted}
       onClick={() =>
         onAskAI(searchValue, [
           {
@@ -117,6 +130,7 @@ jest.mock('@/utils/hotkeys', () => ({
 describe('Search AI chat creation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWorkspaceId = 'workspace-id';
     const currentPage = {
       view_id: 'current-page-id',
       name: 'Current page',
@@ -167,6 +181,53 @@ describe('Search AI chat creation', () => {
           }
         : { updateChatSettings: mockUpdateChatSettings }
     );
+  });
+
+  it('submits the current query and clears submission on editing, workspace changes, and reopening', async () => {
+    const { rerender } = render(<Search />);
+
+    fireEvent.click(screen.getByText('button.search'));
+    const input = screen.getByRole('textbox');
+    const submitButton = screen.getByRole('button', { name: 'button.search' });
+
+    expect(submitButton.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(input, { target: { value: 'invoice' } });
+    expect((await screen.findByText('Ask AI')).dataset.submitted).toBe('false');
+    fireEvent.click(submitButton);
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('true');
+    fireEvent.change(input, { target: { value: 'invoice?' } });
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('false');
+    fireEvent.submit(input.closest('form')!);
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('true');
+    mockWorkspaceId = 'next-workspace';
+    rerender(<Search />);
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('false');
+    fireEvent.click(submitButton);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await act(async () => {
+      fireEvent.click(screen.getByText('button.search'));
+    });
+    expect(screen.getByRole<HTMLInputElement>('textbox').value).toBe('');
+    expect(screen.queryByText('Ask AI')).toBeNull();
+  });
+
+  it('keeps IME drafts and confirmation out of search and requires a later submit for an overview', async () => {
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    const input = screen.getByRole('textbox');
+
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: '输入' } });
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229, isComposing: true });
+    fireEvent.submit(input.closest('form')!);
+    expect(screen.queryByText('Ask AI')).toBeNull();
+    expect(screen.getByRole('button', { name: 'button.search' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.compositionEnd(input);
+    expect((await screen.findByText('Ask AI')).dataset.submitted).toBe('false');
+    expect(screen.getByText('Ask AI').dataset.query).toBe('输入');
+    expect(fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })).toBe(false);
+    fireEvent.submit(input.closest('form')!);
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('true');
   });
 
   it('uses authoritative navigation and persists row ownership before navigating', async () => {
