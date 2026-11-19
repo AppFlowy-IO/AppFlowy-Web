@@ -1,7 +1,7 @@
 {
   "databaseAutomation": {
     "allowWorkspaceWebhooks": "允许自动化发送 Webhook",
-    "workspaceWebhookPolicyDescription": "关闭后，已排队的 Webhook 将被阻止。重新开启后，只有新排队的运行可以发送 Webhook。",
+    "workspaceWebhookPolicyDescription": "关闭后，无法添加新的 Webhook 操作，已排队的 Webhook 也会被阻止。重新开启后，只有新排队的运行可以发送 Webhook。",
     "webhookPolicyError": "无法加载或保存 Webhook 设置。",
     "retryWebhookPolicy": "重试",
     "checkSetupStatus": "查看设置状态",

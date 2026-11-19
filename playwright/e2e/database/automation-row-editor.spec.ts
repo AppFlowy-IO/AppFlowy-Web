@@ -171,5 +171,39 @@ test('workspace owners can turn outgoing webhooks off and restore them after reo
   await openSettings();
   await expect(control).toBeEnabled();
   await expect(control).not.toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await createDatabaseView(page, 'Grid', 0);
+  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
+  const [row] = await getVisibleDataRowIds(page);
+  const checkEditor = async (allowed: boolean) => {
+    await openRowDetailByRowId(page, row);
+    await page.getByTestId('row-detail-more-actions').click();
+    const [policy] = await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'GET' &&
+        /\/api\/workspace\/[^/]+\/settings$/.test(new URL(res.url()).pathname)),
+      page.getByRole('menuitem', { name: 'Automations for this row' }).click(),
+    ]);
+
+    expect(await policy.json()).toMatchObject({ code: 0, data: { disable_automation_webhooks: !allowed } });
+    const rules = page.getByRole('dialog', { name: 'Automations for this row' });
+
+    await rules.getByRole('button', { name: 'New automation' }).click();
+    const action = rules.getByLabel('Action', { exact: true });
+
+    await expect(action.locator('option[value="notify"]')).toHaveCount(1);
+    for (const kind of ['webhook', 'webhook_properties']) {
+      await expect(action.locator(`option[value="${kind}"]`)).toHaveCount(allowed ? 1 : 0);
+    }
+
+    await page.reload();
+    await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
+  };
+
+  await checkEditor(false);
+  await openSettings();
   await change(false);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await checkEditor(true);
 });

@@ -155,6 +155,7 @@ jest.mock('@/application/services/js-services/http/automation-api', () => ({
     putSchedule: jest.fn(),
     databases: jest.fn(),
     fields: jest.fn(),
+    workspaceWebhookPolicy: jest.fn(),
     webhooks: jest.fn(),
     createWebhook: jest.fn(),
   },
@@ -286,6 +287,59 @@ const extended = {
   webhookHeaders: false,
 };
 const fullManager = () => render(<RuleManager workspace='w' database='d' caps={extended} />);
+
+test.each([true, false])('workspace webhook policy filters both action choices when disabled=%s', async (disabled) => {
+  api.workspaceWebhookPolicy.mockResolvedValue({ disable_automation_webhooks: disabled });
+  render(<RuleManager workspace='w' database='d' caps={{ ...extended, workspaceWebhookPolicy: true }} />);
+  fireEvent.click(await screen.findByText('New automation'));
+  const choices = Array.from(screen.getByLabelText('Action').options, (item) => item.value);
+
+  expect(choices.includes('notify')).toBe(true);
+  expect(choices.includes('webhook')).toBe(!disabled);
+  expect(choices.includes('webhook_properties')).toBe(!disabled);
+  expect(api.workspaceWebhookPolicy).toHaveBeenCalledTimes(1);
+});
+
+test('a row editor can replace an existing blocked webhook with an internal notification', async () => {
+  const existing = { ...rule, actions: [{ type: 'webhook', endpoint_id: 'owned', message: 'Ready' }] };
+
+  api.workspaceWebhookPolicy.mockResolvedValue({ disable_automation_webhooks: true });
+  api.list.mockResolvedValue({ items: [existing] });
+  api.get.mockResolvedValue(existing);
+  api.patch.mockResolvedValue(rule);
+  render(<RuleManager workspace='w' database='d' rowScope='row' caps={{ ...extended, workspaceWebhookPolicy: true }} />);
+  fireEvent.click(await screen.findByText('Existing'));
+  const select = await screen.findByLabelText('Action');
+
+  expect(select.selectedOptions[0].value).toBe('webhook');
+  expect(select.selectedOptions[0].disabled).toBe(true);
+  expect(api.webhooks).not.toHaveBeenCalled();
+  fireEvent.change(select, { target: { value: 'notify' } });
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith(
+      'w',
+      'd',
+      'rule',
+      5,
+      {
+        actions: [{ type: 'notify', notify_actor: true }],
+      },
+      'row'
+    )
+  );
+});
+
+test('a failed workspace settings read keeps internal actions available', async () => {
+  api.workspaceWebhookPolicy.mockRejectedValue(new Error('workspace settings unavailable'));
+  render(<RuleManager workspace='w' database='d' caps={{ ...extended, workspaceWebhookPolicy: true }} />);
+  fireEvent.click(await screen.findByText('New automation'));
+  const choices = Array.from(screen.getByLabelText('Action').options, (item) => item.value);
+
+  expect(choices).toContain('notify');
+  expect(choices).not.toContain('webhook');
+  expect(choices).not.toContain('webhook_properties');
+});
 const row = 'e5e8c286-c7c7-4c44-8e15-12f6e4987004';
 
 test('manual invocation retries ambiguous requests with the same key and revision', async () => {

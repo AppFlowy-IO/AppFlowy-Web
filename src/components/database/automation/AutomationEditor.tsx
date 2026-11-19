@@ -24,6 +24,7 @@ import {
   canEditRule,
   Capabilities,
   hasSourceRow,
+  isWebhookAction,
   newAction,
   newRule,
   reorderActions,
@@ -33,6 +34,7 @@ import {
 } from './model';
 import { ActionFields, TriggerFields } from './RuleFields';
 import { selectAssignmentsFit } from './select-variable';
+import { useWebhookSetupAllowed } from './useAutomationCapabilities';
 
 export function RuleManager({
   workspace,
@@ -51,6 +53,7 @@ export function RuleManager({
 }) {
   const { t } = useTranslation();
   const { properties } = usePropertiesSelector(false);
+  const webhooksAllowed = useWebhookSetupAllowed(workspace, !row && caps.workspaceWebhookPolicy);
   const view = useDatabaseView();
   const [rules, setRules] = useState<DatabaseRule[]>();
   const [selected, setSelected] = useState<{ id: string; base?: DatabaseRule }>();
@@ -176,6 +179,7 @@ export function RuleManager({
         rowScope={rowScope}
         fields={properties}
         caps={caps}
+        workspaceWebhooksAllowed={webhooksAllowed}
         copyFilters={() => view?.get(YjsDatabaseKey.filters)?.toJSON() || []}
         back={() => setSelected(undefined)}
         saved={() => {
@@ -236,11 +240,13 @@ export function RuleManager({
                   {t(rule.trigger.type === 'manual' ? 'databaseAutomation.run' : 'databaseAutomation.schedule')}
                 </Button>
               )}
-            {canEditRule(rule, caps) && !(rowScope && rule.trigger.type === 'button') && (
-              <Button variant='ghost' size='sm' disabled={loading} onClick={() => void duplicate(rule)}>
-                {t('databaseAutomation.duplicate')}
-              </Button>
-            )}
+            {canEditRule(rule, caps) &&
+              !(rowScope && rule.trigger.type === 'button') &&
+              (webhooksAllowed || !rule.actions.some((a) => isWebhookAction(a.type))) && (
+                <Button variant='ghost' size='sm' disabled={loading} onClick={() => void duplicate(rule)}>
+                  {t('databaseAutomation.duplicate')}
+                </Button>
+              )}
             <Button variant='ghost' size='sm' onClick={() => setHistory(rule)}>
               {t('databaseAutomation.history')}
             </Button>
@@ -263,6 +269,7 @@ export function RuleForm({
   base,
   fields,
   caps,
+  workspaceWebhooksAllowed,
   copyFilters,
   buttonScope,
   rowScope = buttonScope?.row,
@@ -275,6 +282,7 @@ export function RuleForm({
   base?: DatabaseRule;
   fields: RuleField[];
   caps: Capabilities;
+  workspaceWebhooksAllowed?: boolean;
   copyFilters: () => unknown[];
   buttonScope?: { row: string; field: string };
   rowScope?: string;
@@ -283,6 +291,12 @@ export function RuleForm({
 }) {
   const { t } = useTranslation();
   const sourceFields = useDatabaseFields();
+  const standaloneWebhooksAllowed = useWebhookSetupAllowed(
+    workspace,
+    workspaceWebhooksAllowed === undefined && caps.workspaceWebhookPolicy
+  );
+  const webhooksAllowed = workspaceWebhooksAllowed ?? standaloneWebhooksAllowed;
+  const actionChoices = caps.actions.filter((type) => webhooksAllowed || !isWebhookAction(type));
   const [original, setOriginal] = useState(base);
   const [draft, setDraft] = useState<RuleDefinition>(
     () => base || { ...newRule(caps), ...(buttonScope && { trigger: { type: 'button', field_id: buttonScope.field } }) }
@@ -410,8 +424,13 @@ export function RuleForm({
   const hasChanges = !original || changedKeys.length > 0;
   const metadataOnly = !!original && changedKeys.every((key) => key === 'name' || (key === 'enabled' && !draft.enabled));
   const boundRow = !!rowScope || calendarHasRow;
+  const needsWebhookSetup =
+    !webhooksAllowed &&
+    draft.actions.some((a) => isWebhookAction(a.type)) &&
+    (!original || (!original.enabled && draft.enabled));
   const canSave =
     error !== 'conflict' &&
+    !needsWebhookSetup &&
     hasChanges &&
     !!draft.name.trim() &&
     (!supported || metadataOnly || validRule(draft, fields, boundRow, database));
@@ -433,7 +452,13 @@ export function RuleForm({
           <input
             type='checkbox'
             checked={draft.enabled}
-            disabled={!supported && !original?.enabled}
+            disabled={
+              (!supported && !original?.enabled) ||
+              (!webhooksAllowed &&
+                original?.enabled === false &&
+                !draft.enabled &&
+                draft.actions.some((a) => isWebhookAction(a.type)))
+            }
             onChange={(e) => change({ enabled: e.target.checked })}
           />
           {t('databaseAutomation.enabled')}
@@ -490,6 +515,7 @@ export function RuleForm({
                   action={action}
                   fields={fields}
                   caps={caps}
+                  webhooksAllowed={webhooksAllowed}
                   expressionRow={hasSourceRow(draft.trigger, boundRow)}
                   scheduled={draft.trigger.type === 'scheduled'}
                   deleted={draft.trigger.type === 'row_deleted'}
@@ -525,11 +551,11 @@ export function RuleForm({
                 </div>
               </fieldset>
             ))}
-            {draft.actions.length < 5 && (
+            {draft.actions.length < 5 && actionChoices.length > 0 && (
               <Button
                 variant='outline'
                 type='button'
-                onClick={() => change({ actions: [...draft.actions, newAction(caps.actions[0])] })}
+                onClick={() => change({ actions: [...draft.actions, newAction(actionChoices[0])] })}
               >
                 {t('databaseAutomation.addAction')}
               </Button>

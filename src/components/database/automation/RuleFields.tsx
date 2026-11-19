@@ -13,7 +13,7 @@ import { useMentionableUsers } from '@/components/database/components/cell/perso
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-import { Capabilities, newAction, RuleField, valueKinds } from './model';
+import { Capabilities, isWebhookAction, newAction, RuleField, valueKinds } from './model';
 import { PropertyEditedFields } from './PropertyEditedFields';
 import { RichActionContext } from './RichActionText';
 import { TextFields } from './TextFields';
@@ -415,6 +415,7 @@ export function ActionFields({
   expressionRow,
   scheduled,
   caps,
+  webhooksAllowed,
   change,
 }: {
   action: RuleAction;
@@ -424,6 +425,7 @@ export function ActionFields({
   expressionRow: boolean;
   scheduled: boolean;
   caps: Capabilities;
+  webhooksAllowed: boolean;
   workspace: string;
   previous: RuleAction[];
   change: (a: RuleAction) => void;
@@ -435,8 +437,9 @@ export function ActionFields({
       <Choice label={t('databaseAutomation.action')} value={action.type} onChange={([type]) => change(newAction(type))}>
         {caps.actions
           .filter((a) => !deleted || a !== 'set_property')
+          .filter((a) => webhooksAllowed || !isWebhookAction(a) || a === action.type)
           .map((a) => (
-            <option key={a} value={a}>
+            <option key={a} value={a} disabled={!webhooksAllowed && isWebhookAction(a)}>
               {t(`databaseAutomation.kinds.${a}`, { defaultValue: a })}
             </option>
           ))}
@@ -459,7 +462,7 @@ export function ActionFields({
           previous={previous}
           extended={caps.actions.includes('define_variable')}
         />
-      ) : (
+      ) : webhooksAllowed || !isWebhookAction(action.type) ? (
         <WorkflowFields
           scheduled={scheduled}
           hasRow={expressionRow}
@@ -470,6 +473,8 @@ export function ActionFields({
           fields={expressionRow ? fields : []}
           extended={caps.actions.includes('define_variable')}
         />
+      ) : (
+        <p className='text-text-secondary'>{t('databaseAutomation.workspaceWebhookPolicyDescription')}</p>
       )}
     </RichActionContext.Provider>
   );

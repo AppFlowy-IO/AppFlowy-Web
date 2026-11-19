@@ -45,6 +45,11 @@ export const actionTypes = [
   'webhook',
   'webhook_properties',
 ];
+
+export function isWebhookAction(type: string) {
+  return type === 'webhook' || type === 'webhook_properties';
+}
+
 const propertyKinds = ['text', 'number', 'checkbox', 'date_time', 'event_time', 'single_select', 'multi_select'];
 
 export function ruleCapabilities(info?: ServerInfo) {
@@ -66,6 +71,7 @@ export function ruleCapabilities(info?: ServerInfo) {
     triggers,
     actions,
     webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,
+    workspaceWebhookPolicy: info?.database_automation_webhook_features?.includes('workspace_policy_v1') === true,
     richActionText: info?.database_automation_value_features?.includes('rich_action_text_v1') === true,
     relatedFormulaInputs: info?.database_automation_value_features?.includes('formula_related_inputs_v1') === true,
     formulaExpression: info?.database_automation_value_features?.includes('formula_expression_v1') === true,
