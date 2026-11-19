@@ -119,6 +119,7 @@ for (const memberKey of ['ada', 'ben'] as const) {
         );
       });
       await input.pressSequentially(fixture.query, { delay: 70 });
+      const typedAt = performance.now();
       const keywords = await keywordRequest;
       expect(keywords.status()).toBe(200);
       expect(await keywords.finished()).toBeNull();
@@ -169,6 +170,7 @@ for (const memberKey of ['ada', 'ben'] as const) {
       expect(rankOfRow(fixture.unassigned_to_viewers_row_id)).toBeNull();
       await expect(rows.filter({ hasText: member.document_task })).toBeVisible();
       await expect(rows.filter({ hasText: member.database_task })).toBeVisible();
+      const keywordVisibleMs = Math.round(performance.now() - typedAt);
       const excludedTasks = [
         peer.document_task,
         peer.database_task,
@@ -212,7 +214,10 @@ for (const memberKey of ['ada', 'ben'] as const) {
           {
             member: memberKey,
             preparedVisibleMs,
+            preparedResponseMs: prepared.request().timing().responseEnd,
+            keywordVisibleMs,
             submittedVisibleMs,
+            submittedResponseMs: response.request().timing().responseEnd,
             overviewReads: overviewReads.length,
             keywordResponseMs: keywords.request().timing().responseEnd,
             summariesBeforeSubmit,
