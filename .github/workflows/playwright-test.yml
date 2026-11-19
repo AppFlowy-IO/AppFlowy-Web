@@ -306,7 +306,7 @@ jobs:
           retention-days: 1
 
   search-overviews:
-    name: 'Search overviews (two workspace members)'
+    name: 'Search overviews (three workspace members)'
     needs: build
     if: >-
       !inputs.interop_only && github.event_name != 'schedule' &&
@@ -326,7 +326,7 @@ jobs:
         with:
           repository: AppFlowy-IO/AppFlowy-Cloud-Premium
           # The archived data, restore recipe and service images are one tested contract.
-          ref: f6e80921f2c63ad7ba39185171ce33ddfeaa5425
+          ref: b11744c9a772693de154ae4affa9132c34f6d61c
           path: AppFlowy-Cloud-Premium
           token: ${{ secrets.CI_TOKEN }}
           persist-credentials: false
@@ -379,6 +379,7 @@ jobs:
             test-results/**/Harbor-*.webm
             test-results/**/keyword-ranking.json
             test-results/**/search-measurements.json
+            test-results/**/search-interactions.json
           retention-days: 14
       - name: Stop the Harbor fixture
         if: always() && hashFiles('AppFlowy-Cloud-Premium/script/ci/start_search_ui_fixture.sh') != ''
