@@ -326,7 +326,7 @@ jobs:
         with:
           repository: AppFlowy-IO/AppFlowy-Cloud-Premium
           # The archived data, restore recipe and service images are one tested contract.
-          ref: b11744c9a772693de154ae4affa9132c34f6d61c
+          ref: 3f12e76324f5fb7b6e2e4910605acd7714364114
           path: AppFlowy-Cloud-Premium
           token: ${{ secrets.CI_TOKEN }}
           persist-credentials: false
