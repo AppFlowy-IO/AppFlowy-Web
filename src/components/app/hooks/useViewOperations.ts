@@ -419,7 +419,7 @@ export function useViewOperations({
 
   // Navigate to view
   const toView = useCallback(
-    async (viewId: string, blockId?: string, keepSearch?: boolean, loadViewMeta?: (viewId: string) => Promise<View>) => {
+    async (viewId: string, blockId?: string, keepSearch?: boolean | URLSearchParams, loadViewMeta?: (viewId: string) => Promise<View>) => {
       // Prefer outline/meta when available (fast), but fall back to server fetch for cases
       // where the outline does not include container children (e.g. shallow outline fetch).
       let view: View | undefined;
@@ -494,7 +494,7 @@ export function useViewOperations({
       }
 
       let url = `/app/${resolvedWorkspaceId}/${targetViewId}`;
-      const searchParams = new URLSearchParams(keepSearch ? window.location.search : undefined);
+      const searchParams = new URLSearchParams(keepSearch instanceof URLSearchParams ? keepSearch : keepSearch ? window.location.search : undefined);
 
       if (blockId && targetView) {
         switch (targetView.layout) {

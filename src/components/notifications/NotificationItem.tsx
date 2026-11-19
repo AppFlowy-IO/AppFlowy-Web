@@ -11,6 +11,7 @@ import { ReactComponent as BadgeAtIcon } from '@/assets/icons/notification_icon_
 import { ReactComponent as BadgeReminderIcon } from '@/assets/icons/notification_reminder_badge.svg';
 import { ReactComponent as ReminderClockIcon } from '@/assets/icons/reminder_clock.svg';
 import { useToView } from '@/components/app/app.hooks';
+import { failureRuleSearch } from '@/components/database/automation/failure-link';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
@@ -204,13 +205,14 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
 
   const anchorId = pickText(notification.metadata, ['row_id', 'block_id']) || undefined;
 
-  const openTarget = useCallback(async (viewId: Notification['viewId'], anchor?: string) => {
+  const openTarget = useCallback(async (viewId: Notification['viewId'], anchor?: string, search?: URLSearchParams) => {
     if (actionInFlightRef.current) return;
     actionInFlightRef.current = true;
 
     try {
       if (viewId) {
-        await toView(viewId, anchor);
+        if (search) await toView(viewId, undefined, search);
+        else await toView(viewId, anchor);
       }
 
       if (!notification.isRead) {
@@ -222,6 +224,9 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
       actionInFlightRef.current = false;
     }
   }, [notification.isRead, notification.id, toView, onMarkRead, onClose]);
+
+  const openNotification = () => openTarget(notification.viewId, anchorId,
+    notification.type === 'automation_run_failed' ? failureRuleSearch(notification.metadata) : undefined);
 
   const handleMarkRead = useCallback(
     async (e: React.MouseEvent) => {
@@ -269,11 +274,11 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
     <div
       role={'button'}
       tabIndex={0}
-      onClick={() => void openTarget(notification.viewId, anchorId)}
+      onClick={() => void openNotification()}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          void openTarget(notification.viewId, anchorId);
+          void openNotification();
         }
       }}
       className={

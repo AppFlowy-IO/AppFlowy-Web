@@ -991,7 +991,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Enhanced toView that uses loadViewMeta
   const enhancedToView = useCallback(
-    async (viewId: string, blockId?: string, keepSearch?: boolean) => {
+    async (viewId: string, blockId?: string, keepSearch?: boolean | URLSearchParams) => {
       return toView(viewId, blockId, keepSearch, loadViewMeta);
     },
     [toView, loadViewMeta]

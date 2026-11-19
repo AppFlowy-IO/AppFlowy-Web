@@ -60,3 +60,23 @@ it('shows the automation message and opens only links in this workspace without 
   expect(mockToView.mock.calls).toEqual([[view,undefined]]);
   expect(markRead).toHaveBeenCalledWith(['run']);
 });
+
+it.each([undefined, 'bec03fe2-a539-43cf-b70b-44167e356507'])(
+  'opens the failed automation under its original scope (%s) and marks it read',
+  async (row) => {
+    mockToView.mockClear();
+    const db = 'bcbbf78c-9f95-45a8-b79d-1573a789da37';
+    const id = 'bbdd71d4-01db-44d4-adb4-862f8ef55962';
+    const read = jest.fn().mockResolvedValue(undefined);
+
+    render(<NotificationItem notification={{ id: 'notice', workspaceId: 'workspace', viewId: 'view',
+      type: 'automation_run_failed', metadata: { database_id: db, automation_id: id, scope_row_id: row,
+        event_row_id: 'different', failure_code: 'definition_invalid' }, isRead: false, isArchived: false, createdAt: '' }}
+      tab={NotificationTabType.Archived} onArchive={async () => undefined} onMarkRead={read} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button')); });
+    expect(mockToView).toHaveBeenCalledWith('view', undefined, new URLSearchParams({
+      automationDatabase: db, automationId: id, ...(row && { automationRow: row }),
+    }));
+    expect(read).toHaveBeenCalledWith(['notice']);
+  }
+);

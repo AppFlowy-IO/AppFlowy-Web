@@ -435,17 +435,20 @@ test('a notification editor saves a workspace group and inline formula through t
     actions: [{ type: 'notify', notify_actor: true, message_template: { parts: [{ type: 'text', value: 'Review' }] } }],
   };
   let saved: Record<string, unknown> | undefined;
+
   await page.route('**/__fixtures__/automation-button?workflow', (route) =>
     route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
   );
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const ok = (data: unknown) => route.fulfill({ json: { code: 0, data } });
+
     if (path === collection) return ok({ items: [rule] });
     if (path === collection + '/rich') {
       if (route.request().method() === 'PATCH') saved = route.request().postDataJSON();
       return ok(rule);
     }
+
     if (path === '/api/workspace/team/groups') return ok({ groups: [{ group_id: group, name: 'Design reviewers' }] });
     if (path.endsWith('/fields')) return ok([{ id: 'projects', name: 'Projects', field_type_id: 10 }]);
     if (path.endsWith('/database')) return ok({ databases: [], has_more: false });
@@ -454,6 +457,7 @@ test('a notification editor saves a workspace group and inline formula through t
   await page.goto(new URL('/__fixtures__/automation-button?workflow', integrationsURL).href, { waitUntil: 'commit' });
   await page.getByRole('button', { name: rule.name }).click({ timeout: 60_000 });
   const template = page.getByRole('group', { name: 'Notification message', exact: true });
+
   await template.getByLabel('Value source').selectOption('group');
   await template.getByLabel('Value', { exact: true }).selectOption({ label: 'Design reviewers' });
   await template.getByRole('button', { name: 'Add a part', exact: true }).click();
@@ -478,3 +482,48 @@ test('a notification editor saves a workspace group and inline formula through t
       ],
     });
 });
+
+for (const allowed of [true, false]) {
+  test(`opening a failed row-scoped rule from the inbox rechecks access (${allowed ? 'editor' : 'revoked'})`, async ({page, integrationsURL}) => {
+    const database = 'bcbbf78c-9f95-45a8-b79d-1573a789da37';
+    const id = 'bbdd71d4-01db-44d4-adb4-862f8ef55962';
+    const row = 'bec03fe2-a539-43cf-b70b-44167e356507';
+    const calls: string[] = [];
+    const path = '/api/workspace/team/database/' + database + '/row/' + row + '/automation/' + id;
+
+    await page.route('**/__fixtures__/automation-button?recover*', route => route.fulfill({
+      contentType: 'text/html', body: fixtureHTML('automation-button'),
+    }));
+    await page.route('**/api/**', async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+
+      if (pathname === path && route.request().method() === 'GET') {
+        calls.push(pathname);
+        return route.fulfill({ json: allowed ? { code: 0, data: {
+          id, revision: 4, name: 'Fix assignment', enabled: false, status: 'disabled', timezone: 'Etc/UTC',
+          trigger: { type: 'row_created' }, actions: [{ type: 'notify', notify_actor: true }], conditions: [],
+        } } : { code: 1012, message: 'access revoked' } });
+      }
+
+      return route.fulfill({json:{code:0,data:{items:[]}}});
+    });
+    const url = new URL('/__fixtures__/automation-button', integrationsURL);
+
+    url.search = new URLSearchParams({recover: '1', automationDatabase: database, automationId: id, automationRow: row}).toString();
+    await page.goto(url.href, { waitUntil:'commit' });
+    const dialog = page.getByRole('dialog');
+
+    if (allowed) {
+      await expect(dialog.getByLabel('Name', {exact:true})).toHaveValue('Fix assignment');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      expect(new URL(page.url()).searchParams.has('automationId')).toBe(false);
+      expect(new URL(page.url()).searchParams.has('recover')).toBe(true);
+    } else {
+      await expect(dialog.getByRole('alert')).toBeVisible();
+      await expect(dialog.getByLabel('Name', {exact:true})).toHaveCount(0);
+    }
+
+    expect(calls).toEqual([path]);
+  });
+}

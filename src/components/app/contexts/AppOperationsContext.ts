@@ -58,7 +58,7 @@ import {
 export interface AppOperationsContextType {
   // ── View loading / navigation ──────────────────────────────────────
   /** Navigate to a view by ID. Optionally scroll to a block and preserve search params. */
-  toView: (viewId: string, blockId?: string, keepSearch?: boolean) => Promise<void>;
+  toView: (viewId: string, blockId?: string, keepSearch?: boolean | URLSearchParams) => Promise<void>;
   /** Load metadata (name, icon, layout, etc.) for a view without loading its content. */
   loadViewMeta: LoadViewMeta;
   /** Load a view's full data (content + metadata). */

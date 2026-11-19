@@ -1,6 +1,7 @@
 import { createInstance } from 'i18next';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
+import { BrowserRouter } from 'react-router-dom';
 import * as Y from 'yjs';
 
 import en from '@/@types/translations/en.json';
@@ -9,6 +10,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { initAPIService } from '@/application/services/js-services/http/core';
 import { type User, type YDoc, YjsEditorKey } from '@/application/types';
 import { RuleManager } from '@/components/database/automation/AutomationEditor';
+import { FailureRuleDialog } from '@/components/database/automation/FailureRuleDialog';
 import { ruleCapabilities } from '@/components/database/automation/model';
 import { Cell } from '@/components/database/components/cell/Cell';
 import { CenterPeekHeader } from '@/components/database/components/database-row/RowPeekHeader';
@@ -22,6 +24,7 @@ const language = createInstance();
 await language.use(initReactI18next).init({ lng: 'en', resources: { en: { translation: en } } });
 initAPIService({ baseURL: location.origin, gotrueURL: location.origin, wsURL: '' });
 const workflow = new URLSearchParams(location.search).has('workflow');
+const recover = new URLSearchParams(location.search).has('recover');
 const info = {
   enable_page_history: false,
   self_hosted: true,
@@ -57,7 +60,7 @@ const view = new Y.Map<unknown>([
 doc.getMap(YjsEditorKey.data_section).set(
   YjsEditorKey.database,
   new Y.Map<unknown>([
-    ['id', 'tasks'],
+    ['id', recover ? 'bcbbf78c-9f95-45a8-b79d-1573a789da37' : 'tasks'],
     ['fields', new Y.Map(rowSetup ? [] : [['review', field]])],
     ['views', new Y.Map([['grid', view]])],
   ])
@@ -83,7 +86,9 @@ createRoot(document.getElementById('root')!).render(
       }}
     >
       <DatabaseContext.Provider value={context}>
-        {workflow ? (
+        {recover ? (
+          <BrowserRouter><FailureRuleDialog /></BrowserRouter>
+        ) : workflow ? (
           <RuleManager workspace='team' database='tasks' caps={ruleCapabilities(info)} />
         ) : rowSetup ? (
           <CenterPeekHeader rowId='second' onClose={() => undefined} />
