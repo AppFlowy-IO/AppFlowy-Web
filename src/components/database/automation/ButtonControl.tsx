@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 
 import { RuleForm } from './AutomationEditor';
 import { ButtonResult } from './ButtonResult';
+import { ConnectAccount } from './DestinationSettings';
 import { Capabilities } from './model';
 import { Item, Select } from './Select';
 
@@ -228,6 +229,19 @@ export function ButtonControl({ workspace, database, row, field, caps, onNavigat
               />
             </fieldset>
           ))}
+          {Array.from(new Set(binding.connectors.map((connector) => connector.kind))).map((kind) =>
+            kind === 'gmail' || kind === 'slack' ? (
+              <fieldset key={kind} disabled={busy || !!pending.current}>
+                <ConnectAccount
+                  workspace={workspace}
+                  provider={kind}
+                  connected={() => {
+                    if (!pending.current && !sending.current) setReload((n) => n + 1);
+                  }}
+                />
+              </fieldset>
+            ) : null
+          )}
           {sendError && <p role='alert'>{t('databaseAutomation.saveError')}</p>}
           <Button
             type='button'

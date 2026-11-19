@@ -4,6 +4,7 @@ import strings from '@/@types/translations/en.json';
 import { readButtonOpenTarget, readButtonResultTarget, validButtonUrl } from '@/application/automation/button';
 import { FieldType, useDatabaseContextOptional, useFieldSelector } from '@/application/database-yjs';
 import { useUpdateButtonTypeOption } from '@/application/database-yjs/dispatch';
+import { authorizeIntegration } from '@/application/integrations/oauth';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import {
   type DatabaseRule,
@@ -14,7 +15,7 @@ import {
   type ScheduleState,
   type TargetRow,
 } from '@/application/services/js-services/http/automation-api';
-import { listConnections } from '@/application/services/js-services/http/integration-api';
+import { confirmConnection, listConnections } from '@/application/services/js-services/http/integration-api';
 import { Role, type YDatabaseField } from '@/application/types';
 import { useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -114,6 +115,7 @@ jest.mock('@/components/database/components/cell/person/useMentionableUsers', ()
     }),
   };
 });
+jest.mock('@/application/integrations/oauth', () => ({ authorizeIntegration: jest.fn() }));
 jest.mock('@/application/services/js-services/http/integration-api', () => ({
   listConnections: jest.fn(),
   queryIntegration: jest.fn(),
@@ -2092,6 +2094,54 @@ test('native Button resolution uses the clicked field and row, offers caller-own
   await screen.findByText('Run queued.');
   expect(api.invokeButton.mock.calls[2][4].request_id).not.toBe(first[4].request_id);
 });
+test.each(['gmail', 'slack'] as const)(
+  'a Button clicker can connect their first %s account before invoking',
+  async (provider) => {
+    api.list.mockRejectedValue({ code: 1004 });
+    api.resolveButton.mockResolvedValue({
+      automation_id: 'shared',
+      revision: 2,
+      enabled: true,
+      connectors: [
+        { action_index: 0, kind: provider },
+        { action_index: 1, kind: provider },
+      ],
+    });
+    jest
+      .mocked(listConnections)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        { id: 'my-new-grant', provider, status: 'active', connected_at: '2026-11-19', account_identifier: 'My account' },
+      ]);
+    jest.mocked(authorizeIntegration).mockResolvedValue({ connectionId: 'my-new-grant', oauthQuery: 'completed' });
+    jest.mocked(confirmConnection).mockResolvedValue({ success: true });
+    render(<ButtonControl workspace='w' database='d' row='row' field='send' caps={extended} />);
+
+    const link = await screen.findByRole('button', { name: provider === 'gmail' ? 'Connect Gmail' : 'Connect Slack' });
+
+    expect(screen.queryByText('Set up for this row')).toBeNull();
+    fireEvent.click(link);
+    await waitFor(() => expect(screen.getAllByRole('option', { name: 'My account' })).toHaveLength(2));
+    expect(authorizeIntegration).toHaveBeenCalledWith('w', provider, expect.any(AbortSignal));
+    expect(confirmConnection).toHaveBeenCalledWith('w', provider, 'my-new-grant', 'completed', expect.any(AbortSignal));
+    expect(api.invokeButton).not.toHaveBeenCalled();
+    for (const step of [1, 2])
+      fireEvent.change(screen.getByLabelText(`Step ${step} · ${provider} account`), {
+        target: { value: 'my-new-grant' },
+      });
+    fireEvent.click(screen.getByText('Run now'));
+    await screen.findByText('Run queued.');
+    expect(api.invokeButton).toHaveBeenCalledWith(
+      'w',
+      'd',
+      'row',
+      'send',
+      expect.objectContaining({
+        connections: [0, 1].map((action_index) => ({ action_index, connection_id: 'my-new-grant' })),
+      })
+    );
+  }
+);
 test('a row editor can create the first override without changing the shared definition or schema', async () => {
   api.list.mockResolvedValue({ items: [] });
   api.resolveButton.mockRejectedValue({ code: -2 });

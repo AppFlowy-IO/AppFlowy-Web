@@ -56,9 +56,14 @@ test('run a real Button cell using the clicker’s account and replay an interru
   const dialog = page.getByRole('dialog', { name: 'Request review' });
 
   await expect(dialog.getByRole('button', { name: 'Run now' })).toBeDisabled();
+  const connect = dialog.getByRole('button', { name: 'Connect Gmail' });
+
+  await expect(connect).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Connect Slack' })).toHaveCount(0);
   await dialog.getByLabel('Step 3 · gmail account').selectOption('my-account');
   await expect(dialog.getByRole('button', { name: 'Set up for this row' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Run now' }).click();
+  await expect(connect).toBeDisabled();
   await dialog.getByRole('button', { name: 'Retry' }).click();
   await expect(dialog.getByRole('status')).toHaveText('Run queued.');
   expect(submitted).toHaveLength(2);
