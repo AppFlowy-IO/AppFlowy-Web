@@ -179,13 +179,13 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
  * Creates a document page via the inline add button, expands the ViewModal
  * to full-page view, and returns the document's view ID.
  */
-export async function createDocumentPageAndNavigate(page: Page): Promise<string> {
+export async function createDocumentPageAndNavigate(page: Page, timeout = 10000): Promise<string> {
   await AddPageSelectors.inlineAddButton(page).filter({ visible: true }).first().click();
   await AddPageSelectors.addDocumentButton(page).click();
 
   const dialog = page.getByRole('dialog');
 
-  await expect(dialog).toBeVisible({ timeout: 10000 });
+  await expect(dialog).toBeVisible({ timeout });
   const modalEditor = dialog.getByTestId('editor-content');
 
   await expect(modalEditor).toHaveAttribute('id', /^editor-.+/);

@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Scheduler. Each case replays `keys` with simulate_schedule against a server that answers after `server_latency_ms`; omitted settings take `config`. A bare `@` request goes on the `bare` lane.",
+  "config": {
+    "idle_ms": 100,
+    "trailing_ms": 100,
+    "abort_after_ms": 400,
+    "typed_deadline_ms": 2500,
+    "bare_deadline_ms": 5000,
+    "short_prefix_v1": false,
+    "rows_lane": true
+  },
+  "cases": [
+    {
+      "id": "road-at-40ms-per-key-150ms-server",
+      "server_latency_ms": 150,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 40, "query": "r"},
+        {"t_ms": 80, "query": "ro"},
+        {"t_ms": 120, "query": "roa"},
+        {"t_ms": 160, "query": "road"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 150, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 260, "event": "send", "query": "road", "lanes": ["primary", "rows"]},
+        {"t_ms": 410, "event": "complete", "query": "road", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 3,
+      "typed_groups": 1
+    },
+    {
+      "id": "road-at-40ms-per-key-50ms-server",
+      "server_latency_ms": 50,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 40, "query": "r"},
+        {"t_ms": 80, "query": "ro"},
+        {"t_ms": 120, "query": "roa"},
+        {"t_ms": 160, "query": "road"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 50, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 260, "event": "send", "query": "road", "lanes": ["primary", "rows"]},
+        {"t_ms": 310, "event": "complete", "query": "road", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 3,
+      "typed_groups": 1
+    },
+    {
+      "id": "road-at-250ms-per-key-150ms-server",
+      "server_latency_ms": 150,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 250, "query": "r"},
+        {"t_ms": 500, "query": "ro"},
+        {"t_ms": 750, "query": "roa"},
+        {"t_ms": 1000, "query": "road"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 150, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 500, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 650, "event": "complete", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 750, "event": "send", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 900, "event": "complete", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 1000, "event": "send", "query": "road", "lanes": ["primary", "rows"]},
+        {"t_ms": 1150, "event": "complete", "query": "road", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 7,
+      "typed_groups": 3
+    },
+    {
+      "id": "road-at-250ms-per-key-with-short-prefix-v1",
+      "server_latency_ms": 150,
+      "short_prefix_v1": true,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 250, "query": "r"},
+        {"t_ms": 500, "query": "ro"},
+        {"t_ms": 750, "query": "roa"},
+        {"t_ms": 1000, "query": "road"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 150, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 250, "event": "send", "query": "r", "lanes": ["primary", "rows"]},
+        {"t_ms": 400, "event": "complete", "query": "r", "lanes": ["primary", "rows"]},
+        {"t_ms": 500, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 650, "event": "complete", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 750, "event": "send", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 900, "event": "complete", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 1000, "event": "send", "query": "road", "lanes": ["primary", "rows"]},
+        {"t_ms": 1150, "event": "complete", "query": "road", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 9,
+      "typed_groups": 4
+    },
+    {
+      "id": "road-at-250ms-per-key-600ms-server-aborts-after-400ms",
+      "server_latency_ms": 600,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 250, "query": "r"},
+        {"t_ms": 500, "query": "ro"},
+        {"t_ms": 750, "query": "roa"},
+        {"t_ms": 1000, "query": "road"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 500, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 600, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 900, "event": "abort", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 900, "event": "send", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 1300, "event": "abort", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 1300, "event": "send", "query": "road", "lanes": ["primary", "rows"]},
+        {"t_ms": 1900, "event": "complete", "query": "road", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 7,
+      "typed_groups": 3
+    },
+    {
+      "id": "fast-typing-sends-only-the-last-query",
+      "server_latency_ms": 150,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 10, "query": "r"},
+        {"t_ms": 20, "query": "ro"},
+        {"t_ms": 30, "query": "roa"},
+        {"t_ms": 40, "query": "road"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 140, "event": "send", "query": "road", "lanes": ["primary", "rows"]},
+        {"t_ms": 150, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 290, "event": "complete", "query": "road", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 3,
+      "typed_groups": 1
+    },
+    {
+      "id": "the-newest-query-replaces-a-queued-one",
+      "server_latency_ms": 300,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 300, "query": "pl"},
+        {"t_ms": 350, "query": "pla"},
+        {"t_ms": 400, "query": "plan"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 300, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 300, "event": "send", "query": "pl", "lanes": ["primary", "rows"]},
+        {"t_ms": 600, "event": "complete", "query": "pl", "lanes": ["primary", "rows"]},
+        {"t_ms": 600, "event": "send", "query": "plan", "lanes": ["primary", "rows"]},
+        {"t_ms": 900, "event": "complete", "query": "plan", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 5,
+      "typed_groups": 2
+    },
+    {
+      "id": "typing-back-to-the-query-in-flight-keeps-it",
+      "server_latency_ms": 600,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 300, "query": "ro"},
+        {"t_ms": 350, "query": "roa"},
+        {"t_ms": 400, "query": "ro"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 300, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 600, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 900, "event": "complete", "query": "ro", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 3,
+      "typed_groups": 1
+    },
+    {
+      "id": "typing-never-aborts-a-bare-request",
+      "server_latency_ms": 3000,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 150, "query": "ro"},
+        {"t_ms": 200, "query": "roa"}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 150, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 550, "event": "abort", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 550, "event": "send", "query": "roa", "lanes": ["primary", "rows"]},
+        {"t_ms": 3000, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 3050, "event": "timeout", "query": "roa", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 5,
+      "typed_groups": 2
+    },
+    {
+      "id": "an-answer-at-the-deadline-times-out",
+      "server_latency_ms": 2500,
+      "keys": [{"t_ms": 0, "query": ""}, {"t_ms": 300, "query": "ro"}],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 300, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 2500, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 2800, "event": "timeout", "query": "ro", "lanes": ["primary", "rows"]}
+      ],
+      "requests": 3,
+      "typed_groups": 1
+    },
+    {
+      "id": "a-bare-request-times-out-after-5s",
+      "server_latency_ms": 6000,
+      "keys": [{"t_ms": 0, "query": ""}],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 5000, "event": "timeout", "query": "", "lanes": ["bare"]}
+      ],
+      "requests": 1,
+      "typed_groups": 0
+    },
+    {
+      "id": "backspacing-to-one-letter-and-to-the-trigger",
+      "server_latency_ms": 100,
+      "keys": [
+        {"t_ms": 0, "query": ""},
+        {"t_ms": 300, "query": "ro"},
+        {"t_ms": 600, "query": "r"},
+        {"t_ms": 900, "query": ""}
+      ],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 100, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 300, "event": "send", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 400, "event": "complete", "query": "ro", "lanes": ["primary", "rows"]},
+        {"t_ms": 900, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 1000, "event": "complete", "query": "", "lanes": ["bare"]}
+      ],
+      "requests": 4,
+      "typed_groups": 1
+    },
+    {
+      "id": "a-picker-without-rows-sends-one-request-per-group",
+      "server_latency_ms": 100,
+      "rows_lane": false,
+      "keys": [{"t_ms": 0, "query": ""}, {"t_ms": 300, "query": "spec"}],
+      "events": [
+        {"t_ms": 0, "event": "send", "query": "", "lanes": ["bare"]},
+        {"t_ms": 100, "event": "complete", "query": "", "lanes": ["bare"]},
+        {"t_ms": 300, "event": "send", "query": "spec", "lanes": ["primary"]},
+        {"t_ms": 400, "event": "complete", "query": "spec", "lanes": ["primary"]}
+      ],
+      "requests": 2,
+      "typed_groups": 1
+    }
+  ]
+}

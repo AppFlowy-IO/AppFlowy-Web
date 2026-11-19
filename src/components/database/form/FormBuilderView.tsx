@@ -32,44 +32,34 @@ import { FormQuestionCardReadOnly } from './FormQuestionCardReadOnly';
 import { FormQuestionTypePicker } from './FormQuestionTypePicker';
 import { FormRespondentTitle } from './FormRespondentTitle';
 import { FormShareButton } from './FormShareButton';
-import { FormShareProvider } from './FormShareContext';
+import { FormShareProvider, useFormShareContextOptional } from './FormShareContext';
 
 import type { AddFormSelectOption } from './FormSelectOptionsEditor';
 
 /**
- * Top-level form-builder view. Mirrors the desktop's `FormBuilderPage`:
- *
- *   ┌─ toolbar ──────────────────── Preview · Share form ┐
- *   │  Form title                                        │
- *   │  Description                                       │
- *   │  ┌─ access banner ────────────────────── Change ─┐ │
- *   │  │ 🔒 Only members at <ws> can fill out this form │
- *   │  └────────────────────────────────────────────────┘ │
- *   │  ┌─ question 1 ───────────────────────────── ⋮ ─┐  │
- *   │  ┌─ question 2 ──────────────────────────────────┐ │
- *   │             + Add question                        │
- *   └────────────────────────────────────────────────────┘
- *
- * The auto-create helper is mounted for every unresolved Form, including a
- * fresh view whose legacy projection temporarily exposes existing fields. It
- * removes its hydration subscription as soon as that one-time branch resolves.
+ * The scrolling authoring column. Database page actions live in the tab bar;
+ * standalone widget bodies own a fallback scope and toolbar. Unresolved forms
+ * hydrate before the one-time auto-create decision.
  */
 export function FormBuilderView() {
   const ctx = useDatabaseContextOptional();
   const readOnly = ctx?.readOnly ?? false;
+  const share = useFormShareContextOptional();
 
   if (ctx?.dataSource?.type === 'history') {
     return <FormBuilderBody readOnly />;
   }
 
+  if (share) return <FormBuilderBody readOnly={readOnly} />;
+
   return (
     <FormShareProvider canUpdateSettings={ctx?.canShare === true}>
-      <FormBuilderBody readOnly={readOnly} />
+      <FormBuilderBody readOnly={readOnly} standalone />
     </FormShareProvider>
   );
 }
 
-function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
+function FormBuilderBody({ readOnly, standalone = false }: { readOnly: boolean; standalone?: boolean }) {
   const ctx = useDatabaseContextOptional();
   const isHistory = ctx?.dataSource?.type === 'history';
   const snapshot = useFormLayoutSnapshot();
@@ -201,20 +191,20 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
       data-testid='form-builder-scroll-container'
       className='appflowy-scroller h-full min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden'
     >
-      <div className='mx-auto flex min-h-full w-full max-w-2xl flex-col gap-4 px-6 py-10'>
+      <div className='mx-auto flex min-h-full w-full max-w-[632px] flex-col gap-3 px-4 py-5'>
         {/*
         Preview, share-link inspection, and the access banner remain visible
         to view-only members, matching Desktop. The provider and popovers use
         page permission to disable every mutation. Auto-create and question
         editing remain author-only.
       */}
-        {!isHistory && (
+        {!isHistory && standalone && (
           <header className='flex items-center justify-end gap-2'>
             <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
             <FormShareButton />
           </header>
         )}
-        <section data-testid='form-respondent-copy' className='flex flex-col gap-1'>
+        <section data-testid='form-respondent-copy' className='flex flex-col gap-1 py-2'>
           <FormRespondentTitle
             key={`respondent-title-${activeViewId ?? ''}`}
             title={snapshot.respondentTitle}
@@ -252,6 +242,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
                 required={q.required}
                 description={q.descriptionVisible ? q.description : ''}
                 longAnswer={q.longAnswer}
+                selectField={q.selectField}
               />
             ))}
           </div>
@@ -265,9 +256,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
           />
         )}
 
-        {!readOnly && !autoCreatePending && (
-          <FormQuestionTypePicker fieldsMap={fields} fieldsVersion={fieldsVersion} snapshot={snapshot} writer={writer} />
-        )}
+        {!readOnly && !autoCreatePending && <FormQuestionTypePicker />}
       </div>
     </div>
   );
@@ -368,13 +357,9 @@ function EmptyState({ decided, readOnly }: { decided: boolean; readOnly: boolean
     ? 'This form hasn’t been set up yet.'
     : readOnly
     ? 'No questions yet.'
-    : 'No questions yet. Use “+ Add question” to pick from existing properties.';
+    : 'No questions yet. Use “Add question” to create a question.';
 
-  return (
-    <div className='rounded-md border border-dashed border-line-divider px-4 py-8 text-center text-sm text-text-caption'>
-      {copy}
-    </div>
-  );
+  return <div className='py-4 text-xs text-text-tertiary'>{copy}</div>;
 }
 
 /**

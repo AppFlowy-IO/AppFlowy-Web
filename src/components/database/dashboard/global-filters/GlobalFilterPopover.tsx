@@ -3,8 +3,10 @@ import { ReactElement, ReactNode, useCallback, useState } from 'react';
 import { DASHBOARD_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 import { DashboardSurface } from '../mobile/DashboardSurface';
+import { DASHBOARD_OVERLAY_CLASS } from '../dashboard-ui';
 
 import { LazyGlobalFilterMenu, preloadGlobalFilterMenu } from './LazyGlobalFilterMenu';
 
@@ -66,7 +68,7 @@ export interface GlobalFilterPopoverProps {
  * The dashboard's global filter menu, for every entry point (a pill, the
  * bar's `+ Filter`, the toolbar button): the open state, the lazily loaded
  * menu, and its container. On desktop a popover, the one place its size is set
- * (290 wide, radius 10; `geometry.popover` in `tokens.json`); on a phone a
+ * (290px wide with 12px AppFlowy corners); on a phone a
  * bottom sheet (`DashboardSurface`) whose header carries the back chevron of
  * the menu's pushed screens.
  *
@@ -138,7 +140,8 @@ export function GlobalFilterPopover({
       {wrapTrigger ? wrapTrigger(popoverTrigger) : popoverTrigger}
       <PopoverContent
         align={align}
-        className='!rounded-[10px] bg-surface-primary p-1 shadow-menu'
+        aria-label={typeof sheetTitle === 'string' ? sheetTitle : undefined}
+        className={cn(DASHBOARD_OVERLAY_CLASS, 'max-w-[calc(100vw-16px)] p-2')}
         data-parity-id='dash-global-filter-popover'
         data-testid='dashboard-global-filter-popover'
         onClick={stopPropagation}

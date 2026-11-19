@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { preventTooltipOnFocus, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-/** A dashboard widget's tool: 24×24, radius 6, a 16px glyph; accent when active or in Edit mode. */
-export const WIDGET_TOOL_BUTTON_CLASS =
-  '!rounded-200 text-dash-tool-icon data-[active=true]:text-dash-edit-icon [&_svg]:h-4 [&_svg]:w-4';
+import { DASHBOARD_ICON_BUTTON_CLASS } from '../dashboard-ui';
+
+/** A 32px dashboard control with a 20px icon and an explicit keyboard focus ring. */
+export const WIDGET_TOOL_BUTTON_CLASS = `${DASHBOARD_ICON_BUTTON_CLASS} data-[active=true]:bg-fill-theme-select data-[active=true]:text-icon-info-thick`;
 
 type ButtonProps = ComponentProps<typeof Button>;
 
@@ -26,7 +27,7 @@ export interface WidgetToolButtonProps
 
 /**
  * The trigger every widget tool shares (Filter, Sort, Settings): a quiet
- * 24px ghost button with a 16px glyph and a hover-only tooltip, like the
+ * 32px ghost button with a 20px icon and a hover-only tooltip, like the
  * title's breadcrumb and the desktop tooltips: the focus a closing popover
  * hands back must not open it over the global filter bar just above the
  * header, where it would sit on the Save button. Extra props (`data-*`,
@@ -43,7 +44,7 @@ export const WidgetToolButton = forwardRef<HTMLButtonElement, WidgetToolButtonPr
         <Button
           {...buttonProps}
           aria-label={label}
-          className={cn(WIDGET_TOOL_BUTTON_CLASS, 'relative', accent && 'text-dash-edit-icon', className)}
+          className={cn(WIDGET_TOOL_BUTTON_CLASS, 'relative', accent && 'text-icon-info-thick', className)}
           data-parity-id={parityId}
           ref={ref}
           size='icon-sm'

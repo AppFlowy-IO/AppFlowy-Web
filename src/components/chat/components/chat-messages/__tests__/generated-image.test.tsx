@@ -50,12 +50,13 @@ describe('GeneratedImage', () => {
   });
 
   it('shows the picture with its actions once ready', () => {
-    mockState = { src: 'blob:ready', phase: 'loading', isImageReady: true };
+    mockState = { src: 'blob:ready', phase: 'ready', isImageReady: true };
     render(<GeneratedImage url={BLOB_URL} alt='A fox' onRegenerate={jest.fn()} />);
 
     const image = screen.getByAltText('A fox');
 
     expect(image.getAttribute('src')).toBe('blob:ready');
+    expect(screen.getByTestId('chat-generated-image').getAttribute('data-phase')).toBe('ready');
     expect(screen.getByTestId('chat-generated-image-download')).toBeTruthy();
     expect(screen.getByTestId('chat-generated-image-copy')).toBeTruthy();
     expect(screen.getByTestId('chat-generated-image-regenerate')).toBeTruthy();
@@ -71,7 +72,7 @@ describe('GeneratedImage', () => {
     }));
 
     beforeEach(() => {
-      mockState = { src: 'blob:ready', phase: 'loading', isImageReady: true };
+      mockState = { src: 'blob:ready', phase: 'ready', isImageReady: true };
       write.mockReset().mockImplementation(async (items: ClipboardItem[]) => {
         await items[0].getType('image/png');
       });

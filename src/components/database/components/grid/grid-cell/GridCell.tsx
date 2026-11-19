@@ -27,7 +27,7 @@ function GridCell({
     case RenderRowType.Header:
       return (
         <GridDragColumn columnIndex={columnIndex} column={column}>
-          <GridHeaderColumn onResizeColumnStart={onResizeColumnStart} column={column} />
+          <GridHeaderColumn onResizeColumnStart={onResizeColumnStart} column={column} rowKey={getRenderRowKey(row)} />
         </GridDragColumn>
       );
     case RenderRowType.Row:

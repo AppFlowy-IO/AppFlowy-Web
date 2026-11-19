@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, useReadOnly } from '@/application/database-yjs';
@@ -156,4 +156,5 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
   );
 }
 
-export default GridGroupHeader;
+// Memoized: the grid re-renders its row list on every scroll range change, and this row's props stay the same.
+export default memo(GridGroupHeader);

@@ -1,4 +1,14 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 
 import { useChatContext } from '@/components/chat/chat/context';
@@ -33,7 +43,8 @@ interface MessagesHandlerContextTypes {
     format?: ResponseFormat,
     onMessage?: (text: string, done?: boolean, metadata?: ChatMessageMetadata[]) => void,
     onProgress?: (step: string) => void,
-    onReasoning?: (reasoning: string) => void
+    onReasoning?: (reasoning: string) => void,
+    signal?: AbortSignal
   ) => Promise<void>;
   cancelAnswerStream: () => void;
   /** Saves an edited question and streams a fresh answer for it. */
@@ -54,8 +65,27 @@ interface MessagesHandlerContextTypes {
 
 export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes | undefined>(undefined);
 
+interface AnswerStreamRequest {
+  questionId: number;
+  scope: { disposed: boolean };
+  controller: AbortController;
+  obsolete: boolean;
+  stopRequested: boolean;
+  completed: boolean;
+  cancel?: () => void;
+}
+
+function invalidateAnswerStream(stream: AnswerStreamRequest) {
+  stream.obsolete = true;
+  stream.controller.abort();
+  const cancel = stream.cancel;
+
+  stream.cancel = undefined;
+  cancel?.();
+}
+
 function useMessagesHandler() {
-  const { chatId, requestInstance, currentUser } = useChatContext();
+  const { workspaceId, chatId, requestInstance, currentUser } = useChatContext();
 
   const { chatSettings, fetchChatSettings, persistChatSettings, waitForPendingChatSettings, updateChatSettings } =
     useChatSettingsLoader();
@@ -122,8 +152,9 @@ function useMessagesHandler() {
   const questionSendingRef = useRef(false);
   const [answerApplying, setAnswerApplying] = useState(false);
   const answerApplyingRef = useRef(false);
-  const cancelStreamRef = useRef<() => void>();
   const regenerationTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const activeStreamRef = useRef<AnswerStreamRequest>();
+  const streamScope = useMemo(() => ({ workspaceId, chatId, disposed: false }), [workspaceId, chatId]);
   const chatSettingsFlushersRef = useRef(new Set<() => Promise<void>>());
 
   const registerChatSettingsFlush = useCallback((flush: () => Promise<void>) => {
@@ -140,17 +171,25 @@ function useMessagesHandler() {
     }
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    streamScope.disposed = false;
     return () => {
+      streamScope.disposed = true;
+      const stream = activeStreamRef.current;
+
+      if (stream?.scope === streamScope) {
+        invalidateAnswerStream(stream);
+        activeStreamRef.current = undefined;
+      }
+
       setQuestionSending(false);
       questionSendingRef.current = false;
       setAnswerApplying(false);
       answerApplyingRef.current = false;
       setEditingQuestionId(null);
-      cancelStreamRef.current = undefined;
       clearTimeout(regenerationTimeoutRef.current);
     };
-  }, [chatId]);
+  }, [streamScope]);
 
   const fetchMessages = useCallback(
     async (payload?: GetChatMessagesPayload) => {
@@ -335,46 +374,51 @@ function useMessagesHandler() {
     ]
   );
 
-  const saveAnswer = useCallback(
-    async (questionId: number, placeholderId: number, content: string, metadata: ChatMessageMetadata[]) => {
-      try {
-        const answer = await requestInstance.saveAnswer({
-          question_message_id: questionId,
-          content,
-          ...(metadata.length !== 0 && { meta_data: metadata }),
-        });
-
-        setResponseFormatWithId(answer.message_id, resolveAnswerFormat(placeholderId, content));
-        saveAnswerMessage(questionId, placeholderId, { ...answer, content, meta_data: metadata });
-        // eslint-disable-next-line
-      } catch (e: any) {
-        toast.error(e.message);
-      }
-    },
-    [requestInstance, resolveAnswerFormat, saveAnswerMessage, setResponseFormatWithId]
-  );
-
-  const removeAssistantMessage = useCallback(
-    (messageId: number) => {
-      removeMessages([messageId]);
-    },
-    [removeMessages]
-  );
-
   const fetchAnswerStream = useCallback(
     async (
       questionId: number,
       format?: ResponseFormat,
       onMessage?: (text: string, done?: boolean, metadata?: ChatMessageMetadata[]) => void,
       onProgress?: (step: string) => void,
-      onReasoning?: (reasoning: string) => void
+      onReasoning?: (reasoning: string) => void,
+      signal?: AbortSignal
     ) => {
-      if (questionSendingRef.current || answerApplyingRef.current) {
+      if (streamScope.disposed || signal?.aborted) return;
+
+      const previous = activeStreamRef.current;
+
+      if (
+        questionSendingRef.current ||
+        (answerApplyingRef.current && (previous?.questionId !== questionId || previous.completed))
+      ) {
         throw new Error('An answer is already being requested');
       }
 
+      // Remounting the same assistant may replace its stream. Its pending save,
+      // if any, must finish before another answer can be requested.
+      if (previous) invalidateAnswerStream(previous);
+      const stream: AnswerStreamRequest = {
+        questionId,
+        scope: streamScope,
+        controller: new AbortController(),
+        obsolete: false,
+        stopRequested: false,
+        completed: false,
+      };
+
+      activeStreamRef.current = stream;
       answerApplyingRef.current = true;
       setAnswerApplying(true);
+      const isCurrent = () => !stream.obsolete && !stream.scope.disposed;
+      const abortStream = () => {
+        invalidateAnswerStream(stream);
+        if (activeStreamRef.current === stream) {
+          activeStreamRef.current = undefined;
+          answerApplyingRef.current = false;
+          if (!stream.scope.disposed) setAnswerApplying(false);
+        }
+      };
+
       const question = getMessage(questionId);
       const answerId = question?.reply_message_id || questionId + 1;
 
@@ -382,31 +426,45 @@ function useMessagesHandler() {
         setResponseFormatWithId(answerId, format);
       }
 
+      const persistAnswer = async (content: string, metadata: ChatMessageMetadata[]) => {
+        try {
+          const answer = await requestInstance.saveAnswer({
+            question_message_id: questionId,
+            content,
+            ...(metadata.length !== 0 && { meta_data: metadata }),
+          });
+
+          if (!isCurrent()) return;
+          const isLatestAnswer = messageIdsRef.current[0] === answerId;
+
+          // Replacing the placeholder with a different server ID unmounts its
+          // assistant. Once saved, the chat owns the answer and its suggestions.
+          signal?.removeEventListener('abort', abortStream);
+          setResponseFormatWithId(answer.message_id, resolveAnswerFormat(answerId, content));
+          saveAnswerMessage(questionId, answerId, { ...answer, content, meta_data: metadata });
+          if (isLatestAnswer) void startFetchSuggestions(questionId, isCurrent);
+          // eslint-disable-next-line
+        } catch (e: any) {
+          if (isCurrent()) toast.error(e.message);
+        }
+      };
+
       let completion: Promise<void> | undefined;
       const handleMessageProgress = (message: string, metadata: ChatMessageMetadata[], done?: boolean) => {
+        if (!isCurrent() || stream.completed || (stream.stopRequested && !done)) return;
         onMessage?.(message, done, metadata);
+        if (!done || !isCurrent()) return;
 
-        if (done) {
-          if (message) {
-            const isLatestAnswer = messageIdsRef.current.indexOf(answerId) === 0;
-
-            completion = (async () => {
-              await saveAnswer(questionId, answerId, message, metadata);
-              if (isLatestAnswer) {
-                void startFetchSuggestions(questionId);
-              }
-            })();
-          } else {
-            if (answerId) {
-              removeAssistantMessage(answerId);
-            }
-          }
-
-          return;
+        stream.completed = true;
+        if (message) {
+          completion = persistAnswer(message, metadata);
+        } else {
+          removeMessages([answerId]);
         }
       };
 
       try {
+        signal?.addEventListener('abort', abortStream, { once: true });
         const { cancel, streamPromise } = requestInstance.fetchAnswerStream(
           {
             question_id: questionId,
@@ -417,31 +475,52 @@ function useMessagesHandler() {
             model_name: selectedModelNameRef.current,
           },
           handleMessageProgress,
-          onProgress,
-          onReasoning
+          (step) => {
+            if (isCurrent() && !stream.stopRequested && !stream.completed) onProgress?.(step);
+          },
+          (reasoning) => {
+            if (isCurrent() && !stream.stopRequested && !stream.completed) onReasoning?.(reasoning);
+          },
+          stream.controller.signal
         );
 
-        // Registered before the request resolves so Stop works while waiting for headers.
-        cancelStreamRef.current = cancel;
+        stream.cancel = cancel;
         await streamPromise;
+        stream.cancel = undefined;
         await completion;
-      } catch (e) {
-        // The assistant message stays mounted: it renders the error with a retry
-        // button instead of silently disappearing with a toast.
-        return Promise.reject(e);
+      } catch (error) {
+        if (isCurrent()) throw error;
       } finally {
-        cancelStreamRef.current = undefined;
-        answerApplyingRef.current = false;
-        setAnswerApplying(false);
+        signal?.removeEventListener('abort', abortStream);
+        stream.cancel = undefined;
+        if (activeStreamRef.current === stream) {
+          answerApplyingRef.current = false;
+          setAnswerApplying(false);
+        }
       }
     },
-    [getMessage, setResponseFormatWithId, saveAnswer, startFetchSuggestions, removeAssistantMessage, requestInstance]
+    [
+      getMessage,
+      setResponseFormatWithId,
+      resolveAnswerFormat,
+      saveAnswerMessage,
+      startFetchSuggestions,
+      removeMessages,
+      requestInstance,
+      streamScope,
+    ]
   );
 
   const cancelAnswerStream = useCallback(() => {
-    if (cancelStreamRef.current) {
-      cancelStreamRef.current();
-    }
+    const stream = activeStreamRef.current;
+
+    if (!stream || stream.obsolete || stream.scope.disposed) return;
+    // A manual stop may still produce the transport's final partial answer for persistence.
+    stream.stopRequested = true;
+    const cancel = stream.cancel;
+
+    stream.cancel = undefined;
+    cancel?.();
   }, []);
 
   const editQuestion = useCallback(
@@ -465,20 +544,24 @@ function useMessagesHandler() {
           content,
           generate_answer: false,
         });
+        if (streamScope.disposed) return;
         updateMessageContent(questionId, content);
         setEditingQuestionId(null);
         // eslint-disable-next-line
       } catch (e: any) {
+        if (streamScope.disposed) return;
         toast.error(e.message);
         return Promise.reject(e);
       } finally {
-        questionSendingRef.current = false;
-        setQuestionSending(false);
+        if (!streamScope.disposed) {
+          questionSendingRef.current = false;
+          setQuestionSending(false);
+        }
       }
 
       await regenerateAnswer(questionId, format);
     },
-    [chatId, getMessage, regenerateAnswer, requestInstance, resolveAnswerFormat, updateMessageContent]
+    [chatId, getMessage, regenerateAnswer, requestInstance, resolveAnswerFormat, streamScope, updateMessageContent]
   );
 
   // Keep the shared model state in sync. Explicit persistence is handled by

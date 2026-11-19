@@ -17,8 +17,17 @@ export enum PanelType {
   PasteAs = 'pasteAs',
 }
 
+/** What the user typed to open a panel. */
+export type PanelTrigger = '/' | '@' | '+' | '[[';
+
+type PanelTriggerCharacter = Exclude<PanelTrigger, '[['>;
+
 export interface PanelContextType {
   activePanel?: PanelType;
+  /** What the user typed to open the active panel. Absent when a menu opened it. */
+  activeTrigger?: PanelTrigger;
+  /** `performance.now()` when the active panel opened. */
+  panelOpenedAt?: number;
   panelPosition?: { top: number; left: number };
   setActivePanel: (panel: PanelType) => void;
   closePanel: () => void;
@@ -31,13 +40,15 @@ export interface PanelContextType {
 
 export const PanelContext = createContext<PanelContextType | undefined>(undefined);
 
-const panelTypeByTrigger: Record<string, PanelType> = {
+const panelTypeByTrigger: Record<PanelTriggerCharacter, PanelType> = {
   '/': PanelType.Slash,
   '+': PanelType.PageReference,
   '@': PanelType.Mention,
 };
 
-const panelTypeChars = Object.keys(panelTypeByTrigger);
+function isPanelTriggerCharacter(value: string): value is PanelTriggerCharacter {
+  return Object.prototype.hasOwnProperty.call(panelTypeByTrigger, value);
+}
 
 function getPanelPosition(editor: ReactEditor, selection: BaseRange) {
   const rect = getRangeRect();
@@ -73,6 +84,8 @@ export const PanelProvider = ({
   triggerAtWordStart?: boolean;
 }) => {
   const [activePanel, setActivePanel] = useState<PanelType | undefined>(undefined);
+  const [activeTrigger, setActiveTrigger] = useState<PanelTrigger | undefined>(undefined);
+  const [panelOpenedAt, setPanelOpenedAt] = useState<number | undefined>(undefined);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | undefined>(undefined);
   const startSelection = useRef<BaseRange | null>(null);
   const endSelection = useRef<BaseRange | null>(null);
@@ -95,6 +108,8 @@ export const PanelProvider = ({
     openRef.current = false;
     activePanelRef.current = undefined;
     setActivePanel(undefined);
+    setActiveTrigger(undefined);
+    setPanelOpenedAt(undefined);
     startSelection.current = null;
     endSelection.current = null;
     pasteAsPayloadRef.current = undefined;
@@ -121,11 +136,13 @@ export const PanelProvider = ({
     });
   }, [editor]);
 
-  const openPanel = useCallback(
-    (panel: PanelType, position: { top: number; left: number }) => {
+  const showPanel = useCallback(
+    (panel: PanelType, position: { top: number; left: number }, trigger?: PanelTrigger) => {
       openRef.current = true;
       activePanelRef.current = panel;
       setActivePanel(panel);
+      setActiveTrigger(trigger);
+      setPanelOpenedAt(performance.now());
       setPanelPosition(position);
       pasteAsPayloadRef.current = undefined;
       const { selection } = editor;
@@ -135,6 +152,12 @@ export const PanelProvider = ({
       endSelection.current = editor.selection;
     },
     [editor]
+  );
+
+  // Opens a panel from a menu, such as the slash menu's "Link to page": no trigger was typed.
+  const openPanel = useCallback(
+    (panel: PanelType, position: { top: number; left: number }) => showPanel(panel, position),
+    [showPanel]
   );
 
   const isSlashPanelBlocked = useCallback(
@@ -155,8 +178,9 @@ export const PanelProvider = ({
   );
 
   const openTriggerPanel = useCallback(
-    (panelType: PanelType, triggerLength = 1) => {
+    (panelType: PanelType, trigger: PanelTrigger) => {
       const { selection } = editor;
+      const triggerLength = trigger.length;
 
       if (!selection || isCodeSelection(editor)) return;
       if (!isTriggerEnabled(panelType)) return;
@@ -184,7 +208,7 @@ export const PanelProvider = ({
 
       if (!position) return;
 
-      openPanel(panelType, position);
+      showPanel(panelType, position, trigger);
       startSelection.current = {
         anchor: {
           path: selection.anchor.path,
@@ -194,7 +218,7 @@ export const PanelProvider = ({
       };
       endSelection.current = editor.selection;
     },
-    [editor, isSlashPanelBlocked, isTriggerEnabled, openPanel, triggerAtWordStart]
+    [editor, isSlashPanelBlocked, isTriggerEnabled, showPanel, triggerAtWordStart]
   );
 
   useEffect(() => {
@@ -210,6 +234,8 @@ export const PanelProvider = ({
 
       pasteAsPayloadRef.current = detail;
       setActivePanel(PanelType.PasteAs);
+      setActiveTrigger(undefined);
+      setPanelOpenedAt(performance.now());
       setPanelPosition({ top: rect.top, left: rect.left });
       setSearchText('');
       startSelection.current = detail.range;
@@ -244,11 +270,8 @@ export const PanelProvider = ({
       if (!selection) return;
       if (openRef.current) return;
 
-      if (panelTypeChars.includes(text)) {
-        const panelType = panelTypeByTrigger[text];
-
-        if (!panelType) return;
-        openTriggerPanel(panelType);
+      if (isPanelTriggerCharacter(text)) {
+        openTriggerPanel(panelTypeByTrigger[text], text);
         return;
       }
 
@@ -261,7 +284,7 @@ export const PanelProvider = ({
       });
 
       if (rangeText === '[[') {
-        openTriggerPanel(PanelType.PageReference, 2);
+        openTriggerPanel(PanelType.PageReference, '[[');
       }
     };
 
@@ -316,13 +339,13 @@ export const PanelProvider = ({
       if (!(target instanceof Node) || !ReactEditor.hasEditableTarget(editor, target)) return;
 
       if (!openRef.current) {
-        const panelType = panelTypeByTrigger[key];
+        if (!isPanelTriggerCharacter(key) || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
 
-        if (!panelType || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+        const trigger: PanelTriggerCharacter = key;
 
         window.setTimeout(() => {
           if (!openRef.current) {
-            openTriggerPanel(panelType);
+            openTriggerPanel(panelTypeByTrigger[trigger], trigger);
           }
         }, 0);
         return;
@@ -380,6 +403,8 @@ export const PanelProvider = ({
   const contextValue = useMemo(
     () => ({
       activePanel,
+      activeTrigger,
+      panelOpenedAt,
       setActivePanel,
       closePanel,
       openPanel,
@@ -391,6 +416,8 @@ export const PanelProvider = ({
     }),
     [
       activePanel,
+      activeTrigger,
+      panelOpenedAt,
       closePanel,
       openPanel,
       isPanelOpen,

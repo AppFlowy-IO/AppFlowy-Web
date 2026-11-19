@@ -17,13 +17,13 @@ import {
 } from '@/application/database-yjs/dispatch/row-lifecycle';
 import { runDatabaseAction } from '@/application/database-yjs/history';
 import { getRowDocumentSourceFromView } from '@/application/row-document/lifecycle';
-import { RowDocumentSourcePayload, View, YDatabase, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { View, YDatabase, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as RestoreIcon } from '@/assets/icons/restore.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
-import { useAppOperations, useAppTrash, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useAppTrash, useCurrentWorkspaceId, useScheduleDeferredCleanup } from '@/components/app/app.hooks';
 import { Log } from '@/utils/log';
 
 function TrashPage() {
@@ -36,60 +36,59 @@ function TrashPage() {
     return trashList?.find((view) => view.view_id === deleteViewId);
   }, [deleteViewId, trashList]);
   const { deleteTrash, restorePage, loadView, bindViewSync } = useAppOperations();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
-  // Applies a row-lifecycle mutation (restore / permanent delete) to the
-  // database collab a trashed row page belongs to. The collab is loaded with
-  // sync bound so the change reaches the server through the normal outbox.
-  const withDatabaseCollab = useCallback(
+  const applyRowTrashAction = useCallback(
     async (
-      source: RowDocumentSourcePayload,
-      mutate: (sharedRoot: YSharedRoot, database: YDatabase, rowIds: string[]) => void
+      viewId: string | undefined,
+      mutate: (sharedRoot: YSharedRoot, database: YDatabase, rowIds: string[]) => void,
+      updateTrash?: (viewId?: string) => Promise<void>
     ) => {
-      const doc = await loadView(source.database_view_id, false, false, { databaseId: source.database_id });
+      const databases = new Map<string, { viewId: string; rowIds: string[] }>();
 
-      bindViewSync?.(doc);
-      const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-      const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+      for (const view of trashList ?? []) {
+        if (viewId && view.view_id !== viewId) continue;
+        const source = getRowDocumentSourceFromView(view);
 
-      if (!database) {
-        throw new Error('Database not found for trashed row page');
+        if (!source) continue;
+        const group = databases.get(source.database_id);
+
+        if (group) group.rowIds.push(source.row_id);
+        else databases.set(source.database_id, { viewId: source.database_view_id, rowIds: [source.row_id] });
       }
 
-      // Global Trash is outside the database editor's local history. Keep
-      // these lifecycle changes out of that history and preserve any redo
-      // action that was already available in an open database editor.
-      runDatabaseAction(doc, { type: 'database.global-trash-row-lifecycle', policy: 'skip' }, () => {
-        mutate(sharedRoot, database, [source.row_id]);
-      });
-    },
-    [bindViewSync, loadView]
-  );
+      const retained: string[] = [];
 
-  const rowDocumentEntries = useCallback(
-    (viewId?: string) => {
-      const entries = viewId ? trashList?.filter((view) => view.view_id === viewId) : trashList;
+      try {
+        for (const [databaseId, group] of databases) {
+          const doc = await loadView(group.viewId, false, false, { databaseId, preserveViewMetadata: true });
+          const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+          const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
 
-      return (entries ?? [])
-        .map((view) => getRowDocumentSourceFromView(view))
-        .filter((source): source is RowDocumentSourcePayload => source !== null);
+          if (!database) throw new Error('Database not found for trashed row page');
+          const binding = bindViewSync?.(doc, scheduleDeferredCleanup ? { retain: true } : undefined);
+
+          if (binding) retained.push(binding.doc.guid);
+          // Global Trash is outside the editor's undo/redo history.
+          runDatabaseAction(doc, { type: 'database.global-trash-row-lifecycle', policy: 'skip' }, () => {
+            mutate(sharedRoot, database, group.rowIds);
+          });
+        }
+
+        // A failed collab mutation leaves the Folder entry available for retry.
+        await updateTrash?.(viewId);
+      } finally {
+        for (const id of retained) scheduleDeferredCleanup?.(id);
+      }
     },
-    [trashList]
+    [bindViewSync, loadView, scheduleDeferredCleanup, trashList]
   );
 
   const handleRestore = useCallback(
     async (viewId?: string) => {
       if (!currentWorkspaceId) return;
       try {
-        const rowSources = rowDocumentEntries(viewId);
-
-        // Restoring a row page also clears the row's soft-delete tombstone so
-        // it reappears in every database view. Apply this first so a collab
-        // load/mutation failure leaves the row page in Trash for retry.
-        for (const source of rowSources) {
-          await withDatabaseCollab(source, restoreSoftDeletedRowsInDatabase);
-        }
-
-        await restorePage?.(viewId);
+        await applyRowTrashAction(viewId, restoreSoftDeletedRowsInDatabase, restorePage);
         void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
           Log.warn('[Trash] Failed to refresh after restoring a page', error);
         });
@@ -98,25 +97,14 @@ function TrashPage() {
         notify.error(`Failed to restore page: ${e.message}`);
       }
     },
-    [restorePage, loadTrash, currentWorkspaceId, rowDocumentEntries, withDatabaseCollab]
+    [restorePage, loadTrash, currentWorkspaceId, applyRowTrashAction]
   );
 
   const handleDelete = useCallback(
     async (viewId?: string) => {
       if (!currentWorkspaceId) return;
       try {
-        const rowSources = rowDocumentEntries(viewId);
-
-        // Permanently deleting a row page removes the row from the database
-        // collab entirely. Apply this first so the Trash entry remains if the
-        // source database cannot be loaded or mutated.
-        for (const source of rowSources) {
-          await withDatabaseCollab(source, (sharedRoot, database, rowIds) =>
-            removeRowsFromDatabase(sharedRoot, database, rowIds)
-          );
-        }
-
-        await deleteTrash?.(viewId);
+        await applyRowTrashAction(viewId, removeRowsFromDatabase, deleteTrash);
         setDeleteViewId(undefined);
         void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
           Log.warn('[Trash] Failed to refresh after permanently deleting a page', error);
@@ -126,7 +114,7 @@ function TrashPage() {
         notify.error(`Failed to delete page: ${e.message}`);
       }
     },
-    [deleteTrash, loadTrash, currentWorkspaceId, rowDocumentEntries, withDatabaseCollab]
+    [deleteTrash, loadTrash, currentWorkspaceId, applyRowTrashAction]
   );
 
   useEffect(() => {

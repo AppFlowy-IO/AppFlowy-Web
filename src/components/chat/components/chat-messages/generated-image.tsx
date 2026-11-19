@@ -177,11 +177,7 @@ export function GeneratedImage({ url, alt, onRegenerate, variant = 'answer' }: G
   }
 
   return (
-    <div
-      className={'group relative w-fit max-w-full'}
-      data-testid='chat-generated-image'
-      data-phase={isImageReady ? 'ready' : phase}
-    >
+    <div className={'group relative w-fit max-w-full'} data-testid='chat-generated-image' data-phase={phase}>
       {!isImageReady ? (
         <div
           className={cn(

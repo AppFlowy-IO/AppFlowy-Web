@@ -72,6 +72,9 @@ async function pasteContent(page: Page, html: string, plainText: string) {
         if (html) dataTransfer.setData('text/html', html);
         if (plainText) dataTransfer.setData('text/plain', plainText);
         else if (!html) dataTransfer.setData('text/plain', '');
+        // Append at the document end. Clicking the editor's center can select a
+        // previously pasted code block, where plain text is correctly kept literal.
+        slateEditor.select(slateEditor.end([]));
         slateEditor.insertData(dataTransfer);
       } else {
         const clipboardData = new DataTransfer();

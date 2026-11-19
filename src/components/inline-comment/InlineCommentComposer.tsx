@@ -2,11 +2,13 @@ import { Portal } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { serializeCommentMentions } from '@/application/comment-mentions';
 import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.svg';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
+import { useAppAwareness } from '@/components/app/app.hooks';
 import { cn } from '@/lib/utils';
 
 import { useInlineCommentCompose, useInlineCommentStatus } from './InlineCommentContext';
+import { CommentDraft, EMPTY_COMMENT_DRAFT, InlineCommentInput } from './InlineCommentInput';
 
 // Matches the desktop compose menu: a 320px wide single-row popup anchored to
 // the selection (inline_comment_compose_menu.dart).
@@ -15,16 +17,19 @@ const COMPOSER_ESTIMATED_HEIGHT = 56;
 
 export function InlineCommentComposer() {
   const { t } = useTranslation();
-  const { cancelPendingComment, pendingComment, submitPendingComment } = useInlineCommentCompose();
-  const { mutatingCommentIds } = useInlineCommentStatus();
-  const [content, setContent] = useState('');
+  const { cancelPendingComment, pendingComment, submitPendingComment, viewId } = useInlineCommentCompose();
+  const { currentUserUuid, mutatingCommentIds } = useInlineCommentStatus();
+  // A new thread has no participants yet: the @ picker ranks who is on the page instead.
+  const awareness = useAppAwareness(viewId);
+  const [draft, setDraft] = useState<CommentDraft>(EMPTY_COMMENT_DRAFT);
+  const { content } = draft;
   const composerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const submitting = mutatingCommentIds.has('new');
 
   useEffect(() => {
     if (!pendingComment) {
-      setContent('');
+      setDraft(EMPTY_COMMENT_DRAFT);
       return;
     }
 
@@ -57,8 +62,8 @@ export function InlineCommentComposer() {
 
   const submit = useCallback(() => {
     if (!content.trim() || submitting) return;
-    void submitPendingComment(content);
-  }, [content, submitPendingComment, submitting]);
+    void submitPendingComment(serializeCommentMentions(content, draft.mentions));
+  }, [content, draft.mentions, submitPendingComment, submitting]);
 
   if (!pendingComment || !position) return null;
 
@@ -73,7 +78,7 @@ export function InlineCommentComposer() {
         style={{ left: position.left, top: position.top, width: COMPOSER_WIDTH }}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <TextareaAutosize
+        <InlineCommentInput
           ref={inputRef}
           autoFocus
           // Desktop's compose field is borderless inside the menu shell.
@@ -84,8 +89,10 @@ export function InlineCommentComposer() {
           maxRows={8}
           minRows={1}
           placeholder={t('inlineComment.writeComment')}
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
+          draft={draft}
+          onDraftChange={setDraft}
+          mentionAwareness={awareness}
+          mentionRequesterId={currentUserUuid}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault();

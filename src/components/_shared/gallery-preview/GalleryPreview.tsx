@@ -5,7 +5,7 @@ import { ReactZoomPanPinchContentRef, TransformComponent, TransformWrapper } fro
 
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ReloadIcon } from '@/assets/icons/reset.svg';
@@ -58,6 +58,7 @@ function GalleryPreview({ images, open, onClose, previewIndex, workspaceId, view
   const [loadedSrc, setLoadedSrc] = useState('');
   const transformComponentRef = useRef<ReactZoomPanPinchContentRef>(null);
   const lastPanEndRef = useRef(0);
+  const panStartRef = useRef<{ x: number; y: number }>();
 
   const imageUrl = useMemo(() => {
     const image = images[index];
@@ -93,8 +94,12 @@ function GalleryPreview({ images, open, onClose, previewIndex, workspaceId, view
       return;
     }
 
-    await copyTextToClipboard(image.src);
-    notify.success(t('publish.copy.imageBlock'));
+    try {
+      await copyTextToClipboard(image.src);
+      notify.success(t('chat.success.copied'));
+    } catch {
+      notify.error(t('web.imageBlock.actionFailed'));
+    }
   }, [images, index, t]);
 
   const handleDownload = useCallback(() => {
@@ -181,8 +186,20 @@ function GalleryPreview({ images, open, onClose, previewIndex, workspaceId, view
           centerZoomedOut
           wheel={{ step: 0.2 }}
           doubleClick={{ mode: 'toggle', step: 2 }}
-          onPanningStop={() => {
-            lastPanEndRef.current = Date.now();
+          onPanningStart={(_, event) => {
+            const point = 'touches' in event ? event.touches[0] : event;
+
+            panStartRef.current = point ? { x: point.clientX, y: point.clientY } : undefined;
+          }}
+          onPanningStop={(_, event) => {
+            const point = 'changedTouches' in event ? event.changedTouches[0] : event;
+            const start = panStartRef.current;
+
+            if (start && point && Math.hypot(point.clientX - start.x, point.clientY - start.y) > 3) {
+              lastPanEndRef.current = Date.now();
+            }
+
+            panStartRef.current = undefined;
           }}
           onTransformed={(_, state) => setScale(state.scale)}
         >
@@ -232,7 +249,7 @@ function GalleryPreview({ images, open, onClose, previewIndex, workspaceId, view
                 <div className={'flex w-fit gap-2  rounded-[8px] bg-bg-mask p-2'}>
                   <Tooltip title={t('gallery.copy')}>
                     <IconButton size={'small'} className={buttonClassName} onClick={handleCopy}>
-                      <LinkIcon />
+                      <CopyIcon />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title={t('button.download')}>

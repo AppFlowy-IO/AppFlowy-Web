@@ -4,10 +4,13 @@
  * Tests downloading image when clicking download button.
  * Migrated from: cypress/e2e/embeded/image/download_image.cy.ts
  */
+import { readFile } from 'node:fs/promises';
+
 import { test, expect } from '@playwright/test';
-import { generateRandomEmail } from '../../../support/test-config';
+
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createPageAndInsertImage } from '../../../support/page-utils';
+import { generateRandomEmail } from '../../../support/test-config';
 
 // Minimal valid 1x1 PNG buffer
 const PNG_BUFFER = Buffer.from(
@@ -37,12 +40,17 @@ test.describe('Download Image Test', () => {
     await page.locator('[data-block-type="image"]').first().hover();
     await page.waitForTimeout(1000);
 
-    // Click the download button
-    const downloadButton = page.getByTestId('download-image-button');
-    await expect(downloadButton).toBeVisible();
-    await downloadButton.click({ force: true });
+    await page
+      .locator('[data-block-type="image"]')
+      .first()
+      .getByRole('button', { name: 'Image options', exact: true })
+      .click();
+    const downloading = page.waitForEvent('download');
 
-    // Verify success notification appears
-    await expect(page.getByText('Image downloaded successfully')).toBeVisible({ timeout: 10000 });
+    await page.getByTestId('image-menu').getByRole('button', { name: 'Download', exact: true }).click();
+    const download = await downloading;
+
+    expect(download.suggestedFilename()).toBe('test-image.png');
+    expect(await readFile(await download.path())).toEqual(PNG_BUFFER);
   });
 });

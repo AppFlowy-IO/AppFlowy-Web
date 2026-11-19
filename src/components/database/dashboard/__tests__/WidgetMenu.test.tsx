@@ -144,7 +144,12 @@ describe('buildWidgetMenuEntries', () => {
         (entry) => entry.id === 'duplicate'
       );
 
-    expect(duplicate(false)).toEqual({ id: 'duplicate', group: 'manage', disabled: true, disabledReason: 'dashboard_full' });
+    expect(duplicate(false)).toEqual({
+      id: 'duplicate',
+      group: 'manage',
+      disabled: true,
+      disabledReason: 'dashboard_full',
+    });
     expect(duplicate(true)).toEqual({ id: 'duplicate', group: 'manage', disabled: false });
   });
 });
@@ -173,21 +178,21 @@ describe('WidgetMenu', () => {
     expect(within(screen.getByTestId('dashboard-widget-menu')).getAllByRole('separator')).toHaveLength(2);
   });
 
-  it('has Notion chrome: 220 wide, radius 10, padding 4, neutral Delete and the parity ids', () => {
+  it('uses AppFlowy menu geometry and preserves the action identifiers', () => {
     render(withContext(createContext(), <ControlledMenu />));
     const menu = screen.getByTestId('dashboard-widget-menu');
 
-    expect(menu.className).toContain('w-[220px]');
-    expect(menu.className).toContain('!min-w-[220px]');
-    expect(menu.className).toContain('!rounded-[10px]');
-    expect(menu.className).toContain('!p-1');
+    expect(menu.className).toContain('w-[240px]');
+    expect(menu.className).toContain('!min-w-[240px]');
+    expect(menu.className).toContain('!rounded-400');
+    expect(menu.className).toContain('!p-2');
     expect(menu.getAttribute('data-parity-id')).toBe('dash-widget-menu');
 
     const remove = screen.getByTestId('dashboard-widget-menu-delete');
 
     expect(remove.getAttribute('data-variant')).toBe('default');
-    expect(remove.className).not.toContain('text-text-error');
-    expect(remove.className).toContain('!h-7');
+    expect(remove.className).toContain('hover:text-text-error');
+    expect(remove.className).toContain('!h-8');
     expect(remove.getAttribute('data-parity-id')).toBe('dash-widget-menu-item-delete');
     expect(remove.querySelector('[data-parity-id="dash-widget-menu-item-delete__icon"]')).not.toBeNull();
     expect(remove.querySelector('[data-parity-id="dash-widget-menu-item-delete__label"]')?.textContent).toBe('Delete');
@@ -240,7 +245,7 @@ describe('WidgetMenu', () => {
 
     const content = screen.getByTestId('dashboard-widget-menu-move-to-row-content');
 
-    expect(content.className).toContain('w-[220px]');
+    expect(content.className).toContain('w-[240px]');
     expect(
       within(content)
         .getAllByRole('menuitem')
@@ -322,7 +327,9 @@ describe('WidgetMenu', () => {
       expect(actions.duplicate).not.toHaveBeenCalled();
       expect(ui.announce).toHaveBeenCalledWith('Connect to the internet to create dashboard widget views.');
       online.mockReturnValue(true);
-      act(() => { window.dispatchEvent(new Event('online')); });
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
       expect(item().getAttribute('data-disabled-reason')).toBeNull();
       fireEvent.click(item());
       expect(actions.duplicate).toHaveBeenCalledTimes(1);
@@ -331,7 +338,7 @@ describe('WidgetMenu', () => {
     }
   });
 
-  it('disables Duplicate while this widget\'s duplicate is in flight', () => {
+  it("disables Duplicate while this widget's duplicate is in flight", () => {
     const actions = createActions();
     const ui = createDashboardUiValue();
     let inFlight: string | null = 'w1';

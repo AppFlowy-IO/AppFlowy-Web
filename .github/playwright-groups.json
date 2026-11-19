@@ -22,15 +22,15 @@
   },
   {
     "name": "dockable-outline-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js",
-    "description": "Dockable document outline, scroll tracking, themes, comments, and published display modes",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/inline-comment-mentions.feature.spec.js",
+    "description": "Dockable document outline and document comment person mentions",
     "bdd": "true",
     "shard": ""
   },
   {
     "name": "code-block-bdd",
-    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js",
-    "description": "Code block settings, Mermaid, literal editing, clipboard, and code/callout page conversion",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js playwright/.features-gen/playwright/bdd/features/editor/pdf-embed.feature.spec.js",
+    "description": "Code block settings, Mermaid, literal editing, clipboard, code/callout page conversion, and PDF embeds on the production server",
     "bdd": "true",
     "shard": ""
   },
@@ -61,6 +61,14 @@
     "description": "Database row, row, page and database PDF export, undo/redo, Formula, Rollup and Board rendering BDD workflows",
     "bdd": "true",
     "shard": ""
+  },
+  {
+    "name": "mention-search-bdd",
+    "spec": "playwright/.features-gen/playwright/bdd/features/editor/mention-search.feature.spec.js",
+    "description": "Mention panel search: defaults, typed sections, keep-and-narrow and the local lane",
+    "bdd": "true",
+    "shard": "",
+    "workers": "1"
   },
   {
     "name": "rich-text-bdd",

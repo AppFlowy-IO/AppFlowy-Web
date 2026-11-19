@@ -2,7 +2,7 @@
  * Group order of a chart (WP11 §1.7, `x_sort`), pinned by
  * `dashboard-parity/group-keys.json#sort` and `#labelCompare`.
  */
-import { normalizeDashboardText } from '@/utils/normalize-text';
+import { compareCodeUnits, compareDashboardText, normalizeDashboardText } from '@/utils/normalize-text';
 
 import { ChartXSort } from '../chart-extended-settings';
 
@@ -16,17 +16,12 @@ export interface SortableChartGroup {
   value?: number;
 }
 
-function codeUnitCompare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /**
- * Label order on both clients: the normalized labels (`normalizeDashboardText`)
- * by UTF-16 code unit, then the raw labels by code unit. Never locale collation.
+ * Label order on both clients: `compareDashboardText` (the normalized labels by
+ * UTF-16 code unit, then the raw labels by code unit; never locale collation),
+ * under the name the parity fixture and Desktop give it.
  */
-export function compareChartLabels(a: string, b: string): number {
-  return codeUnitCompare(normalizeDashboardText(a), normalizeDashboardText(b)) || codeUnitCompare(a, b);
-}
+export const compareChartLabels = compareDashboardText;
 
 /**
  * Each group's normalized label, read once per sort: `normalizeDashboardText`
@@ -41,8 +36,8 @@ function normalizeLabels(groups: readonly SortableChartGroup[]): NormalizedLabel
 /** `compareChartLabels` of two groups through the cache. */
 function compareGroupLabels(normalized: NormalizedLabels, a: SortableChartGroup, b: SortableChartGroup): number {
   return (
-    codeUnitCompare(normalized.get(a) ?? normalizeDashboardText(a.label), normalized.get(b) ?? normalizeDashboardText(b.label)) ||
-    codeUnitCompare(a.label, b.label)
+    compareCodeUnits(normalized.get(a) ?? normalizeDashboardText(a.label), normalized.get(b) ?? normalizeDashboardText(b.label)) ||
+    compareCodeUnits(a.label, b.label)
   );
 }
 
@@ -60,13 +55,13 @@ function compareAuto(normalized: NormalizedLabels, a: SortableChartGroup, b: Sor
     const rank = a.hint.rank === b.hint.rank ? 0 : a.hint.rank < b.hint.rank ? -1 : 1;
 
     if (rank !== 0) return rank;
-    const tie = codeUnitCompare(a.hint.tie ?? '', b.hint.tie ?? '');
+    const tie = compareCodeUnits(a.hint.tie ?? '', b.hint.tie ?? '');
 
     if (tie !== 0) return tie;
   }
 
   // Equal labels (two unknown people) fall back to the key, so both clients agree.
-  return compareGroupLabels(normalized, a, b) || codeUnitCompare(a.key, b.key);
+  return compareGroupLabels(normalized, a, b) || compareCodeUnits(a.key, b.key);
 }
 
 function valueOf(group: SortableChartGroup): number {

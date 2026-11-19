@@ -91,6 +91,7 @@ describe('useFormShare mutations', () => {
     });
 
     expect(result.current.info).toMatchObject({ tier: 'closed', anonymous: true });
+    expect(result.current.isSaving).toBe(true);
     expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
     expect(mockPatchFormShare).toHaveBeenNthCalledWith(1, 'workspace-id', 'database-id', 'view-a', { tier: 'public' });
 
@@ -108,6 +109,7 @@ describe('useFormShare mutations', () => {
     });
 
     expect(result.current.info).toMatchObject({ tier: 'closed', anonymous: true });
+    expect(result.current.isSaving).toBe(false);
   });
 
   it('canonicalizes concurrent providers into one serialized mutation lane', async () => {
@@ -691,10 +693,9 @@ describe('useFormShare mutations', () => {
     const initialGet = deferred<FormShareInfo | null>();
 
     mockGetFormShare.mockReturnValueOnce(initialGet.promise).mockResolvedValueOnce(null);
-    const { result, rerender } = renderHook(
-      ({ canUpdateSettings }) => useFormShare({ canUpdateSettings }),
-      { initialProps: { canUpdateSettings: true } }
-    );
+    const { result, rerender } = renderHook(({ canUpdateSettings }) => useFormShare({ canUpdateSettings }), {
+      initialProps: { canUpdateSettings: true },
+    });
 
     await waitFor(() => expect(mockGetFormShare).toHaveBeenCalledTimes(1));
     rerender({ canUpdateSettings: false });
@@ -837,9 +838,15 @@ describe('useFormShare mutations', () => {
         data: {
           code: 1017,
           message: diagnostic,
-          user_error: publicMessage === undefined ? undefined : {
-            schema_version: 1, reason: 'ACTION_PROBLEM', message: publicMessage, locale,
-          },
+          user_error:
+            publicMessage === undefined
+              ? undefined
+              : {
+                  schema_version: 1,
+                  reason: 'ACTION_PROBLEM',
+                  message: publicMessage,
+                  locale,
+                },
         },
       });
 

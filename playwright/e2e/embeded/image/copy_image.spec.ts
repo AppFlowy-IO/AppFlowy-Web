@@ -5,9 +5,15 @@
  * Migrated from: cypress/e2e/embeded/image/copy_image.cy.ts
  */
 import { test, expect } from '@playwright/test';
-import { generateRandomEmail } from '../../../support/test-config';
+
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createPageAndInsertImage } from '../../../support/page-utils';
+import { generateRandomEmail } from '../../../support/test-config';
+
+type ClipboardTestWindow = typeof window & {
+  __clipboardWriteCalled: boolean;
+  __clipboardWriteTypes: string[];
+};
 
 // Minimal valid 1x1 PNG buffer
 const PNG_BUFFER = Buffer.from(
@@ -32,15 +38,16 @@ test.describe('Copy Image Test', () => {
 
     // Stub clipboard.write to capture calls
     await page.evaluate(() => {
-      (window as any).__clipboardWriteCalled = false;
-      (window as any).__clipboardWriteTypes = [];
-      const originalWrite = navigator.clipboard?.write;
+      (window as ClipboardTestWindow).__clipboardWriteCalled = false;
+      (window as ClipboardTestWindow).__clipboardWriteTypes = [];
       if (navigator.clipboard) {
         navigator.clipboard.write = async (items: ClipboardItem[]) => {
-          (window as any).__clipboardWriteCalled = true;
-          items.forEach((item) => {
-            (window as any).__clipboardWriteTypes.push(...item.types);
-          });
+          for (const item of items) {
+            await item.getType('image/png');
+            (window as ClipboardTestWindow).__clipboardWriteTypes.push(...item.types);
+          }
+
+          (window as ClipboardTestWindow).__clipboardWriteCalled = true;
         };
       }
     });
@@ -53,17 +60,23 @@ test.describe('Copy Image Test', () => {
     await page.waitForTimeout(1000);
 
     // Click the copy button
-    const copyButton = page.getByTestId('copy-image-button');
+    const copyButton = page
+      .locator('[data-block-type="image"]')
+      .first()
+      .getByRole('button', { name: 'Copy image', exact: true });
+
     await expect(copyButton).toBeVisible();
-    await copyButton.click({ force: true });
-    await page.waitForTimeout(1000);
+    await copyButton.click();
+    await expect(page.getByText('Copied to clipboard', { exact: true })).toBeVisible();
 
     // Verify clipboard write was called
-    const clipboardWriteCalled = await page.evaluate(() => (window as any).__clipboardWriteCalled);
+    const clipboardWriteCalled = await page.evaluate(() => (window as ClipboardTestWindow).__clipboardWriteCalled);
+
     expect(clipboardWriteCalled).toBeTruthy();
 
     // Verify the clipboard write included image/png MIME type
-    const clipboardWriteTypes = await page.evaluate(() => (window as any).__clipboardWriteTypes);
+    const clipboardWriteTypes = await page.evaluate(() => (window as ClipboardTestWindow).__clipboardWriteTypes);
+
     expect(clipboardWriteTypes).toContain('image/png');
   });
 });

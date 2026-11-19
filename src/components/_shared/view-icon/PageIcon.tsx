@@ -11,7 +11,7 @@ import { ReactComponent as FeedSvg } from '@/assets/icons/feed.svg';
 import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
-import { ReactComponent as FormSvg } from '@/assets/icons/edit.svg';
+import FormSvg from './FormViewIcon';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 import { ReactComponent as TimelineSvg } from '@/assets/icons/timeline.svg';
 import { cn } from '@/lib/utils';
@@ -46,10 +46,22 @@ function PageIcon({
 
   useEffect(() => {
     let currentBlobUrl: string | undefined;
+    // Set once the icon changes or the component unmounts: an image that loads later is not shown.
+    let stale = false;
 
     if (view.icon && view.icon.ty === ViewIconType.URL && view.icon.value) {
-      void getImageUrl(view.icon.value).then((url) => {
-        currentBlobUrl = url;
+      const value = view.icon.value;
+
+      void getImageUrl(value).then((url) => {
+        // Only a blob fetched here is this icon's to revoke; a URL the icon names itself is borrowed.
+        const ownedUrl = url !== value ? url : undefined;
+
+        if (stale) {
+          if (ownedUrl) revokeBlobUrl(ownedUrl);
+          return;
+        }
+
+        currentBlobUrl = ownedUrl;
         setImgSrc(url);
       });
     } else {
@@ -57,6 +69,7 @@ function PageIcon({
     }
 
     return () => {
+      stale = true;
       if (currentBlobUrl) {
         revokeBlobUrl(currentBlobUrl);
       }

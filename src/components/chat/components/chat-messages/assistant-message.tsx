@@ -27,7 +27,6 @@ const MAX_PROGRESS_STEPS = 5;
 
 export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boolean }) {
   const isOfficialHosted = useIsOfficialHosted();
-  const hasStarted = useRef(false);
   const { getMessage, getQuestionId } = useChatMessagesContext();
   const { resolveAnswerFormat } = useMessageResponseFormatContext();
   const { fetchAnswerStream, regenerateAnswer, answerApplying, questionSending } = useMessagesHandlerContext();
@@ -65,57 +64,59 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
     });
   }, []);
 
-  const run = useCallback(async () => {
-    if (questionId === undefined) return;
+  const [retryCount, setRetryCount] = useState(0);
+  const request = { fetchAnswerStream, resolveAnswerFormat, content: message?.content, handleProgress, t };
+  const requestRef = useRef(request);
 
+  requestRef.current = request;
+
+  useEffect(() => {
+    if (questionId === undefined) return;
+    const controller = new AbortController();
+    const { fetchAnswerStream, resolveAnswerFormat, content, handleProgress, t } = requestRef.current;
+    const format = resolveAnswerFormat(id, content);
+
+    formatRef.current = format;
     setLoading(true);
     setError(null);
+    setContent('');
     setDone(false);
     setProgressSteps([]);
+    stepIdRef.current = 0;
     setReasoning('');
     setReasoningOpen(undefined);
     setStreamSources([]);
 
-    // The format chosen when the question was sent wins over whatever the
-    // input shows now, so a regenerated image answer stays an image answer.
-    const format = resolveAnswerFormat(id, message?.content);
-
-    formatRef.current = format;
-
-    try {
-      await fetchAnswerStream(
-        questionId,
-        format,
-        (text, done, metadata) => {
-          if (done || text) {
-            setLoading(false);
-          }
-
-          if (metadata && metadata.length > 0) {
-            setStreamSources(metadata);
-          }
-
-          setDone(done || false);
-          setContent(text);
-        },
-        handleProgress,
-        setReasoning
-      );
-    } catch (e) {
+    // Each mounted question or explicit retry owns its request through cleanup.
+    void fetchAnswerStream(
+      questionId,
+      format,
+      (text, done, metadata) => {
+        if (controller.signal.aborted) return;
+        if (done || text) setLoading(false);
+        if (metadata) setStreamSources(metadata);
+        setDone(!!done);
+        setContent(text);
+      },
+      (step) => {
+        if (!controller.signal.aborted) handleProgress(step);
+      },
+      (text) => {
+        if (!controller.signal.aborted) setReasoning(text);
+      },
+      controller.signal
+    ).catch((e) => {
+      if (controller.signal.aborted) return;
       console.error(e);
       setError({
         message: getErrorMessage(e, '') || t('chat.errors.responseUnavailable'),
         isResponseLimit: isAPIErrorCode(e, ERROR_CODE_NO_LIMIT),
       });
       setLoading(false);
-    }
-  }, [fetchAnswerStream, handleProgress, id, message?.content, questionId, resolveAnswerFormat, t]);
+    });
 
-  useEffect(() => {
-    if (!questionId || hasStarted.current) return;
-    hasStarted.current = true;
-    void run();
-  }, [questionId, run]);
+    return () => controller.abort();
+  }, [id, questionId, retryCount]);
 
   const handleRegenerateImage = useCallback(() => {
     if (questionId === undefined) return;
@@ -213,7 +214,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
                       className={'ml-auto shrink-0'}
                       data-testid='chat-answer-retry'
                       disabled={questionSending || answerApplying || loading}
-                      onClick={() => void run()}
+                      onClick={() => setRetryCount((count) => count + 1)}
                     >
                       {t('chat.retry')}
                     </Button>

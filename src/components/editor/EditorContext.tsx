@@ -33,6 +33,7 @@ import {
   UpdatePagePayload,
   YDoc,
 } from '@/application/types';
+import type { MentionLocalRowsAccess } from '@/components/editor/components/panels/mention-panel/mentionLocalRows';
 
 export interface EditorLayoutStyle {
   fontLayout: FontLayout;
@@ -125,6 +126,11 @@ export interface EditorContextState {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   searchMentions?: SearchMentions;
   mentionContext?: MentionSearchContext;
+  /**
+   * The rows of the database a Text cell or row page is in, which the @ picker matches by title
+   * (MEN-WEB-15). Absent outside a database and where the picker cannot open.
+   */
+  mentionLocalRows?: MentionLocalRowsAccess;
   /** Hosts without a reminder scheduler must not offer reminder creation. */
   enableReminderMentions?: boolean;
   awareness?: Awareness;
@@ -187,6 +193,7 @@ export const EditorContextProvider = ({
   getMentionUser,
   searchMentions,
   mentionContext,
+  mentionLocalRows,
   enableReminderMentions = true,
   awareness,
   getDeviceId,
@@ -286,6 +293,7 @@ export const EditorContextProvider = ({
       getMentionUser,
       searchMentions,
       mentionContext,
+      mentionLocalRows,
       enableReminderMentions,
       awareness,
       getDeviceId,
@@ -342,6 +350,7 @@ export const EditorContextProvider = ({
       getMentionUser,
       searchMentions,
       mentionContext,
+      mentionLocalRows,
       enableReminderMentions,
       awareness,
       getDeviceId,

@@ -1,8 +1,8 @@
 /**
  * Dashboard widget chrome (WP03, addendum A5): the widget box, its title pill
  * and card, the tools and their popovers, the settings host, the selection
- * outline and the dashboard toolbar. The wording is shared with the desktop
- * BDD (`dashboard_widget_chrome.feature`).
+ * outline and the dashboard toolbar. Visual checks use the Web design-system
+ * roles; stored geometry stays shared with the desktop dashboard.
  *
  * A widget is named by its view name: "Grid" is the dashboard host's Grid
  * widget, labelled "<host> Grid" by the composite Given.
@@ -401,18 +401,17 @@ Then('the {string} widget card keeps its size', async ({ page }, name: string) =
 
 Then('the {string} widget has the edit tint', async ({ page }, name: string) => {
   const widget = widgetOf(page, name);
+  const fill = await resolveColor(page, '--fill-theme-select');
 
   await expect(widget).toHaveAttribute('data-editing', 'true');
-  await expect
-    .poll(() => widget.evaluate((element) => getComputedStyle(element).backgroundColor))
-    .not.toMatch(/^(transparent|rgba\(0, 0, 0, 0\))$/);
+  await expect.poll(() => widget.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(fill);
 });
 
-Then('the {string} widget title is blue', async ({ page }, name: string) => {
+Then('the {string} widget title uses the primary text color', async ({ page }, name: string) => {
   const title = widgetOf(page, name).getByTestId('dashboard-widget-title-button');
-  const action = await resolveColor(page, '--text-action');
+  const textColor = await resolveColor(page, '--text-primary');
 
-  await expect.poll(() => title.evaluate((element) => getComputedStyle(element).color)).toBe(action);
+  await expect.poll(() => title.evaluate((element) => getComputedStyle(element).color)).toBe(textColor);
 });
 
 Then('the {string} widget header has no drag glyph and no more button', async ({ page }, name: string) => {
@@ -472,10 +471,12 @@ Then('the {string} widget shows the tools {string} without hover', async ({ page
 
 Then('the {string} tool of the {string} widget is highlighted', async ({ page }, tool: string, name: string) => {
   const button = widgetOf(page, name).locator(`[data-widget-tool="${tool.toLowerCase()}"]`).getByRole('button').first();
-  const accent = await resolveColor(page, '--fill-theme-thick');
+  const iconColor = await resolveColor(page, '--icon-info-thick');
+  const fill = await resolveColor(page, '--fill-theme-select');
 
   await expect(button).toHaveAttribute('data-active', 'true');
-  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).color)).toBe(accent);
+  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).color)).toBe(iconColor);
+  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(fill);
 });
 
 Then('the widget {string} popover lists {int} rule(s)', async ({ page }, kind: string, count: number) => {

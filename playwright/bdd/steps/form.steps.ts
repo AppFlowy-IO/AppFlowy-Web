@@ -115,7 +115,10 @@ Given('a Grid with a Form tab is open', async ({ page, request }) => {
   await signInAndAddFormViewViaTabBar(page, request, generateRandomEmail());
 });
 
-Given('Nathan has a Grid with a Form tab open in his workspace', async ({ page }) => {
+Given('Nathan has a Grid with a Form tab open in his workspace', async ({ page, $testInfo }) => {
+  // The seeded workspace can need the controller's full five-attempt
+  // permission bootstrap before the separate member session can submit.
+  $testInfo.setTimeout(240_000);
   const databaseName = `${MEMBER_FORM_DATABASE_PREFIX} ${Date.now().toString(36)}`;
 
   await signInWithPasswordViaUi(page, NATHAN_EMAIL, NATHAN_PASSWORD, 2000);
@@ -218,13 +221,23 @@ When('I submit the form preview', async ({ page }) => {
   await dialog.getByTestId('public-form-submit').click();
 });
 
-Then('the form preview confirmation is visible', async ({ page }) => {
+When('I enter {string} in the form preview', async ({ page }, answer: string) => {
+  const input = FormSelectors.previewDialog(page).getByRole('textbox');
+
+  await input.click();
+  await input.pressSequentially(answer);
+});
+
+Then('the form preview success feedback is visible', async ({ page }) => {
   const dialog = FormSelectors.previewDialog(page);
 
   await expect(dialog).toBeVisible({ timeout: 10000 });
-  await expect(dialog.getByTestId('public-form-confirmation')).toBeVisible({
-    timeout: 5000,
-  });
+  await expect(page.locator('[data-sonner-toast][data-type="success"]')).toContainText('Submission valid — looks good!');
+  await expect(dialog.getByTestId('public-form-confirmation')).toHaveCount(0);
+});
+
+Then('the form preview answer remains {string}', async ({ page }, answer: string) => {
+  await expect(FormSelectors.previewDialog(page).getByRole('textbox')).toHaveValue(answer);
 });
 
 Then('no public-form submit request was sent', async ({ page }) => {
@@ -368,7 +381,9 @@ Then('database view tab {int} is a {string} layout', async ({ page }, position: 
 // ── Share popover ───────────────────────────────────────────────────
 
 When('I open the share popover', async ({ page }) => {
-  await openSharePopover(page);
+  // CI observed ~14s per permission check in the seeded workspace. Five
+  // GET/mint attempts plus backoff can outlast the ordinary 60s wait.
+  await openSharePopover(page, sharedState.get(page)?.temporaryDatabase ? 150_000 : 60_000);
 });
 
 Then('the share popover shows the share controls', async ({ page }) => {
@@ -680,7 +695,7 @@ Then('the respondent for the row with name {string} is Eva', async ({ page }, na
 
   await expect
     .poll(() => readRespondentIdsForRowByName(page, nameSubstring), {
-      timeout: 15000,
+      timeout: 45000,
       message: `Waiting for the Respondent cell to contain Eva's UUID ${evaUserId}`,
     })
     .toEqual([evaUserId]);
@@ -870,28 +885,23 @@ function userIdFromJwt(accessToken: string): string {
  * while the row's YJS cell is the authoritative Form submission result.
  */
 async function readRespondentIdsForRowByName(page: Page, nameSubstring: string): Promise<string[]> {
-  const row = DatabaseGridSelectors.rows(page).filter({ hasText: nameSubstring }).first();
-
-  await expect(row).toBeVisible({ timeout: 15000 });
-  const rowTestId = await row.getAttribute('data-testid');
-  const rowId = rowTestId?.replace(/^grid-row-/, '');
-
-  if (!rowId) throw new Error(`Could not resolve the row ID for ${nameSubstring}`);
-
-  const personCell = row.locator(`[data-testid^="person-cell-${rowId}-"]`).first();
-
-  await expect(personCell).toBeAttached({ timeout: 15000 });
-  const personCellTestId = await personCell.getAttribute('data-testid');
-  const fieldId = personCellTestId?.slice(`person-cell-${rowId}-`.length);
-
-  if (!fieldId) throw new Error(`Could not resolve the Respondent field ID for ${nameSubstring}`);
-
+  // Keep each poll observation synchronous. Row orders can precede their
+  // canonical row data; nested locator waits or an extra ensureRow request
+  // can consume the entire outer poll budget before it can observe again.
   return page.evaluate(
-    async ({ fieldId, rowId }) => {
-      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
-      let rowDoc = ctx?.rowMap?.[rowId];
+    (nameSubstring) => {
+      const row = Array.from(document.querySelectorAll('[data-testid^="grid-row-"]')).find((element) =>
+        element.textContent?.includes(nameSubstring)
+      );
+      const rowId = row?.getAttribute('data-testid')?.replace(/^grid-row-/, '');
 
-      if (!rowDoc && ctx?.ensureRow) rowDoc = await ctx.ensureRow(rowId);
+      if (!rowId) return [];
+      const personCellTestId = row?.querySelector('[data-testid^="person-cell-"]')?.getAttribute('data-testid');
+      const fieldId = personCellTestId?.slice(`person-cell-${rowId}-`.length);
+
+      if (!fieldId) return [];
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      const rowDoc = ctx?.rowMap?.[rowId];
       const rowData = rowDoc?.getMap('data')?.get('data');
       const data = rowData?.get('cells')?.get(fieldId)?.get('data');
 
@@ -907,7 +917,7 @@ async function readRespondentIdsForRowByName(page: Page, nameSubstring: string):
         return [];
       }
     },
-    { fieldId, rowId }
+    nameSubstring
   );
 }
 

@@ -92,14 +92,20 @@ describe('Board group loading state', () => {
     mockSorts = [];
   });
 
-  it('replaces the non-interactive Kanban skeleton after the first row grouping is hydrated', () => {
-    mockUseRowsByGroup.mockReturnValue(loadingResult);
+  it('keeps the Kanban skeleton through group metadata and first row hydration', () => {
+    mockUseRowsByGroup.mockReturnValue({ ...loadingResult, fieldId: null });
 
     const { rerender } = render(<Group groupId='status-group-id' />);
 
     expect(screen.getByTestId('kanban-skeleton')).toBeTruthy();
     expect(screen.queryByTestId('board-columns')).toBeNull();
     expect(screen.queryByText('New')).toBeNull();
+
+    mockUseRowsByGroup.mockReturnValue(loadingResult);
+    rerender(<Group groupId='status-group-id' />);
+
+    expect(screen.getByTestId('kanban-skeleton')).toBeTruthy();
+    expect(screen.queryByTestId('board-columns')).toBeNull();
 
     mockUseRowsByGroup.mockReturnValue({ ...loadingResult, groupRowsReady: true });
     rerender(<Group groupId='status-group-id' />);

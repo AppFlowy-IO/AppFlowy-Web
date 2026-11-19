@@ -93,19 +93,12 @@
 
 .block-element .block-element:not([data-block-type="table/cell"]) {
   @apply mb-0;
-  margin-left: 24px;
+  margin-left: 26px;
 }
 
-
-.block-element[data-block-type="quote"] {
-  .border-l-4 > .block-element {
-    margin-left: 0 !important;
-  }
-}
 
 .block-element[data-block-type="simple_columns"] {
   margin-bottom: 0 !important;
-  margin-top: 0 !important;
 }
 
 .block-element[data-block-type="simple_columns"] .block-element[data-block-type="simple_column"] {
@@ -381,7 +374,7 @@ td[data-block-type="simple_table_cell"] {
 
 [role=textbox] {
   .text-element {
-    @apply my-1;
+    margin: 0;
 
     &::selection {
       @apply bg-transparent;
@@ -566,18 +559,12 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
   }
 }
 
-.line-height-large {
-  .text-element {
-    margin-top: 6px;
-    margin-bottom: 6px;
-  }
+// Line height changes text leading; block spacing stays independent.
+.line-height-large .text-content {
+  line-height: 2;
 }
-
-.line-height-small {
-  .text-element {
-    margin-top: 0px;
-    margin-bottom: 0px;
-  }
+.line-height-small .text-content {
+  line-height: 1.25;
 }
 
 .table-block {
@@ -618,69 +605,60 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 
 .toggle-heading, .heading, .hover-controls {
   &.level-1 {
-    @apply py-[8px];
-    > span > .toggle-icon {
-      @apply relative top-3;
-    }
+    padding-block: 0;
 
     > .hover-controls-placeholder,
-    > .text-element {
-      @apply text-[2rem] max-md:text-[24px] font-semibold;
+    > .text-element:is(.callout-content *),
+    > .text-element > .text-content {
+      @apply text-[2rem] font-semibold max-md:text-[24px];
     }
   }
 
   &.level-2 {
-    @apply py-[6px];
-    > span > .toggle-icon {
-      @apply relative top-2;
-    }
+    padding-block: 0;
 
     > .hover-controls-placeholder,
-    > .text-element {
-      @apply text-[1.75rem] max-md:text-[22px] font-semibold;
+    > .text-element:is(.callout-content *),
+    > .text-element > .text-content {
+      @apply text-[1.75rem] font-semibold max-md:text-[22px];
     }
   }
 
   &.level-3 {
-    @apply py-[4px];
-    > span > .toggle-icon {
-      @apply relative top-1.5;
-    }
+    padding-block: 0;
 
     > .hover-controls-placeholder,
-    > .text-element {
-      @apply text-[1.5rem] max-md:text-[20px] font-semibold;
+    > .text-element:is(.callout-content *),
+    > .text-element > .text-content {
+      @apply text-[1.5rem] font-semibold max-md:text-[20px];
     }
   }
 
   &.level-4 {
-    @apply py-[4px];
-    > span > .toggle-icon {
-      @apply relative top-1;
-    }
+    padding-block: 0;
 
     > .hover-controls-placeholder,
-    > .text-element {
-      @apply text-[1.25rem] max-md:text-[16px] font-semibold;
+    > .text-element:is(.callout-content *),
+    > .text-element > .text-content {
+      @apply text-[1.25rem] font-semibold max-md:text-[16px];
     }
   }
 
   &.level-5 {
-    @apply py-[2px];
-    > span > .toggle-icon {
-      @apply relative top-0.5;
-    }
+    padding-block: 0;
 
     > .hover-controls-placeholder,
-    > .text-element {
+    > .text-element:is(.callout-content *),
+    > .text-element > .text-content {
       @apply text-[1.125rem] font-semibold;
     }
   }
 
   &.level-6 {
-    @apply py-[2px];
+    padding-block: 0;
     > .hover-controls-placeholder,
-    > .text-element {
+    > .text-element:is(.callout-content *),
+    > .text-element > .text-content {
       @apply text-[1rem] font-semibold;
     }
   }
@@ -755,7 +733,8 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
       flex: 0 0 24px;
       width: 24px;
       height: 24px;
-      padding: 2px 4px 2px 0;
+      // Center the 20px glyph with the adjacent 22px list marker.
+      padding: 2px 3px 2px 1px;
       top: 0;
       margin-top: max(0px, calc((var(--callout-toggle-line-height) - 24px) / 2));
       border-radius: 6px;
@@ -802,5 +781,329 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
     font-size: 1em;
     line-height: 1.5;
     color: var(--text-tertiary);
+  }
+}
+
+// Flutter's vertical Padding adds adjacent margins. A column flex container
+// prevents CSS sibling margin collapse (notably speaker 12px + paragraph 6px).
+#body [data-testid='editor-content'][role='textbox'] {
+  display: flex;
+  flex-direction: column;
+}
+
+// Keep document block margins separate from content padding (desktop editor parity).
+// Scope to the editor so menus and other Slate surfaces do not acquire spacing.
+#body [role='textbox'] .block-element {
+  margin-top: 6px;
+  margin-bottom: 0;
+
+  > div:not(.callout-content) > .text-element:not(.callout-content *) {
+    margin-block: 0;
+    padding: 2px;
+  }
+
+  > .heading,
+  > .toggle-heading {
+    padding-block: 0;
+  }
+
+  > .embed-block,
+  > div > .embed-block,
+  > .code-block,
+  > .table-block,
+  > .outline-block,
+  > .ai-meeting-block,
+  > .container-bg,
+  > div > .container-bg,
+  > .callout-content,
+  > div > .outline-block {
+    margin-block: 0;
+  }
+
+  @each $level, $top in (1: 32px, 2: 24px, 3: 16px, 4: 12px, 5: 8px, 6: 4px) {
+    &:has(> .heading.level-#{$level}),
+    &:has(> .toggle-heading.level-#{$level}) {
+      margin-top: $top;
+    }
+  }
+
+  &[data-block-type='page'],
+  &[data-block-type='table'],
+  &[data-block-type='simple_columns'],
+  &[data-block-type='ai_meeting_summary'],
+  &[data-block-type='ai_meeting_notes'],
+  &[data-block-type='simple_column'],
+  &[data-block-type='table/cell'] {
+    margin-top: 0;
+  }
+}
+
+// Default blocks suppress the first margin in a simple-table cell. Heading
+// and toggle builders override it; legacy table-cell blocks retain their margin.
+#body
+  [role='textbox']
+  td[data-block-type='simple_table_cell']
+  > .cell-children
+  > .block-element:first-child:not([data-block-type='heading']):not([data-block-type='toggle_list']) {
+  margin-top: 0;
+}
+
+#body [role='textbox'] .toggle-list:not(.callout-content *) {
+  > .text-element {
+    padding: 0 0 0 2px;
+    align-items: flex-start;
+    gap: 6px;
+
+    > .toggle-icon {
+      flex: 0 0 1.4em;
+      width: 1.4em;
+      height: 1.4em;
+      padding: 0;
+      top: 0;
+
+      > svg {
+        width: 100%;
+        height: 100%;
+      }
+    }
+
+    > .text-content {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 2px 2px;
+    }
+  }
+
+  @each $level, $size in (1: 32px, 2: 28px, 3: 24px, 4: 20px, 5: 18px, 6: 16px) {
+    &.level-#{$level} {
+      --toggle-heading-leading: calc(#{$size} * 1.4);
+    }
+  }
+
+  @media (max-width: 767px) {
+    @each $level, $size in (1: 24px, 2: 22px, 3: 20px, 4: 16px) {
+      &.level-#{$level} {
+        --toggle-heading-leading: calc(#{$size} * 1.4);
+      }
+    }
+  }
+
+  &.toggle-heading > .text-element > .toggle-icon {
+    margin-top: max(0px, calc((var(--toggle-heading-leading) - 1.4em) / 2));
+  }
+
+  > .block-element,
+  > [data-testid='toggle-list-empty'] {
+    margin-left: calc(1.4em + 6px);
+    width: calc(100% - 1.4em - 6px);
+  }
+
+  > [data-testid='toggle-list-empty'] {
+    margin-top: 6px;
+    height: auto;
+    min-height: calc(1.4em + 4px);
+    padding: 2px;
+    font-size: inherit;
+    line-height: 1.4;
+  }
+}
+
+#body [role='textbox'] .divider-node > div[contenteditable='false'] {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding-block: 0;
+
+  > hr {
+    width: 100%;
+    border-color: var(--border-primary);
+  }
+}
+
+// The desktop theme uses spacing.s = 6 and spacing.xs = 4.
+#body [role='textbox'] .block-element[data-block-type='toggle_list']:not(:has(> .toggle-heading)) {
+  margin-top: 4px;
+}
+
+#body [role='textbox'] .text-content:not(.callout-content *):not(.code-block *):not(.document-title *) {
+  line-height: 1.4;
+
+  &:is(.line-height-large *) {
+    line-height: 2;
+  }
+  &:is(.line-height-small *) {
+    line-height: 1.25;
+  }
+}
+
+// Speaker headers and the transcript section have dedicated desktop spacing.
+#body [role='textbox'] .block-element[data-block-type='ai_meeting_speaker'] {
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+#body [role='textbox'] .ai-meeting-section-transcription {
+  padding-inline: 32px;
+}
+
+// Marker gutters use minWidth 26 / minHeight 22 in the desktop editor.
+#body
+  [role='textbox']
+  .block-element:is(
+    [data-block-type='bulleted_list'],
+    [data-block-type='numbered_list'],
+    [data-block-type='todo_list']
+  )
+  > div
+  > .text-element
+  > .text-block-icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 22px;
+  min-height: 22px;
+  font-size: inherit;
+
+  > svg {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+#body [role='textbox'] .quote-block {
+  position: relative;
+
+  > .quote-rail {
+    position: absolute;
+    inset-block: 2px;
+    inset-inline-start: 7.5px;
+    width: 3px;
+    background: var(--fill-theme-thick);
+    pointer-events: none;
+  }
+
+  > .quote-content {
+    width: 100%;
+
+    > .text-element {
+      padding: 2px;
+      padding-inline-start: 26px;
+    }
+
+    > .block-element {
+      margin-left: 0 !important;
+    }
+    > .block-element > div > .block-element {
+      margin-left: 50px;
+    }
+  }
+}
+
+#body [role='textbox'] .table-block {
+  padding: 14px 0 8px 10px;
+}
+
+// Empty media surfaces use the same 8px / 12px inset on desktop. Content
+// (images, video players and galleries) keeps its own intrinsic dimensions.
+#body [role='textbox'] .block-element {
+  [data-media-placeholder='true'],
+  [data-file-row] {
+    min-height: 44px;
+    font-size: 14px;
+    line-height: 20px;
+    padding: 8px 12px;
+    border-width: 0;
+    gap: 8px;
+    border-color: transparent;
+
+    > [class~='flex'] {
+      min-height: 28px;
+      align-items: center;
+      gap: 8px;
+    }
+    svg[class~='flex-none'],
+    > [class~='flex'] > svg,
+    > svg,
+    > [class~='flex'] > [class~='h-6'] > svg {
+      width: 20px;
+      height: 20px;
+    }
+    > [class~='flex'] > [class~='h-6'] {
+      height: 20px;
+    }
+    [class~='text-base'] {
+      font-size: 14px;
+      line-height: 20px;
+    }
+  }
+
+  > .subpage {
+    .mention-inline {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+  }
+
+  .pdf-empty {
+    padding: 8px 12px;
+  }
+}
+
+#body [role='textbox'] .ai-meeting-section > .block-element,
+#body [role='textbox'] .ai-meeting-speaker__content > .block-element {
+  margin-left: 0 !important;
+}
+
+// Quotes inside table cells use the desktop's reduced 24px child indent.
+#body [role='textbox'] td[data-block-type='simple_table_cell'] .quote-content > .block-element,
+#body [role='textbox'] [data-block-type='table/cell'] .quote-content > .block-element {
+  margin-left: 24px !important;
+}
+
+// Image/gallery placeholders reserve a 24px trailing slot; other media use
+// a 28px more-menu slot. Reserve it even when the button is not visible.
+#body
+  [role='textbox']
+  .block-element:is([data-block-type='image'], [data-block-type='multi_image'])
+  [data-media-placeholder='true'] {
+  min-height: 40px;
+
+  > div {
+    min-height: 24px;
+  }
+}
+
+// Keep the last nested item's background inside the parent's body inset.
+// Only expanded groups need this; leaves and collapsed toggles have no body.
+#body [role='textbox'] .block-element[data-block-type='todo_list'] > div:has(> .block-element),
+#body
+  [role='textbox']
+  .block-element[data-block-type='toggle_list']
+  > .toggle-list:not(.collapsed):has(> .block-element) {
+  padding-bottom: 2px;
+}
+
+// Match the desktop file row and keep its action slot stable on hover.
+#body [role='textbox'] .file-block [data-file-row] {
+  border-radius: 8px;
+  background-color: var(--block-bg-color-20);
+  color: var(--block-text-color-20);
+
+  &:hover,
+  &:focus-within {
+    background-color: var(--block-bg-hover-color-20);
+  }
+
+  > .flex {
+    min-height: 28px;
+  }
+
+  > [data-file-actions] {
+    opacity: 0;
+  }
+
+  &:hover > [data-file-actions],
+  &:focus-within > [data-file-actions] {
+    opacity: 1;
   }
 }

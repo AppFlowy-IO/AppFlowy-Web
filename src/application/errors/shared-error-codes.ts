@@ -127,6 +127,7 @@ export const serverErrorCodes = {
   WorkspaceNotFound: 1130,
   GuestInviteRequiresAdminApproval: 1131,
   WorkspaceStorageMaintenanceRequired: 1132,
+  RowDocumentContentUnavailable: 1133,
   RetryLater: -5,
   RecordDeleted: -4,
   RecordAlreadyExists: -3,

@@ -31,6 +31,7 @@ import {
   useDatabaseExtraFilters,
   useDatabaseFields,
   useDatabaseSearchQuery,
+  useDatabaseSelector,
   useDatabaseView,
   useDatabaseViewId,
   useRow,
@@ -917,121 +918,131 @@ export function useDatabaseGroupFieldIdSelector(): string | undefined {
 }
 
 export function useFieldType(fieldId: string) {
-  const database = useDatabase();
-  const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
-  const [fieldType, setFieldType] = useState<FieldType>(FieldType.RichText);
+  return useDatabaseSelector(
+    useCallback(
+      (database) => {
+        const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-  useEffect(() => {
-    if (!field) return;
-
-    const observerEvent = () => {
-      setFieldType(Number(field.get(YjsDatabaseKey.type)) as FieldType);
-    };
-
-    observerEvent();
-
-    field.observe(observerEvent);
-
-    return () => {
-      field.unobserve(observerEvent);
-    };
-  }, [field]);
-
-  return fieldType;
+        return field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : FieldType.RichText;
+      },
+      [fieldId]
+    )
+  );
 }
 
 export function useFieldVisibility(fieldId: string) {
-  const view = useDatabaseView();
-  const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
-  const fieldSetting = fieldSettings?.get(fieldId);
+  const viewId = useDatabaseViewId();
 
-  const [visibility, setVisibility] = useState<FieldVisibility>(
-    Number(fieldSetting?.get(YjsDatabaseKey.visibility)) ?? FieldVisibility.AlwaysShown
+  return useDatabaseSelector(
+    useCallback(
+      (database) => {
+        const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+        const setting = view?.get(YjsDatabaseKey.field_settings)?.get(fieldId);
+
+        return Number(setting?.get(YjsDatabaseKey.visibility) ?? FieldVisibility.AlwaysShown) as FieldVisibility;
+      },
+      [fieldId, viewId]
+    )
   );
-
-  useEffect(() => {
-    if (!view) return;
-
-    const observerEvent = () => {
-      setVisibility(Number(fieldSetting?.get(YjsDatabaseKey.visibility)) ?? FieldVisibility.AlwaysShown);
-    };
-
-    observerEvent();
-
-    fieldSettings?.observeDeep(observerEvent);
-
-    return () => {
-      fieldSettings?.unobserveDeep(observerEvent);
-    };
-  }, [view, fieldId, fieldSettings, fieldSetting]);
-
-  return visibility;
 }
 
 export function useFieldWrap(fieldId: string) {
-  const view = useDatabaseView();
-  const database = useDatabase();
-  const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
-  const fieldSetting = fieldSettings?.get(fieldId);
+  const viewId = useDatabaseViewId();
 
-  const [wrap, setWrap] = useState(fieldSetting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP);
+  return useDatabaseSelector(
+    useCallback(
+      (database) => {
+        const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+        const setting = view?.get(YjsDatabaseKey.field_settings)?.get(fieldId);
 
-  useEffect(() => {
-    if (!view) return;
+        return setting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP;
+      },
+      [fieldId, viewId]
+    )
+  );
+}
 
-    const observerEvent = () => {
-      setWrap(fieldSetting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP);
-    };
+type FieldVersionStore = {
+  getSnapshot: () => number;
+  subscribe: (notify: () => void) => () => void;
+};
 
-    observerEvent();
+const EMPTY_FIELD_VERSION_STORE: FieldVersionStore = {
+  getSnapshot: () => 0,
+  subscribe: () => () => undefined,
+};
+const fieldVersionStores = new WeakMap<YDatabaseField, FieldVersionStore>();
 
-    fieldSettings?.observeDeep(observerEvent);
+function getFieldVersionStore(field: YDatabaseField | undefined): FieldVersionStore {
+  if (!field) return EMPTY_FIELD_VERSION_STORE;
+  const existing = fieldVersionStores.get(field);
 
-    return () => {
-      fieldSettings?.unobserveDeep(observerEvent);
-    };
-  }, [database, view, fieldId, fieldSettings, fieldSetting]);
+  if (existing) return existing;
+  const subscribers = new Set<() => void>();
+  const fingerprint = () =>
+    JSON.stringify(field.toJSON(), (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
+  let detachedFingerprint: string | undefined = fingerprint();
+  let version = 0;
 
-  return wrap;
+  const publish = () => {
+    version += 1;
+    subscribers.forEach((notify) => notify());
+  };
+
+  const store: FieldVersionStore = {
+    getSnapshot: () => version,
+    subscribe: (notify) => {
+      subscribers.add(notify);
+      if (subscribers.size === 1) {
+        field.observeDeep(publish);
+        // Compare only across the render/subscription gap. Once observed, a
+        // numeric revision tracks edits without serializing schema per cell.
+        const changedBeforeSubscribe = fingerprint() !== detachedFingerprint;
+
+        detachedFingerprint = undefined;
+        if (changedBeforeSubscribe) publish();
+      }
+
+      return () => {
+        subscribers.delete(notify);
+        if (subscribers.size === 0) {
+          field.unobserveDeep(publish);
+          detachedFingerprint = fingerprint();
+        }
+      };
+    },
+  };
+
+  fieldVersionStores.set(field, store);
+  return store;
 }
 
 export function useFieldSelector(fieldId: string) {
-  const database = useDatabase();
-  const [clock, setClock] = useState<number>(0);
-  const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+  const field = useDatabaseSelector(
+    useCallback((database) => database?.get(YjsDatabaseKey.fields)?.get(fieldId), [fieldId])
+  );
+  const store = getFieldVersionStore(field);
+  const clock = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
-  useEffect(() => {
-    if (!database) return;
-    const observerEvent = () => setClock((prev) => prev + 1);
-
-    field?.observeDeep(observerEvent);
-
-    return () => {
-      field?.unobserveDeep(observerEvent);
-    };
-  }, [database, field, fieldId]);
-
-  return {
-    field,
-    clock,
-  };
+  return { field, clock };
 }
 
-export function useDatabaseIdFromField(fieldId: string) {
-  const database = useDatabase();
-  const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+export function useDatabaseIdFromField(fieldId: string): string | undefined {
+  const field = useDatabaseSelector(
+    useCallback((database) => database?.get(YjsDatabaseKey.fields)?.get(fieldId), [fieldId])
+  );
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       if (!field) return () => undefined;
 
-      field.observe(onStoreChange);
+      field.observeDeep(onStoreChange);
       return () => {
-        field.unobserve(onStoreChange);
+        field.unobserveDeep(onStoreChange);
       };
     },
     [field]
   );
-  const getSnapshot = useCallback(() => parseRelationTypeOption(field)?.database_id ?? null, [field]);
+  const getSnapshot = useCallback(() => (field ? parseRelationTypeOption(field).database_id : undefined), [field]);
 
   // Relation cells need this value during their first render so an existing
   // relation never paints an empty frame before its loading indicator.
@@ -5409,7 +5420,7 @@ export const useDateTimeCellString = (cell: DateTimeCell | undefined, fieldId: s
   const { field, clock } = useFieldSelector(fieldId);
 
   return useMemo(() => {
-    if (!cell) return null;
+    if (!cell || !field) return null;
     return getDateCellStr({ cell, field, currentUser });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell, field, clock, currentUser]);

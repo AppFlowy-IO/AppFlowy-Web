@@ -387,6 +387,21 @@ export const useDatabase = () => {
   return store.getDatabase() as YDatabase;
 };
 
+/**
+ * Observe a stable projection of the database instead of its global revision.
+ * Return a primitive or an existing Yjs handle; allocate derived objects outside
+ * the selector. Field readers can observe their own handle's contents without
+ * re-rendering for edits in another view, while still following hydration and
+ * replacement of the database, fields map, or selected field.
+ */
+export function useDatabaseSelector<T>(selector: (database: YDatabase | undefined) => T): T {
+  const { databaseDoc } = useDatabaseContext();
+  const store = getDatabaseExternalStore(databaseDoc);
+  const getSnapshot = useCallback(() => selector(store.getDatabase()), [selector, store]);
+
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+}
+
 export const useNavigateToRow = () => {
   return useDatabaseContext().navigateToRow;
 };

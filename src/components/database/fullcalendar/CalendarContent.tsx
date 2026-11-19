@@ -60,6 +60,10 @@ export const useEventContext = () => {
   return context;
 };
 
+// FullCalendar compares `eventOrder` by identity: a new array on every render
+// would make it rebuild the content of every event.
+const TIME_GRID_EVENT_ORDER = ['start', 'title'];
+
 /**
  * Calendar data and handlers interface for parent components
  */
@@ -179,6 +183,12 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
       return newSet;
     });
   }, []);
+
+  // Every event reads this context: a new value on each render would re-render them all.
+  const eventContext = useMemo(
+    () => ({ clearNewEvent, setOpenEventRowId, markEventAsNew, markEventAsUpdate, clearUpdateEvent }),
+    [clearNewEvent, markEventAsNew, markEventAsUpdate, clearUpdateEvent]
+  );
 
   // Empty slots remain local until the user edits or explicitly submits the editor.
   const handleAdd = useCallback(
@@ -493,9 +503,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
 
   return (
     <CalendarDraftContext.Provider value={draftContext}>
-      <EventContext.Provider
-        value={{ clearNewEvent, setOpenEventRowId, markEventAsNew, markEventAsUpdate, clearUpdateEvent }}
-      >
+      <EventContext.Provider value={eventContext}>
         <div
           ref={setContainerRef}
           style={containerStyle}
@@ -533,7 +541,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
             moreLinkContent={renderMoreLinkContent}
             dayPopoverFormat={dayPopoverFormat}
             // eslint-disable-next-line
-            eventOrder={isTimeGridView(currentView) ? ['start', 'title'] : (eventOrder as any)}
+            eventOrder={isTimeGridView(currentView) ? TIME_GRID_EVENT_ORDER : (eventOrder as any)}
             eventOrderStrict={false}
             editable={permissions.editable}
             selectable={permissions.selectable}

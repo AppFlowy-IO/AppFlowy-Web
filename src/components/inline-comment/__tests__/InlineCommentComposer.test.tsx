@@ -2,6 +2,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { InlineCommentComposer } from '../InlineCommentComposer';
 
+jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
+  useMentionableUsersWithAutoFetch: () => ({ users: [], loading: false }),
+}));
+
 const mockPortal = jest.fn(({ children }: { children: React.ReactNode; container?: HTMLElement }) => children);
 
 jest.mock('@mui/material', () => ({

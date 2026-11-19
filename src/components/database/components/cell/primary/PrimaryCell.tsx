@@ -71,7 +71,11 @@ export function PrimaryCell(props: CellProps<CellType>) {
         ) : null}
       </CustomIconPopover>
 
-      <div className={'flex flex-1 items-center overflow-x-hidden'}>
+      {/* At least one `text-sm` line (20px) tall, whether the row is loading
+          (a 14px spinner), loaded, or titled with nothing: a one-line row keeps
+          one height. A row that grew when its data arrived would move the scroll
+          offset of a grid already scrolled past it. */}
+      <div className={'flex min-h-5 flex-1 items-center overflow-x-hidden'}>
         {isRowLoaded ? (
           <DatabaseCell {...props} />
         ) : (

@@ -1,100 +1,106 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
 
-import { DriveFile, driveFileUrl } from '@/application/integrations/google-drive';
+import { DriveFile } from '@/application/integrations/google-drive';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { GoogleDriveBlockData } from '@/application/types';
-import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
+import { BlockType, LinkPreviewBlockData } from '@/application/types';
+import { notify } from '@/components/_shared/notify';
+import { writableDrive } from '@/components/editor/components/blocks/google-drive/drive-actions';
 import {
-  isGoogleDriveUrl,
-  resolveGoogleDriveName,
-} from '@/components/editor/components/blocks/google-drive/google-drive-utils';
+  driveFileData,
+  driveLink,
+  driveLinkData,
+  validDriveSource,
+} from '@/components/editor/components/blocks/google-drive/drive-data';
 import { GoogleDriveBrowser } from '@/components/editor/components/blocks/google-drive/GoogleDriveBrowser';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
-import { processUrl } from '@/utils/url';
+import { Input } from '@/components/ui/input';
 
-function GoogleDriveBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
+export default function GoogleDriveBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
   const { t } = useTranslation();
   const { workspaceId } = useEditorContext();
-  const [browse, setBrowse] = useState(false);
-  const entry = useMemo(() => {
-    try {
-      return findSlateEntryByBlockId(editor, blockId);
-    } catch {
-      return null;
-    }
-  }, [blockId, editor]);
-  const data = entry?.[0]?.data as GoogleDriveBlockData | undefined;
+  const [tab, setTab] = useState<'link' | 'browse'>('link');
+  // Replace always starts with a fresh, focused link field.
+  const [input, setInput] = useState('');
+  const [originalUrl] = useState(() => writableDrive(editor, blockId)?.data.url);
+  const canReplace = () => {
+    const live = writableDrive(editor, blockId);
 
-  const handleInsertEmbedLink = useCallback(
-    (rawUrl: string) => {
-      const url = processUrl(rawUrl) || rawUrl;
+    return live && live.data.url === originalUrl;
+  };
 
-      CustomEditor.setBlockData(editor, blockId, {
-        url,
-        email: '',
-        file_id: '',
-        name: resolveGoogleDriveName(url),
-        uploaded_at: Date.now(),
-        width_factor: data?.width_factor ?? 1,
-        height_factor: data?.height_factor ?? 1,
-      } as GoogleDriveBlockData);
-      onClose();
-    },
-    [blockId, data?.height_factor, data?.width_factor, editor, onClose]
-  );
-
-  const handleSelectFile = (file: DriveFile, email?: string) => {
-    CustomEditor.setBlockData(editor, blockId, {
-      url: driveFileUrl(file),
-      name: file.name,
-      email: email ?? '',
-      file_id: file.id,
-      uploaded_at: Date.now(),
-      width_factor: data?.width_factor ?? 1,
-      height_factor: data?.height_factor ?? 1,
-    });
+  const url = driveLink(input);
+  const select = (file: DriveFile, email?: string) => {
+    if (!canReplace()) return;
+    CustomEditor.setBlockData(editor, blockId, driveFileData(file, email));
     onClose();
   };
 
   return (
-    <div className={'flex flex-col gap-2 p-4'}>
-      {workspaceId && (
-        <div className='flex gap-2'>
-          <Button variant={browse ? 'ghost' : 'outline'} onClick={() => setBrowse(false)}>
-            {t('document.plugins.googleDrive.pasteLink')}
-          </Button>
-          <Button variant={browse ? 'outline' : 'ghost'} onClick={() => setBrowse(true)}>
-            {t('document.plugins.googleDrive.browseGoogleDrive')}
-          </Button>
-        </div>
-      )}
-      {browse && workspaceId ? (
-        <GoogleDriveBrowser key={workspaceId} workspaceId={workspaceId} onSelect={handleSelectFile} />
-      ) : (
-        <>
-          <EmbedLink
-            onDone={handleInsertEmbedLink}
-            defaultLink={data?.url}
-            placeholder={t('document.plugins.googleDrive.embedPlaceholder', {
-              defaultValue: 'Paste a Google Drive link',
-            })}
-            validator={isGoogleDriveUrl}
+    <div className='google-drive-picker w-full text-sm' data-testid='google-drive-picker'>
+      <div
+        role='tablist'
+        aria-label={t('document.plugins.googleDrive.name')}
+        className='flex border-b border-border-primary pl-3 pt-3'
+      >
+        {(['link', 'browse'] as const).map((value) => (
+          <button
+            key={value}
+            type='button'
+            role='tab'
+            aria-selected={tab === value}
+            className={`h-[34px] border-b-2 px-[10px] pb-2 font-medium ${
+              tab === value ? 'border-border-theme-thick text-text-primary' : 'border-transparent text-text-tertiary'
+            }`}
+            onClick={() => setTab(value)}
+          >
+            {t(
+              value === 'link'
+                ? 'document.plugins.googleDrive.embedLink'
+                : 'document.plugins.googleDrive.browseGoogleDrive'
+            )}
+          </button>
+        ))}
+      </div>
+      {tab === 'link' ? (
+        <form
+          className='flex flex-col gap-4 p-5'
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!url || !canReplace()) return;
+            if (validDriveSource(url)) CustomEditor.setBlockData(editor, blockId, driveLinkData(url));
+            else {
+              CustomEditor.turnToBlock(editor, blockId, BlockType.LinkPreview, { url } as LinkPreviewBlockData);
+              notify.warning(t('document.plugins.pdf.unableToEmbed'));
+            }
+
+            onClose();
+          }}
+        >
+          <Input
+            autoFocus
+            aria-label={t('document.plugins.googleDrive.embedPlaceholder')}
+            placeholder={t('document.plugins.googleDrive.embedPlaceholder')}
+            className='h-10 rounded-[10px] px-2 text-sm'
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
           />
-          <div className={'w-full text-center text-sm text-text-secondary'}>
-            {t('document.plugins.googleDrive.worksWithLinksOfGoogleDrive', {
-              defaultValue: 'Works with Google Docs, Sheets, Slides, Forms, files, and folders.',
-            })}
-          </div>
-        </>
+          <Button type='submit' className='h-8 w-full' disabled={!url}>
+            {t('document.plugins.googleDrive.embed')}
+          </Button>
+          <p className='text-sm leading-5 text-text-secondary'>
+            {t('document.plugins.googleDrive.worksWithLinksOfGoogleDrive')}
+          </p>
+        </form>
+      ) : workspaceId ? (
+        <GoogleDriveBrowser key={workspaceId} workspaceId={workspaceId} onSelect={select} />
+      ) : (
+        <p className='p-5 text-text-secondary'>{t('document.plugins.googleDrive.accountRequired')}</p>
       )}
     </div>
   );
 }
-
-export default GoogleDriveBlockPopoverContent;

@@ -229,7 +229,7 @@ describe('WidgetHeaderFrame with titles', () => {
     await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
   });
 
-  it('turns blue in Edit mode, where the band is the drag handle, with no drag glyph and no more button', () => {
+  it('keeps the title readable in Edit mode and makes the band the drag handle without extra buttons', () => {
     const setDragHandle = jest.fn();
     const { rerender } = render(<Harness setDragHandle={setDragHandle} />);
     const viewModeLook = pill().className;
@@ -238,8 +238,8 @@ describe('WidgetHeaderFrame with titles', () => {
     rerender(<Harness editing setDragHandle={setDragHandle} />);
     const header = screen.getByTestId('dashboard-widget-header');
 
-    // Edit mode alone restyles the pill (the accent title).
-    expect(pill().className).not.toBe(viewModeLook);
+    // Edit mode is indicated by the frame; the title keeps its primary text color.
+    expect(pill().className).toBe(viewModeLook);
     expect(setDragHandle).toHaveBeenCalledWith(header);
     // The same 40px band as in View mode: Edit mode never changes a size.
     expect(header.style.height).toBe('40px');

@@ -1,0 +1,142 @@
+.google-drive-block[data-selected='true'] .drive-selection-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--fill-theme-select);
+}
+.google-drive-block[data-selected='true'] .drive-empty::after {
+  background: var(--fill-text-select);
+}
+#body .google-drive-block[data-picker-open='true'] .drive-empty {
+  background: var(--block-bg-hover-color-20);
+}
+.drive-content {
+  container-type: inline-size;
+  container-name: google-drive;
+}
+.drive-toolbar {
+  opacity: 0;
+  transition: opacity 100ms;
+}
+.drive-card:hover .drive-toolbar,
+.drive-card:focus-within .drive-toolbar,
+.drive-toolbar[data-open='true'] {
+  opacity: 1;
+}
+#body .drive-toolbar button {
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+  border-radius: 4px;
+  color: white;
+}
+#body .drive-toolbar button:hover {
+  color: white;
+  background: rgb(255 255 255 / 16%);
+}
+.drive-menu-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
+  background: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: auto;
+}
+.drive-caption {
+  display: block;
+  width: 100%;
+  min-height: 18px;
+  margin-top: 8px;
+  padding: 0;
+  resize: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+.drive-caption::placeholder {
+  color: var(--text-tertiary);
+}
+.drive-resize {
+  touch-action: none;
+  position: absolute;
+  z-index: 10;
+  border-radius: 100px;
+  border: 1px solid rgb(255 255 255 / 80%);
+  background: rgb(0 0 0 / 40%);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+}
+.drive-card:hover .drive-resize,
+.drive-resize:focus {
+  opacity: 1;
+}
+.drive-resize-left,
+.drive-resize-right {
+  width: 6px;
+  height: min(60px, 30%);
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+.drive-resize-top,
+.drive-resize-bottom {
+  height: 6px;
+  width: min(60px, 30%);
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+.drive-resize-left {
+  left: 2px;
+}
+.drive-resize-right {
+  right: 2px;
+}
+.drive-resize-top {
+  top: 2px;
+}
+.drive-resize-bottom {
+  bottom: 2px;
+}
+.drive-card:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0;
+  background: var(--surface-primary);
+}
+@container google-drive (max-width: 180px) {
+  .drive-toolbar-extra {
+    display: none;
+  }
+  .drive-footer {
+    padding: 8px;
+  }
+  .drive-footer > span {
+    display: none;
+  }
+}
+@media (hover: none) {
+  .drive-toolbar {
+    opacity: 1;
+  }
+}
+
+#body .drive-fullscreen-close {
+  display: none !important;
+}
+#body .drive-card:fullscreen .drive-fullscreen-close {
+  display: inline-flex !important;
+}
+#body .drive-card:fullscreen .drive-toolbar,
+#body .drive-card:fullscreen .drive-resize {
+  display: none !important;
+}

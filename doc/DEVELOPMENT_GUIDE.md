@@ -82,6 +82,60 @@ Web development/test mode bypasses this client check. To test creation without P
 debug Cloud server (`debug_assertions` enabled); a release Cloud server still enforces Pro.
 Production-policy tests explicitly disable the development bypass.
 
+### Board viewport loading
+
+A board keeps its Kanban skeleton while its group field initializes and through its first row
+grouping. Grouped rows can also arrive before TanStack Virtual measures the column viewport. A
+visible column with persisted cards keeps a loading card and `aria-busy` until the virtual range
+is available; empty columns and intentionally unmounted offscreen columns do not. The focused
+`CardList.test.tsx` regression covers this handoff, and `CardList.sizing.test.tsx` exercises the
+real virtualizer's viewport and scroll behavior. The cloud BDD scenario “Board, calendar and
+timeline widgets of a slow source” also checks that no empty widget appears before its data.
+
+### Collaboration branch recovery
+
+Collab versions identify history branches. A server Update or Manifest that omits its version
+carries no branch-change information: keep the document's known version, cache, and pending edits.
+A concrete differing version still enters the existing history-recovery flow. Server write fences
+remain responsible for rejecting uploads from the wrong branch.
+
+Sibling-tab updates can be broadcast before the server accepts them. They need a matching version
+to enter a known branch; an unversioned peer frame is ignored without resetting local state.
+Subsequent authoritative server state can still catch the document up normally.
+
+The versionless-message cases in `src/components/ws/__tests__/useSync.test.ts` exercise the real
+Yjs protocol with queued edits before and after both Update and Manifest delivery. They verify
+that neither WebSocket nor sibling-tab traffic destroys the local branch, and that drained
+uploads retain its version and carry both edits to a server replica.
+
+### React subscriptions and request ownership
+
+Yjs handles keep their identity when their contents change. Database field readers should use
+`useDatabaseSelector` for primitive values or stable handles, and `useFieldSelector`'s `clock`
+when memoizing a field's contents. Keep `useDatabase` for consumers that need the whole database's
+deep revision. Test hydration, handle replacement, nested edits, and mutations between render
+and subscription; memoizing a Y.Map handle alone can leave derived values stale.
+
+Feed and Gallery search index hydrated row text separately from the query. Query changes should
+filter the index without decoding every row again. Row/schema changes still invalidate the
+relevant text, and Gallery applies its normal card budget to search matches (50 initially,
+then 30 per page), resetting the budget for a new query.
+
+Associate asynchronous document results with their source and loader before rendering or
+inserting content. Clearing state in an effect alone does not prevent a previous document from
+rendering with the next source's metadata. A chat answer stream belongs to both its provider's
+workspace/chat and the mounted assistant request. Pass its AbortSignal through to fetch so
+teardown also cancels requests still waiting for headers. Fence in-flight suggestions with the
+same ownership check, including late failures. Teardown ignores late callbacks and cancels
+handles that arrive after teardown. Manual Stop can persist the final partial answer. Exercise
+the real consumer under Strict Mode so effect replay starts a replacement request instead of
+leaving a canceled answer on screen.
+
+Optimistic reaction intent must be computed outside React state updaters. Serialize changes to
+the same reaction and rebase pending intent on the initial server read so rapid toggles retain
+their order. Remote cursor geometry also needs local content and layout invalidation; peer
+awareness events alone cannot track an image loading or a local edit moving a cursor.
+
 
 ## 🚀 Production Mode Setup
 

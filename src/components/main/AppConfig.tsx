@@ -13,6 +13,7 @@ import { MetadataKey } from '@/application/user-metadata';
 import { createInitialTimezone, UserTimezone } from '@/application/user-timezone.types';
 import { InfoSnackbarProps } from '@/components/_shared/notify';
 import { removePrivatePayloadsForUser } from '@/components/database/dashboard/private/private-storage';
+import { removeMentionPickMemoryForUser } from '@/components/editor/components/panels/mention-panel/mentionPickMemory';
 import { AFConfigContext, defaultConfig } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
 import { useServerErrorCatalog } from '@/components/main/hooks/useServerErrorCatalog';
@@ -71,6 +72,8 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   // An explicit sign-out keeps no private dashboard state of that user on
   // this device (WP07 rule 11): the app root wires it, the session helper runs it.
   useEffect(() => registerSignOutCleanup(removePrivatePayloadsForUser), []);
+  // Nor what that user picked after typing what in the @-mention picker (MEN-WEB-10).
+  useEffect(() => registerSignOutCleanup(removeMentionPickMemoryForUser), []);
 
   useEffect(() => {
     const syncAuthenticationState = () => {

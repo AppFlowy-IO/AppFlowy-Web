@@ -425,7 +425,8 @@ export class ChatRequest {
     },
     onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void,
     onProgress?: (step: string) => void,
-    onReasoning?: (reasoning: string) => void
+    onReasoning?: (reasoning: string) => void,
+    signal?: AbortSignal
   ): { cancel: () => void; streamPromise: Promise<void> } {
     const baseUrl = this.axiosInstance.defaults.baseURL;
     const url = `${baseUrl}/api/chat/${this.workspaceId}/${this.chatId}/answer/stream`;
@@ -433,20 +434,31 @@ export class ChatRequest {
     const token = getAccessToken();
     const controller = new AbortController();
 
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined = undefined;
-    let cancelled = false;
-
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const cancel = () => {
-      cancelled = true;
       controller.abort();
+      // A fetch abort may already have errored the reader. The iterator releases its lock.
       void reader?.cancel().catch(() => undefined);
     };
 
+    if (signal?.aborted) {
+      cancel();
+    } else {
+      signal?.addEventListener('abort', cancel, { once: true });
+    }
+
     const streamPromise = (async () => {
-      let response: Response;
+      let text = '';
+      let metadata: ChatMessageMetadata[] = [];
+      let body: ReadableStream<Uint8Array> | null = null;
 
       try {
-        response = await fetch(url, {
+        if (controller.signal.aborted) {
+          onMessage(text, metadata, true);
+          return;
+        }
+
+        const response = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -460,46 +472,34 @@ export class ChatRequest {
           }),
           signal: controller.signal,
         });
-      } catch (error) {
-        if (cancelled || isAbortError(error)) {
-          onMessage('', [], true);
+
+        if (!response.ok) {
+          throw await readStreamErrorResponse(response);
+        }
+
+        const contentType = response.headers.get('Content-Type');
+
+        if (contentType?.includes('application/json')) {
+          const json = await response.json();
+
+          if (json.code !== 0) {
+            return Promise.reject(json);
+          }
+
           return;
         }
 
-        throw error;
-      }
+        body = response.body;
+        reader = body?.getReader();
 
-      if (!response.ok) {
-        throw await readStreamErrorResponse(response);
-      }
-
-      const contentType = response.headers.get('Content-Type');
-
-      if (contentType?.includes('application/json')) {
-        const json = await response.json();
-
-        if (json.code !== 0) {
-          return Promise.reject(json);
+        if (!reader) {
+          throw new Error('Failed to get reader');
         }
 
-        return;
-      }
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let reasoning = '';
 
-      reader = response.body?.getReader();
-
-      if (!reader) {
-        throw new Error('Failed to get reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let text = '';
-      let reasoning = '';
-      // The service may send sources before the answer (so citations resolve while
-      // streaming) and again at the end; the latest list is authoritative.
-      let metadata: ChatMessageMetadata[] = [];
-
-      try {
         for await (const chunk of readableStreamToAsyncIterator(reader)) {
           buffer += decoder.decode(chunk, { stream: true });
 
@@ -532,6 +532,7 @@ export class ChatRequest {
               switch (key) {
                 case StreamType.META_DATA:
                   if (Array.isArray(value)) {
+                    // The final sources may replace a provisional list streamed earlier.
                     metadata = value.filter(isChatMessageMetadata);
                     metadataChanged = true;
                   }
@@ -562,7 +563,7 @@ export class ChatRequest {
 
         onMessage(text, metadata, true);
       } catch (error) {
-        if (cancelled || isAbortError(error)) {
+        if (controller.signal.aborted || isAbortError(error)) {
           // Stopping keeps whatever was already generated.
           onMessage(text, metadata, true);
           return;
@@ -570,18 +571,10 @@ export class ChatRequest {
 
         throw error;
       } finally {
-        try {
-          reader.releaseLock();
-        } catch {
-          // The async iterator already released the lock.
-        }
-
-        if (!cancelled) {
-          try {
-            await response.body?.cancel();
-          } catch (error) {
-            console.error('Error canceling stream:', error);
-          }
+        signal?.removeEventListener('abort', cancel);
+        if (body && !controller.signal.aborted) {
+          // A terminal error frame can end iteration while the response body is still open.
+          await body.cancel().catch(() => undefined);
         }
       }
     })();

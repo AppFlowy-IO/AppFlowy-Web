@@ -174,8 +174,20 @@ export function Gallery() {
   usePublishRowOrders(navigationRows, true, { layout: 'gallery', query });
   const { activeViewId, isDocumentBlock, onRendered, paddingEnd, paddingStart } = useDatabaseContext();
   const reorderRow = useReorderRowDispatch();
-  const [visibleRowLimit, setVisibleRowLimit] = useState(GALLERY_INITIAL_ROW_LIMIT);
-  const [groupLimits, setGroupLimits] = useState<Record<string, number>>({});
+  const paginationScope = JSON.stringify([activeViewId, grouping.groupId, isDocumentBlock, query]);
+  const [pagination, setPagination] = useState({
+    scope: paginationScope,
+    limit: GALLERY_INITIAL_ROW_LIMIT,
+    groups: {} as Record<string, number>,
+  });
+
+  // Reset before cards commit so another query cannot inherit an expanded window.
+  if (pagination.scope !== paginationScope) {
+    setPagination({ scope: paginationScope, limit: GALLERY_INITIAL_ROW_LIMIT, groups: {} });
+  }
+
+  const visibleRowLimit = pagination.scope === paginationScope ? pagination.limit : GALLERY_INITIAL_ROW_LIMIT;
+  const groupLimits = pagination.scope === paginationScope ? pagination.groups : {};
   const [reorderAnnouncement, setReorderAnnouncement] = useState('');
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const rowOrdersRef = useLatest(rowOrders);
@@ -188,27 +200,22 @@ export function Gallery() {
   );
 
   useEffect(() => {
-    setVisibleRowLimit(GALLERY_INITIAL_ROW_LIMIT);
-    setGroupLimits({});
-  }, [activeViewId, grouping.groupId, isDocumentBlock]);
-
-  useEffect(() => {
     if (rowOrders !== undefined && grouping.ready) onRendered?.();
   }, [onRendered, rowOrders, grouping.ready]);
 
   const searchActive = query.trim().length > 0;
-  const visibleRows = useMemo(
-    () => (searchActive ? matchingRows : rowOrders?.slice(0, visibleRowLimit)),
-    [matchingRows, rowOrders, searchActive, visibleRowLimit]
-  );
-  const remainingRowCount = rowOrders && !searchActive ? Math.max(rowOrders.length - visibleRowLimit, 0) : 0;
+  const visibleRows = useMemo(() => matchingRows?.slice(0, visibleRowLimit), [matchingRows, visibleRowLimit]);
+  const remainingRowCount = Math.max((matchingRows?.length ?? 0) - visibleRowLimit, 0);
   const loadMoreRows = useCallback(() => {
-    setVisibleRowLimit((current) => current + GALLERY_LOAD_MORE_INCREMENT);
+    setPagination((current) => ({ ...current, limit: current.limit + GALLERY_LOAD_MORE_INCREMENT }));
   }, []);
   const loadMoreGroupRows = useCallback((groupId: string) => {
-    setGroupLimits((current) => ({
+    setPagination((current) => ({
       ...current,
-      [groupId]: (current[groupId] ?? GALLERY_INITIAL_ROW_LIMIT) + GALLERY_LOAD_MORE_INCREMENT,
+      groups: {
+        ...current.groups,
+        [groupId]: (current.groups[groupId] ?? GALLERY_INITIAL_ROW_LIMIT) + GALLERY_LOAD_MORE_INCREMENT,
+      },
     }));
   }, []);
 

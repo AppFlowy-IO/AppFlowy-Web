@@ -6,6 +6,7 @@ import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { BlockType, CollabOrigin, YjsEditorKey } from '@/application/types';
 import { createDatabaseDuplicatePlaceholderData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { setImageUploading } from '@/components/editor/components/blocks/image/image-upload-state';
 import { EditorContextState } from '@/components/editor/EditorContext';
 import { observeSubpageLifecycle } from '@/components/editor/subpage/subpage-lifecycle';
 import { collectInlineCommentAnchors } from '@/components/inline-comment/editor/anchors';
@@ -15,6 +16,28 @@ import { duplicateBlockSelection, finalizeDuplicatedBlockData } from '../duplica
 const settle = async () => {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 };
+
+it.each(['pending', 'recovery', 'preparing'])(
+  'does not duplicate a selection containing an image with %s upload state',
+  async (state) => {
+    const data =
+      state === 'pending' ? { pending_upload_id: 'pending' } : state === 'recovery' ? { retry_local_url: 'local' } : {};
+    const f = setup([
+      block(BlockType.Paragraph, 'Keep this'),
+      block(BlockType.CalloutBlock, 'Nested image', [block(BlockType.ImageBlock, '', [], data)]),
+    ]);
+    try {
+      const image = (f.editor.children[1].children as Element[]).find((node) => node.type === BlockType.ImageBlock)!;
+      if (state === 'preparing') setImageUploading(f.editor, image.blockId!, true);
+      const ids = f.editor.children.map((node) => node.blockId!);
+      expect(await duplicateBlockSelection(f.editor, ids, f.context)).toEqual([]);
+      expect(f.editor.children.map((node) => node.blockId)).toEqual(ids);
+      expect(f.context.duplicatePage).not.toHaveBeenCalled();
+    } finally {
+      f.dispose();
+    }
+  }
+);
 
 function block(type: BlockType, text = '', children: Element[] = [], data = {}): Element {
   return { type, data, children: [{ type: YjsEditorKey.text, children: [{ text }] }, ...children] } as Element;

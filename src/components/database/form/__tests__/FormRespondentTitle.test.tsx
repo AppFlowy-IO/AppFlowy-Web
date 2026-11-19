@@ -98,4 +98,17 @@ describe('FormRespondentTitle draft synchronization', () => {
     expect(screen.queryByText('Unauthorized pending title')).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
+  it('persists a multiline draft and keeps Enter available for line breaks', () => {
+    const onChange = jest.fn();
+
+    render(<FormRespondentTitle title='Feedback' readOnly={false} onChange={onChange} />);
+    const title = screen.getByRole('textbox', { name: 'Form title' });
+
+    expect(title.tagName).toBe('TEXTAREA');
+    fireEvent.focus(title);
+    expect(fireEvent.keyDown(title, { key: 'Enter' })).toBe(true);
+    fireEvent.change(title, { target: { value: 'Feedback\nTell us more' } });
+    fireEvent.blur(title);
+    expect(onChange).toHaveBeenCalledWith('Feedback\nTell us more');
+  });
 });

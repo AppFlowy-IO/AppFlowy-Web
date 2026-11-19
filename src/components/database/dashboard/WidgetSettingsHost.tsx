@@ -27,6 +27,7 @@ import { GridSettingsItems } from '@/components/database/components/settings/Gri
 import { ListSettingsItems } from '@/components/database/components/settings/ListSettings';
 import { TimelineSettingsItems } from '@/components/database/components/settings/TimelineSettings';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +53,7 @@ import { getLayoutLabel } from './utils';
 import { getDashboardWidgetTools } from './widget-tools';
 import { WidgetFiltersBody, WidgetSortsBody } from './WidgetConditionsPopover';
 import { useWidgetContext } from './WidgetContext';
+import { DASHBOARD_ICON_BUTTON_CLASS, DASHBOARD_OVERLAY_CLASS } from './dashboard-ui';
 
 /** The view's own settings rows per layout (the same rows its toolbar menu shows). */
 const SETTINGS_ITEMS: Partial<Record<DatabaseViewLayout, ComponentType>> = {
@@ -67,7 +69,7 @@ const SETTINGS_ITEMS: Partial<Record<DatabaseViewLayout, ComponentType>> = {
 
 // The Settings tool's slot (`WidgetTools`), for a tool that does not attach `settingsToolRef`.
 const SETTINGS_TOOL_SELECTOR = '[data-widget-tool="settings"]';
-/** The host and its filter and sort submenus: 300px wide with 10px corners (`tokens.json` `geometry.popover`). */
+/** The host and its filter and sort submenus: 300px wide, with feature-local 12px AppFlowy corners. */
 const HOST_SIZE_STYLE = {
   width: WIDGET_SETTINGS_WIDTH,
   minWidth: WIDGET_SETTINGS_WIDTH,
@@ -114,7 +116,7 @@ function ConditionsRow({
         </span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuSubContent className='p-2' style={SUBMENU_SIZE_STYLE}>
+        <DropdownMenuSubContent className={cn(DASHBOARD_OVERLAY_CLASS, 'p-2')} style={SUBMENU_SIZE_STYLE}>
           {children}
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
@@ -282,7 +284,11 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
           // As on desktop: 8px between the parts of a row, 16px submenu chevrons, and a
           // row's trailing value is secondary text beside its chevron (both have `ml-auto`
           // in the shared rows, which would leave the value in the middle of this wider menu).
-          className='max-h-[560px] overflow-y-auto bg-surface-primary p-0 [&_[data-slot=dropdown-menu-sub-trigger]>.ml-auto+svg]:!ml-0 [&_[data-slot=dropdown-menu-sub-trigger]>svg:last-child]:!h-4 [&_[data-slot=dropdown-menu-sub-trigger]>svg:last-child]:!w-4 [&_[role=menuitem]>.ml-auto]:!text-text-secondary [&_[role=menuitem]]:!gap-2'
+          aria-label={t('dashboard.widget.viewSettings', { defaultValue: 'View settings' })}
+          className={cn(
+            DASHBOARD_OVERLAY_CLASS,
+            'max-h-[560px] overflow-y-auto p-1 [&_[data-slot=dropdown-menu-sub-trigger]>.ml-auto+svg]:!ml-0 [&_[data-slot=dropdown-menu-sub-trigger]>svg:last-child]:!h-4 [&_[data-slot=dropdown-menu-sub-trigger]>svg:last-child]:!w-4 [&_[role=menuitem]>.ml-auto]:!text-text-secondary [&_[role=menuitem]]:!min-h-8 [&_[role=menuitem]]:!gap-2 [&_[role=menuitem]]:!rounded-200'
+          )}
           collisionPadding={DOCK_PADDING}
           data-parity-id='dash-widget-settings'
           data-side={side}
@@ -315,7 +321,7 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
             {fromFlow ? (
               <Button
                 aria-label={t('dashboard.picker.back', { defaultValue: 'Back' })}
-                className='-ml-1 text-icon-secondary [&_svg]:h-4 [&_svg]:w-4'
+                className={cn(DASHBOARD_ICON_BUTTON_CLASS, '-ml-1')}
                 data-testid='dashboard-widget-settings-back'
                 onClick={() => {
                   setSettingsOpen(false);
@@ -336,7 +342,7 @@ export function WidgetSettingsHost({ nameField }: { nameField?: ReactNode }) {
             </span>
             <Button
               aria-label={t('dashboard.widget.close', { defaultValue: 'Close' })}
-              className='!rounded-full text-icon-secondary [&_svg]:h-4 [&_svg]:w-4'
+              className={DASHBOARD_ICON_BUTTON_CLASS}
               data-parity-id='dash-widget-settings-close'
               data-testid='dashboard-widget-settings-close'
               onClick={() => handleOpenChange(false)}

@@ -17,7 +17,7 @@ describe('FormFormDescription debounce', () => {
     const { rerender } = render(
       <FormFormDescription description='Initial description' readOnly={false} onChange={onChange} />
     );
-    const input = screen.getByPlaceholderText('Description (optional)');
+    const input = screen.getByPlaceholderText('Description (Optional)');
 
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: 'Pending local description' } });
@@ -40,7 +40,7 @@ describe('FormFormDescription debounce', () => {
     const { rerender } = render(
       <FormFormDescription description='Initial description' readOnly={false} onChange={onChange} />
     );
-    const input = screen.getByPlaceholderText('Description (optional)');
+    const input = screen.getByPlaceholderText('Description (Optional)');
 
     fireEvent.focus(input);
     rerender(<FormFormDescription description='Remote description' readOnly={false} onChange={onChange} />);
@@ -55,7 +55,7 @@ describe('FormFormDescription debounce', () => {
     const onChange = jest.fn();
     const { unmount } = render(<FormFormDescription description='' readOnly={false} onChange={onChange} />);
 
-    fireEvent.change(screen.getByPlaceholderText('Description (optional)'), {
+    fireEvent.change(screen.getByPlaceholderText('Description (Optional)'), {
       target: { value: 'Keep this draft' },
     });
     unmount();
@@ -69,7 +69,7 @@ describe('FormFormDescription debounce', () => {
       <FormFormDescription description='Initial description' readOnly={false} onChange={onChange} />
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Description (optional)'));
+    fireEvent.focus(screen.getByPlaceholderText('Description (Optional)'));
     rerender(<FormFormDescription description='Remote description' readOnly={false} onChange={onChange} />);
     unmount();
 
@@ -82,7 +82,7 @@ describe('FormFormDescription debounce', () => {
       <FormFormDescription description='Saved description' readOnly={false} onChange={onChange} />
     );
 
-    fireEvent.change(screen.getByPlaceholderText('Description (optional)'), {
+    fireEvent.change(screen.getByPlaceholderText('Description (Optional)'), {
       target: { value: 'Unauthorized pending draft' },
     });
     rerender(<FormFormDescription description='Saved description' readOnly onChange={onChange} />);

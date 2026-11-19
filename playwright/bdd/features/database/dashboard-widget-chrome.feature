@@ -1,9 +1,9 @@
 @dashboard @cloud
 Feature: Dashboard widget chrome
-  Every widget is a padded box with a quiet title pill above its own card.
+  Every widget has a shared card surface for its title and content.
   Its tools appear on hover, and an active filter or sort stays visible.
-  Edit mode only changes colors: a blue tint, a blue title, and always-visible
-  tools. An open menu or settings panel outlines the widget.
+  Edit mode adds a selection tint and always-visible tools while titles keep
+  the primary text color. An open menu or settings panel outlines the widget.
 
   Scenario: A widget title is a quiet pill button above its own card
     Given a dashboard of "Projects" shows its "Grid" and "Board" views side by side
@@ -58,13 +58,13 @@ Feature: Dashboard widget chrome
     And I right-click the "Board" widget outside its title
     Then the widget menu is open
 
-  Scenario: Edit mode tints the widgets and turns titles and tools blue without resizing them
+  Scenario: Edit mode tints the widgets and keeps titles readable without resizing them
     Given a dashboard of "Projects" shows its "Grid" and "Board" views side by side
     When I remember the size of the "Grid" widget card
     And I click the dashboard Edit button
     Then the dashboard is in Edit mode
     And the "Grid" widget has the edit tint
-    And the "Grid" widget title is blue
+    And the "Grid" widget title uses the primary text color
     And the "Grid" widget shows the tools "Filter, Sort, Settings" without hover
     And the "Grid" widget header has no drag glyph and no more button
     And the "Grid" widget card keeps its size

@@ -60,9 +60,19 @@ List/Gallery/Feed creation requests the final layout directly, removing temporar
 Grid creation, conversion and compensation calls.
 
 Creation source probes and hydration use current-collab GETs, with at most four
-requests in flight. They preserve server state vectors, collab versions, deletion
-coverage and the surrounding restore checks; they do not call full-sync to read
-data. Readiness polling backs off from 250 ms to two seconds within the existing
+requests in flight. They verify server state vectors, collab versions and deletion
+coverage. Database-view creation reads restore state once after the source is ready
+and before submitting the command. The server checks the submitted restore ID at commit.
+Web reads restore state again after loading current content and Folder metadata, before
+applying the content locally. If a content read is missing edits from the captured
+source or the created view is missing from content or Folder, Web checks the restore
+ID before waiting for sync. A repeated restore can remove those edits or the view
+while preserving the collab version. Each phase checks its first miss and rechecks
+at most once every five seconds while waiting. Reopening a committed view whose
+content and Folder entry are ready only needs the final check.
+If that check encounters a transient failure, Web retries the marker read within the
+remaining hydration budget, honoring the server's retry delay. A changed marker ends the attempt.
+Readiness polling backs off from 250 ms to two seconds within the existing
 30-second preparation/submission deadline. After a Database-view receipt is validated
 and retained in the journal, current-content and Folder hydration receive a separate
 10-second read budget. A near-deadline successful write therefore does not immediately

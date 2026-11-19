@@ -95,6 +95,12 @@ function GridDragColumn ({ columnIndex, column, children }: {
     );
   }, [isRegularColumn, readOnly, columnIndex, fieldId, instanceId, registerColumn]);
 
+  // As in GridVirtualRow: turning read-only mid-drag unregisters the column, and the adapter
+  // ends a drag only for entries still registered.
+  useEffect(() => {
+    if (readOnly && state.type !== GridDragState.IDLE) setState(idleState);
+  }, [readOnly, state.type]);
+
   return (
     <div
       ref={innerRef}

@@ -117,7 +117,6 @@ function renderColumns({
       setActivePropertyId: jest.fn(),
       setRows: jest.fn(),
       setShowStickyHeader: jest.fn(),
-      showStickyHeader: false,
     };
     const interactionContextValue = {
       historyScopeId: 'test-history-scope',

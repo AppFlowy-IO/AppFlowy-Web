@@ -8,6 +8,7 @@ import {
   confirmConnection,
   disconnectConnection,
   getConnectionEmail,
+  getConnectionAccessToken,
 } from '../integration-api';
 
 jest.mock('../core', () => ({
@@ -56,6 +57,16 @@ describe('integration API contract', () => {
       '/api/integrations/connections',
       expect.objectContaining({ params: { workspace_id: 'workspace', include_metadata: true }, signal })
     );
+  });
+
+  it('retrieves only the selected account access token without response logging', async () => {
+    get.mockResolvedValue({ data: { data: { access_token: 'test-access', refresh_token: 'never-return' } } });
+    await expect(getConnectionAccessToken('workspace', 'account/one', signal)).resolves.toBe('test-access');
+    expect(get).toHaveBeenLastCalledWith(
+      '/api/integrations/connections/account%2Fone/token',
+      expect.objectContaining({ params: { workspace_id: 'workspace' }, signal })
+    );
+    expect(executeAPIRequest).toHaveBeenLastCalledWith(expect.any(Function), { suppressResponseDataLogging: true });
   });
 
   it('initiates and confirms with the original state binding and unmodified OAuth query', async () => {

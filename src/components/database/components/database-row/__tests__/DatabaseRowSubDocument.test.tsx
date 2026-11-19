@@ -90,6 +90,7 @@ jest.mock('@/components/editor', () => {
       canWrite,
       addPage,
       contentPadding,
+      mentionLocalRows,
       onEditorConnected,
     }: {
       viewId: string;
@@ -99,6 +100,7 @@ jest.mock('@/components/editor', () => {
       canWrite?: boolean;
       addPage?: unknown;
       contentPadding?: string;
+      mentionLocalRows?: { databaseViewId: string };
       onEditorConnected?: (editor: { children: unknown[] }) => void;
     }) => {
       mockRenderedDoc = doc as YDoc;
@@ -116,6 +118,7 @@ jest.mock('@/components/editor', () => {
           data-can-write={String(canWrite)}
           data-can-add-page={String(Boolean(addPage))}
           data-content-padding={contentPadding}
+          data-mention-rows-view={mentionLocalRows?.databaseViewId ?? 'none'}
         />
       );
     },
@@ -1051,6 +1054,34 @@ describe('DatabaseRowSubDocument', () => {
     expect(editor.getAttribute('data-can-comment')).toBe('true');
     expect(editor.getAttribute('data-can-write')).toBe('false');
   });
+
+  // MEN-WEB-15: the row page's @ picker matches the database's rows by title, where it can open.
+  it.each([
+    [false, true, 'database-view-id'],
+    [true, false, 'none'],
+    [false, false, 'none'],
+  ])(
+    "gives the editor the database's rows in the row's view only when the row page is writable (readOnly=%s, canWrite=%s)",
+    async (readOnly, canWrite, rowsView) => {
+      const rowId = 'row-id';
+      const documentId = 'document-id';
+      const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+      Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
+      configureRowDocumentTest({
+        documentIds: { [rowId]: documentId },
+        cachedDocs: new Map([[documentId, cachedDoc]]),
+        loadRowDocument: jest.fn().mockResolvedValue(cachedDoc),
+        createRowDocument: jest.fn(),
+        readOnly,
+        canWrite,
+      });
+
+      render(<DatabaseRowSubDocument rowId={rowId} />);
+
+      expect((await screen.findByTestId('row-document-editor')).getAttribute('data-mention-rows-view')).toBe(rowsView);
+    }
+  );
 
   it('registers a synchronous flush for pending document metadata updates', async () => {
     const rowId = 'row-id';

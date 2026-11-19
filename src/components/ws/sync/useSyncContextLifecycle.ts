@@ -45,7 +45,8 @@ export function useSyncContextLifecycle(
   onManifestSync?: (objectId: string) => void,
   beforeSend?: (objectId: string, collabType: Types, marker?: string) => Promise<boolean>,
   prepareContext?: (context: RegisterSyncContext) => void,
-  canRetry?: () => boolean
+  canRetry?: () => boolean,
+  needsContextForHttpSync?: (objectId: string) => boolean
 ) {
   const cancelDeferredCleanup = useCallback((objectId: string) => {
     const timer = refs.pendingCleanups.current.get(objectId);
@@ -140,7 +141,7 @@ export function useSyncContextLifecycle(
       return;
     }
 
-    const timer = setTimeout(() => {
+    const cleanup = () => {
       refs.pendingCleanups.current.delete(objectId);
 
       const activeRefCount = refs.contextRefCounts.current.get(objectId) ?? 0;
@@ -150,12 +151,19 @@ export function useSyncContextLifecycle(
         return;
       }
 
-      unregisterSyncContext(objectId);
-    }, delayMs);
+      // Keep the ownerless database available to HTTP fallback until its latest edit
+      // is covered. A temporary socket reconnect doesn't prove server coverage.
+      if (refs.registeredContexts.current.get(objectId)?.collabType === Types.Database && needsContextForHttpSync?.(objectId)) {
+        refs.pendingCleanups.current.set(objectId, setTimeout(cleanup, 10_000));
+        return;
+      }
 
-    refs.pendingCleanups.current.set(objectId, timer);
+      unregisterSyncContext(objectId);
+    };
+
+    refs.pendingCleanups.current.set(objectId, setTimeout(cleanup, delayMs));
     Log.debug(`Scheduled deferred cleanup for objectId ${objectId} in ${delayMs}ms`);
-  }, [refs, cancelDeferredCleanup, decrementContextRefCount, unregisterSyncContext]);
+  }, [refs, cancelDeferredCleanup, decrementContextRefCount, unregisterSyncContext, needsContextForHttpSync]);
 
   const registerSyncContext = useCallback(
     (context: RegisterSyncContext): SyncContext => {

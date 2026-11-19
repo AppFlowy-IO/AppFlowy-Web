@@ -2,10 +2,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 const mockLoadView = jest.fn();
+const mockBindViewSync = jest.fn((doc: Y.Doc) => ({ doc }));
+const mockScheduleDeferredCleanup = jest.fn();
 const mockRestorePage = jest.fn();
 const mockDeleteTrash = jest.fn();
 const mockLoadTrash = jest.fn();
 const mockNotifyError = jest.fn();
+const firstRow = { view_id: 'row-page-id', name: 'Row page', created_at: 1, last_edited_time: 1 };
+let mockTrashRows = [firstRow];
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -13,30 +17,24 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-id',
+  useScheduleDeferredCleanup: () => mockScheduleDeferredCleanup,
   useAppTrash: () => ({
-    trashList: [
-      {
-        view_id: 'row-page-id',
-        name: 'Row page',
-        created_at: 1,
-        last_edited_time: 1,
-      },
-    ],
+    trashList: mockTrashRows,
     loadTrash: mockLoadTrash,
   }),
   useAppOperations: () => ({
     restorePage: mockRestorePage,
     deleteTrash: mockDeleteTrash,
     loadView: mockLoadView,
-    bindViewSync: jest.fn(),
+    bindViewSync: mockBindViewSync,
   }),
 }));
 
 jest.mock('@/application/row-document/lifecycle', () => ({
-  getRowDocumentSourceFromView: () => ({
+  getRowDocumentSourceFromView: (view: { view_id: string }) => ({
     database_id: 'database-id',
     database_view_id: 'database-view-id',
-    row_id: 'row-id',
+    row_id: view.view_id,
   }),
 }));
 
@@ -115,10 +113,35 @@ function createTrackedLifecycleMutation(marker: string) {
 
 describe('TrashPage row lifecycle ordering', () => {
   beforeEach(() => {
+    mockTrashRows = [firstRow];
     jest.clearAllMocks();
     jest.mocked(removeRowsFromDatabase).mockReset();
     jest.mocked(restoreSoftDeletedRowsInDatabase).mockReset();
     mockLoadView.mockRejectedValue(new Error('database unavailable'));
+  });
+
+  it.each(['restore', 'delete'] as const)('retains a single database binding through bulk %s', async (action) => {
+    const { doc } = createDatabaseFixture();
+    const folderAction = action === 'restore' ? mockRestorePage : mockDeleteTrash;
+    const mutate = action === 'restore' ? restoreSoftDeletedRowsInDatabase : removeRowsFromDatabase;
+    let finishFolder!: () => void;
+
+    mockTrashRows = [firstRow, { ...firstRow, view_id: 'other-row-page' }];
+    mockLoadView.mockResolvedValue(doc);
+    folderAction.mockImplementationOnce(() => new Promise<void>((resolve) => { finishFolder = resolve; }));
+    render(<TrashPage />);
+    fireEvent.click(screen.getByText(action === 'restore' ? 'trash.restoreAll' : 'trash.deleteAll'));
+    if (action === 'delete') fireEvent.click(await screen.findByTestId('confirm-permanent-delete'));
+
+    await waitFor(() => expect(folderAction).toHaveBeenCalledWith(undefined));
+    expect(mockLoadView).toHaveBeenCalledTimes(1);
+    expect(mockBindViewSync).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(mutate).mock.calls[0]?.[2]).toEqual(['row-page-id', 'other-row-page']);
+    expect(mockScheduleDeferredCleanup).not.toHaveBeenCalled();
+    finishFolder();
+    await waitFor(() => expect(mockScheduleDeferredCleanup).toHaveBeenCalledWith(doc.guid));
+    expect(mockScheduleDeferredCleanup).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the Trash entry when loading the database for restore fails', async () => {
@@ -130,6 +153,7 @@ describe('TrashPage row lifecycle ordering', () => {
       expect(mockNotifyError).toHaveBeenCalledWith('Failed to restore page: database unavailable');
     });
     expect(mockRestorePage).not.toHaveBeenCalled();
+    expect(mockScheduleDeferredCleanup).not.toHaveBeenCalled();
   });
 
   it('keeps the Trash entry when the permanent-delete database mutation fails', async () => {
@@ -150,6 +174,7 @@ describe('TrashPage row lifecycle ordering', () => {
       expect(mockNotifyError).toHaveBeenCalledWith('Failed to delete page: database mutation failed');
     });
     expect(mockDeleteTrash).not.toHaveBeenCalled();
+    expect(mockScheduleDeferredCleanup).toHaveBeenCalledWith(doc.guid);
   });
 
   it('restores a row from global Trash without adding history or clearing redo', async () => {
@@ -167,6 +192,8 @@ describe('TrashPage row lifecycle ordering', () => {
       expect(mockRestorePage).toHaveBeenCalledWith('row-page-id');
     });
     expect(database.get(trashMarkerKey)).toBe('restored');
+    expect(mockBindViewSync).toHaveBeenCalledWith(doc, { retain: true });
+    expect(mockScheduleDeferredCleanup).toHaveBeenCalledWith(doc.guid);
     expect(history.canUndo()).toBe(false);
     expect(history.canRedo()).toBe(true);
   });
@@ -187,6 +214,7 @@ describe('TrashPage row lifecycle ordering', () => {
       expect(mockDeleteTrash).toHaveBeenCalledWith('row-page-id');
     });
     expect(database.get(trashMarkerKey)).toBe('permanently-deleted');
+    expect(mockScheduleDeferredCleanup).toHaveBeenCalledWith(doc.guid);
     expect(history.canUndo()).toBe(false);
     expect(history.canRedo()).toBe(true);
   });

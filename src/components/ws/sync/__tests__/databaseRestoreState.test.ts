@@ -1,9 +1,80 @@
 import { DatabaseStorageGenerationChangedError } from '@/application/db/database-storage-fence';
+import { ERROR_CODE } from '@/application/constants';
 
 import { DATABASE_RESTORE_CHECK_INTERVAL_MS, DatabaseRestoreTracker } from '../databaseRestoreState';
 
 beforeEach(() => localStorage.clear());
 afterEach(() => jest.useRealTimers());
+
+test.each([{ httpStatus: 403 }, { code: ERROR_CODE.NOT_HAS_PERMISSION }, { httpStatus: 401 }])(
+  'retains an established database access denial across ordinary traffic: %o', async (denial) => {
+    jest.useFakeTimers();
+    const state = { database_restore_id: null, version: null };
+    const read = jest.fn().mockResolvedValueOnce(state).mockRejectedValue(denial);
+    const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+    await tracker.checkIfStale('db');
+    await expect(tracker.check('db')).rejects.toEqual(denial);
+    jest.advanceTimersByTime(3_600_000);
+    await Promise.all(Array.from({ length: 32 }, () => expect(tracker.checkIfStale('db')).rejects.toEqual(denial)));
+    expect(read).toHaveBeenCalledTimes(2);
+    read.mockResolvedValue(state);
+    tracker.invalidateVerification('db');
+    await tracker.checkIfStale('db');
+    expect(read).toHaveBeenCalledTimes(3);
+  }
+);
+
+test('a first pre-publication permission failure remains retryable for a never-verified root', async () => {
+  jest.useFakeTimers();
+  const read = jest.fn().mockRejectedValueOnce({ httpStatus: 403 })
+    .mockResolvedValue({ database_restore_id: null, version: null });
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await expect(tracker.checkIfStale('new-db')).rejects.toEqual({ httpStatus: 403 });
+  jest.advanceTimersByTime(5000);
+  expect(await tracker.checkIfStale('new-db')).toBe(true);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+test('new restore evidence bypasses a retained denial but repeated evidence does not', async () => {
+  jest.useFakeTimers();
+  const state = { database_restore_id: null, version: null };
+  const read = jest.fn().mockResolvedValueOnce(state).mockRejectedValue({ httpStatus: 403 });
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await tracker.checkIfStale('db');
+  tracker.observeRestoreHint('db', undefined, 'version-a');
+  await expect(tracker.checkIfStale('db')).rejects.toEqual({ httpStatus: 403 });
+  jest.advanceTimersByTime(5000);
+  tracker.observeRestoreHint('db', undefined, 'version-a');
+  await expect(tracker.checkIfStale('db')).rejects.toEqual({ httpStatus: 403 });
+  expect(read).toHaveBeenCalledTimes(2);
+  read.mockResolvedValue(state);
+  tracker.observeRestoreHint('db', undefined, 'version-b');
+  expect(await tracker.checkIfStale('db')).toBe(true);
+  expect(read).toHaveBeenCalledTimes(3);
+});
+
+test('a denial admitted before reconnect cannot latch the renewed access revision', async () => {
+  jest.useFakeTimers();
+  const state = { database_restore_id: null, version: null };
+  let fail!: (error: unknown) => void;
+  const read = jest.fn().mockResolvedValueOnce(state)
+    .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }))
+    .mockResolvedValue(state);
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await tracker.checkIfStale('db');
+  const request = tracker.check('db');
+
+  tracker.invalidateVerification('db');
+  fail({ httpStatus: 403 });
+  await expect(request).rejects.toEqual({ httpStatus: 403 });
+  jest.advanceTimersByTime(5000);
+  expect(await tracker.checkIfStale('db')).toBe(true);
+  expect(read).toHaveBeenCalledTimes(3);
+});
 
 test('routine traffic shares database authority for five minutes without extending its lifetime', async () => {
   jest.useFakeTimers();

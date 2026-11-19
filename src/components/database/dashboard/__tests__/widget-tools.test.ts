@@ -212,10 +212,11 @@ describe('getDashboardWidgetTools', () => {
     ]);
   });
 
-  it('gives a Form view a standalone Filter only, and a dashboard none (its own toolbar)', () => {
+  it('gives a Form author Settings without Filter/Sort, and a dashboard its own toolbar', () => {
     const input = { editing: false, canWrite: true, canEditConditions: true, context: 'standalone' as const };
 
-    expect(getDashboardWidgetTools({ ...input, layout: DatabaseViewLayout.Form })).toEqual(['filter']);
+    expect(getDashboardWidgetTools({ ...input, layout: DatabaseViewLayout.Form })).toEqual(['settings']);
+    expect(getDashboardWidgetTools({ ...input, layout: DatabaseViewLayout.Form, canWrite: false })).toEqual([]);
     expect(getDashboardWidgetTools({ ...input, layout: DatabaseViewLayout.Dashboard })).toEqual([]);
   });
 });

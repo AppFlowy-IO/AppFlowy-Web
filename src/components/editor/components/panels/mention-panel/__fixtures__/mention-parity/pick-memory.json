@@ -1,0 +1,602 @@
+{
+  "version": 1,
+  "about": "doc/context/workspace/mention_typeahead_contract.md, section Pick memory. Each case replays `steps` on an empty memory of `capacity` entries (default 1000); counts and `adaptive` are millionths.",
+  "cases": [
+    {
+      "id": "one-pick",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1000000
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 200000,
+          "lift": false
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "ro",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 100000,
+          "lift": false
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "roads",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 0,
+          "lift": false
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a2",
+          "adaptive": 0,
+          "lift": false
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 0,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "the-fourth-pick-lifts",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 3600000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 3600000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1900000
+        },
+        {
+          "t_ms": 7200000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 7200000,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 542000,
+          "lift": false
+        },
+        {
+          "t_ms": 10800000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 10800000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 3439000
+        },
+        {
+          "t_ms": 10800000,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 687800,
+          "lift": true
+        },
+        {
+          "t_ms": 10800000,
+          "op": "score",
+          "input": "ro",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 343900,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "decay-per-whole-day",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 86399999,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1000000
+        },
+        {
+          "t_ms": 86400000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 975000
+        },
+        {
+          "t_ms": 172800000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 950625
+        },
+        {
+          "t_ms": 172800000,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 190125,
+          "lift": false
+        },
+        {
+          "t_ms": 2592000000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 467875
+        },
+        {
+          "t_ms": 7776000000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 102407
+        },
+        {
+          "t_ms": 7862400000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": null
+        },
+        {
+          "t_ms": 7862400000,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 0,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "a-longer-stored-input-counts-without-doubling",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "roadmap",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 60000,
+          "op": "pick",
+          "input": "roadmap",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 120000,
+          "op": "pick",
+          "input": "roadmap",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 120000,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 271000,
+          "lift": false
+        },
+        {
+          "t_ms": 120000,
+          "op": "score",
+          "input": "roadmap",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 542000,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "inputs-are-normalized",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "  Road ",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1000000
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "ROAD",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 200000,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "bare-picks-are-not-recorded",
+      "steps": [
+        {"t_ms": 0, "op": "pick", "input": "", "key": "page:00000000-0000-4000-8000-0000000002a1"},
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "   ",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": null
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "r",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 0,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "a-clock-that-steps-back-decays-nothing",
+      "steps": [
+        {
+          "t_ms": 864000000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 432000000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1000000
+        }
+      ]
+    },
+    {
+      "id": "a-pick-after-a-gap",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 259200000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 259200000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1834173
+        },
+        {
+          "t_ms": 345600000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1788318
+        }
+      ]
+    },
+    {
+      "id": "a-forgotten-entry-starts-over",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 17280000000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 17280000000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1000000
+        }
+      ]
+    },
+    {
+      "id": "each-item-has-its-own-entry",
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a2"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a2"
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "adaptive": 200000,
+          "lift": false
+        },
+        {
+          "t_ms": 0,
+          "op": "score",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a2",
+          "adaptive": 380000,
+          "lift": false
+        }
+      ]
+    },
+    {
+      "id": "a-full-memory-forgets-the-weakest-entry",
+      "capacity": 2,
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "plan",
+          "key": "page:00000000-0000-4000-8000-0000000002a2"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002a3"
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002a1",
+          "use_count": 1900000
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "plan",
+          "key": "page:00000000-0000-4000-8000-0000000002a2",
+          "use_count": null
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002a3",
+          "use_count": 1000000
+        }
+      ]
+    },
+    {
+      "id": "a-full-memory-forgets-the-oldest-of-equally-weak-entries",
+      "capacity": 2,
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002b2"
+        },
+        {
+          "t_ms": 1000,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002b1"
+        },
+        {
+          "t_ms": 2000,
+          "op": "pick",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002b3"
+        },
+        {
+          "t_ms": 2000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002b2",
+          "use_count": null
+        },
+        {
+          "t_ms": 2000,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002b1",
+          "use_count": 1000000
+        },
+        {
+          "t_ms": 2000,
+          "op": "use_count",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002b3",
+          "use_count": 1000000
+        }
+      ]
+    },
+    {
+      "id": "a-full-memory-forgets-the-smallest-key-of-equally-weak-and-old-entries",
+      "capacity": 2,
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002c1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "plan",
+          "key": "page:00000000-0000-4000-8000-0000000002c2"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002c3"
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002c1",
+          "use_count": null
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "plan",
+          "key": "page:00000000-0000-4000-8000-0000000002c2",
+          "use_count": 1000000
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002c3",
+          "use_count": 1000000
+        }
+      ]
+    },
+    {
+      "id": "a-full-memory-forgets-the-smallest-input-of-one-key",
+      "capacity": 2,
+      "steps": [
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002d1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "plan",
+          "key": "page:00000000-0000-4000-8000-0000000002d1"
+        },
+        {
+          "t_ms": 0,
+          "op": "pick",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002d2"
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "plan",
+          "key": "page:00000000-0000-4000-8000-0000000002d1",
+          "use_count": null
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "road",
+          "key": "page:00000000-0000-4000-8000-0000000002d1",
+          "use_count": 1000000
+        },
+        {
+          "t_ms": 0,
+          "op": "use_count",
+          "input": "spec",
+          "key": "page:00000000-0000-4000-8000-0000000002d2",
+          "use_count": 1000000
+        }
+      ]
+    }
+  ]
+}

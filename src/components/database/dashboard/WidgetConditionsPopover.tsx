@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -31,8 +31,10 @@ import SortList from '@/components/database/components/sorts/SortList';
 import { useRollupSortableIds } from '@/components/database/components/sorts/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 import { WidgetPrivateFooter } from './private/WidgetPrivateFooter';
+import { DASHBOARD_CONTROL_CLASS, DASHBOARD_ICON_BUTTON_CLASS, DASHBOARD_OVERLAY_CLASS } from './dashboard-ui';
 
 export type WidgetConditionsKind = 'filters' | 'sorts';
 
@@ -153,7 +155,7 @@ export function WidgetFiltersBody({ initialAddOpen = false }: { initialAddOpen?:
           searchPlaceholder={t('grid.settings.filterBy')}
         >
           <Button
-            className='h-7 whitespace-nowrap rounded-full px-2 font-medium text-text-secondary'
+            className={cn(DASHBOARD_CONTROL_CLASS, 'whitespace-nowrap px-2 text-text-secondary')}
             data-testid='database-add-filter-button'
             size='sm'
             variant='ghost'
@@ -257,6 +259,7 @@ interface WidgetConditionsPopoverProps {
  */
 export function WidgetConditionsPopover({ kind, open, onOpenChange, children, footer }: WidgetConditionsPopoverProps) {
   const { t } = useTranslation();
+  const titleId = useId();
   const anchorRef = useRef<HTMLDivElement>(null);
   const title =
     kind === 'filters'
@@ -274,7 +277,8 @@ export function WidgetConditionsPopover({ kind, open, onOpenChange, children, fo
       {open ? (
         <PopoverContent
           align='end'
-          className='w-[300px] !rounded-[10px] bg-surface-primary p-2'
+          aria-labelledby={titleId}
+          className={cn(DASHBOARD_OVERLAY_CLASS, 'w-[300px] max-w-[calc(100vw-16px)] p-3')}
           data-parity-id={kind === 'filters' ? 'dash-widget-filters-popover' : 'dash-widget-sorts-popover'}
           data-testid={`dashboard-widget-${kind}-popover`}
           onClick={(event) => event.stopPropagation()}
@@ -284,11 +288,11 @@ export function WidgetConditionsPopover({ kind, open, onOpenChange, children, fo
 
             if (tool?.isConnected) tool.focus();
           }}
-          onOpenAutoFocus={(event) => event.preventDefault()}
           sideOffset={4}
         >
-          <div className='mb-1.5 flex items-center gap-2 pl-1'>
+          <div className='mb-2 flex items-center gap-2 border-b border-border-primary pb-2'>
             <span
+              id={titleId}
               className='flex-1 truncate text-sm font-semibold text-text-primary'
               data-parity-id={kind === 'filters' ? 'dash-widget-filters-popover__title' : undefined}
             >
@@ -296,7 +300,7 @@ export function WidgetConditionsPopover({ kind, open, onOpenChange, children, fo
             </span>
             <Button
               aria-label={t('dashboard.widget.close', { defaultValue: 'Close' })}
-              className='!rounded-full text-icon-secondary [&_svg]:h-4 [&_svg]:w-4'
+              className={DASHBOARD_ICON_BUTTON_CLASS}
               data-parity-id={kind === 'filters' ? 'dash-widget-filters-popover-close' : undefined}
               data-testid={`dashboard-widget-${kind}-popover-close`}
               onClick={close}

@@ -91,10 +91,17 @@ databaseDoc.getMap('data').set(
 );
 
 const titles = ['The Art of Living in the Moment', 'A Quiet Place to Think', 'Finding Joy in Everyday Life'];
+// The same real-component fixture can exercise a large search result window without a backend.
+const requestedRows = Number(new URLSearchParams(window.location.search).get('rows'));
+const fixtureRowCount = Number.isInteger(requestedRows) ? Math.max(3, Math.min(requestedRows, 2_000)) : 3;
+
+for (let index = titles.length; index < fixtureRowCount; index += 1) {
+  titles.push(`Gallery budget ${index}`);
+}
 const rowMap: Record<string, YDoc> = {};
 
 titles.forEach((title, index) => {
-  const id = `00000000-0000-4000-8000-00000000000${index + 1}`;
+  const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
   const doc = new Y.Doc() as YDoc;
   const values = [
     title,
@@ -144,6 +151,7 @@ titles.forEach((title, index) => {
 const context: DatabaseContextState = {
   databaseDoc,
   activeViewId: 'gallery',
+  isDocumentBlock: new URLSearchParams(window.location.search).get('embedded') === 'true',
   databasePageId: 'database',
   workspaceId: '',
   rowMap,
@@ -194,7 +202,10 @@ function Fixture() {
           <DatabaseContext.Provider value={{ ...context, readOnly }}>
             <GalleryViewProvider>
               <DatabaseSearchProvider activeViewId='gallery'>
-                <div style={{ minHeight: '100vh' }} className='flex min-h-screen flex-col bg-surface-primary text-text-primary'>
+                <div
+                  style={{ minHeight: '100vh' }}
+                  className='flex min-h-screen flex-col bg-surface-primary text-text-primary'
+                >
                   <Header readOnly={readOnly} />
                   <Gallery />
                   <footer className='mt-8 px-20 text-xs text-text-secondary'>

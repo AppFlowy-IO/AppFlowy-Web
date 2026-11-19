@@ -372,6 +372,8 @@ function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, f
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
+    case FieldType.Summary:
+    case FieldType.Translate:
       return (
         condition === TextFilterCondition.TextIsEmpty ||
         condition === TextFilterCondition.TextIsNotEmpty ||
@@ -1067,6 +1069,8 @@ export function filterBy(
       switch (fieldType) {
         case FieldType.URL:
         case FieldType.RichText:
+        case FieldType.Summary:
+        case FieldType.Translate:
           return textFilterCheck(getConditionCellText(snapshot, fieldId, field), content, condition);
         case FieldType.Rollup:
           return rollupFilterCheck(
@@ -1088,6 +1092,8 @@ export function filterBy(
             : selectOptionFilterCheck(field, cellData, content, condition);
         case FieldType.Checklist:
           return checklistFilterCheck(cellData as string, content, condition);
+        case FieldType.Media:
+          return mediaFilterCheck(cellData, condition);
         case FieldType.DateTime:
           return dateFilterCheck(getConditionDateCell(snapshot, fieldId, field), filterValue as DateFilter);
         case FieldType.CreatedTime: {
@@ -1203,6 +1209,15 @@ export function checkboxFilterCheck(data: unknown, condition: number) {
     default:
       return false;
   }
+}
+
+function mediaFilterCheck(data: unknown, condition: number) {
+  const hasFiles = Array.isArray(data) && data.length > 0;
+
+  // These condition ids are shared with Desktop and the persisted MCP view filters.
+  if (condition === 0) return !hasFiles;
+  if (condition === 1) return hasFiles;
+  return true;
 }
 
 export function checklistFilterCheck(data: unknown, content: string, condition: number) {
@@ -1756,9 +1771,7 @@ export function rollupFilterCheck(
         case FieldType.LastEditedBy:
           return personFilterCheck(String(cell.data ?? '[]'), content || '[]', condition);
         case FieldType.Media:
-          return condition === 0
-            ? !Array.isArray(cell.data) || cell.data.length === 0
-            : Array.isArray(cell.data) && cell.data.length > 0;
+          return mediaFilterCheck(cell.data, condition);
         default:
           return textFilterCheck(cell.text, content, condition);
       }

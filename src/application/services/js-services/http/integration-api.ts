@@ -9,7 +9,7 @@ import { APIResponse, executeAPIRequest, getAxios } from './core';
 
 const REQUEST_TIMEOUT_MS = 45_000;
 
-/** Keep provider credentials on the server, including when browsing private files. */
+/** Proxy metadata requests without exposing provider credentials. */
 export async function queryIntegration<T>(
   workspaceId: string,
   connectionId: string,
@@ -136,4 +136,20 @@ export async function getConnectionEmail(
   const email = connection.provider === 'google-drive' ? response.data?.user?.emailAddress : response.data?.email;
 
   return typeof email === 'string' && email.trim() ? email : undefined;
+}
+
+/** The Google Picker SDK needs this account's access token. Never cache or log it. */
+export async function getConnectionAccessToken(workspaceId: string, connectionId: string, signal?: AbortSignal) {
+  const response = await executeAPIRequest<{ access_token: string }>(
+    () =>
+      getAxios()?.get(`/api/integrations/connections/${encodeURIComponent(connectionId)}/token`, {
+        params: { workspace_id: workspaceId },
+        signal,
+        timeout: REQUEST_TIMEOUT_MS,
+      }),
+    { suppressResponseDataLogging: true }
+  );
+
+  if (!response.access_token) throw new Error('Missing Google Drive access token');
+  return response.access_token;
 }

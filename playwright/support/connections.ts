@@ -44,7 +44,12 @@ export const test = base.extend<{ connectionApp: ConnectionApp }>({
       authorizations: [],
       requests: [],
       open: async () => {
-        await page.goto(new URL('/connections-fixture', integrationsURL).href);
+        // A cold browser worker compiles the fixture through Vite. Give navigation
+        // the same bounded startup budget as the panel readiness assertion.
+        await page.goto(new URL('/connections-fixture', integrationsURL).href, {
+          waitUntil: 'domcontentloaded',
+          timeout: 60_000,
+        });
         await expect(page.getByRole('heading', { name: 'Connections', exact: true })).toBeVisible({ timeout: 60_000 });
         await expect(page.getByRole('status', { name: 'Loading connections' })).toBeHidden();
       },

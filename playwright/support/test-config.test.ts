@@ -1,4 +1,4 @@
-import { generateRandomEmail } from './test-config';
+import { generateRandomEmail, runtimeConfigFromEnv } from './test-config';
 
 describe('generateRandomEmail', () => {
   const originalReusableEmail = process.env.APPFLOWY_E2E_TEST_EMAIL;
@@ -24,5 +24,32 @@ describe('generateRandomEmail', () => {
 
   it('uses the requested domain', () => {
     expect(generateRandomEmail('example.test')).toMatch(/^[0-9a-f-]+@example\.test$/);
+  });
+});
+
+describe('runtimeConfigFromEnv', () => {
+  const services = {
+    APPFLOWY_BASE_URL: 'http://localhost:18180',
+    APPFLOWY_GOTRUE_BASE_URL: 'http://localhost:18180/gotrue',
+    APPFLOWY_WS_BASE_URL: 'ws://localhost:18180/ws/v2',
+  };
+
+  it('points the app at the three services and leaves the MCP origin to the app when unset', () => {
+    expect(runtimeConfigFromEnv({ ...services, APPFLOWY_MCP_BASE_URL: '' })).toEqual({ config: services });
+  });
+
+  it('passes the MCP origin override on when set', () => {
+    expect(runtimeConfigFromEnv({ ...services, APPFLOWY_MCP_BASE_URL: 'http://localhost:18180' })).toEqual({
+      config: { ...services, APPFLOWY_MCP_BASE_URL: 'http://localhost:18180' },
+    });
+  });
+
+  it('names the first service URL left unset', () => {
+    expect(runtimeConfigFromEnv({ ...services, APPFLOWY_GOTRUE_BASE_URL: '' })).toEqual({
+      missing: 'APPFLOWY_GOTRUE_BASE_URL',
+    });
+    expect(runtimeConfigFromEnv({ APPFLOWY_MCP_BASE_URL: 'http://localhost:8002' })).toEqual({
+      missing: 'APPFLOWY_BASE_URL',
+    });
   });
 });

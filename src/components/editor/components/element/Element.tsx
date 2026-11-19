@@ -288,6 +288,8 @@ export const Element = ({
     const data = (node.data as BlockData) || {};
     const properties = {
       backgroundColor: !selected && data.bgColor ? renderColor(data.bgColor) : undefined,
+      // Desktop paints the background on the content container with a 4px radius.
+      borderRadius: data.bgColor && node.type !== BlockType.CalloutBlock ? 4 : undefined,
       color: data.font_color ? renderColor(data.font_color) : undefined,
     };
 

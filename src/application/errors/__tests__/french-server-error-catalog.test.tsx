@@ -7,6 +7,7 @@ import { TextDecoder, TextEncoder } from 'util';
 import enTranslations from '@/@types/translations/en.json';
 import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import { getAxios, initAPIService } from '@/application/services/js-services/http/core';
+import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { useServerErrorCatalog } from '@/components/main/hooks/useServerErrorCatalog';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
@@ -15,6 +16,8 @@ import { updateServerInfo } from '@/utils/server-info';
 const serverUrl = 'https://test.appflowy.cloud';
 const frenchMessage = 'D’autres exportations sont en cours. Attendez que l’une d’elles se termine.';
 const englishMessage = 'Wait for the current server export to finish.';
+const englishSignupMessage = 'Sign-up is not allowed for this email address. Contact your administrator to request access.';
+const frenchSignupMessage = 'L’inscription n’est pas autorisée avec cette adresse e-mail. Contactez votre administrateur pour demander un accès.';
 const error = Object.freeze({ code: 1073, message: 'private export diagnostic', retryAfterSecs: 17 });
 const originalFetch = global.fetch;
 const fetchMock = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>();
@@ -26,7 +29,10 @@ function catalogResponse(locale: string): Response {
     data: {
       schema_version: 1,
       locale: french ? 'fr' : 'en',
-      reasons: { EXPORT_BUSY: french ? frenchMessage : englishMessage },
+      reasons: {
+        EXPORT_BUSY: french ? frenchMessage : englishMessage,
+        SIGN_UP_RESTRICTED: french ? frenchSignupMessage : englishSignupMessage,
+      },
       codes: { '1073': 'EXPORT_BUSY' },
     },
   }));
@@ -80,6 +86,19 @@ afterEach(() => {
   updateServerInfo(serverUrl, { status: 'loading' });
   jest.useRealTimers();
   jest.restoreAllMocks();
+});
+
+it('uses the French catalog for an OAuth signup restriction while preserving its GoTrue identity', async () => {
+  const diagnostic = 'Signup is not allowed for this email address. Contact your administrator to request access.';
+  const failure = parseGoTrueErrorFromUrl(`https://appflowy.test/auth/callback#${new URLSearchParams({
+    error: 'access_denied', error_description: diagnostic,
+  })}`);
+
+  render(<I18nextProvider i18n={i18next}><App savedLanguage='fr-CA' failure={failure} /></I18nextProvider>);
+  await settle();
+
+  expect(screen.getByRole('alert').textContent).toContain(frenchSignupMessage);
+  expect(failure).toMatchObject({ code: -1, sourceDomain: 'gotrue', errorCode: 'access_denied', originalError: diagnostic });
 });
 
 it.each(['fr', 'fr-FR', 'fr-CA'])(

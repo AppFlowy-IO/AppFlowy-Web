@@ -14,6 +14,8 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { inlineCommentMentionParticipants } from '@/application/comment-mention-ranking';
+import { serializeCommentMentions } from '@/application/comment-mentions';
 import { InlineComment, InlineCommentReaction } from '@/application/inline-comment';
 // The same glyphs the desktop card uses (FlowySvgs.comment_* / three_dots).
 import { ReactComponent as AddReactionIcon } from '@/assets/icons/add_comment_reaction.svg';
@@ -27,11 +29,12 @@ import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EmptyCommentIcon } from '@/assets/icons/empty_comment.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { NormalModal } from '@/components/_shared/modal';
+import { useAppAwareness } from '@/components/app/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { CommentDraft, EMPTY_COMMENT_DRAFT, InlineCommentInput } from './InlineCommentInput';
 
 import {
   INLINE_COMMENT_DRAWER_WIDTH,
@@ -354,7 +357,9 @@ function ReactionBar({ comment, reactions }: { comment: InlineComment; reactions
                 disabled={!canComment || mutating}
                 className={cn(
                   'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors',
-                  hasReacted ? 'bg-fill-button-active text-text-info-on-fill' : 'bg-surface-layer-01 text-text-secondary',
+                  hasReacted
+                    ? 'bg-fill-button-active text-text-info-on-fill'
+                    : 'bg-surface-layer-01 text-text-secondary',
                   canComment && !hasReacted && 'hover:bg-fill-content-hover',
                   !canComment && 'cursor-default'
                 )}
@@ -507,9 +512,7 @@ function CommentEntry({
       </div>
 
       {quote ? (
-        <div className={'mt-2 truncate border-l-[3px] border-brand-lemon pl-2 text-sm text-text-secondary'}>
-          {quote}
-        </div>
+        <div className={'mt-2 truncate border-l-[3px] border-brand-lemon pl-2 text-sm text-text-secondary'}>{quote}</div>
       ) : null}
 
       <CommentContent comment={comment} />
@@ -518,29 +521,42 @@ function CommentEntry({
   );
 }
 
-function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onClose: () => void }) {
+function ReplyInput({
+  comment,
+  replies,
+  onClose,
+}: {
+  comment: InlineComment;
+  replies: InlineComment[];
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
-  const { mutatingCommentIds } = useInlineCommentStatus();
+  const { currentUserUuid, mutatingCommentIds } = useInlineCommentStatus();
   const { createReply } = useInlineCommentActions();
-  const [content, setContent] = useState('');
+  const [draft, setDraft] = useState<CommentDraft>(EMPTY_COMMENT_DRAFT);
+  const { content } = draft;
+  const parentCommentId = comment.commentId;
   const submitting = mutatingCommentIds.has(parentCommentId);
+  // The @ picker ranks the thread's participants first, then who is on the page.
+  const participantIds = useMemo(() => inlineCommentMentionParticipants([comment, ...replies]), [comment, replies]);
+  const awareness = useAppAwareness(comment.viewId);
 
   const submit = useCallback(async () => {
     if (!content.trim() || submitting) return;
 
     try {
-      await createReply(parentCommentId, content);
-      setContent('');
+      await createReply(parentCommentId, serializeCommentMentions(content, draft.mentions));
+      setDraft(EMPTY_COMMENT_DRAFT);
       onClose();
     } catch {
       // The context already reports the API error.
     }
-  }, [content, createReply, onClose, parentCommentId, submitting]);
+  }, [content, createReply, draft.mentions, onClose, parentCommentId, submitting]);
 
   return (
     <div className={'px-4 pb-3 pt-1'}>
       <div className={'relative rounded-lg border border-border-primary bg-background-primary px-2 py-1'}>
-        <TextareaAutosize
+        <InlineCommentInput
           autoFocus
           aria-busy={submitting}
           // The bordered shell around it is the field frame, as on desktop.
@@ -551,8 +567,11 @@ function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onC
           maxRows={3}
           minRows={1}
           placeholder={t('inlineComment.addReply')}
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
+          draft={draft}
+          onDraftChange={setDraft}
+          mentionParticipantIds={participantIds}
+          mentionAwareness={awareness}
+          mentionRequesterId={currentUserUuid}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault();
@@ -668,7 +687,7 @@ function CommentThread({
 
       {canReply && replying && (
         <div onClick={(event) => event.stopPropagation()}>
-          <ReplyInput parentCommentId={comment.commentId} onClose={() => setReplying(false)} />
+          <ReplyInput comment={comment} replies={replies} onClose={() => setReplying(false)} />
         </div>
       )}
     </article>
@@ -683,7 +702,13 @@ const EMPTY_STATE_KEY: Record<InlineCommentFilter, 'noComments' | 'noOpenComment
   resolved: 'noResolvedComments',
 };
 
-export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { elevated?: boolean; rightOffset?: number }) {
+export function InlineCommentSidebar({
+  elevated = false,
+  rightOffset = 0,
+}: {
+  elevated?: boolean;
+  rightOffset?: number;
+}) {
   const { t } = useTranslation();
   const {
     active,
@@ -760,7 +785,9 @@ export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { el
       result.push(comment);
     }
 
-    return result.sort((left, right) => (createdAtMs.get(right.commentId) ?? 0) - (createdAtMs.get(left.commentId) ?? 0));
+    return result.sort(
+      (left, right) => (createdAtMs.get(right.commentId) ?? 0) - (createdAtMs.get(left.commentId) ?? 0)
+    );
   }, [anchors, comments, createdAtMs, filter]);
 
   if (!active || !isPanelOpen) return null;

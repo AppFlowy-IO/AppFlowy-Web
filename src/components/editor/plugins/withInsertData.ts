@@ -7,11 +7,13 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { findSlateEntryByBlockId, getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
-import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType, YjsEditorKey } from '@/application/types';
+import { BlockType, FieldURLType, FileBlockData, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
+import { uploadImageBlocks } from '@/components/editor/components/blocks/image/image-upload';
+import { reportImageUploadError } from '@/components/editor/components/blocks/image/image-upload-state';
 import { reportPDFUploadError } from '@/components/editor/components/blocks/pdf/pdf-block-state';
 import { insertFirstBodyFiles } from '@/components/editor/plugins/insert-first-body-files';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
@@ -160,7 +162,9 @@ export const withInsertData = (editor: ReactEditor) => {
 
     const blockId = node.blockId;
 
-    insertData(data);
+    // A browser clipboard can carry both a file and its HTML <img>. The file
+    // handler below owns that paste; parsing the HTML as well inserts a duplicate.
+    if (!fileArray.length) insertData(data);
 
     if (blockId && fileArray.length > 0 && selection) {
       void (async () => {
@@ -178,6 +182,7 @@ export const withInsertData = (editor: ReactEditor) => {
         // scales with the slowest IDB write, not the sum.
         const fileIds = await Promise.all(
           fileArray.map(async (file) => {
+            if (file.type.startsWith('image/')) return '';
             try {
               const res = await fileHandler.handleFileUpload(file);
 
@@ -203,15 +208,23 @@ export const withInsertData = (editor: ReactEditor) => {
           let insertedBlockId: string | undefined;
 
           if (isImage) {
-            const data = {
-              url: '',
-              image_type: undefined,
-              retry_local_url: fileId,
-              pending_upload_id: pendingUploadId,
-            } as ImageBlockData;
-
-            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data);
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, {});
             newBlockId = insertedBlockId || newBlockId;
+            if (insertedBlockId) {
+              const imageId = insertedBlockId;
+
+              pendingUploads.push(
+                uploadImageBlocks({
+                  editor: e,
+                  blockId: imageId,
+                  files: [file],
+                  uploadFile: e.uploadFile,
+                  onError: (error) => reportImageUploadError(e, imageId, error),
+                })
+              );
+            }
+
+            continue;
           } else {
             const data = {
               url: '',
@@ -222,7 +235,12 @@ export const withInsertData = (editor: ReactEditor) => {
               pending_upload_id: pendingUploadId,
             } as FileBlockData;
 
-            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, isPDF ? BlockType.PDFBlock : BlockType.FileBlock, data);
+            insertedBlockId = CustomEditor.addBelowBlock(
+              e,
+              newBlockId,
+              isPDF ? BlockType.PDFBlock : BlockType.FileBlock,
+              data
+            );
             newBlockId = insertedBlockId || newBlockId;
           }
 
@@ -242,8 +260,15 @@ export const withInsertData = (editor: ReactEditor) => {
                 if (!url) {
                   const entry = isPDF && findSlateEntryByBlockId(e, insertedBlockId);
 
-                  if (entry && entry[0].type === BlockType.PDFBlock && (entry[0].data as FileBlockData)?.pending_upload_id === pendingUploadId) {
-                    CustomEditor.setBlockData(e, insertedBlockId, { pending_upload_id: '', upload_error: true } as FileBlockData);
+                  if (
+                    entry &&
+                    entry[0].type === BlockType.PDFBlock &&
+                    (entry[0].data as FileBlockData)?.pending_upload_id === pendingUploadId
+                  ) {
+                    CustomEditor.setBlockData(e, insertedBlockId, {
+                      pending_upload_id: '',
+                      upload_error: true,
+                    } as FileBlockData);
                     if (uploadError) reportPDFUploadError(e, insertedBlockId, uploadError);
                   }
 
@@ -273,23 +298,14 @@ export const withInsertData = (editor: ReactEditor) => {
                 if (currentData.url) return;
                 if (currentData.pending_upload_id !== pendingUploadId) return;
 
-                if (isImage) {
-                  CustomEditor.setBlockData(e, insertedBlockId, {
-                    url,
-                    image_type: ImageType.External,
-                    retry_local_url: '',
-                    pending_upload_id: '',
-                  } as ImageBlockData);
-                } else {
-                  CustomEditor.setBlockData(e, insertedBlockId, {
-                    url,
-                    name: file.name,
-                    uploaded_at: Date.now(),
-                    url_type: FieldURLType.Upload,
-                    retry_local_url: '',
-                    pending_upload_id: '',
-                  } as FileBlockData);
-                }
+                CustomEditor.setBlockData(e, insertedBlockId, {
+                  url,
+                  name: file.name,
+                  uploaded_at: Date.now(),
+                  url_type: FieldURLType.Upload,
+                  retry_local_url: '',
+                  pending_upload_id: '',
+                } as FileBlockData);
               })()
             );
           }

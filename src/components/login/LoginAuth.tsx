@@ -10,13 +10,16 @@ import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { NormalModal } from '@/components/_shared/modal';
 import { useOpenLoginModalOptional } from '@/components/main/app.hooks';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 
 function LoginAuth () {
   const [loading, setLoading] = useState<boolean>(false);
   const [modalOpened, setModalOpened] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const { t } = useTranslation();
   const openLoginModal = useOpenLoginModalOptional();
+
+  useErrorCatalogRevision();
 
   useEffect(() => {
     void (async () => {
@@ -29,7 +32,7 @@ function LoginAuth () {
         // eslint-disable-next-line
       } catch (e: any) {
         Log.error('[Auth] LoginAuth: login failed', { code: e.code, message: e.message });
-        setError(getErrorMessage(e));
+        setError(e);
         setModalOpened(true);
       } finally {
         setLoading(false);
@@ -69,7 +72,9 @@ function LoginAuth () {
         }
         open={modalOpened}
       >
-        <div className={'flex flex-col gap-1 whitespace-pre-wrap break-words text-sm text-text-primary'}>{error}</div>
+        <div className={'flex flex-col gap-1 whitespace-pre-wrap break-words text-sm text-text-primary'}>
+          {error === null ? null : getErrorMessage(error)}
+        </div>
       </NormalModal>
     </>
   );

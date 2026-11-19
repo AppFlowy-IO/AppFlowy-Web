@@ -22,7 +22,9 @@ export function Action({
 export function Notice({ children }: { children: ReactNode }) {
   return (
     <div className='ps-notice' role='status'>
-      <AlertCircle size={16} />
+      <span className='ps-notice-icon' aria-hidden='true'>
+        <AlertCircle size={16} />
+      </span>
       <span>{children}</span>
     </div>
   );

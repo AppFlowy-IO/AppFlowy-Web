@@ -21,7 +21,7 @@ function parseGoogleDriveUrl(rawUrl: string) {
 export function isGoogleDriveUrl(rawUrl: string) {
   const url = parseGoogleDriveUrl(rawUrl);
 
-  if (!url || !['https:', 'http:'].includes(url.protocol)) return false;
+  if (!url || url.username || url.password || !['https:', 'http:'].includes(url.protocol)) return false;
 
   const host = url.hostname.toLowerCase();
   const matchesHost = supportedGoogleDriveHosts.some((supportedHost) => host === supportedHost);
@@ -68,7 +68,7 @@ function extractGoogleDriveId(url: URL, segments: string[]) {
     }
   }
 
-  return url.searchParams.get('id') || url.searchParams.get('mid') || url.searchParams.get('resourcekey');
+  return url.searchParams.get('id');
 }
 
 export function resolveGoogleDriveName(rawUrl: string) {
@@ -130,7 +130,7 @@ export function buildGoogleDriveEmbeddedUrl(rawUrl: string) {
       case 'presentation':
         return appendResourceKey(`${base}/presentation/d/${id}/embed?start=false&loop=false`);
       case 'forms':
-        return appendResourceKey(`${base}/forms/d/e/${id}/viewform?embedded=true`);
+        return appendResourceKey(`${base}/forms/d/${segments.includes('e') ? 'e/' : ''}${id}/viewform?embedded=true`);
       default:
         return appendResourceKey(`https://drive.google.com/file/d/${id}/preview`);
     }

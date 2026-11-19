@@ -149,7 +149,7 @@ export const AudioBlock = memo(
         }}
         onMouseLeave={() => setShowToolbar(false)}
       >
-        <div contentEditable={false} className={'embed-block flex-col p-4'}>
+        <div contentEditable={false} data-media-placeholder={!hasContent} className={'embed-block flex-col p-4'}>
           <div className={'flex w-full items-center gap-3'}>
             <AudioIcon className={'h-6 w-6 flex-none'} />
             <div ref={emptyRef} className={'min-w-0 flex-1 text-base font-medium'}>

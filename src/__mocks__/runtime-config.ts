@@ -7,6 +7,8 @@ export function getConfigValue(key: string, defaultValue: string): string {
   const testDefaults: Record<string, string> = {
     APPFLOWY_BASE_URL: 'https://test.appflowy.cloud',
     APPFLOWY_GOTRUE_BASE_URL: 'https://test.appflowy.cloud/gotrue',
+    // No APPFLOWY_MCP_BASE_URL: unset, the Web takes the MCP service from server-info. MCP suites
+    // mock this module and set the override themselves.
   };
 
   return testDefaults[key] ?? defaultValue;

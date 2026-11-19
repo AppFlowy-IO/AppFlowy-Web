@@ -321,7 +321,14 @@ export default defineConfig(async ({ command, mode }) => {
             output: {
               chunkFileNames: 'static/js/[name]-[hash].js',
               entryFileNames: 'static/js/[name]-[hash].js',
-              assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
+              // Browsers only run a module script, such as the PDF.js worker, when it is
+              // served as JavaScript, and common MIME maps (Debian's nginx mime.types and
+              // deploy/routes.ts) know `.js` but not `.mjs`. Emitting `.mjs` assets as `.js`
+              // keeps them loadable on any server (AppFlowy-IO/AppFlowy#9116).
+              assetFileNames: ({ names }) =>
+                names.some((name) => name.endsWith('.mjs'))
+                  ? 'static/js/[name]-[hash].js'
+                  : 'static/[ext]/[name]-[hash].[ext]',
               manualChunks(id) {
                 if (
                   // id.includes('/react@') ||

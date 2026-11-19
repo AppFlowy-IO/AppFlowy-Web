@@ -9,6 +9,7 @@ import enTranslations from '@/@types/translations/en.json';
 import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import { ERROR_CODE } from '@/application/constants';
 import { handleAPIResponseError } from '@/application/services/js-services/http/core';
+import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
 import { SettingsPanelError } from '@/components/app/settings/billing/SettingsPanelShell';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { ErrorHandlerPage } from '@/components/error/ErrorHandlerPage';
@@ -421,6 +422,25 @@ it.each(['http', 'gotrue', 'transport', 'client'] as const)('does not apply Clou
 
   expect(message).not.toContain('current server export');
   expect(message).not.toContain('private diagnostic');
+});
+
+it('localizes a reviewed GoTrue reason without consuming a conflicting Cloud code mapping', async () => {
+  const message = 'Your administrator needs to approve this email address before you can sign up.';
+  const diagnostic = 'Signup is not allowed for this email address. Contact your administrator to request access.';
+
+  fetchMock.mockResolvedValueOnce(jsonResponse({ code: 0, data: {
+    schema_version: 1, locale: 'en',
+    reasons: { SIGN_UP_RESTRICTED: message, EXPORT_BUSY: 'A different Cloud error' },
+    codes: { '-1': 'EXPORT_BUSY' },
+  } }));
+  retain();
+  await settle();
+  const error = parseGoTrueErrorFromUrl(`https://appflowy.test/auth/callback#${new URLSearchParams({
+    error: 'access_denied', error_description: diagnostic,
+  })}`);
+
+  expect(userFriendlyErrorMessage(error)).toBe(message);
+  expect(error).toMatchObject({ code: -1, sourceDomain: 'gotrue', errorCode: 'access_denied', originalError: diagnostic });
 });
 
 it('uses language-independent new-code mappings while retaining app translations until server copy matches', async () => {

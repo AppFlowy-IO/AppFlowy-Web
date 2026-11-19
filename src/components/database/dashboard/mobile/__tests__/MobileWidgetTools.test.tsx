@@ -198,8 +198,8 @@ describe('MobileWidgetTools', () => {
     expect(screen.queryByTestId('database-template-split-button')).toBeNull();
     expect(screen.queryByTestId('dashboard-widget-settings-button')).toBeNull();
     container.querySelectorAll('[data-widget-tool] button').forEach((button) => {
-      expect(button.className).toContain('before:-inset-2');
-      expect(button.className).toContain('h-6');
+      expect(button.className).toContain('before:-inset-1');
+      expect(button.className).toContain('h-8');
     });
   });
 
@@ -262,7 +262,7 @@ describe('MobileWidgetTools', () => {
       const input = screen.getByTestId('database-actions-search-input');
 
       expect(field.getAttribute('data-mobile')).toBe('true');
-      expect(field.className).toContain('h-8');
+      expect(field.className).toContain('h-10');
       expect(field.className).toContain('flex-1');
       expect(input.className).toContain('text-base');
       expect(input.getAttribute('enterkeyhint')).toBe('search');

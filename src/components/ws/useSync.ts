@@ -229,7 +229,7 @@ export const useSync = (
   // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
   // notifyLocalEdit: debounced HTTP full-sync fallback while WebSocket is reconnecting.
   // notifyManifestSync: clears HTTP fallback markers after a WS manifest/state-vector exchange.
-  const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync } = useBatchSync(refs, {
+  const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync, needsContextForHttpSync } = useBatchSync(refs, {
     workspaceId,
     wsReadyState: readyState,
     beforeSend: beforeDatabaseSend,
@@ -248,7 +248,8 @@ export const useSync = (
     notifyManifestSync,
     historyOptions ? beforeDatabaseSend : undefined,
     prepareDatabaseContext,
-    canRetry
+    canRetry,
+    needsContextForHttpSync
   );
   const databaseRestore = useDatabaseHistoryRestoreSync({
     refs, workspaceId, eventEmitter, userId: currentUser?.uuid,
@@ -258,7 +259,7 @@ export const useSync = (
 
   beforeDatabaseSendRef.current = databaseRestore.ensureDatabaseRestoreCurrent;
   prepareDatabaseContextRef.current = databaseRestore.prepareDatabaseContext;
-  const { reloadDatabaseAfterRestore, handleRestoreNotification } = databaseRestore;
+  const { reloadDatabaseAfterRestore, handleRestoreNotification, prepareReconnect } = databaseRestore;
 
   useEffect(() => {
     if (historyOptions?.capabilityLoaded !== true) return;
@@ -299,8 +300,9 @@ export const useSync = (
       return;
     }
 
+    prepareReconnect();
     refs.registeredContexts.current.forEach((context) => bindSyncContext(context));
-  }, [readyState, refs]);
+  }, [readyState, refs, prepareReconnect]);
 
   const rebindSyncContext = useCallback(
     (objectId: string) => {

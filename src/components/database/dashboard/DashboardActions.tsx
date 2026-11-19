@@ -10,16 +10,13 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { useDashboardContextOptional } from './DashboardContext';
+import { DASHBOARD_CONTROL_CLASS, DASHBOARD_ICON_BUTTON_CLASS } from './dashboard-ui';
 import { GlobalFilterButton } from './global-filters/GlobalFilterButton';
+import { wrapInTooltipTrigger } from './global-filters/GlobalFilterPopover';
 
-/** A 28×28 toolbar icon button: radius 6, padding 6, a 16px glyph in the tool icon color. */
-const TOOLBAR_BUTTON_CLASS = 'h-7 w-7 !rounded-200 p-1.5 text-dash-tool-icon [&_svg]:h-4 [&_svg]:w-4';
-/** Edit and Done: 28 tall, text 10px from each side, radius 6, 14/20 medium, text only. */
-const TOOLBAR_TEXT_BUTTON_CLASS = 'h-7 !rounded-200 py-1 text-sm font-medium leading-5';
-/** Done has no border. */
-const DONE_BUTTON_CLASS = `${TOOLBAR_TEXT_BUTTON_CLASS} px-2.5`;
-/** Edit's 1px outline plus 9px keeps its text 10px in, where Done's sits. */
-const EDIT_BUTTON_CLASS = `${TOOLBAR_TEXT_BUTTON_CLASS} px-[9px]`;
+const TOOLBAR_BUTTON_CLASS = DASHBOARD_ICON_BUTTON_CLASS;
+const DONE_BUTTON_CLASS = `${DASHBOARD_CONTROL_CLASS} px-3`;
+const EDIT_BUTTON_CLASS = `${DASHBOARD_CONTROL_CLASS} px-3`;
 
 /** Opens the dashboard view itself as a full page (shown only when the dashboard is embedded in a document). */
 function OpenAsFullPageButton({ viewId, fallbackViewId }: { viewId: string; fallbackViewId?: string }) {
@@ -56,24 +53,22 @@ function DashboardSettingsButton() {
   const label = t('dashboard.toolbar.settings', { defaultValue: 'Settings' });
 
   return (
-    <DashboardSettings>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            aria-label={label}
-            className={TOOLBAR_BUTTON_CLASS}
-            data-parity-id='dash-toolbar-settings'
-            data-testid='database-actions-settings'
-            size='icon'
-            type='button'
-            variant='ghost'
-          >
-            <SettingsIcon aria-hidden='true' data-parity-id='dash-toolbar-settings__icon' />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    </DashboardSettings>
+    <Tooltip>
+      <DashboardSettings wrapTrigger={wrapInTooltipTrigger}>
+        <Button
+          aria-label={label}
+          className={TOOLBAR_BUTTON_CLASS}
+          data-parity-id='dash-toolbar-settings'
+          data-testid='database-actions-settings'
+          size='icon'
+          type='button'
+          variant='ghost'
+        >
+          <SettingsIcon aria-hidden='true' data-parity-id='dash-toolbar-settings__icon' />
+        </Button>
+      </DashboardSettings>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

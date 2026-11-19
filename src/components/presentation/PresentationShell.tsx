@@ -38,12 +38,13 @@ export default function PresentationShell({
                 maxWidth: 'calc(100vw - 32px)',
                 height: 'min(900px, calc(100dvh - 32px))',
                 maxHeight: 'calc(100dvh - 32px)',
-                borderRadius: 12,
+                // Modal View: radius xl (16) over the shared Surface/overlay scrim.
+                borderRadius: 16,
               },
             }
           : { 'aria-label': 'AI presentation', className: paperClassName }
       }
-      BackdropProps={setup || preview ? { style: { background: 'rgba(0,0,0,.12)' } } : undefined}
+      BackdropProps={setup || preview ? { style: { background: 'var(--surface-overlay)' } } : undefined}
     >
       {(setup || preview) && (
         <Button

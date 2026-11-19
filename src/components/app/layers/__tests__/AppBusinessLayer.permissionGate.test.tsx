@@ -26,6 +26,11 @@ import { usePageOperations } from '@/components/app/hooks/usePageOperations';
 import { useRowOperations } from '@/components/app/hooks/useRowOperations';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import { useWorkspaceData } from '@/components/app/hooks/useWorkspaceData';
+import {
+  clearMentionLocalIndex,
+  EMPTY_MENTION_LOCAL_SNAPSHOT,
+  getMentionLocalSnapshot,
+} from '@/components/editor/components/panels/mention-panel/mentionLocalIndex';
 
 import { AppBusinessLayer } from '../AppBusinessLayer';
 
@@ -1193,6 +1198,154 @@ describe('AppBusinessLayer permission gates', () => {
       await Promise.resolve();
     });
     expect(parentFetchCount()).toBe(1);
+  });
+
+  it('gives the mention index only each workspace’s own sources across a workspace switch', async () => {
+    const otherWorkspaceId = '00000000-0000-4000-8000-0000000000ff';
+    const workspaceOutline = [createView(routeViewId)];
+    const workspaceTrash = [createView(modalViewId)];
+    const otherRecent = [createView(modalViewId)];
+    const stableOutlineRef = { current: workspaceOutline } as MutableRefObject<View[]>;
+    const workspaceData = (outline: View[], trashList: View[] | undefined, recentViews: View[] | undefined) => ({
+      outline,
+      favoriteViews: [],
+      recentViews,
+      trashList,
+      workspaceDatabases: {},
+      stableOutlineRef,
+      loadedViewIds: new Set<string>(),
+    });
+    const viewIds = (id: string) => getMentionLocalSnapshot(id).views.map((view) => view.viewId);
+    const auth = (currentWorkspaceId: string) => ({
+      currentWorkspaceId,
+      isAuthenticated: true,
+      onChangeWorkspace: jest.fn(),
+      userWorkspaceInfo: { userId: 'requester-id' },
+    });
+    // Fresh elements per render, so React re-renders the layer.
+    const makeTree = () => (
+      <MemoryRouter
+        initialEntries={[`/${routeViewId}`]}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <Routes>
+          <Route
+            path={'/:viewId'}
+            element={
+              <AppBusinessLayer>
+                <NavigationProbe modalTargetId={modalViewId} />
+              </AppBusinessLayer>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    clearMentionLocalIndex();
+    // The route view leaves the outline after the switch, so the layer checks it with the server.
+    (ViewService.get as jest.Mock).mockResolvedValue(createView(routeViewId));
+    (useSyncInternal as jest.Mock).mockReturnValue({
+      eventEmitter: new EventEmitter(),
+      awarenessMap: {},
+      flushAllSync: jest.fn(),
+      revertCollabVersion: jest.fn(),
+      scheduleDeferredCleanup: jest.fn(),
+      syncAllToServer: jest.fn(),
+    });
+    (useWorkspaceData as jest.Mock).mockReturnValue(workspaceData(workspaceOutline, workspaceTrash, []));
+
+    const { rerender, unmount } = render(makeTree());
+
+    expect(viewIds(workspaceId)).toEqual([routeViewId]);
+
+    // `useWorkspaceData` resets the outline and the trash in an effect after a switch, so the first
+    // render for the next workspace still returns the previous one's. Recent views are tagged with
+    // their workspace, so they are unset until the next workspace's load.
+    (useAuthInternal as jest.Mock).mockReturnValue(auth(otherWorkspaceId));
+    (useWorkspaceData as jest.Mock).mockReturnValue(workspaceData(workspaceOutline, workspaceTrash, undefined));
+    rerender(makeTree());
+
+    expect(getMentionLocalSnapshot(workspaceId)).toBe(EMPTY_MENTION_LOCAL_SNAPSHOT);
+    expect(getMentionLocalSnapshot(otherWorkspaceId).workspaceId).toBe(otherWorkspaceId);
+    expect(viewIds(otherWorkspaceId)).toEqual([]);
+
+    // The next workspace's own sources, once the data layer replaced the previous ones.
+    const otherOutline = [createView(effectiveModalViewId)];
+
+    (useWorkspaceData as jest.Mock).mockReturnValue(workspaceData(otherOutline, [], otherRecent));
+    rerender(makeTree());
+    expect(viewIds(otherWorkspaceId)).toEqual([effectiveModalViewId, modalViewId]);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    unmount();
+    expect(getMentionLocalSnapshot(otherWorkspaceId)).toBe(EMPTY_MENTION_LOCAL_SNAPSHOT);
+  });
+
+  // A space, member or group change reaches the app as PERMISSION_CHANGED on the sync layer's
+  // emitter, naming no view the user lost. The layer gives that emitter to the index's sources.
+  it('keeps a view only the recent views loaded before list out of the mention index after an access change', async () => {
+    const eventEmitter = new EventEmitter();
+    const outline = [createView(routeViewId)];
+    const stableOutlineRef = { current: outline } as MutableRefObject<View[]>;
+    // A page in a space the outline does not show: only the recent views list it.
+    const recentViews = () => [{ ...createView(modalViewId), parent_view_id: parentViewId }];
+    const workspaceData = (recent: View[]) => ({
+      outline,
+      favoriteViews: [],
+      recentViews: recent,
+      trashList: [],
+      workspaceDatabases: {},
+      stableOutlineRef,
+      loadedViewIds: new Set<string>(),
+    });
+    const viewIds = () => getMentionLocalSnapshot(workspaceId).views.map((view) => view.viewId);
+    // Fresh elements per render, so React re-renders the layer.
+    const makeTree = () => (
+      <MemoryRouter
+        initialEntries={[`/${routeViewId}`]}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <Routes>
+          <Route
+            path={'/:viewId'}
+            element={
+              <AppBusinessLayer>
+                <NavigationProbe modalTargetId={modalViewId} />
+              </AppBusinessLayer>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    clearMentionLocalIndex();
+    (useSyncInternal as jest.Mock).mockReturnValue({
+      eventEmitter,
+      awarenessMap: {},
+      flushAllSync: jest.fn(),
+      revertCollabVersion: jest.fn(),
+      scheduleDeferredCleanup: jest.fn(),
+      syncAllToServer: jest.fn(),
+    });
+    (useWorkspaceData as jest.Mock).mockReturnValue(workspaceData(recentViews()));
+
+    const { rerender } = render(makeTree());
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+    expect(viewIds()).toEqual([routeViewId, modalViewId]);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    expect(viewIds()).toEqual([routeViewId]);
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+
+    // Recent views loaded since reflect the user's access.
+    (useWorkspaceData as jest.Mock).mockReturnValue(workspaceData(recentViews()));
+    rerender(makeTree());
+    expect(viewIds()).toEqual([routeViewId, modalViewId]);
   });
 
   it.each(['missing', 'partial'])(

@@ -69,4 +69,72 @@ describe('useContainerVisibleViewIds', () => {
     expect(result.current.containerView).toBeUndefined();
     expect(result.current.visibleViewIds).toBeUndefined();
   });
+
+  it.each([ViewLayout.Grid, ViewLayout.Chart, ViewLayout.Dashboard])(
+    'keeps a document-owned view of layout %s out of an unrelated source container',
+    (layout) => {
+      const linked = createView({ view_id: 'linked-view', parent_view_id: 'document', layout });
+      const document = createView({ view_id: 'document', layout: ViewLayout.Document, children: [linked] });
+      const { result } = renderHook(() =>
+        useContainerVisibleViewIds({ view: linked, outline: [container, document], databaseId: 'db-1' })
+      );
+
+      expect(result.current.containerView).toBeUndefined();
+      expect(result.current.visibleViewIds).toEqual(['linked-view']);
+    }
+  );
+
+  it('keeps an embedded document link as an explicit tab without borrowing unrelated views', () => {
+    const linked = createView({
+      view_id: 'embedded-dashboard',
+      parent_view_id: 'document',
+      layout: ViewLayout.Dashboard,
+      extra: { is_space: false, database_id: 'db-1', embedded: true },
+    });
+    const document = createView({ view_id: 'document', layout: ViewLayout.Document, children: [linked] });
+    const { result } = renderHook(() =>
+      useContainerVisibleViewIds({ view: linked, outline: [container, document], databaseId: 'db-1', embedded: true })
+    );
+
+    expect(result.current.containerView).toBeUndefined();
+    expect(result.current.visibleViewIds).toEqual(['embedded-dashboard']);
+  });
+
+  it('retains the explicit parent while a linked view is missing from a shallow outline', () => {
+    const { result } = renderHook(() =>
+      useContainerVisibleViewIds({
+        view: undefined,
+        outline: [container],
+        parentViewId: 'document',
+        databaseId: 'db-1',
+      })
+    );
+
+    expect(result.current.containerView).toBeUndefined();
+    expect(result.current.visibleViewIds).toBeUndefined();
+  });
+
+  it('still uses a known container parent before considering embedded presentation flags', () => {
+    const { result } = renderHook(() =>
+      useContainerVisibleViewIds({
+        view: undefined,
+        outline,
+        parentViewId: 'container',
+        databaseId: 'db-1',
+        embedded: true,
+      })
+    );
+
+    expect(result.current.containerView).toBe(container);
+    expect(result.current.visibleViewIds).toEqual(['grid-view', 'dashboard-view']);
+  });
+
+  it('retains database identity fallback when parent metadata is unavailable', () => {
+    const { result } = renderHook(() =>
+      useContainerVisibleViewIds({ view: undefined, outline, databaseId: 'db-1' })
+    );
+
+    expect(result.current.containerView).toBe(container);
+    expect(result.current.visibleViewIds).toEqual(['grid-view', 'dashboard-view']);
+  });
 });

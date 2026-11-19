@@ -1,3 +1,4 @@
+import * as RadioGroup from '@radix-ui/react-radio-group';
 import { KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -5,9 +6,12 @@ import { useDatabase } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 import { useDashboardContext } from '../DashboardContext';
+import { DASHBOARD_CONTROL_CLASS } from '../dashboard-ui';
 import { useDashboardUi } from '../DashboardUiContext';
 import { useHostViews } from '../hooks/useHostViews';
 import { useWidgetSourceName } from '../hooks/useWidgetSourceName';
@@ -106,14 +110,14 @@ export function NewViewConfigPanel({ state }: { state: ConfiguringState }) {
       <div className='flex items-center gap-2 px-1 pb-2'>
         <span
           aria-hidden='true'
-          className='flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] border border-border-primary text-dash-tool-icon'
+          className='flex h-8 w-8 shrink-0 items-center justify-center rounded-200 border border-border-primary text-icon-secondary'
         >
-          <ViewIcon className='h-4 w-4' layout={databaseLayoutToViewLayout(state.layout)} size='unset' />
+          <ViewIcon className='h-5 w-5' layout={databaseLayoutToViewLayout(state.layout)} size='unset' />
         </span>
-        <input
+        <Input
           aria-label={t('dashboard.picker.viewName', { defaultValue: 'View name' })}
           autoFocus
-          className='h-7 min-w-0 flex-1 rounded-[6px] bg-fill-content-hover px-2 text-sm leading-5 text-text-primary outline-none focus:ring-1 focus:ring-dash-accent'
+          className='h-8 min-w-0 flex-1 !rounded-200 px-2 text-sm leading-5'
           data-dock-autofocus='true'
           data-testid='dashboard-widget-new-view-panel-name'
           onBlur={commit}
@@ -128,38 +132,51 @@ export function NewViewConfigPanel({ state }: { state: ConfiguringState }) {
           value={draft}
         />
       </div>
-      <div className='grid grid-cols-3 gap-2 px-1 pb-2' role='radiogroup'>
+      <RadioGroup.Root
+        aria-label={t('dashboard.picker.newView', { defaultValue: 'New view' })}
+        className='grid grid-cols-3 gap-2 px-1 pb-2'
+        value={String(state.layout)}
+        onValueChange={(value) => {
+          const layout = CONFIG_TILE_LAYOUTS.find((layout) => String(layout) === value);
+
+          if (layout !== undefined) flow.dispatch({ type: 'pick_tile', layout });
+        }}
+      >
         {CONFIG_TILE_LAYOUTS.map((layout) => {
           const selected = layout === state.layout;
 
           return (
-            <button
-              aria-checked={selected}
-              className={cn(
-                'flex h-16 flex-col items-center justify-center gap-1 rounded-[8px] border border-border-primary text-xs leading-4 text-text-primary outline-none transition-colors',
-                'hover:bg-dash-hover-fill focus-visible:ring-2 focus-visible:ring-dash-accent',
-                selected && 'border-2 border-dash-accent text-dash-accent'
-              )}
-              data-layout={String(layout)}
-              data-selected={selected ? 'true' : 'false'}
-              data-testid='dashboard-widget-new-view-panel-tile'
-              key={layout}
-              onClick={() => {
-                flow.dispatch({ type: 'pick_tile', layout });
-              }}
-              role='radio'
-              type='button'
-            >
-              <ViewIcon className='h-5 w-5' layout={databaseLayoutToViewLayout(layout)} size='unset' />
-              <span>{label(layout)}</span>
-            </button>
+            <RadioGroup.Item key={layout} value={String(layout)} asChild>
+              <Button
+                className={cn(
+                  'h-16 min-w-0 flex-col items-center justify-center gap-1 !rounded-300 border border-border-primary text-sm font-normal leading-5 text-text-primary transition-colors',
+                  'focus-visible:ring-2 focus-visible:ring-border-theme-thick',
+                  selected && 'border-border-theme-thick bg-fill-theme-select'
+                )}
+                data-layout={String(layout)}
+                data-selected={selected ? 'true' : 'false'}
+                data-testid='dashboard-widget-new-view-panel-tile'
+                variant='ghost'
+                type='button'
+              >
+                <ViewIcon
+                  className='h-5 w-5 text-icon-secondary'
+                  layout={databaseLayoutToViewLayout(layout)}
+                  size='unset'
+                />
+                <span className='max-w-full truncate' title={label(layout)}>
+                  {label(layout)}
+                </span>
+              </Button>
+            </RadioGroup.Item>
           );
         })}
-      </div>
+      </RadioGroup.Root>
       {state.layout === DatabaseViewLayout.Chart ? (
         <div className='flex flex-col gap-2 px-1 pb-1'>
-          <button
-            className='flex h-7 w-full items-center gap-2 rounded-[6px] px-2 text-left text-sm leading-5 text-text-primary outline-none hover:bg-dash-hover-fill focus-visible:bg-dash-hover-fill'
+          <Button
+            className={cn(DASHBOARD_CONTROL_CLASS, 'w-full justify-start gap-2 px-2 text-left text-text-primary')}
+            variant='ghost'
             data-testid='dashboard-widget-new-view-panel-source'
             onClick={() => {
               flow.dispatch({ type: 'dismiss' });
@@ -172,15 +189,15 @@ export function NewViewConfigPanel({ state }: { state: ConfiguringState }) {
               <span className='max-w-[140px] truncate text-xs text-text-secondary'>{sourceName}</span>
             ) : null}
             <ChevronRightIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-icon-tertiary' />
-          </button>
-          <button
-            className='h-8 w-full rounded-[6px] bg-fill-theme-thick text-sm font-medium leading-5 text-text-on-fill outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-dash-accent'
+          </Button>
+          <Button
+            className={cn(DASHBOARD_CONTROL_CLASS, 'w-full')}
             data-testid='dashboard-widget-edit-chart'
             onClick={() => flow.dispatch({ type: 'edit_chart' })}
             type='button'
           >
             {t('dashboard.picker.editChart', { defaultValue: 'Edit chart' })}
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
+import { COMMENT_MENTION_RANKING_OVERRIDE_KEY } from '@/application/comment-mention-ranking';
 import { useDatabaseContext } from '@/application/database-yjs';
+import { MentionablePerson, MentionPersonRole } from '@/application/types';
 
 import { CommentComposer } from '../CommentComposer';
 import { CommentDraftContext } from '../CommentDraftContext';
@@ -117,5 +119,101 @@ describe('CommentComposer inline variant', () => {
     render(<CommentComposer initiallyExpanded onSubmit={() => undefined} placeholder='Comment' testIds={testIds} />);
 
     expect(screen.getByTestId('input').closest('.border')).not.toBeNull();
+  });
+});
+
+describe('CommentComposer person mentions', () => {
+  const testIds = { collapsed: 'collapsed', input: 'input', submit: 'submit', attachment: 'attachment' };
+  const member = (uid: number, name: string): MentionablePerson => ({
+    uid,
+    person_id: `00000000-0000-4000-8000-${String(uid).padStart(12, '0')}`,
+    name,
+    email: `${name.split(' ')[0].toLowerCase()}@appflowy.io`,
+    role: MentionPersonRole.Member,
+    avatar_url: null,
+    cover_image_url: null,
+    custom_image_url: null,
+    description: null,
+    invited: false,
+    last_mentioned_at: null,
+  });
+  const joan = member(1, 'Joan Diaz');
+  const brian = member(2, 'Brian Li');
+  const anna = member(3, 'Anna Kim');
+  // Roster order: today's picker lists Joan first for '@an'.
+  const members = [joan, brian, anna];
+
+  beforeEach(() => {
+    mockUseDatabaseContext.mockReturnValue({ uploadFile: jest.fn() } as unknown as ReturnType<
+      typeof useDatabaseContext
+    >);
+  });
+  afterEach(() => window.localStorage.clear());
+
+  function renderComposer(props: Partial<Parameters<typeof CommentComposer>[0]> = {}) {
+    const onSubmit = jest.fn(() => 'comment-id');
+
+    render(
+      <CommentComposer
+        initiallyExpanded
+        members={members}
+        onSubmit={onSubmit}
+        placeholder='Comment'
+        testIds={testIds}
+        {...props}
+      />
+    );
+    return { onSubmit, input: screen.getByTestId<HTMLTextAreaElement>('input') };
+  }
+
+  const type = (input: HTMLTextAreaElement, value: string) =>
+    fireEvent.change(input, { target: { value, selectionStart: value.length, selectionEnd: value.length } });
+  const options = () => screen.queryAllByRole('option').map((option) => option.textContent);
+  const selected = () => screen.getAllByRole('option').find((option) => option.getAttribute('aria-selected') === 'true');
+
+  it("keeps today's roster order by default, domain matches included", () => {
+    const { input } = renderComposer({ mentionParticipantIds: [brian.person_id] });
+
+    type(input, '@an');
+    expect(options()).toEqual(['Joan Diaz', 'Brian Li', 'Anna Kim']);
+    type(input, '@flow');
+    expect(options()).toEqual(['Joan Diaz', 'Brian Li', 'Anna Kim']);
+  });
+
+  it("ranks '@an' Anna above Joan and matches no one by domain once ranked", () => {
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    const { input } = renderComposer();
+
+    type(input, '@an');
+    expect(options()).toEqual(['Anna Kim', 'Brian Li', 'Joan Diaz']);
+    type(input, '@flow');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('lists a thread participant first within its class and keeps arrow and Enter selection', () => {
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    const { input, onSubmit } = renderComposer({ mentionParticipantIds: [joan.person_id] });
+
+    type(input, '@an');
+    expect(options()).toEqual(['Anna Kim', 'Joan Diaz', 'Brian Li']);
+    expect(selected()?.textContent).toBe('Anna Kim');
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(selected()?.textContent).toBe('Brian Li');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(selected()?.textContent).toBe('Joan Diaz');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(input.value).toBe('@Joan Diaz ');
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSubmit).toHaveBeenCalledWith(`@[Joan Diaz](${joan.person_id})`, []);
+  });
+
+  it('lists the commenter last', () => {
+    window.localStorage.setItem(COMMENT_MENTION_RANKING_OVERRIDE_KEY, 'ranked');
+    const { input } = renderComposer({ mentionRequesterId: String(anna.uid) });
+
+    type(input, '@');
+    expect(options()).toEqual(['Brian Li', 'Joan Diaz', 'Anna Kim']);
   });
 });
