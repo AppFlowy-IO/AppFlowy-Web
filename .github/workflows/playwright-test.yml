@@ -26,6 +26,10 @@ on:
         description: Run only the Web/Desktop template compatibility suite
         type: boolean
         default: false
+      require_row_automations:
+        description: Verify the live row automation editor against the paired Cloud and Worker
+        type: boolean
+        default: false
       correlation_id:
         description: Caller correlation ID for the Desktop CI check
         required: false
@@ -280,6 +284,7 @@ jobs:
         id: groups
         env:
           INTEROP_ONLY: ${{ inputs.interop_only }}
+          REQUIRE_ROW_AUTOMATIONS: ${{ inputs.require_row_automations }}
           CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
           CLOUD_IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
         run: |
@@ -288,6 +293,11 @@ jobs:
             const groups = require("./.github/playwright-groups.json");
             if ((process.env.CLOUD_SOURCE_SHA || process.env.CLOUD_IMAGE_RUN_ID) && process.env.INTEROP_ONLY !== "true") {
               throw new Error("Exact Cloud artifacts require interop_only=true");
+            }
+            if (process.env.REQUIRE_ROW_AUTOMATIONS === "true" && (process.env.INTEROP_ONLY !== "true"
+                || !/^[a-f0-9]{40}$/.test(process.env.CLOUD_SOURCE_SHA || "")
+                || !/^[1-9][0-9]*$/.test(process.env.CLOUD_IMAGE_RUN_ID || ""))) {
+              throw new Error("The row automation editor requires a paired immutable Cloud and image run");
             }
             const selected = process.env.INTEROP_ONLY === "true"
               ? groups.filter(group => group.name === "template-interop")
@@ -331,6 +341,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Enable row automations for the paired editor test
+        if: matrix.test-group.name == 'template-interop' && inputs.require_row_automations
+        run: echo "APPFLOWY_DATABASE_AUTOMATIONS_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Validate compatibility runtime selection
         id: cloud-input
@@ -661,6 +675,13 @@ jobs:
           cargo build --locked -p event-integration-test --example row_template_interop --features dart
           echo "APPFLOWY_DESKTOP_INTEROP_BIN=$PWD/target/debug/examples/row_template_interop" >> "$GITHUB_ENV"
           echo "Desktop under test: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test the live Web row automation editor
+        if: matrix.test-group.name == 'template-interop' && inputs.require_row_automations
+        env:
+          APPFLOWY_TEST_REQUIRE_ROW_AUTOMATIONS: 'true'
+          BASE_URL: http://localhost:3000
+        run: pnpm exec playwright test playwright/e2e/database/automation-row-editor.spec.ts --project=chromium --workers=1 --retries=0 --reporter=list
 
       - name: Generate BDD tests
         if: ${{ matrix.test-group.bdd == 'true' }}

@@ -111,6 +111,33 @@ printf '%s\\n' "$GH_MERGE_BASE"
         self.assertEqual(self.step("Upload exact Cloud runtime manifest")["if"],
                          "always() && steps.cloud-input.outputs.needs-tools == 'true'")
 
+    def test_live_row_editor_requires_paired_images_and_enables_the_feature_before_startup(self):
+        select = next(step for step in WORKFLOW["jobs"]["build"]["steps"] if step.get("name") == "Select test groups")
+        with tempfile.TemporaryDirectory() as directory:
+            for source, image, interop, accepted in [
+                ("", "", "true", False), ("b" * 40, "", "true", False),
+                ("b" * 40, "0", "true", False), ("main", "123", "true", False),
+                ("b" * 40, "123", "false", False), ("b" * 40, "123", "true", True),
+            ]:
+                with self.subTest(source=source, image=image, interop=interop):
+                    output = Path(directory) / "output"
+                    output.write_text("")
+                    env = {**os.environ, "GITHUB_OUTPUT": str(output), "INTEROP_ONLY": interop,
+                           "CLOUD_SOURCE_SHA": source, "CLOUD_IMAGE_RUN_ID": image, "REQUIRE_ROW_AUTOMATIONS": "true"}
+                    rc = subprocess.run(["bash", "-c", select["run"]], cwd=ROOT, env=env, capture_output=True)
+                    self.assertEqual(rc.returncode == 0, accepted, rc.stderr)
+        enable = self.step("Enable row automations for the paired editor test")
+        case = self.step("Test the live Web row automation editor")
+        steps = WORKFLOW["jobs"]["test"]["steps"]
+        self.assertEqual(enable["if"], "matrix.test-group.name == 'template-interop' && inputs.require_row_automations")
+        self.assertEqual(case["if"], enable["if"])
+        self.assertLess(steps.index(enable), steps.index(self.step("Start Docker services")))
+        self.assertLess(steps.index(self.step("Start Docker services")), steps.index(case))
+        self.assertIn("APPFLOWY_DATABASE_AUTOMATIONS_ENABLED=true", enable["run"])
+        self.assertEqual(case["env"]["APPFLOWY_TEST_REQUIRE_ROW_AUTOMATIONS"], "true")
+        self.assertTrue((ROOT / "playwright/e2e/database/automation-row-editor.spec.ts").is_file())
+        self.assertIn("playwright/e2e/database/automation-row-editor.spec.ts", case["run"])
+
     def test_exact_inputs_cannot_be_ignored_by_a_noninterop_run(self):
         step = next(step for step in WORKFLOW["jobs"]["build"]["steps"]
                     if step.get("name") == "Select test groups")
