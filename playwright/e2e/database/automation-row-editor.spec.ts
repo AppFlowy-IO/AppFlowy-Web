@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { pressEscapeUntilHidden } from '../../support/dashboard-shared-helpers';
 import { createDatabaseView } from '../../support/database-ui-helpers';
 import { getVisibleDataRowIds, openRowDetailByRowId } from '../../support/row-detail-helpers';
 import { DatabaseGridSelectors, WorkspaceSelectors } from '../../support/selectors';
@@ -164,6 +165,12 @@ test('workspace owners can turn outgoing webhooks off and restore them after reo
     await expect(control).toHaveAttribute('aria-checked', String(!disabled));
   };
 
+  const closeSettings = async () => {
+    await expect(control).toBeEnabled();
+    await control.focus();
+    await pressEscapeUntilHidden(page, dialog);
+  };
+
   await expect(control).toBeEnabled();
   await expect(control).toBeChecked();
   await change(true);
@@ -171,8 +178,7 @@ test('workspace owners can turn outgoing webhooks off and restore them after reo
   await openSettings();
   await expect(control).toBeEnabled();
   await expect(control).not.toBeChecked();
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await closeSettings();
   await createDatabaseView(page, 'Grid', 0);
   await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
   const [row] = await getVisibleDataRowIds(page);
@@ -203,7 +209,6 @@ test('workspace owners can turn outgoing webhooks off and restore them after reo
   await checkEditor(false);
   await openSettings();
   await change(false);
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await closeSettings();
   await checkEditor(true);
 });
