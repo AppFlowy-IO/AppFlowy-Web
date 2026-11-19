@@ -177,8 +177,19 @@ export function flattenViews (views: View[]): View[] {
   return result;
 }
 
-export function getOutlineExpands () {
-  const expandView = localStorage.getItem('outline_expanded');
+const LEGACY_EXPAND_KEY = 'outline_expanded';
+
+const expandStorageKey = (workspaceId?: string) =>
+  workspaceId ? `${LEGACY_EXPAND_KEY}_${workspaceId}` : LEGACY_EXPAND_KEY;
+
+export function getOutlineExpands (workspaceId?: string) {
+  // Expand state is scoped per workspace: a single global entry meant that opening one
+  // workspace validated (and pruned) the restored ids of every other workspace, so a
+  // switch always collapsed the target workspace's spaces. Fall back to the legacy global
+  // entry so existing users keep their state; the next write migrates it to the scoped key.
+  const expandView =
+    localStorage.getItem(expandStorageKey(workspaceId)) ??
+    (workspaceId ? localStorage.getItem(LEGACY_EXPAND_KEY) : null);
 
   try {
     return JSON.parse(expandView || '{}');
@@ -187,8 +198,8 @@ export function getOutlineExpands () {
   }
 }
 
-export function setOutlineExpands (viewId: string, isExpanded: boolean) {
-  const expands = getOutlineExpands();
+export function setOutlineExpands (viewId: string, isExpanded: boolean, workspaceId?: string) {
+  const expands = getOutlineExpands(workspaceId);
 
   if (isExpanded) {
     expands[viewId] = true;
@@ -196,7 +207,30 @@ export function setOutlineExpands (viewId: string, isExpanded: boolean) {
     delete expands[viewId];
   }
 
-  localStorage.setItem('outline_expanded', JSON.stringify(expands));
+  localStorage.setItem(expandStorageKey(workspaceId), JSON.stringify(expands));
+}
+
+/**
+ * Return the chain of ancestor view ids for `targetId` within `data`, or null when the view
+ * is not in the tree. Used to expand the ancestors of a view that is already present in the
+ * outline (e.g. after a workspace switch), where no navigation hydration fetch is needed.
+ */
+export function findViewAncestorIds (data: View[], targetId: string, trail: string[] = []): string[] | null {
+  for (const item of data) {
+    if (item.view_id === targetId) {
+      return trail;
+    }
+
+    if (item.children) {
+      const result = findViewAncestorIds(item.children, targetId, [...trail, item.view_id]);
+
+      if (result) {
+        return result;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function findShareWithMeSpace (views: View[]): View | null {
