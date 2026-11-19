@@ -127,6 +127,7 @@ function BestMatch({
   searchValue,
   queryStartedAt,
   submitted = false,
+  onOverviewFailure,
   askingAI,
   onAskAI,
 }: {
@@ -134,6 +135,7 @@ function BestMatch({
   searchValue: string;
   queryStartedAt?: number;
   submitted?: boolean;
+  onOverviewFailure?: () => void;
   askingAI: boolean;
   onAskAI: (query: string, sources?: AIChatRagSource[]) => void;
 }) {
@@ -486,9 +488,16 @@ function BestMatch({
       await Promise.resolve();
       if (controller.signal.aborted) return;
       try {
-        const response = await SearchService.generateSearchSummary(currentWorkspaceId, searchValue, controller.signal);
+        const response = await SearchService.generateSearchSummary(
+          currentWorkspaceId,
+          searchValue,
+          controller.signal
+        ).catch(() => {
+          if (!controller.signal.aborted) onOverviewFailure?.();
+          return null;
+        });
 
-        if (controller.signal.aborted) return;
+        if (!response || controller.signal.aborted) return;
         const answer = response.summaries[0];
 
         if (!answer) return;
@@ -512,7 +521,7 @@ function BestMatch({
     })();
 
     return () => controller.abort();
-  }, [aiEnabled, currentWorkspaceId, debounceSearch, searchValue, submitted]);
+  }, [aiEnabled, currentWorkspaceId, debounceSearch, onOverviewFailure, searchValue, submitted]);
 
   useLayoutEffect(() => {
     presentationRef.current?.committedRows(

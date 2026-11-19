@@ -67,26 +67,31 @@ jest.mock('@/components/app/search/BestMatch', () => ({
     onAskAI,
     searchValue,
     submitted,
+    onOverviewFailure,
   }: {
     onAskAI: (query: string, sources: unknown[]) => void;
     searchValue: string;
     submitted: boolean;
+    onOverviewFailure: () => void;
   }) => (
-    <button
-      data-query={searchValue}
-      data-submitted={submitted}
-      onClick={() =>
-        onAskAI(searchValue, [
-          {
-            ragId: 'row-id',
-            ownerViewId: 'database-view-id',
-            ownerDatabaseId: 'database-id',
-          },
-        ])
-      }
-    >
-      Ask AI
-    </button>
+    <>
+      <button
+        data-query={searchValue}
+        data-submitted={submitted}
+        onClick={() =>
+          onAskAI(searchValue, [
+            {
+              ragId: 'row-id',
+              ownerViewId: 'database-view-id',
+              ownerDatabaseId: 'database-id',
+            },
+          ])
+        }
+      >
+        Ask AI
+      </button>
+      <button onClick={onOverviewFailure}>Simulate overview failure</button>
+    </>
   ),
 }));
 
@@ -220,6 +225,10 @@ describe('Search AI chat creation', () => {
     expect(submitButton.hasAttribute('disabled')).toBe(true);
     fireEvent.change(input, { target: { value: 'invoice' } });
     expect((await screen.findByText('Ask AI')).dataset.submitted).toBe('false');
+    fireEvent.click(submitButton);
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('true');
+    fireEvent.click(screen.getByText('Simulate overview failure'));
+    expect(screen.getByText('Ask AI').dataset.submitted).toBe('false');
     fireEvent.click(submitButton);
     expect(screen.getByText('Ask AI').dataset.submitted).toBe('true');
     fireEvent.change(input, { target: { value: 'invoice?' } });

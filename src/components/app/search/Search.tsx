@@ -64,6 +64,8 @@ export function Search() {
     setSubmittedWorkspace(undefined);
   }, [accountId, currentWorkspaceId, aiEnabled]);
 
+  const handleOverviewFailure = useCallback(() => setSubmittedWorkspace(undefined), []);
+
   const handleAskAI = useCallback(
     async (query: string, sources?: AIChatRagSource[]) => {
       if (!aiEnabled || !addPage || !currentWorkspaceId) return;
@@ -280,6 +282,7 @@ export function Search() {
               queryStartedAt={queryStartedAt}
               searchValue={searchValue}
               submitted={Boolean(currentWorkspaceId && currentWorkspaceId === submittedWorkspace)}
+              onOverviewFailure={handleOverviewFailure}
               onAskAI={handleAskAI}
               onClose={handleClose}
             />

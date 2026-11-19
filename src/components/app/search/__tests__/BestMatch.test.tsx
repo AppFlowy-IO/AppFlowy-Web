@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { debounce } from 'lodash-es';
+import { useCallback, useState } from 'react';
 
 import { SearchStreamUnsupportedError } from '@/application/services/domains/search';
 import type {
@@ -1036,6 +1037,71 @@ describe('BestMatch', () => {
       expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
     }
   );
+
+  it('allows an unchanged retry after a transport failure and deduplicates pending and successful submits', async () => {
+    const failed = deferred<{ summaries: SearchSummary[] }>();
+    const retry = deferred<{ summaries: SearchSummary[] }>();
+    const keyword = createView({ view_id: 'page', name: 'Keyword result' });
+
+    mockAppOutline = [keyword];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({ items: [result('page')], has_more: false });
+    mockGenerateSearchSummary.mockReturnValueOnce(failed.promise).mockReturnValueOnce(retry.promise);
+    function SubmittedResults() {
+      const [submitted, setSubmitted] = useState(false);
+      const release = useCallback(() => setSubmitted(false), []);
+
+      return (
+        <>
+          <button onClick={() => setSubmitted(true)}>Submit</button>
+          <BestMatch
+            submitted={submitted}
+            onOverviewFailure={release}
+            askingAI={false}
+            searchValue='term'
+            onAskAI={jest.fn()}
+            onClose={jest.fn()}
+          />
+        </>
+      );
+    }
+
+    render(<SubmittedResults />);
+    const submit = screen.getByText('Submit');
+
+    fireEvent.click(submit);
+    expect(await screen.findByText('Keyword result')).toBeTruthy();
+    fireEvent.click(submit);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+    await act(async () => failed.reject(new Error('503')));
+    expect(screen.getByText('Keyword result')).toBeTruthy();
+    fireEvent.click(submit);
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(2));
+    await act(async () => retry.resolve({ summaries: [] }));
+    fireEvent.click(submit);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(2);
+    expect(mockSearchStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release the current submission when an obsolete overview fails', async () => {
+    const old = deferred<{ summaries: SearchSummary[] }>();
+    const release = jest.fn();
+
+    mockGenerateSearchSummary.mockReturnValueOnce(old.promise).mockResolvedValue({ summaries: [] });
+    const props = {
+      submitted: true,
+      askingAI: false,
+      onOverviewFailure: release,
+      onAskAI: jest.fn(),
+      onClose: jest.fn(),
+    };
+    const { rerender } = render(<BestMatch {...props} searchValue='first' />);
+
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
+    rerender(<BestMatch {...props} searchValue='second' />);
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(2));
+    await act(async () => old.reject(new Error('obsolete')));
+    expect(release).not.toHaveBeenCalled();
+  });
 
   it('retains an explicitly requested answer if keyword retrieval fails', async () => {
     mockSearchStream.mockRejectedValue(new Error('keyword failure'));

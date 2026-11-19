@@ -142,6 +142,7 @@ export async function generateSearchSummary(workspaceId: string, query: string, 
   return executeAPIRequest<SearchSummaryResult>(() =>
     getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
       headers,
+      skipTransportRetry: true,
       ...(signal ? { signal } : {}),
     })
   );

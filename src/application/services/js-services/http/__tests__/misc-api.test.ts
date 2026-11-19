@@ -49,6 +49,7 @@ describe('generateSearchSummary', () => {
         only_context: true,
       },
       {
+        skipTransportRetry: true,
         headers: {
           'x-request-time': expect.any(String),
         },
@@ -75,6 +76,7 @@ describe('generateSearchSummary', () => {
       '/api/search/workspace-id/summary',
       { query: 'show my tasks', only_context: true },
       {
+        skipTransportRetry: true,
         headers: { 'x-request-time': expect.any(String) },
         signal: controller.signal,
       }
