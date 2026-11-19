@@ -49,6 +49,11 @@
   visibility: hidden;
 }
 
+.math-equation-editor textarea,
+.math-equation-dialog textarea {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
 .math-equation-editor {
   // Match Figma at both sizes, independent of the formula's length. On short
   // viewports the input scrolls; the action row stays available.

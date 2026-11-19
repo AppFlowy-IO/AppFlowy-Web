@@ -44,7 +44,7 @@ function FormulaPopover({
           value={value}
           spellCheck={false}
           placeholder='E = mc^2'
-          className='h-8 min-w-0 flex-1 px-2 py-1.5'
+          className='h-8 min-w-0 flex-1 px-2 py-1.5 font-mono'
           onFocus={(event) => event.currentTarget.select()}
           onChange={(event) => {
             setValue(event.target.value);

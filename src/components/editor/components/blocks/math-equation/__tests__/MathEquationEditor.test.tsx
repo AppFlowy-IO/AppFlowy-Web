@@ -13,6 +13,11 @@ function setup(initialValue = 'E=mc^2') {
 }
 
 describe('Flutter equation editor parity', () => {
+  it('renders the TeX input with a monospaced font', () => {
+    setup();
+    expect(screen.getByRole('textbox').className).toContain('font-mono');
+  });
+
   it('pastes a wrapped Markdown equation into the selected TeX range', () => {
     const { onSave } = setup('old formula');
     const input = screen.getByRole('textbox');
