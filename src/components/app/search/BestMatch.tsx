@@ -229,7 +229,9 @@ function BestMatch({
         rowId,
         blockId: evidenceBlockId(item, evidence),
         evidence: evidence ? describeEvidence(evidence) : undefined,
-        title: rowId ? `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}` : undefined,
+        title: rowId
+          ? item.title?.trim() || `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}`
+          : undefined,
         preview: previewLines(item.content || item.preview),
       };
     });
@@ -568,7 +570,11 @@ function BestMatch({
         ownerViewId: view?.view_id || result?.database_view_id || (!targetRowId ? targetViewId : undefined),
         ownerDatabaseId: result?.database_id || undefined,
         view,
-        name: view?.name?.trim() || t('menuAppHeader.defaultNewPageName'),
+        name:
+          (targetRowId && result?.title?.trim()) ||
+          summary.source_sections?.find((section) => section.source_id === sourceId)?.title?.trim() ||
+          view?.name?.trim() ||
+          t('menuAppHeader.defaultNewPageName'),
       });
 
       return sources;

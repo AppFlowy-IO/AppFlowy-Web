@@ -34,6 +34,8 @@ export interface SearchDocumentResponseItem {
   object_id: string;
   workspace_id: string;
   score: number;
+  /** Canonical row or page title when available. */
+  title?: string | null;
   content: string;
   preview?: string | null;
   database_view_id?: string | null;
@@ -53,6 +55,7 @@ export interface SearchSummary {
   content: string;
   highlights?: string;
   sources: string[];
+  source_sections?: Array<{ source_id: string; title?: string | null; content: string }>;
 }
 
 export interface RecentOverviewTopic {

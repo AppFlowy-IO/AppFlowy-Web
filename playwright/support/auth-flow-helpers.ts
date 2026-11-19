@@ -120,11 +120,14 @@ export async function signInWithPasswordViaUi(
   page: Page,
   email: string,
   password: string,
-  waitMs: number = 3000
+  waitMs: number = 3000,
+  redirectTo?: string
 ): Promise<void> {
   await enableTestMode(page);
 
-  await visitLoginPage(page, 1000);
+  await visitAuthPath(page, redirectTo ? `/login?redirectTo=${encodeURIComponent(redirectTo)}` : '/login', {
+    waitMs: 1000,
+  });
   await expect(AuthSelectors.emailInput(page)).toBeVisible({ timeout: 30000 });
   await AuthSelectors.emailInput(page).fill(email);
   await expect(AuthSelectors.passwordSignInButton(page)).toBeVisible({ timeout: 10000 });

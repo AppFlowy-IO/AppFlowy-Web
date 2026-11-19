@@ -511,6 +511,7 @@ describe('BestMatch', () => {
           workspace_id: 'workspace-id',
           score: 1,
           content: 'Launch project',
+          title: 'Calibrate the beacon',
           database_row_id: 'row-id',
           database_view_id: 'database-view-id',
           database_id: 'database-id',
@@ -528,6 +529,7 @@ describe('BestMatch', () => {
       expect(mockOverviewSources).toEqual([
         expect.objectContaining({
           ragId: 'row-id',
+          name: 'Calibrate the beacon',
           ownerViewId: 'database-view-id',
           ownerDatabaseId: 'database-id',
         }),
