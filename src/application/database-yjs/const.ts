@@ -26,7 +26,15 @@ export const metaIdFromRowId = (rowId: string) => {
   try {
     namespace = uuidParse(rowId);
   } catch (e) {
-    namespace = uuidParse(generateUUID());
+    // Cloud's idempotent row API stores 16 SHA-256 bytes as a UUID. Keep
+    // those namespace bytes even when uuid.parse rejects the version/variant.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rowId)) {
+      const hex = rowId.replace(/-/g, '');
+
+      namespace = Uint8Array.from({ length: 16 }, (_, index) => parseInt(hex.slice(index * 2, index * 2 + 2), 16));
+    } else {
+      namespace = uuidParse(generateUUID());
+    }
   }
 
   return (key: RowMetaKey) => uuidv5(key, namespace).toString();
