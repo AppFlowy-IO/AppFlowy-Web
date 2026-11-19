@@ -12,9 +12,22 @@ const mockSettingsClose = jest.fn();
 const mockImportSuccess = jest.fn();
 const mockTranslate = (key: string) => key;
 let mockCurrentUserUid = '42';
+let mockWorkspaceRole = 'Owner';
+let mockWebhookFeatures: string[] = [];
+const mockLoadPolicy = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mockTranslate }),
+}));
+
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  ...jest.requireActual('@/components/app/hooks/useServerInfo'),
+  useServerInfoState: () => ({ status: 'available', info: {
+    enable_database_automations: true, database_automation_webhook_features: mockWebhookFeatures,
+  } }),
+}));
+jest.mock('@/application/services/js-services/http/automation-api', () => ({
+  ruleApi: { workspaceWebhookPolicy: (...args: unknown[]) => mockLoadPolicy(...args) },
 }));
 
 jest.mock('sonner', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
@@ -33,7 +46,7 @@ jest.mock('@/application/services/domains', () => ({
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'current-workspace',
   useUserWorkspaceInfo: () => ({
-    workspaces: [{ id: 'current-workspace', owner: { uid: 42 } }],
+    workspaces: [{ id: 'current-workspace', owner: { uid: 42 }, role: mockWorkspaceRole }],
   }),
   useIsOfficialHosted: () => false,
 }));
@@ -84,8 +97,31 @@ describe('Settings workspace import', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCurrentUserUid = '42';
+    mockWorkspaceRole = 'Owner';
+    mockWebhookFeatures = [];
     mockImportFile.mockResolvedValue(undefined);
     mockExportWorkspace.mockResolvedValue(undefined);
+  });
+
+  it.each([
+    ['Owner', ['workspace_policy_v1'], true],
+    ['Member', ['workspace_policy_v1'], false],
+    ['Guest', ['workspace_policy_v1'], false],
+    ['Owner', [], false],
+  ] as const)('shows the workspace webhook switch for role %s and capabilities %j', async (role, features, visible) => {
+    mockWorkspaceRole = role;
+    mockWebhookFeatures = [...features];
+    mockLoadPolicy.mockResolvedValue({ disable_automation_webhooks: false });
+    renderManageData();
+    const label = 'databaseAutomation.allowWorkspaceWebhooks';
+
+    if (visible) {
+      expect(await screen.findByRole('switch', { name: label })).toBeTruthy();
+      expect(mockLoadPolicy).toHaveBeenCalledWith('current-workspace', expect.any(AbortSignal));
+    } else {
+      expect(screen.queryByRole('switch', { name: label })).toBeNull();
+      expect(mockLoadPolicy).not.toHaveBeenCalled();
+    }
   });
 
   it('opens the shared workspace importer and submits Confluence only after choosing its ZIP', async () => {

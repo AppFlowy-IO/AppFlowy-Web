@@ -1,5 +1,9 @@
 {
   "databaseAutomation": {
+    "allowWorkspaceWebhooks": "Allow outgoing automation webhooks",
+    "workspaceWebhookPolicyDescription": "Turning this off blocks queued webhooks. Turning it back on allows only newly queued runs.",
+    "webhookPolicyError": "Could not load or save the webhook setting.",
+    "retryWebhookPolicy": "Try again",
     "checkSetupStatus": "Check setup status",
     "findMention": "Find a mention",
     "mentionDate": "Date (leave empty for the event date)",

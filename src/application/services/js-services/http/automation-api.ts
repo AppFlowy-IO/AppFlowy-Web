@@ -260,6 +260,16 @@ export const ruleApi = {
     executeAPIVoidRequest(() =>
       getAxios()?.delete('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks/' + encodeURIComponent(id))
     ),
+  workspaceWebhookPolicy: (workspace: string, signal?: AbortSignal) =>
+    executeAPIRequest<{ disable_automation_webhooks: boolean }>(() =>
+      getAxios()?.get('/api/workspace/' + encodeURIComponent(workspace) + '/settings', { signal })
+    ),
+  setWorkspaceWebhookPolicy: (workspace: string, disabled: boolean) =>
+    executeAPIRequest<{ disable_automation_webhooks: boolean }>(() =>
+      getAxios()?.post('/api/workspace/' + encodeURIComponent(workspace) + '/settings', {
+        disable_automation_webhooks: disabled,
+      })
+    ),
   webhooks: (w: string, after?: string, signal?: AbortSignal) =>
     executeAPIRequest<{ items: { id: string; name: string; disabled: boolean }[]; next_cursor?: string }>(() =>
       getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', { params: { after }, signal })

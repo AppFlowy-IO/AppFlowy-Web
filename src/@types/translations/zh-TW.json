@@ -1,5 +1,9 @@
 {
   "databaseAutomation": {
+    "allowWorkspaceWebhooks": "允許自動化傳送 Webhook",
+    "workspaceWebhookPolicyDescription": "關閉後，已排入佇列的 Webhook 將被封鎖。重新開啟後，只有新排入佇列的執行可以傳送 Webhook。",
+    "webhookPolicyError": "無法載入或儲存 Webhook 設定。",
+    "retryWebhookPolicy": "重試",
     "checkSetupStatus": "查看設定狀態",
     "findMention": "尋找提及",
     "mentionDate": "日期（留空以使用事件日期）",

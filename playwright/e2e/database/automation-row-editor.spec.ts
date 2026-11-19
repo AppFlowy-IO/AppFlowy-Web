@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView } from '../../support/database-ui-helpers';
 import { getVisibleDataRowIds, openRowDetailByRowId } from '../../support/row-detail-helpers';
-import { DatabaseGridSelectors } from '../../support/selectors';
+import { DatabaseGridSelectors, WorkspaceSelectors } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
 test('row automation availability and a manual notification follow server capabilities', async ({ page, request }) => {
@@ -114,4 +114,62 @@ test('row automation availability and a manual notification follow server capabi
     expect(removed.ok()).toBeTruthy();
     expect((await removed.json()).code).toBe(0);
   }
+});
+
+test('workspace owners can turn outgoing webhooks off and restore them after reopening settings', async ({ page, request }) => {
+  await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
+  const info = await request.get(`${TestConfig.apiUrl}/api/server-info`);
+
+  expect(info.ok()).toBeTruthy();
+  const { code, data } = await info.json();
+
+  expect(code).toBe(0);
+  const supported = data.enable_database_automations === true &&
+    data.database_automation_webhook_features?.includes('workspace_policy_v1') === true;
+
+  if (process.env.APPFLOWY_TEST_REQUIRE_WORKSPACE_WEBHOOK_POLICY === 'true') expect(supported).toBe(true);
+
+  const dialog = page.getByTestId('settings-dialog');
+  const openSettings = async () => {
+    await expect(async () => {
+      if (!(await dialog.isVisible())) {
+        await page.keyboard.press('Escape');
+        await WorkspaceSelectors.dropdownTrigger(page).click({ timeout: 3_000 });
+        await page.getByTestId('settings-button').click({ timeout: 3_000 });
+      }
+
+      await dialog.getByTestId('settings-menu-manage_data').click({ timeout: 3_000 });
+      await expect(dialog.getByTestId('manage-data-import')).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+  };
+
+  const control = dialog.getByRole('switch', { name: 'Allow outgoing automation webhooks' });
+
+  await openSettings();
+  if (!supported) {
+    await expect(control).toHaveCount(0);
+    return;
+  }
+
+  const change = async (disabled: boolean) => {
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'POST' &&
+        /\/api\/workspace\/[^/]+\/settings$/.test(new URL(res.url()).pathname)),
+      control.click(),
+    ]);
+
+    expect(response.ok()).toBeTruthy();
+    expect(response.request().postDataJSON()).toEqual({ disable_automation_webhooks: disabled });
+    expect(await response.json()).toMatchObject({ code: 0, data: { disable_automation_webhooks: disabled } });
+    await expect(control).toHaveAttribute('aria-checked', String(!disabled));
+  };
+
+  await expect(control).toBeEnabled();
+  await expect(control).toBeChecked();
+  await change(true);
+  await page.reload();
+  await openSettings();
+  await expect(control).toBeEnabled();
+  await expect(control).not.toBeChecked();
+  await change(false);
 });

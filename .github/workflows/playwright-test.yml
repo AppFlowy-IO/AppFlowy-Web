@@ -30,6 +30,10 @@ on:
         description: Verify the live row automation editor against the paired Cloud and Worker
         type: boolean
         default: false
+      require_workspace_webhook_policy:
+        description: Verify that an owner can disable and restore outgoing webhooks in the paired workspace
+        type: boolean
+        default: false
       correlation_id:
         description: Caller correlation ID for the Desktop CI check
         required: false
@@ -284,7 +288,7 @@ jobs:
         id: groups
         env:
           INTEROP_ONLY: ${{ inputs.interop_only }}
-          REQUIRE_ROW_AUTOMATIONS: ${{ inputs.require_row_automations }}
+          REQUIRE_ROW_AUTOMATIONS: ${{ inputs.require_row_automations || inputs.require_workspace_webhook_policy }}
           CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
           CLOUD_IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
         run: |
@@ -343,7 +347,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Enable row automations for the paired editor test
-        if: matrix.test-group.name == 'template-interop' && inputs.require_row_automations
+        if: matrix.test-group.name == 'template-interop' && (inputs.require_row_automations || inputs.require_workspace_webhook_policy)
         run: echo "APPFLOWY_DATABASE_AUTOMATIONS_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Validate compatibility runtime selection
@@ -677,9 +681,10 @@ jobs:
           echo "Desktop under test: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Test the live Web row automation editor
-        if: matrix.test-group.name == 'template-interop' && inputs.require_row_automations
+        if: matrix.test-group.name == 'template-interop' && (inputs.require_row_automations || inputs.require_workspace_webhook_policy)
         env:
           APPFLOWY_TEST_REQUIRE_ROW_AUTOMATIONS: 'true'
+          APPFLOWY_TEST_REQUIRE_WORKSPACE_WEBHOOK_POLICY: ${{ inputs.require_workspace_webhook_policy }}
           BASE_URL: http://localhost:3000
         run: pnpm exec playwright test playwright/e2e/database/automation-row-editor.spec.ts --project=chromium --workers=1 --retries=0 --reporter=list
 

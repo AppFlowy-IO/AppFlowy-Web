@@ -52,6 +52,12 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === workspaceId),
     [userWorkspaceInfo?.workspaces, workspaceId]
   );
+  const webhookPolicyWorkspace =
+    currentWorkspace?.role === Role.Owner &&
+    serverInfo.info?.enable_database_automations &&
+    serverInfo.info.database_automation_webhook_features?.includes('workspace_policy_v1')
+      ? workspaceId
+      : undefined;
   // Billing exists only on the official cloud, and only the owner can change a workspace's plan.
   const showBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isOfficialHosted);
   const mcpBaseUrl = mcpConfiguration.status === 'configured' ? mcpConfiguration.baseUrl : undefined;
@@ -125,7 +131,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
         {selectedItem === SettingMenuItem.ACCOUNT && <AccountAppPanel />}
         {selectedItem === SettingMenuItem.PROFILE && <ProfilePanel />}
         {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel />}
-        {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel onImport={handleImport} />}
+        {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel onImport={handleImport} webhookPolicyWorkspace={webhookPolicyWorkspace} />}
         {open && selectedItem === SettingMenuItem.CONNECTIONS && workspaceId && (
           <Suspense
             fallback={

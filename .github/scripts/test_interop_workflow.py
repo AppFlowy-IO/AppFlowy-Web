@@ -129,7 +129,7 @@ printf '%s\\n' "$GH_MERGE_BASE"
         enable = self.step("Enable row automations for the paired editor test")
         case = self.step("Test the live Web row automation editor")
         steps = WORKFLOW["jobs"]["test"]["steps"]
-        self.assertEqual(enable["if"], "matrix.test-group.name == 'template-interop' && inputs.require_row_automations")
+        self.assertEqual(enable["if"], "matrix.test-group.name == 'template-interop' && (inputs.require_row_automations || inputs.require_workspace_webhook_policy)")
         self.assertEqual(case["if"], enable["if"])
         self.assertLess(steps.index(enable), steps.index(self.step("Start Docker services")))
         self.assertLess(steps.index(self.step("Start Docker services")), steps.index(case))
@@ -137,6 +137,14 @@ printf '%s\\n' "$GH_MERGE_BASE"
         self.assertEqual(case["env"]["APPFLOWY_TEST_REQUIRE_ROW_AUTOMATIONS"], "true")
         self.assertTrue((ROOT / "playwright/e2e/database/automation-row-editor.spec.ts").is_file())
         self.assertIn("playwright/e2e/database/automation-row-editor.spec.ts", case["run"])
+
+    def test_workspace_webhook_policy_uses_the_paired_editor_and_requires_exact_images(self):
+        select = next(step for step in WORKFLOW["jobs"]["build"]["steps"] if step.get("id") == "groups")
+        self.assertIn("inputs.require_workspace_webhook_policy", select["env"]["REQUIRE_ROW_AUTOMATIONS"])
+        case = self.step("Test the live Web row automation editor")
+        self.assertIn("inputs.require_workspace_webhook_policy", case["if"])
+        self.assertEqual(case["env"]["APPFLOWY_TEST_REQUIRE_WORKSPACE_WEBHOOK_POLICY"],
+                         "${{ inputs.require_workspace_webhook_policy }}")
 
     def test_exact_inputs_cannot_be_ignored_by_a_noninterop_run(self):
         step = next(step for step in WORKFLOW["jobs"]["build"]["steps"]

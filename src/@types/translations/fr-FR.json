@@ -1,5 +1,9 @@
 {
   "databaseAutomation": {
+    "allowWorkspaceWebhooks": "Autoriser les webhooks sortants des automatisations",
+    "workspaceWebhookPolicyDescription": "La désactivation bloque les webhooks en attente. Après la réactivation, seules les nouvelles exécutions peuvent en envoyer.",
+    "webhookPolicyError": "Impossible de charger ou d’enregistrer le paramètre des webhooks.",
+    "retryWebhookPolicy": "Réessayer",
     "checkSetupStatus": "Vérifier la configuration",
     "findMention": "Rechercher une mention",
     "mentionDate": "Date (vide pour utiliser la date de l’événement)",
