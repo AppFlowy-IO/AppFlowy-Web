@@ -319,7 +319,7 @@ describe('workspace search', () => {
     expect(mockReadOverviews.mock.calls.map(([workspace]) => workspace)).toEqual(Array(3).fill('workspace-id'));
   });
 
-  it('keeps keyword search usable when the prepared read fails and reads again on the next open', async () => {
+  it('passes the typed query to the search panel after a prepared read fails and retries on reopen', async () => {
     mockReadOverviews.mockRejectedValueOnce(new Error('Overview endpoint unavailable'));
     render(<Search />);
 
@@ -329,7 +329,10 @@ describe('workspace search', () => {
 
     expect(screen.queryByRole('region', { name: 'commandPalette.recentOverviews' })).toBeNull();
     fireEvent.change(input, { target: { value: 'release' } });
-    expect((await screen.findByText('Ask AI')).dataset.submitted).toBe('false');
+    const typedSearch = await screen.findByText('Ask AI');
+
+    expect(typedSearch.dataset.query).toBe('release');
+    expect(typedSearch.dataset.submitted).toBe('false');
     fireEvent.keyDown(input, { key: 'Escape' });
     fireEvent.click(screen.getByText('button.search'));
 
