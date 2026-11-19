@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import type { View } from '@/application/types';
 import { RAG_SOURCE_OWNERS_METADATA_KEY } from '@/components/ai-chat/rag-scope';
 import { Search } from '@/components/app/search/Search';
 
@@ -12,6 +13,8 @@ const mockFetchCompleteView = jest.fn();
 const mockUpdateChatSettings = jest.fn();
 const mockChatRequest = jest.fn();
 const mockLoadRecentViews = jest.fn();
+const mockReadOverviews = jest.fn();
+const mockOutline: View[] = [];
 let mockWorkspaceId = 'workspace-id';
 let mockAccountId = 'member-a';
 let mockAIEnabled = true;
@@ -20,23 +23,12 @@ jest.mock('@/components/main/app.hooks', () => ({
   useAuthenticatedUserIdOptional: () => mockAccountId,
 }));
 
-jest.mock('@/components/app/search/RecentOverviews', () => ({
-  __esModule: true,
-  default: function MockRecentOverviews({
-    workspaceId,
-    onAvailabilityChange,
-  }: {
-    workspaceId: string;
-    onAvailabilityChange: (value: boolean) => void;
-  }) {
-    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+jest.mock('@/application/services/domains', () => ({
+  SearchService: { getRecentOverviews: (...args: unknown[]) => mockReadOverviews(...args) },
+}));
 
-    useEffect(() => {
-      onAvailabilityChange(true);
-      return () => onAvailabilityChange(false);
-    }, [onAvailabilityChange]);
-    return <div>Recent topics in {workspaceId}</div>;
-  },
+jest.mock('@/components/app/search/SearchAIOverview', () => ({
+  MarkdownSummary: ({ content }: { content: string }) => <p>{content}</p>,
 }));
 
 jest.mock('@mui/material', () => ({
@@ -54,7 +46,7 @@ jest.mock('react-i18next', () => ({
 jest.mock('@/components/app/app.hooks', () => ({
   useAIEnabled: () => mockAIEnabled,
   useAppOperations: () => ({ addPage: mockAddPage }),
-  useAppOutline: () => [],
+  useAppOutline: () => mockOutline,
   useAppRecent: () => ({ recentViews: [], loadRecentViews: mockLoadRecentViews }),
   useAppViewId: () => 'current-page-id',
   useCurrentWorkspaceId: () => mockWorkspaceId,
@@ -157,12 +149,19 @@ jest.mock('@/utils/hotkeys', () => ({
   createHotKeyLabel: () => '',
 }));
 
-describe('Search AI chat creation', () => {
+function preparedOverview(title: string) {
+  return {
+    topics: [{ title, generated_at: '2026-11-19T08:00:00Z', summary: { content: `Answer for ${title}`, sources: [] } }],
+  };
+}
+
+describe('workspace search', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWorkspaceId = 'workspace-id';
     mockAIEnabled = true;
     mockAccountId = 'member-a';
+    mockReadOverviews.mockReset().mockResolvedValue(preparedOverview('Release checklist'));
     const currentPage = {
       view_id: 'current-page-id',
       name: 'Current page',
@@ -269,20 +268,73 @@ describe('Search AI chat creation', () => {
   it('opens the ranked topics only on an empty, authenticated, AI-enabled palette', async () => {
     const { rerender } = render(<Search />);
 
-    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    expect(screen.queryByText('Release checklist')).toBeNull();
     fireEvent.click(screen.getByText('button.search'));
-    expect(await screen.findByText('Recent topics in workspace-id')).toBeTruthy();
+    expect(await screen.findByText('Release checklist')).toBeTruthy();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'draft' } });
-    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    expect(screen.queryByText('Release checklist')).toBeNull();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
-    expect(await screen.findByText('Recent topics in workspace-id')).toBeTruthy();
+    expect(await screen.findByText('Release checklist')).toBeTruthy();
     mockAIEnabled = false;
     rerender(<Search />);
-    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    expect(screen.queryByText('Release checklist')).toBeNull();
     mockAIEnabled = true;
     mockAccountId = '';
     rerender(<Search />);
-    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    expect(screen.queryByText('Release checklist')).toBeNull();
+  });
+
+  it('removes a previous member’s card immediately and ignores their pending read on a same-workspace switch', async () => {
+    let finishBen!: (value: ReturnType<typeof preparedOverview>) => void;
+
+    mockReadOverviews
+      .mockResolvedValueOnce(preparedOverview('Ada checklist'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishBen = resolve;
+          })
+      )
+      .mockResolvedValueOnce(preparedOverview('Casey checklist'));
+
+    const { rerender } = render(<Search />);
+
+    fireEvent.click(screen.getByText('button.search'));
+    expect(await screen.findByText('Answer for Ada checklist')).toBeTruthy();
+
+    mockAccountId = 'ben';
+    rerender(<Search />);
+    expect(screen.queryByText('Answer for Ada checklist')).toBeNull();
+    await waitFor(() => expect(mockReadOverviews).toHaveBeenCalledTimes(2));
+    const benSignal = mockReadOverviews.mock.calls[1][1] as AbortSignal;
+
+    mockAccountId = 'casey';
+    rerender(<Search />);
+    expect(benSignal.aborted).toBe(true);
+    expect(await screen.findByText('Answer for Casey checklist')).toBeTruthy();
+
+    await act(async () => finishBen(preparedOverview('Ben checklist')));
+    expect(screen.queryByText('Ben checklist')).toBeNull();
+    expect(screen.getByText('Answer for Casey checklist')).toBeTruthy();
+    expect(mockReadOverviews.mock.calls.map(([workspace]) => workspace)).toEqual(Array(3).fill('workspace-id'));
+  });
+
+  it('keeps keyword search usable when the prepared read fails and reads again on the next open', async () => {
+    mockReadOverviews.mockRejectedValueOnce(new Error('Overview endpoint unavailable'));
+    render(<Search />);
+
+    fireEvent.click(screen.getByText('button.search'));
+    await waitFor(() => expect(mockReadOverviews).toHaveBeenCalledTimes(1));
+    const input = screen.getByRole('textbox');
+
+    expect(screen.queryByRole('region', { name: 'commandPalette.recentOverviews' })).toBeNull();
+    fireEvent.change(input, { target: { value: 'release' } });
+    expect((await screen.findByText('Ask AI')).dataset.submitted).toBe('false');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.click(screen.getByText('button.search'));
+
+    expect(await screen.findByText('Release checklist')).toBeTruthy();
+    expect(mockReadOverviews).toHaveBeenCalledTimes(2);
   });
 
   it('leaves native Tab available for the topic buttons before Recent handles its navigation shortcut', async () => {
@@ -292,7 +344,7 @@ describe('Search AI chat creation', () => {
     try {
       render(<Search />);
       fireEvent.click(screen.getByText('button.search'));
-      await screen.findByText('Recent topics in workspace-id');
+      await screen.findByText('Release checklist');
       const input = screen.getByRole('textbox');
 
       expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(true);
