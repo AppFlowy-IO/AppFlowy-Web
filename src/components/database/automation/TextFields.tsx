@@ -1,10 +1,13 @@
+import { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { AutomationText, RuleAction, TextPart } from '@/application/services/js-services/http/automation-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+import { ExpressionFields } from './ExpressionFields';
 import { type RuleField, valueKinds } from './model';
+import { RichActionContext, MentionChoice } from './RichActionText';
 import { Select } from './Select';
 
 export function TextFields({
@@ -12,15 +15,19 @@ export function TextFields({
   value,
   fields,
   previous,
+  allowRich = true,
   change,
 }: {
   label: string;
+  allowRich?: boolean;
   value?: AutomationText;
   fields: RuleField[];
   previous: RuleAction[];
   change: (v: AutomationText) => void;
 }) {
   const { t } = useTranslation();
+  const options = useContext(RichActionContext);
+  const rich = allowRich && options.rich;
 
   if (typeof value !== 'object')
     return (
@@ -62,18 +69,46 @@ export function TextFields({
             value={p.type}
             options={[
               'text',
+              ...(rich ? ['expression', 'date', 'page', 'person', 'group'] : []),
               ...(readable.length ? ['field'] : []),
               ...(variables.length ? ['variable'] : []),
               ...(steps.length ? ['step_row_id'] : []),
             ].map((id) => ({ id, name: t(`databaseAutomation.kinds.${id}`, { defaultValue: id }) }))}
             change={([type]) => {
-              if (type === 'field') write(i, { type, field_id: readable[0]?.id || '' });
+              if (type === 'expression') write(i, { type, expression: '' });
+              else if (type === 'date') write(i, { type });
+              else if (type === 'page') write(i, { type, view_id: '' });
+              else if (type === 'group') write(i, { type, group_id: '' });
+              else if (type === 'person') write(i, { type, user_id: '' });
+              else if (type === 'field') write(i, { type, field_id: readable[0]?.id || '' });
               else if (type === 'variable') write(i, { type, name: variables[0]?.id || '' });
               else if (type === 'step_row_id') write(i, { type, action_index: Number(steps[0]?.id) });
               else write(i, { type: 'text', value: '' });
             }}
           />
-          {p.type === 'text' ? (
+          {p.type === 'expression' ? (
+            <ExpressionFields
+              source={p.expression}
+              fields={fields}
+              change={(expression) => write(i, { type: 'expression', expression })}
+            />
+          ) : p.type === 'date' ? (
+            <label>
+              {t('databaseAutomation.mentionDate')}
+              <Input
+                type='date'
+                value={p.value || ''}
+                onChange={(e) => write(i, e.target.value ? { type: 'date', value: e.target.value } : { type: 'date' })}
+              />
+            </label>
+          ) : p.type === 'page' || p.type === 'group' || p.type === 'person' ? (
+            <MentionChoice
+              key={options.workspace + p.type}
+              workspace={options.workspace}
+              part={p}
+              change={(part) => write(i, part)}
+            />
+          ) : p.type === 'text' ? (
             <Input
               aria-label={t('databaseAutomation.value')}
               value={p.value}

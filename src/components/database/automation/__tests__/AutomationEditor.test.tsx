@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 
 import strings from '@/@types/translations/en.json';
 import { readButtonOpenTarget, readButtonResultTarget, validButtonUrl } from '@/application/automation/button';
@@ -8,6 +9,8 @@ import { authorizeIntegration } from '@/application/integrations/oauth';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
 import {
   type DatabaseRule,
+  type AutomationText,
+  type TextPart,
   parseRuleList,
   type PropertyValue,
   ruleApi,
@@ -16,6 +19,7 @@ import {
   type TargetRow,
 } from '@/application/services/js-services/http/automation-api';
 import { confirmConnection, listConnections } from '@/application/services/js-services/http/integration-api';
+import { getWorkspaceGroups, searchMentions } from '@/application/services/js-services/http/workspace-api';
 import { Role, type YDatabaseField } from '@/application/types';
 import { useUserWorkspaceInfoOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -24,8 +28,6 @@ import { getServerInfoSnapshot } from '@/utils/server-info';
 
 import AutomationButton from '../AutomationButton';
 import { RuleManager } from '../AutomationEditor';
-import { SourceValue } from '../WorkflowFields';
-import { TextFields } from '../TextFields';
 import { ButtonCell } from '../ButtonCell';
 import { ButtonControl } from '../ButtonControl';
 import { ButtonDefaults } from '../ButtonDefaults';
@@ -43,8 +45,11 @@ import {
   valueKinds,
   workflowVariableChoices,
 } from '../model';
-import { selectAssignmentsFit } from '../select-variable';
 import { validPropertyEvent } from '../property-trigger';
+import { RichActionContext } from '../RichActionText';
+import { selectAssignmentsFit } from '../select-variable';
+import { TextFields } from '../TextFields';
+import { SourceValue } from '../WorkflowFields';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -115,6 +120,11 @@ jest.mock('@/components/database/components/cell/person/useMentionableUsers', ()
     }),
   };
 });
+jest.mock('@/application/services/js-services/http/workspace-api', () => ({
+  ...jest.requireActual('@/application/services/js-services/http/workspace-api'),
+  getWorkspaceGroups: jest.fn(),
+  searchMentions: jest.fn(),
+}));
 jest.mock('@/application/integrations/oauth', () => ({ authorizeIntegration: jest.fn() }));
 jest.mock('@/application/services/js-services/http/integration-api', () => ({
   listConnections: jest.fn(),
@@ -2723,4 +2733,145 @@ test('typed operands, aliases and template parts offer values the Worker can act
     />
   );
   expect(options('Value source')).not.toContain('field');
+});
+
+test('rich text saves stable choices and a formula using the triggering row in an eligible action', async () => {
+  const id = '825119c1-c9e1-4bcd-b54c-b31ba43ee9de';
+  const writes = jest.fn();
+
+  jest
+    .mocked(getWorkspaceGroups)
+    .mockResolvedValue({ groups: [{ group_id: id, name: 'Reviewers' }] } as Awaited<
+      ReturnType<typeof getWorkspaceGroups>
+    >);
+  function Editor() {
+    const [value, update] = useState<AutomationText>({ parts: [{ type: 'text', value: '' }] });
+
+    return (
+      <RichActionContext.Provider value={{ workspace: 'w', rich: true, related: true }}>
+        <TextFields
+          label='Message'
+          value={value}
+          fields={[{ id: 'related', name: 'Projects', type: FieldType.Relation }]}
+          previous={[]}
+          change={(v) => {
+            writes(v);
+            update(v);
+          }}
+        />
+      </RichActionContext.Provider>
+    );
+  }
+
+  render(<Editor />);
+  fireEvent.change(screen.getByLabelText('Value source'), { target: { value: 'group' } });
+  const option = await screen.findByRole('option', { name: 'Reviewers' });
+
+  fireEvent.change(option.parentElement!, { target: { value: id } });
+  expect(getWorkspaceGroups).toHaveBeenCalledWith('w');
+  expect(writes).toHaveBeenLastCalledWith({ parts: [{ type: 'group', group_id: id }] });
+  fireEvent.click(screen.getByRole('button', { name: strings.databaseAutomation.addPart }));
+  fireEvent.change(screen.getAllByLabelText('Value source')[1], { target: { value: 'expression' } });
+  expect((screen.getByRole('option', { name: 'Projects' })).value).toBe('related');
+  fireEvent.change(screen.getByLabelText('Formula expression'), { target: { value: 'prop("related").length()' } });
+  expect(writes).toHaveBeenLastCalledWith({
+    parts: [
+      { type: 'group', group_id: id },
+      { type: 'expression', expression: 'prop("related").length()' },
+    ],
+  });
+});
+test('a mention search uses the current workspace and type, and ignores an older outstanding lookup', async () => {
+  const build = (name: string, id: string) =>
+    ({ sections: [{ items: [{ title: name, mention: { type: 'page', page_id: id } }] }] } as unknown as Awaited<
+      ReturnType<typeof searchMentions>
+    >);
+  let deliver!: (value: Awaited<ReturnType<typeof searchMentions>>) => void;
+
+  jest
+    .mocked(searchMentions)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          deliver = resolve;
+        })
+    )
+    .mockResolvedValueOnce(build('New page', 'new-id'));
+  const change = jest.fn();
+  const show = (workspace: string) => (
+    <RichActionContext.Provider value={{ workspace, rich: true, related: false }}>
+      <TextFields
+        label='Message'
+        value={{ parts: [{ type: 'page', view_id: '' }] }}
+        fields={[]}
+        previous={[]}
+        change={change}
+      />
+    </RichActionContext.Provider>
+  );
+  const view = render(show('first'));
+
+  await waitFor(() => expect(searchMentions).toHaveBeenCalledTimes(1));
+  view.rerender(show('second'));
+  expect(await screen.findByRole('option', { name: 'New page' })).toBeTruthy();
+  expect(jest.mocked(searchMentions).mock.calls[0][2]?.signal?.aborted).toBe(true);
+  await act(async () => deliver(build('Old page', 'old-id')));
+  expect(screen.queryByRole('option', { name: 'Old page' })).toBeNull();
+  expect(searchMentions).toHaveBeenLastCalledWith(
+    'second',
+    { query: '', include: ['page', 'database'], limit: 20 },
+    expect.anything()
+  );
+});
+test('capabilities protect older clients and validate rich text dates, IDs, schedules and action-specific fields', () => {
+  const rich = ruleCapabilities({
+    enable_database_automations: true,
+    database_automation_triggers: ['row_created'],
+    database_automation_actions: ['notify', 'define_variable'],
+    database_automation_value_features: ['rich_action_text_v1', 'formula_related_inputs_v1'],
+  } as ServerInfo);
+
+  function withParts(parts: TextPart[]) {
+    return {
+      ...rule,
+      actions: [{ type: 'notify', user_ids: ['825119c1-c9e1-4bcd-b54c-b31ba43ee9de'], message_template: { parts } }],
+    };
+  }
+
+  const id = '825119c1-c9e1-4bcd-b54c-b31ba43ee9de';
+  const saved = withParts([
+    { type: 'date', value: '2028-02-29' },
+    { type: 'date' },
+    { type: 'page', view_id: id },
+    { type: 'group', group_id: id },
+    { type: 'person', user_id: id },
+  ]);
+
+  expect(canEditRule(saved, caps)).toBe(false);
+  expect(canEditRule(saved, rich)).toBe(true);
+  expect(validRule(saved)).toBe(true);
+  for (const part of [
+    { type: 'date', value: '2027-02-29' },
+    { type: 'group', group_id: 'label' },
+    { type: 'expression', expression: '' },
+  ] as TextPart[])
+    expect(validRule(withParts([part]))).toBe(false);
+  const template = { parts: [{ type: 'date' } as TextPart] };
+
+  expect(
+    validRule({ ...rule, actions: [{ type: 'slack', connection_id: id, channel_id: 'test', message: template }] })
+  ).toBe(false);
+  expect(
+    validRule({
+      ...rule,
+      actions: [{ type: 'connected_email', connection_id: id, to: [template], message: 'ok', subject: 'subject' }],
+    })
+  ).toBe(false);
+  const scheduled = (expression: string) => ({
+    ...withParts([{ type: 'expression', expression }]),
+    trigger: { type: 'scheduled' },
+  });
+
+  expect(scheduleRequiresSourceRow(scheduled('now()'))).toBe(false);
+  expect(scheduleRequiresSourceRow(scheduled('prop("related").length()'))).toBe(true);
 });

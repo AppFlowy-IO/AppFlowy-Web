@@ -16,9 +16,8 @@ import { Input } from '@/components/ui/input';
 import { ConditionFields } from './ConditionFields';
 import { DatabasePicker, useDestinationSchema, VariableSelectOptions } from './DestinationSchema';
 import { EndpointControls, ConnectAccount } from './DestinationSettings';
-import { TextFields } from './TextFields';
-import { MemberEmailFields } from './MemberEmailFields';
 import { ExpressionFields } from './ExpressionFields';
+import { MemberEmailFields } from './MemberEmailFields';
 import {
   arithmetic,
   compatibleCreateSteps,
@@ -29,6 +28,7 @@ import {
   workflowVariableChoices,
 } from './model';
 import { Select, Item } from './Select';
+import { TextFields } from './TextFields';
 
 export function SourceValue({
   value,
@@ -788,6 +788,7 @@ export function WorkflowFields({
                   {values.map((value, i) => (
                     <div key={i}>
                       <TextFields
+                        allowRich={false}
                         label={label}
                         value={recipientText(value)}
                         fields={fields}
@@ -820,6 +821,7 @@ export function WorkflowFields({
           {action.type === 'addressed_email' &&
             (['reply_to', 'sender_name'] as const).map((key) => (
               <TextFields
+                allowRich={key === 'sender_name'}
                 key={key}
                 label={t(`databaseAutomation.${key}`)}
                 value={recipientText(action[key])}
@@ -855,6 +857,7 @@ export function WorkflowFields({
         </>
       )}
       <TextFields
+        allowRich={action.type.endsWith('email')}
         label={t('databaseAutomation.message')}
         value={action.message}
         fields={fields}

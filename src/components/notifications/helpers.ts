@@ -12,6 +12,8 @@ const KNOWN_TYPES: Set<string> = new Set([
   'page_permission_changed',
   'page_access_revoked',
   'person_property_assigned',
+  'automation_notification',
+  'automation_run_failed',
   'workspace_invite',
   'workspace_role_changed',
 ]);

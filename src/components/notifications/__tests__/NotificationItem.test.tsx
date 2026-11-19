@@ -38,3 +38,25 @@ it.each([
   expect(markRead).toHaveBeenCalledWith(['notification']);
   expect(close).toHaveBeenCalledTimes(1);
 });
+
+it('shows the automation message and opens only links in this workspace without opening the triggering row', async () => {
+  const ws='825119c1-c9e1-4bcd-b54c-b31ba43ee9de', view='d2ba21ea-2604-4acf-8feb-5dc766b3b512';
+  const link='appflowy-flutter://open-page/'+ws+'/'+view;
+  const foreign='appflowy-flutter://open-page/'+view+'/'+ws;
+  const markRead=jest.fn(async()=>undefined),close=jest.fn();
+
+  mockToView.mockClear();
+  render(<NotificationItem notification={{id:'run',workspaceId:ws,viewId:'source',type:'automation_notification',
+    metadata:{automation_name:'Review changes',message:'@Design Review ('+link+') '+foreign,row_id:'row'},
+    isRead:false,isArchived:true,createdAt:'2026-11-18T00:00:00Z'}} tab={NotificationTabType.Archived}
+    onMarkRead={markRead} onArchive={async()=>undefined} onClose={close}/>);
+  expect(screen.getByText('Review changes')).toBeTruthy();
+  expect(screen.getByText(/@Design Review/)).toBeTruthy();
+  expect(screen.getAllByRole('link')).toHaveLength(1);
+  const page=screen.getByRole('link',{name:link});
+
+  expect(page.getAttribute('href')).toBe('/app/'+ws+'/'+view);
+  await act(async()=>{fireEvent.click(page);});
+  expect(mockToView.mock.calls).toEqual([[view,undefined]]);
+  expect(markRead).toHaveBeenCalledWith(['run']);
+});

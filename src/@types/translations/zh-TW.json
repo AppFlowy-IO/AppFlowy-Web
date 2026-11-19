@@ -1,5 +1,7 @@
 {
   "databaseAutomation": {
+    "findMention": "尋找提及",
+    "mentionDate": "日期（留空以使用事件日期）",
     "recipientSource": "{{group}}收件者來源",
     "recipientKinds": {
       "address": "電子郵件地址",
@@ -151,6 +153,9 @@
     "more": "載入更多",
     "back": "返回",
     "kinds": {
+      "page": "頁面",
+      "group": "群組",
+      "date": "日期",
       "expression": "公式運算式",
       "webhook_properties": "傳送指定屬性至 Webhook",
       "member_addressed_email": "使用 Gmail 傳送郵件給人員",

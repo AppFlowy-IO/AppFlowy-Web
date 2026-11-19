@@ -3,8 +3,8 @@ import { NIL, validate as isUuid } from 'uuid';
 import { FieldType } from '@/application/database-yjs';
 import { formulaReadsSourceRow } from '@/application/database-yjs/fields/formula/ast';
 import { parseFormula } from '@/application/database-yjs/fields/formula/parser';
-import { isMemberRecipient } from '@/application/services/js-services/http/automation-api';
 import type { ServerInfo } from '@/application/services/js-services/http/auth-api';
+import { isMemberRecipient } from '@/application/services/js-services/http/automation-api';
 import type {
   AutomationText,
   DatabaseRule,
@@ -17,8 +17,8 @@ import type {
   TextPart,
 } from '@/application/services/js-services/http/automation-api';
 
-import { selectVariableConstants, optionIdsFit } from './select-variable';
 import { propertyOperand, validPropertyEvent } from './property-trigger';
+import { selectVariableConstants, optionIdsFit } from './select-variable';
 
 export const triggerTypes = [
   'row_created',
@@ -66,6 +66,8 @@ export function ruleCapabilities(info?: ServerInfo) {
     triggers,
     actions,
     webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,
+    richActionText: info?.database_automation_value_features?.includes('rich_action_text_v1') === true,
+    relatedFormulaInputs: info?.database_automation_value_features?.includes('formula_related_inputs_v1') === true,
     formulaExpression: info?.database_automation_value_features?.includes('formula_expression_v1') === true,
     propertyEdited: info?.database_automation_trigger_features?.includes('property_edited_v1') === true,
     customRecurrence: info?.database_automation_schedule_features?.includes('custom_recurrence_v1') === true,
@@ -237,7 +239,7 @@ function supportedTrigger(trigger: RuleTrigger, caps: Capabilities): boolean {
   return knownKeys(trigger, keys);
 }
 
-function knownText(text?: AutomationText): boolean {
+function knownText(text?: AutomationText, rich = false): boolean {
   if (text === undefined || typeof text === 'string') return true;
   return (
     !!text &&
@@ -248,6 +250,16 @@ function knownText(text?: AutomationText): boolean {
       switch (p.type) {
         case 'text':
           return knownKeys(p, ['type', 'value']);
+        case 'expression':
+          return rich && knownKeys(p, ['type', 'expression']) && typeof p.expression === 'string';
+        case 'date':
+          return rich && knownKeys(p, ['type', 'value']) && (p.value === undefined || typeof p.value === 'string');
+        case 'page':
+          return rich && knownKeys(p, ['type', 'view_id']) && typeof p.view_id === 'string';
+        case 'person':
+          return rich && knownKeys(p, ['type', 'user_id']) && typeof p.user_id === 'string';
+        case 'group':
+          return rich && knownKeys(p, ['type', 'group_id']) && typeof p.group_id === 'string';
         case 'field':
           return knownKeys(p, ['type', 'field_id']);
         case 'variable':
@@ -266,7 +278,7 @@ export function formula(v?: PropertyValue): Formula | undefined {
   return v?.kind === 'formula' && v.value && typeof v.value === 'object' && 'operator' in v.value ? v.value : undefined;
 }
 
-function knownValue(v: PropertyValue | undefined, expressions: boolean): boolean {
+function knownValue(v: PropertyValue | undefined, expressions: boolean, rich = false): boolean {
   if (!v) return false;
   if (v.kind === 'expression')
     return expressions && knownKeys(v, ['kind', 'expression']) && typeof v.expression === 'string';
@@ -278,8 +290,8 @@ function knownValue(v: PropertyValue | undefined, expressions: boolean): boolean
       knownKeys(v, ['kind', 'value']) &&
       knownKeys(f, ['operator', 'left', 'right']) &&
       arithmetic.includes(f.operator) &&
-      knownValue(f.left, expressions) &&
-      knownValue(f.right, expressions)
+      knownValue(f.left, expressions, rich) &&
+      knownValue(f.right, expressions, rich)
     );
   }
 
@@ -296,7 +308,7 @@ function knownValue(v: PropertyValue | undefined, expressions: boolean): boolean
     );
   if (v.kind === 'field') return knownKeys(v, ['kind', 'field_id']);
   if (v.kind === 'variable') return knownKeys(v, ['kind', 'name']);
-  if (v.kind === 'template') return knownKeys(v, ['kind', 'parts']) && knownText({ parts: v.parts || [] });
+  if (v.kind === 'template') return knownKeys(v, ['kind', 'parts']) && knownText({ parts: v.parts || [] }, rich);
   return propertyKinds.includes(v.kind) && knownKeys(v, v.kind === 'event_time' ? ['kind'] : ['kind', 'value']);
 }
 
@@ -347,7 +359,7 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
   return (
     !!keys[a.type] &&
     knownKeys(a, ['type', ...keys[a.type]]) &&
-    (!a.value || knownValue(a.value, caps.formulaExpression)) &&
+    (!a.value || knownValue(a.value, caps.formulaExpression, caps.richActionText)) &&
     (!row || (!!rowKeys && knownKeys(row, rowKeys))) &&
     (row?.type !== 'variable' ||
       (caps.actions.includes('define_variable') && typeof row.name === 'string' && !!row.name)) &&
@@ -356,17 +368,19 @@ function supportedAction(a: RuleAction, caps: Capabilities) {
       !['template', 'field', 'variable', 'formula', 'person', 'relation', 'multi_select_delta'].includes(a.value.kind) ||
       caps.actions.includes('define_variable')) &&
     (a.message_template === undefined ||
-      (caps.actions.includes('define_variable') && a.message === undefined && knownText(a.message_template))) &&
-    knownText(a.message) &&
-    knownText(a.subject) &&
+      (caps.actions.includes('define_variable') &&
+        a.message === undefined &&
+        knownText(a.message_template, caps.richActionText))) &&
+    knownText(a.message, caps.richActionText && a.type.endsWith('email')) &&
+    knownText(a.subject, caps.richActionText) &&
     [a.to, a.cc, a.bcc].every((group) => group === undefined || (Array.isArray(group) && group.every(recipient))) &&
     (a.reply_to === undefined || recipient(a.reply_to)) &&
-    knownText(a.sender_name) &&
+    knownText(a.sender_name, caps.richActionText) &&
     (!a.properties ||
       a.properties.every(
         (p) =>
           knownKeys(p, ['field_id', 'value']) &&
-          knownValue(p.value, caps.formulaExpression) &&
+          knownValue(p.value, caps.formulaExpression, caps.richActionText) &&
           (p.value.kind !== 'multi_select_delta' || caps.actions.includes('define_variable'))
       ))
   );
@@ -384,8 +398,10 @@ export function scheduleRequiresSourceRow(rule: DatabaseRule) {
   if (rule.requires_source_row !== undefined) return rule.requires_source_row;
   if (rule.conditions.length) return true;
 
-  const text = (value?: AutomationText) =>
-    typeof value === 'object' && value?.parts?.some((part) => part.type === 'field');
+  const partReadsRow = (part: TextPart) =>
+    part.type === 'field' ||
+    (part.type === 'expression' && property({ kind: 'expression', expression: part.expression }));
+  const text = (value?: AutomationText) => typeof value === 'object' && value?.parts?.some(partReadsRow);
   const recipient = (value?: EmailRecipient): boolean => {
     if (value === undefined) return false;
     if (!isMemberRecipient(value)) return !!text(value);
@@ -397,7 +413,7 @@ export function scheduleRequiresSourceRow(rule: DatabaseRule) {
       case 'field':
         return true;
       case 'template':
-        return !!value.parts?.some((part) => part.type === 'field');
+        return !!value.parts?.some(partReadsRow);
       case 'formula': {
         const arithmetic = formula(value);
 
@@ -506,6 +522,22 @@ export function validRule(
       v.length <= 128 &&
       v.every((p) => {
         switch (p.type) {
+          case 'expression':
+            return validValue({ kind: 'expression', expression: p.expression });
+          case 'date': {
+            if (p.value === undefined) return true;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(p.value)) return false;
+            const parsed = new Date(p.value + 'T00:00:00Z');
+
+            return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === p.value;
+          }
+
+          case 'page':
+            return isUuid(p.view_id) && p.view_id !== NIL;
+          case 'group':
+            return isUuid(p.group_id) && p.group_id !== NIL;
+          case 'person':
+            return isUuid(p.user_id) && p.user_id !== NIL;
           case 'field':
             return !!p.field_id;
           case 'variable':
@@ -524,7 +556,8 @@ export function validRule(
       return false;
     if (a.row?.type === 'trigger' && (!hasSourceRow(rule.trigger, calendarHasRow) || a.database_id !== sourceDatabase))
       return false;
-    const text = (v?: AutomationText) => (typeof v === 'string' ? !!v.trim() : !!v?.parts.length && parts(v.parts));
+    const text = (v?: AutomationText, rich = true) =>
+      knownText(v, rich) && (typeof v === 'string' ? !!v.trim() : !!v?.parts.length && parts(v.parts));
 
     switch (a.type) {
       case 'notify':
@@ -538,11 +571,11 @@ export function validRule(
         const groups = [a.to ?? [], a.cc ?? [], a.bcc ?? []];
         const addresses = groups.flat();
         const recipient = (v: EmailRecipient) => {
-          if (a.type !== 'member_addressed_email') return !isMemberRecipient(v) && text(v);
+          if (a.type !== 'member_addressed_email') return !isMemberRecipient(v) && text(v, false);
           if (!isMemberRecipient(v)) return false;
           switch (v.type) {
             case 'address':
-              return text(v.value);
+              return text(v.value, false);
             case 'actor':
               return rule.trigger.type !== 'scheduled';
             case 'workspace_user':
@@ -575,7 +608,7 @@ export function validRule(
           !!a.connection_id &&
           !!a.to?.length &&
           a.to.length <= 10 &&
-          a.to.every((v) => !isMemberRecipient(v) && text(v)) &&
+          a.to.every((v) => !isMemberRecipient(v) && text(v, false)) &&
           text(a.subject) &&
           text(a.message)
         );
@@ -585,16 +618,16 @@ export function validRule(
         return (
           !deletesRow &&
           !!a.endpoint_id &&
-          text(a.message) &&
+          text(a.message, false) &&
           !!a.property_ids?.length &&
           a.property_ids.length <= 32 &&
           a.property_ids.every(Boolean) &&
           new Set(a.property_ids).size === a.property_ids.length
         );
       case 'webhook':
-        return !!a.endpoint_id && text(a.message);
+        return !!a.endpoint_id && text(a.message, false);
       case 'slack':
-        return !!a.connection_id && !!a.channel_id && text(a.message);
+        return !!a.connection_id && !!a.channel_id && text(a.message, false);
       case 'define_variable':
         return !!a.name && /^[a-zA-Z0-9_]{1,64}$/.test(a.name) && !named(a.name) && resolved(a.value);
       case 'create_row':

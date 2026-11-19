@@ -15,8 +15,9 @@ import { Input } from '@/components/ui/input';
 
 import { Capabilities, newAction, RuleField, valueKinds } from './model';
 import { PropertyEditedFields } from './PropertyEditedFields';
-import { SourceValue, WorkflowFields } from './WorkflowFields';
+import { RichActionContext } from './RichActionText';
 import { TextFields } from './TextFields';
+import { SourceValue, WorkflowFields } from './WorkflowFields';
 
 import type { ReactNode } from 'react';
 
@@ -430,7 +431,7 @@ export function ActionFields({
   const { t } = useTranslation();
 
   return (
-    <>
+    <RichActionContext.Provider value={{ workspace, rich: caps.richActionText, related: caps.relatedFormulaInputs }}>
       <Choice label={t('databaseAutomation.action')} value={action.type} onChange={([type]) => change(newAction(type))}>
         {caps.actions
           .filter((a) => !deleted || a !== 'set_property')
@@ -470,6 +471,6 @@ export function ActionFields({
           extended={caps.actions.includes('define_variable')}
         />
       )}
-    </>
+    </RichActionContext.Provider>
   );
 }

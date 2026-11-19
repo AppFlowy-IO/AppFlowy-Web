@@ -6,8 +6,8 @@ import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ArchiveIcon } from '@/assets/icons/archive.svg';
 import { ReactComponent as CheckCircleIcon } from '@/assets/icons/check_circle.svg';
 import { ReactComponent as MainReminderIcon } from '@/assets/icons/m_notification_reminder.svg';
-import { ReactComponent as BadgeAtIcon } from '@/assets/icons/notification_icon_at.svg';
 import { ReactComponent as BadgeBellIcon } from '@/assets/icons/notification_bell.svg';
+import { ReactComponent as BadgeAtIcon } from '@/assets/icons/notification_icon_at.svg';
 import { ReactComponent as BadgeReminderIcon } from '@/assets/icons/notification_reminder_badge.svg';
 import { ReactComponent as ReminderClockIcon } from '@/assets/icons/reminder_clock.svg';
 import { useToView } from '@/components/app/app.hooks';
@@ -15,6 +15,7 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
+import { AutomationMessage } from './AutomationMessage';
 import { buildSecondary, formatTimestamp, humanizeType, pickText } from './helpers';
 import { Notification, NotificationTabType } from './types';
 
@@ -158,7 +159,9 @@ function ReminderContent({ notification }: { notification: Notification }) {
   );
 }
 
-function GenericContent({ notification }: { notification: Notification }) {
+function GenericContent({ notification, openPage }: { notification: Notification; openPage: (view: string) => Promise<void> }) {
+  const automation = notification.type === 'automation_notification' || notification.type === 'automation_run_failed';
+  const message = notification.type === 'automation_notification' ? pickText(notification.metadata, ['message']) : '';
   const actor = pickText(notification.metadata, ['actor_name', 'requester_name', 'inviter_name']);
   const pageName = pickText(notification.metadata, ['page_name']);
   const workspace = pickText(notification.metadata, ['workspace_name']);
@@ -175,13 +178,15 @@ function GenericContent({ notification }: { notification: Notification }) {
   return (
     <div className={'flex min-w-0 flex-1 flex-col'}>
       <NotificationHeader
-        title={humanizeType(notification.type)}
+        title={automation ? pickText(notification.metadata, ['automation_name']) || humanizeType(notification.type) : humanizeType(notification.type)}
         createdAt={notification.createdAt}
         isRead={notification.isRead}
       />
       {secondary && (
         <div className={'truncate text-xs leading-[18px] text-text-secondary'}>{secondary}</div>
       )}
+      {message && <AutomationMessage message={message} workspace={notification.workspaceId} openPage={openPage} />}
+      {notification.type === 'automation_run_failed' && <div className='text-sm text-text-secondary'>{humanizeType(pickText(notification.metadata, ['failure_code']))}</div>}
       {detail && (
         <div className={'mt-0.5 line-clamp-2 text-sm leading-5 text-text-primary'}>{detail}</div>
       )}
@@ -199,13 +204,13 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
 
   const anchorId = pickText(notification.metadata, ['row_id', 'block_id']) || undefined;
 
-  const handleClick = useCallback(async () => {
+  const openTarget = useCallback(async (viewId: Notification['viewId'], anchor?: string) => {
     if (actionInFlightRef.current) return;
     actionInFlightRef.current = true;
 
     try {
-      if (notification.viewId) {
-        await toView(notification.viewId, anchorId);
+      if (viewId) {
+        await toView(viewId, anchor);
       }
 
       if (!notification.isRead) {
@@ -216,7 +221,7 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
     } finally {
       actionInFlightRef.current = false;
     }
-  }, [notification.viewId, notification.isRead, notification.id, toView, anchorId, onMarkRead, onClose]);
+  }, [notification.isRead, notification.id, toView, onMarkRead, onClose]);
 
   const handleMarkRead = useCallback(
     async (e: React.MouseEvent) => {
@@ -257,18 +262,18 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
     ) : notification.type === 'reminder' ? (
       <ReminderContent notification={notification} />
     ) : (
-      <GenericContent notification={notification} />
+      <GenericContent notification={notification} openPage={openTarget} />
     );
 
   return (
     <div
       role={'button'}
       tabIndex={0}
-      onClick={handleClick}
+      onClick={() => void openTarget(notification.viewId, anchorId)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          void handleClick();
+          void openTarget(notification.viewId, anchorId);
         }
       }}
       className={

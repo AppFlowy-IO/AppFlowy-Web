@@ -1,9 +1,10 @@
-import { useRef } from 'react';
+import { useContext, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs/database.type';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 
+import { RichActionContext } from './RichActionText';
 import { Select } from './Select';
 
 import type { RuleField } from './model';
@@ -21,7 +22,13 @@ export function ExpressionFields({
 }) {
   const { t } = useTranslation();
   const input = useRef<HTMLTextAreaElement>(null);
-  const properties = fields.filter((field) => readable.has(field.type));
+  const { related } = useContext(RichActionContext);
+  const properties = fields.filter(
+    (field) =>
+      readable.has(field.type) ||
+      (related &&
+        [FieldType.Relation, FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(field.type))
+  );
 
   return (
     <>

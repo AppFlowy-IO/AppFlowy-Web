@@ -1,5 +1,7 @@
 {
   "databaseAutomation": {
+    "findMention": "查找提及",
+    "mentionDate": "日期（留空以使用事件日期）",
     "recipientSource": "{{group}}收件人来源",
     "recipientKinds": {
       "address": "电子邮件地址",
@@ -151,6 +153,9 @@
     "more": "加载更多",
     "back": "返回",
     "kinds": {
+      "page": "页面",
+      "group": "群组",
+      "date": "日期",
       "expression": "公式表达式",
       "webhook_properties": "将指定属性发送到 Webhook",
       "member_addressed_email": "使用 Gmail 向人员发送邮件",

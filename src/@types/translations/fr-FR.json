@@ -1,5 +1,7 @@
 {
   "databaseAutomation": {
+    "findMention": "Rechercher une mention",
+    "mentionDate": "Date (vide pour utiliser la date de l’événement)",
     "recipientSource": "Source du destinataire ({{group}})",
     "recipientKinds": {
       "address": "Adresse e-mail",
@@ -151,6 +153,9 @@
     "more": "Charger la suite",
     "back": "Retour",
     "kinds": {
+      "page": "Page",
+      "group": "Groupe",
+      "date": "Date",
       "expression": "Expression de formule",
       "webhook_properties": "Envoyer les propriétés au webhook",
       "member_addressed_email": "Envoyer un e-mail Gmail à des personnes",

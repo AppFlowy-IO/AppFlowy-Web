@@ -17,7 +17,12 @@ export type TextPart =
   | { type: 'text'; value: string }
   | { type: 'field'; field_id: string }
   | { type: 'variable'; name: string }
-  | { type: 'step_row_id'; action_index: number };
+  | { type: 'step_row_id'; action_index: number }
+  | { type: 'expression'; expression: string }
+  | { type: 'date'; value?: string }
+  | { type: 'page'; view_id: string }
+  | { type: 'group'; group_id: string }
+  | { type: 'person'; user_id: string };
 export type AutomationText = string | { parts: TextPart[] };
 export type MemberRecipient =
   | { type: 'address'; value: AutomationText }

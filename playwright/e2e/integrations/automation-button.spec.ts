@@ -416,3 +416,65 @@ test('a select variable is authored from destination property options and preser
       actions: [{ ...definition, value: { kind: 'single_select', value: 'stage-ready' } }, actions[1]],
     });
 });
+
+test('a notification editor saves a workspace group and inline formula through the rule API', async ({
+  page,
+  integrationsURL,
+}) => {
+  const collection = '/api/workspace/team/database/tasks/automation';
+  const group = '825119c1-c9e1-4bcd-b54c-b31ba43ee9de';
+  const rule = {
+    id: 'rich',
+    name: 'Notify reviewers',
+    enabled: true,
+    status: 'active',
+    revision: 4,
+    timezone: 'UTC',
+    trigger: { type: 'row_created' },
+    conditions: [],
+    actions: [{ type: 'notify', notify_actor: true, message_template: { parts: [{ type: 'text', value: 'Review' }] } }],
+  };
+  let saved: Record<string, unknown> | undefined;
+  await page.route('**/__fixtures__/automation-button?workflow', (route) =>
+    route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
+  );
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const ok = (data: unknown) => route.fulfill({ json: { code: 0, data } });
+    if (path === collection) return ok({ items: [rule] });
+    if (path === collection + '/rich') {
+      if (route.request().method() === 'PATCH') saved = route.request().postDataJSON();
+      return ok(rule);
+    }
+    if (path === '/api/workspace/team/groups') return ok({ groups: [{ group_id: group, name: 'Design reviewers' }] });
+    if (path.endsWith('/fields')) return ok([{ id: 'projects', name: 'Projects', field_type_id: 10 }]);
+    if (path.endsWith('/database')) return ok({ databases: [], has_more: false });
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto(new URL('/__fixtures__/automation-button?workflow', integrationsURL).href, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: rule.name }).click({ timeout: 60_000 });
+  const template = page.getByRole('group', { name: 'Notification message', exact: true });
+  await template.getByLabel('Value source').selectOption('group');
+  await template.getByLabel('Value', { exact: true }).selectOption({ label: 'Design reviewers' });
+  await template.getByRole('button', { name: 'Add a part', exact: true }).click();
+  await template.getByLabel('Value source').nth(1).selectOption('expression');
+  await template.getByLabel('Formula expression').fill('prop("projects").length()');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect
+    .poll(() => saved)
+    .toEqual({
+      expected_revision: 4,
+      actions: [
+        {
+          type: 'notify',
+          notify_actor: true,
+          message_template: {
+            parts: [
+              { type: 'group', group_id: group },
+              { type: 'expression', expression: 'prop("projects").length()' },
+            ],
+          },
+        },
+      ],
+    });
+});

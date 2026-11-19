@@ -28,6 +28,9 @@ const info = {
   enable_database_automations: true,
   database_automation_triggers: ['row_created', 'manual', 'button', ...(workflow ? ['scheduled'] : [])],
   database_automation_actions: ['notify', ...(workflow ? ['create_row', 'edit_row', 'define_variable'] : [])],
+  database_automation_value_features: workflow
+    ? ['formula_expression_v1', 'rich_action_text_v1', 'formula_related_inputs_v1']
+    : [],
   database_automation_scope_features: [
     'row_scoped_v1',
     ...(new URLSearchParams(location.search).has('interactions') ? ['button_interactions_v1'] : []),

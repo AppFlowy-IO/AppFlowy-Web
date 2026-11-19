@@ -62,6 +62,7 @@ export function MemberEmailFields({
         />
         {v?.type === 'address' && (
           <TextFields
+            allowRich={false}
             label={groupName}
             {...{ fields, previous }}
             value={v.value}
