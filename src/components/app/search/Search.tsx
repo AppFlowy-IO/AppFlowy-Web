@@ -21,12 +21,14 @@ import {
 import RecentViews from '@/components/app/search/RecentViews';
 import ViewList from '@/components/app/search/ViewList';
 import { findAncestors } from '@/components/chat/lib/views';
+import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
+const RecentOverviews = lazy(() => import('@/components/app/search/RecentOverviews'));
 const BestMatch = lazy(() => import('@/components/app/search/BestMatch'));
 
 function getFallbackAIChatParent(outline: View[] | undefined) {
@@ -40,11 +42,13 @@ export function Search() {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
   const [queryStartedAt, setQueryStartedAt] = useState<number>();
+  const [hasRecentTopics, setHasRecentTopics] = useState(false);
   const [composing, setComposing] = useState(false);
   const [submittedWorkspace, setSubmittedWorkspace] = useState<string>();
   const [askingAI, setAskingAI] = useState<boolean>(false);
   const outline = useAppOutline();
   const currentViewId = useAppViewId();
+  const accountId = useAuthenticatedUserIdOptional();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const aiEnabled = useAIEnabled();
   const { addPage } = useAppOperations();
@@ -58,7 +62,7 @@ export function Search() {
 
   useLayoutEffect(() => {
     setSubmittedWorkspace(undefined);
-  }, [currentWorkspaceId, aiEnabled]);
+  }, [accountId, currentWorkspaceId, aiEnabled]);
 
   const handleAskAI = useCallback(
     async (query: string, sources?: AIChatRagSource[]) => {
@@ -211,6 +215,8 @@ export function Search() {
             setQueryStartedAt(performance.now());
           }}
           onKeyDown={(event) => {
+            // Keep the ranked topic buttons reachable before Recent's document-level Tab shortcut.
+            if (event.key === 'Tab' && hasRecentTopics && !searchValue.trim()) event.stopPropagation();
             if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || composing) {
               event.stopPropagation();
               // Some IMEs end composition just before dispatching their confirmation key.
@@ -253,10 +259,23 @@ export function Search() {
           </div>
         </form>
         {composing ? null : !searchValue.trim() ? (
-          <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
+          <>
+            {open && aiEnabled && accountId && currentWorkspaceId && (
+              <Suspense fallback={null}>
+                <RecentOverviews
+                  key={`${accountId}:${currentWorkspaceId}`}
+                  workspaceId={currentWorkspaceId}
+                  onAvailabilityChange={setHasRecentTopics}
+                  onClose={handleClose}
+                />
+              </Suspense>
+            )}
+            <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
+          </>
         ) : (
           <Suspense fallback={<ViewList loading title={t('commandPalette.bestMatches')} onClose={handleClose} />}>
             <BestMatch
+              key={accountId}
               askingAI={askingAI}
               queryStartedAt={queryStartedAt}
               searchValue={searchValue}

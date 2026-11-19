@@ -55,6 +55,22 @@ export interface SearchSummary {
   sources: string[];
 }
 
+export interface RecentOverviewTopic {
+  title: string;
+  generated_at: string;
+  summary: SearchSummary;
+}
+
+/** Read ranked, previously generated overviews for the current workspace member. */
+export function getRecentOverviews(workspaceId: string, signal: AbortSignal) {
+  return executeAPIRequest<{ topics: RecentOverviewTopic[] }>(() =>
+    getAxios()?.get<APIResponse<{ topics: RecentOverviewTopic[] }>>(
+      `/api/search/${workspaceId}/recent-overviews`,
+      { signal, skipTransportRetry: true }
+    )
+  );
+}
+
 export interface SearchSummaryResult {
   summaries: SearchSummary[];
 }

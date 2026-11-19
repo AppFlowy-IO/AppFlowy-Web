@@ -13,6 +13,31 @@ const mockUpdateChatSettings = jest.fn();
 const mockChatRequest = jest.fn();
 const mockLoadRecentViews = jest.fn();
 let mockWorkspaceId = 'workspace-id';
+let mockAccountId = 'member-a';
+let mockAIEnabled = true;
+
+jest.mock('@/components/main/app.hooks', () => ({
+  useAuthenticatedUserIdOptional: () => mockAccountId,
+}));
+
+jest.mock('@/components/app/search/RecentOverviews', () => ({
+  __esModule: true,
+  default: function MockRecentOverviews({
+    workspaceId,
+    onAvailabilityChange,
+  }: {
+    workspaceId: string;
+    onAvailabilityChange: (value: boolean) => void;
+  }) {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+
+    useEffect(() => {
+      onAvailabilityChange(true);
+      return () => onAvailabilityChange(false);
+    }, [onAvailabilityChange]);
+    return <div>Recent topics in {workspaceId}</div>;
+  },
+}));
 
 jest.mock('@mui/material', () => ({
   Dialog: ({ children, open, onClose }: { children: ReactNode; open: boolean; onClose: () => void }) =>
@@ -27,7 +52,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAIEnabled: () => true,
+  useAIEnabled: () => mockAIEnabled,
   useAppOperations: () => ({ addPage: mockAddPage }),
   useAppOutline: () => [],
   useAppRecent: () => ({ recentViews: [], loadRecentViews: mockLoadRecentViews }),
@@ -131,6 +156,8 @@ describe('Search AI chat creation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWorkspaceId = 'workspace-id';
+    mockAIEnabled = true;
+    mockAccountId = 'member-a';
     const currentPage = {
       view_id: 'current-page-id',
       name: 'Current page',
@@ -228,6 +255,45 @@ describe('Search AI chat creation', () => {
     expect(fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })).toBe(false);
     fireEvent.submit(input.closest('form')!);
     expect(screen.getByText('Ask AI').dataset.submitted).toBe('true');
+  });
+
+  it('opens the ranked topics only on an empty, authenticated, AI-enabled palette', async () => {
+    const { rerender } = render(<Search />);
+
+    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    fireEvent.click(screen.getByText('button.search'));
+    expect(await screen.findByText('Recent topics in workspace-id')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'draft' } });
+    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
+    expect(await screen.findByText('Recent topics in workspace-id')).toBeTruthy();
+    mockAIEnabled = false;
+    rerender(<Search />);
+    expect(screen.queryByText(/Recent topics/)).toBeNull();
+    mockAIEnabled = true;
+    mockAccountId = '';
+    rerender(<Search />);
+    expect(screen.queryByText(/Recent topics/)).toBeNull();
+  });
+
+  it('leaves native Tab available for the topic buttons before Recent handles its navigation shortcut', async () => {
+    const listener = jest.fn();
+
+    document.addEventListener('keydown', listener);
+    try {
+      render(<Search />);
+      fireEvent.click(screen.getByText('button.search'));
+      await screen.findByText('Recent topics in workspace-id');
+      const input = screen.getByRole('textbox');
+
+      expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(true);
+      expect(listener).not.toHaveBeenCalled();
+      fireEvent.change(input, { target: { value: 'query' } });
+      fireEvent.keyDown(input, { key: 'Tab' });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', listener);
+    }
   });
 
   it('uses authoritative navigation and persists row ownership before navigating', async () => {

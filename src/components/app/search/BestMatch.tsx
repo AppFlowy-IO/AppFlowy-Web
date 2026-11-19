@@ -19,6 +19,7 @@ import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components
 import { describeEvidence, evidenceBlockId, primaryEvidence } from '@/components/app/search/search-evidence';
 import { SearchPresentationObservation } from '@/components/app/search/search-presentation-observation';
 import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
+import { loadSummarySourceViews } from '@/components/app/search/summary-source-views';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -64,30 +65,6 @@ async function loadSearchResultView(
     } catch {
       // Search can return database/object ids that are not view ids. Try the next candidate.
     }
-  }
-}
-
-async function loadSummarySourceViews(
-  outline: View[],
-  currentWorkspaceId: string,
-  sourceIds: string[],
-  searchResults: SearchDocumentResponseItem[]
-): Promise<Map<string, View>> {
-  const resultSourceIds = new Set(
-    searchResults.flatMap((item) => [item.object_id, item.database_row_id].filter(Boolean) as string[])
-  );
-  const unresolvedSourceIds = Array.from(
-    new Set(sourceIds.filter((sourceId) => !resultSourceIds.has(sourceId) && !findView(outline, sourceId)))
-  );
-
-  if (unresolvedSourceIds.length === 0) return new Map();
-
-  try {
-    const views = await ViewService.getMultiple(currentWorkspaceId, unresolvedSourceIds, 0);
-
-    return new Map(views.filter((view) => !isSpaceView(view)).map((view) => [view.view_id, view]));
-  } catch {
-    return new Map();
   }
 }
 

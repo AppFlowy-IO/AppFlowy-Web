@@ -39,7 +39,7 @@ interface SearchAIOverviewProps {
   onClose: () => void;
 }
 
-function MarkdownSummary({
+export function MarkdownSummary({
   content,
   sources,
   onClose,
