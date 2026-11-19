@@ -198,6 +198,19 @@ test('hides unsupported capabilities and protects future definitions; all suppor
   ).toEqual(['text', 'number', 'checkbox', 'single_select', 'multi_select']);
   expect(validRule({ ...rule, trigger: { type: 'status_set_to' } })).toBe(false);
 });
+test('refreshes a pending row rule with the same row authorization scope', async () => {
+  api.list.mockResolvedValueOnce({ items: [{ ...rule, status: 'setting_up' }] });
+  render(<RuleManager workspace='w' database='d' caps={caps} rowScope='row' />);
+  expect(await screen.findByText('Setting up')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Check setup status' }));
+  expect(await screen.findByText('Active')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Check setup status' })).toBeNull();
+  expect(api.list.mock.calls.map(([workspace, database, , row]) => [workspace, database, row])).toEqual([
+    ['w', 'd', 'row'],
+    ['w', 'd', 'row'],
+  ]);
+});
+
 test('retries a create with the same id and authors a status rule with a date action', async () => {
   api.create.mockRejectedValueOnce(new Error('connection')).mockResolvedValueOnce(rule);
   manager();

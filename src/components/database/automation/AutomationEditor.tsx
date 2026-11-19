@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 
 import { useDatabaseFields, useDatabaseView, usePropertiesSelector } from '@/application/database-yjs';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import {
   DatabaseRule,
   isRuleConflict,
@@ -10,7 +11,6 @@ import {
   RuleDefinition,
   RuleRun,
 } from '@/application/services/js-services/http/automation-api';
-import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,6 @@ import { Input } from '@/components/ui/input';
 import { toIntlLocale } from '@/i18n/intl-locale';
 
 import { ConditionFields } from './ConditionFields';
-import { selectAssignmentsFit } from './select-variable';
 import { prepareCopy, saveCopy } from './duplicate';
 import { InvocationFields } from './InvocationFields';
 import {
@@ -33,6 +32,7 @@ import {
   validRule,
 } from './model';
 import { ActionFields, TriggerFields } from './RuleFields';
+import { selectAssignmentsFit } from './select-variable';
 
 export function RuleManager({
   workspace,
@@ -199,6 +199,11 @@ export function RuleManager({
       ) : !visibleRules?.length ? (
         <p>{t('databaseAutomation.empty')}</p>
       ) : null}
+      {!row && visibleRules?.some((rule) => rule.status === 'setting_up') && (
+        <Button className='self-start' variant='ghost' disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
+          {t('databaseAutomation.checkSetupStatus')}
+        </Button>
+      )}
       {copyError && <p role='alert'>{t('databaseAutomation.copyError')}</p>}
       {visibleRules?.map((rule) =>
         row ? (

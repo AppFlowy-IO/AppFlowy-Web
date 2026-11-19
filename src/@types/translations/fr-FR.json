@@ -1,5 +1,6 @@
 {
   "databaseAutomation": {
+    "checkSetupStatus": "Vérifier la configuration",
     "findMention": "Rechercher une mention",
     "mentionDate": "Date (vide pour utiliser la date de l’événement)",
     "recipientSource": "Source du destinataire ({{group}})",

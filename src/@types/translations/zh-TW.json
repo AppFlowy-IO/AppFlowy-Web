@@ -1,5 +1,6 @@
 {
   "databaseAutomation": {
+    "checkSetupStatus": "查看設定狀態",
     "findMention": "尋找提及",
     "mentionDate": "日期（留空以使用事件日期）",
     "recipientSource": "{{group}}收件者來源",

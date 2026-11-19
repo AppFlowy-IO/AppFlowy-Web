@@ -84,6 +84,7 @@ test('a guest configures a rule from the row header without database management 
   const routePath = '/api/workspace/team/database/tasks/row/second/automation';
   const calls: string[] = [];
   let body: Record<string, unknown> | undefined;
+  let readsAfterCreate = 0;
 
   await page.route('**/__fixtures__/automation-button?row-setup', (route) =>
     route.fulfill({ contentType: 'text/html', body: fixtureHTML('automation-button') })
@@ -99,7 +100,11 @@ test('a guest configures a rule from the row header without database management 
       return route.fulfill({ json: { code: 0, data: { ...body, revision: 1 } } });
     }
 
-    return route.fulfill({ json: { code: 0, data: { items: [] } } });
+    const items = body
+      ? [{ ...body, revision: 1, enabled: true, status: ++readsAfterCreate === 1 ? 'setting_up' : 'active' }]
+      : [];
+
+    return route.fulfill({ json: { code: 0, data: { items } } });
   });
   await page.goto(new URL('/__fixtures__/automation-button?row-setup', integrationsURL).href, { waitUntil: 'commit' });
   await page.getByRole('button', { name: 'Automations for this row' }).click({ timeout: 60_000 });
@@ -110,6 +115,11 @@ test('a guest configures a rule from the row header without database management 
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => body?.name).toBe('Flag for follow-up');
   expect(body?.trigger).toEqual({ type: 'row_created' });
+  await expect(dialog.getByText('Setting up', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Check setup status' }).click();
+  await expect(dialog.getByText('Active', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Check setup status' })).toHaveCount(0);
+  expect(readsAfterCreate).toBe(2);
   expect(calls.filter((call) => call.includes('/automation')).every((call) => call.endsWith(routePath))).toBe(true);
   expect(calls.some((call) => call.includes('/button/'))).toBe(false);
   await expect(page.getByTestId('row-detail-duplicate')).toHaveCount(0);
