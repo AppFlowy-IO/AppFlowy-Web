@@ -246,6 +246,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Test browser setup and paired runtime selection
+        run: python3 .github/scripts/test_interop_workflow.py
+
       - name: Test Web backend fixture selection
         run: python3 .github/scripts/test_web_ci_compose.py
 
@@ -563,13 +566,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright deps (cached browsers)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+      - name: Install Chromium for database tests
+        uses: ./.github/actions/install-chromium
+        timeout-minutes: 20
+        with:
+          cache-hit: ${{ steps.playwright-cache.outputs.cache-hit }}
 
       - name: Setup environment
         run: cp deploy.env .env
@@ -965,13 +966,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright deps (cached browsers)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+      - name: Install Chromium for database tests
+        uses: ./.github/actions/install-chromium
+        timeout-minutes: 20
+        with:
+          cache-hit: ${{ steps.playwright-cache.outputs.cache-hit }}
 
       - name: Setup environment
         run: cp deploy.env .env

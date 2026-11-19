@@ -1,0 +1,31 @@
+name: Install Chromium for database browser tests
+description: Install Playwright's operating system dependencies and any missing Chromium binaries
+inputs:
+  cache-hit:
+    description: Whether the Playwright browser cache matched the current lockfile
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the Ubuntu runner package configuration
+      uses: actions/checkout@v4
+      with:
+        repository: AppFlowy-IO/AppFlowy-CI
+        ref: 64fb4d9c6302a6f574acbc5e6746d30df880861e
+        path: .playwright-apt-tools
+        persist-credentials: false
+        sparse-checkout: /.github/scripts/configure_flutter_apt.py
+        sparse-checkout-cone-mode: false
+
+    - name: Install Chromium dependencies and browser
+      shell: bash
+      env:
+        PLAYWRIGHT_CACHE_HIT: ${{ inputs.cache-hit }}
+      run: |
+        # GitHub's preferred Ubuntu mirror can stall before Playwright launches.
+        sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 "$GITHUB_WORKSPACE/.playwright-apt-tools/.github/scripts/configure_flutter_apt.py" --network-only
+        pnpm exec playwright install-deps chromium
+        if [[ "$PLAYWRIGHT_CACHE_HIT" != true ]]; then
+          pnpm exec playwright install chromium
+        fi

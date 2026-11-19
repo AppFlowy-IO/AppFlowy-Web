@@ -18,6 +18,50 @@ class InteropWorkflowTest(unittest.TestCase):
     def step(self, name):
         return next(step for step in WORKFLOW["jobs"]["test"]["steps"] if step.get("name") == name)
 
+    def test_cached_browser_setup_is_bounded_in_both_database_jobs(self):
+        for job in ("test", "dashboard-large-database"):
+            with self.subTest(job=job):
+                steps = WORKFLOW["jobs"][job]["steps"]
+                cache = next(step for step in steps if step.get("id") == "playwright-cache")
+                install = next(step for step in steps if step.get("uses") == "./.github/actions/install-chromium")
+                self.assertLess(steps.index(cache), steps.index(install))
+                self.assertGreater(install["timeout-minutes"], 0)
+                self.assertLessEqual(install["timeout-minutes"], 25)
+                self.assertEqual(install["with"]["cache-hit"], "${{ steps.playwright-cache.outputs.cache-hit }}")
+
+    def test_chromium_dependencies_and_downloads_follow_the_browser_cache(self):
+        action = yaml.safe_load((ROOT / ".github/actions/install-chromium/action.yml").read_text())
+        checkout, install = action["runs"]["steps"]
+        self.assertEqual(checkout["with"]["repository"], "AppFlowy-IO/AppFlowy-CI")
+        self.assertRegex(checkout["with"]["ref"], r"^[a-f0-9]{40}$")
+        self.assertFalse(checkout["with"]["persist-credentials"])
+        self.assertEqual(install["env"]["PLAYWRIGHT_CACHE_HIT"], "${{ inputs.cache-hit }}")
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            trace = temporary / "commands"
+            # Shell functions record attempts and preserve failures from package setup.
+            shell = '''
+                sudo() { printf '%s\\n' "$*" >> "$TRACE"; }
+                pnpm() {
+                    printf '%s\\n' "$*" >> "$TRACE"
+                    [[ "$*" != "exec playwright install-deps chromium" ]] || return "$DEPENDENCY_EXIT"
+                }
+            ''' + install["run"]
+            for cached, dep_exit in (("true", 0), ("false", 0), ("", 0), ("false", 7)):
+                with self.subTest(cached=cached, dep_exit=dep_exit):
+                    trace.write_text("")
+                    env = {**os.environ, "TRACE": str(trace), "GITHUB_WORKSPACE": directory,
+                           "PLAYWRIGHT_CACHE_HIT": cached, "DEPENDENCY_EXIT": str(dep_exit)}
+                    result = subprocess.run(["bash", "-eo", "pipefail", "-c", shell], env=env)
+                    self.assertEqual(result.returncode, dep_exit)
+                    setup, *commands = trace.read_text().splitlines()
+                    script = temporary / checkout["with"]["path"] / ".github/scripts/configure_flutter_apt.py"
+                    self.assertEqual(setup, f"--preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 {script} --network-only")
+                    expected = ["exec playwright install-deps chromium"]
+                    if cached != "true" and not dep_exit:
+                        expected.append("exec playwright install chromium")
+                    self.assertEqual(commands, expected)
+
     def selection(self, **values):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "outputs"
