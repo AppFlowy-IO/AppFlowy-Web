@@ -1,21 +1,25 @@
-import { AppFlowyEditor, Editor, useEditor } from '@appflowyinc/editor';
 import { useEffect, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 import { useEditorContext } from '@/components/chat/provider/editor-provider';
+import type { ParsedBlock } from '@/components/editor/parsers/types';
 
 import { resolveCitationMarkdown } from './citation-markdown';
+import { answerBlocksToEditorData, parseAnswerBlocks } from './markdown/answer-blocks';
+import { AnswerMarkdown } from './markdown/answer-markdown';
+
 import type { ResolvedMessageSource } from './message-sources';
 
 const EMPTY_RESOLVED_SOURCES: ResolvedMessageSource[] = [];
 
-function RegisterMessageEditor({ editor, id }: { editor: AppFlowyEditor; id: number }) {
-  const { setEditor: setMessageEditor } = useEditorContext();
+/** Copy and "Add to page" read the answer through the message editor registry. */
+function RegisterMessageData({ blocks, id }: { blocks: ParsedBlock[]; id: number }) {
+  const { setEditor } = useEditorContext();
 
   useEffect(() => {
-    setMessageEditor(id, editor);
-  }, [editor, id, setMessageEditor]);
+    setEditor(id, { getData: () => answerBlocksToEditorData(blocks) });
+  }, [blocks, id, setEditor]);
 
   return null;
 }
@@ -24,27 +28,23 @@ export function AnswerMd({
   mdContent,
   id,
   sources = EMPTY_RESOLVED_SOURCES,
+  onRegenerateImage,
+  streaming,
 }: {
   mdContent: string;
   id?: number;
   sources?: ResolvedMessageSource[];
+  /** Offered on generated images; omit when the answer cannot be regenerated. */
+  onRegenerateImage?: () => void;
+  /** True while the answer is still arriving. */
+  streaming?: boolean;
 }) {
-  const editor = useEditor();
   const renderedContent = useMemo(() => resolveCitationMarkdown(mdContent, sources), [mdContent, sources]);
-
-  useEffect(() => {
-    if (!renderedContent) return;
-
-    try {
-      editor.applyMarkdown(renderedContent);
-    } catch (error) {
-      console.error('Failed to apply markdown', error);
-    }
-  }, [editor, renderedContent]);
+  const blocks = useMemo(() => parseAnswerBlocks(renderedContent), [renderedContent]);
 
   return (
-    <>
-      {id !== undefined && <RegisterMessageEditor editor={editor} id={id} />}
+    <div className='flex w-full min-w-0 flex-col gap-2'>
+      {id !== undefined ? <RegisterMessageData blocks={blocks} id={id} /> : null}
       <ErrorBoundary
         fallback={
           <Alert variant={'destructive'}>
@@ -52,8 +52,8 @@ export function AnswerMd({
           </Alert>
         }
       >
-        <Editor readOnly />
+        <AnswerMarkdown blocks={blocks} streaming={streaming} onRegenerateImage={onRegenerateImage} />
       </ErrorBoundary>
-    </>
+    </div>
   );
 }

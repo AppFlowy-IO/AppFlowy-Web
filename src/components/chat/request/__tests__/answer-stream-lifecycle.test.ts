@@ -43,19 +43,23 @@ describe('answer stream transport lifetime', () => {
         })
     ) as jest.Mock;
     const controller = new AbortController();
-    const pending = new ChatRequest('workspace', 'chat').fetchAnswerStream(
+    const onMessage = jest.fn();
+    const { streamPromise } = new ChatRequest('workspace', 'chat').fetchAnswerStream(
       payload,
-      jest.fn(),
+      onMessage,
+      undefined,
       undefined,
       controller.signal
     );
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      'https://cloud.example/api/chat/workspace/chat/answer/stream',
-      expect.objectContaining({ signal: controller.signal })
-    );
+    expect(url).toBe('https://cloud.example/api/chat/workspace/chat/answer/stream');
+    expect(options.signal.aborted).toBe(false);
     controller.abort();
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(options.signal.aborted).toBe(true);
+    await streamPromise;
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onMessage).toHaveBeenCalledWith('', [], true);
   });
 
   function openStream() {
@@ -78,7 +82,7 @@ describe('answer stream transport lifetime', () => {
   it('keeps the final partial answer when manually stopped during a pending read', async () => {
     const { source, body } = openStream();
     const onMessage = jest.fn();
-    const { cancel, streamPromise } = await new ChatRequest('workspace', 'chat').fetchAnswerStream(payload, onMessage);
+    const { cancel, streamPromise } = new ChatRequest('workspace', 'chat').fetchAnswerStream(payload, onMessage);
 
     source.enqueue(new TextEncoder().encode(JSON.stringify({ [StreamType.TEXT]: 'partial answer' })));
     await waitFor(() => expect(onMessage).toHaveBeenCalledWith('partial answer', [], false));
@@ -92,7 +96,7 @@ describe('answer stream transport lifetime', () => {
   it('allows cleanup to cancel an already errored body without an unhandled rejection', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const { source, body } = openStream();
-    const { cancel, streamPromise } = await new ChatRequest('workspace', 'chat').fetchAnswerStream(payload, jest.fn());
+    const { cancel, streamPromise } = new ChatRequest('workspace', 'chat').fetchAnswerStream(payload, jest.fn());
 
     // Aborting fetch errors its body before the provider invokes the cancel handle.
     source.error(new DOMException('Aborted', 'AbortError'));

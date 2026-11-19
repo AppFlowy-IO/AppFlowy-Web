@@ -23,7 +23,12 @@ export function hasMathMarkdown(source: string): boolean {
  * Use the initial AST to protect code, links, HTML, and existing dollar math.
  * Formula bodies stay byte-for-byte intact, including newlines and backslashes.
  */
-export function normalizeMathMarkdown(source: string, tree: Root): string {
+export interface NormalizeMathOptions {
+  /** Keep `\(...\)` inline (`$...$`) instead of promoting it to display math as Flutter imports do. */
+  inlineParentheses?: boolean;
+}
+
+export function normalizeMathMarkdown(source: string, tree: Root, options: NormalizeMathOptions = {}): string {
   const matches = alternateMathMatches(source);
 
   if (!matches.length) return source;
@@ -47,7 +52,10 @@ export function normalizeMathMarkdown(source: string, tree: Root): string {
     const end = start + match[0].length;
 
     if (protectedSpans.some((span) => start < span.end && end > span.start)) continue;
-    normalized += source.slice(cursor, start) + '$$' + (match[1] ?? match[2] ?? match[3]) + '$$';
+    const body = match[1] ?? match[2] ?? match[3];
+    const inline = options.inlineParentheses && match[2] !== undefined && !body.includes('$');
+
+    normalized += source.slice(cursor, start) + (inline ? `$${body.trim()}$` : `$$${body}$$`);
     cursor = end;
   }
 

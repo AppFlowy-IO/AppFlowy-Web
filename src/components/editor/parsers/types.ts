@@ -74,6 +74,8 @@ export interface HTMLParseOptions {
 export interface MarkdownParseOptions {
   /** Whether to use GitHub Flavored Markdown */
   gfm?: boolean;
+  /** Keep `\(...\)` as inline math; by default it becomes display math like Flutter imports. */
+  inlineParentheses?: boolean;
   /** Whether to parse tables */
   tables?: boolean;
   /** Whether to parse strikethrough */

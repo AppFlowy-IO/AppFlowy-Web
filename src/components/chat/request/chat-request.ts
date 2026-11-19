@@ -17,8 +17,10 @@ import {
   RepeatedChatMessage,
   ResponseFormat,
   SendQuestionPayload,
+  StreamErrorPayload,
   StreamType,
   Suggestions,
+  UpdateQuestionPayload,
   User,
   View,
   ViewLayout,
@@ -54,6 +56,75 @@ function decodeEmptyRagScope(settings: ChatSettings, chatId: string): ChatSettin
   if (settings.rag_ids.length !== 1 || settings.rag_ids[0] !== chatId) return settings;
 
   return { ...settings, rag_ids: [] };
+}
+
+const STREAM_KEYS = new Set<string>(Object.values(StreamType));
+
+class StreamRequestError extends Error implements StreamErrorPayload {
+  code: number;
+  httpStatus?: number;
+
+  constructor(message: string, code: number, httpStatus?: number) {
+    super(message);
+    this.name = 'StreamRequestError';
+    this.code = code;
+    this.httpStatus = httpStatus;
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError';
+}
+
+/**
+ * The AI service writes failures that happen after the response started as a JSON
+ * line `{code, message, error}` inside an otherwise successful stream.
+ */
+export function parseStreamError(data: unknown): StreamRequestError | null {
+  if (typeof data !== 'object' || data === null) return null;
+
+  const record = data as Record<string, unknown>;
+
+  if (Object.keys(record).some((key) => STREAM_KEYS.has(key))) return null;
+
+  const code = record.code;
+
+  if (typeof code !== 'number' || code === 0) return null;
+
+  return new StreamRequestError(errorMessageFromPayload(record) ?? `AI request failed with code ${code}`, code);
+}
+
+/** The service puts the readable text in `message`; older versions used `error`. */
+function errorMessageFromPayload(record: Record<string, unknown>): string | undefined {
+  if (typeof record.message === 'string' && record.message) return record.message;
+  if (typeof record.error === 'string' && record.error) return record.error;
+
+  return undefined;
+}
+
+async function readStreamErrorResponse(response: Response): Promise<Error> {
+  let payload: unknown = null;
+
+  try {
+    const text = await response.text();
+
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (typeof payload === 'object' && payload !== null) {
+    const record = payload as Record<string, unknown>;
+    const message = errorMessageFromPayload(record);
+
+    if (message) {
+      const code = typeof record.code === 'number' ? record.code : response.status;
+
+      return new StreamRequestError(message, code, response.status);
+    }
+  }
+
+  return new StreamRequestError(`HTTP error! status: ${response.status}`, response.status, response.status);
 }
 
 function collectTruncatedViewIds(root: View): string[] {
@@ -337,7 +408,16 @@ export class ChatRequest {
     return Promise.reject(res?.data);
   }
 
-  async fetchAnswerStream(
+  /**
+   * Streams the answer for a question. The returned `cancel` works at any point,
+   * including before response headers arrive, and a cancelled stream still reports
+   * the partial text through `onMessage(..., true)` so it can be saved.
+   *
+   * The stream is NDJSON with one-key objects: `"1"` answer text, `"5"` progress,
+   * `"6"` reasoning, `"0"` sources. An object carrying a non-zero `code` is an
+   * error line and rejects `streamPromise` with it.
+   */
+  fetchAnswerStream(
     payload: {
       question_id: number;
       format: ResponseFormat;
@@ -345,65 +425,81 @@ export class ChatRequest {
     },
     onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void,
     onProgress?: (step: string) => void,
+    onReasoning?: (reasoning: string) => void,
     signal?: AbortSignal
-  ) {
+  ): { cancel: () => void; streamPromise: Promise<void> } {
     const baseUrl = this.axiosInstance.defaults.baseURL;
     const url = `${baseUrl}/api/chat/${this.workspaceId}/${this.chatId}/answer/stream`;
 
-    const token = getAccessToken(); // Assume this function returns a valid token
+    const token = getAccessToken();
+    const controller = new AbortController();
 
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined = undefined;
-
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const cancel = () => {
-      // The iterator releases its lock after a pending read settles. Fetch's
-      // AbortSignal may already have errored or released this reader.
+      controller.abort();
+      // A fetch abort may already have errored the reader. The iterator releases its lock.
       void reader?.cancel().catch(() => undefined);
     };
 
-    const response = await fetch(url, {
-      method: 'POST',
-      signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        'ai-model': payload.model_name || 'Auto',
-        'x-platform': 'web-app',
-      },
-      body: JSON.stringify({
-        ...payload,
-        chat_id: this.chatId,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    if (signal?.aborted) {
+      cancel();
+    } else {
+      signal?.addEventListener('abort', cancel, { once: true });
     }
 
     const streamPromise = (async () => {
-      const contentType = response.headers.get('Content-Type');
-
-      if (contentType?.includes('application/json')) {
-        const json = await response.json();
-
-        if (json.code !== 0) {
-          return Promise.reject(json);
-        }
-
-        return;
-      }
-
-      reader = response.body?.getReader();
-
-      if (!reader) {
-        throw new Error('Failed to get reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
       let text = '';
-      const metadata: ChatMessageMetadata[] = [];
+      let metadata: ChatMessageMetadata[] = [];
+      let body: ReadableStream<Uint8Array> | null = null;
 
       try {
+        if (controller.signal.aborted) {
+          onMessage(text, metadata, true);
+          return;
+        }
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            'ai-model': payload.model_name || 'Auto',
+            'x-platform': 'web-app',
+          },
+          body: JSON.stringify({
+            ...payload,
+            chat_id: this.chatId,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw await readStreamErrorResponse(response);
+        }
+
+        const contentType = response.headers.get('Content-Type');
+
+        if (contentType?.includes('application/json')) {
+          const json = await response.json();
+
+          if (json.code !== 0) {
+            return Promise.reject(json);
+          }
+
+          return;
+        }
+
+        body = response.body;
+        reader = body?.getReader();
+
+        if (!reader) {
+          throw new Error('Failed to get reader');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let reasoning = '';
+
         for await (const chunk of readableStreamToAsyncIterator(reader)) {
           buffer += decoder.decode(chunk, { stream: true });
 
@@ -412,52 +508,97 @@ export class ChatRequest {
 
             if (!extracted) break;
 
+            buffer = buffer.slice(extracted.nextIndex);
+
+            let data: unknown;
+
             try {
-              const data = JSON.parse(extracted.jsonStr);
-
-              Object.entries(data).forEach(([key, value]) => {
-                if (key === StreamType.META_DATA) {
-                  if (Array.isArray(value)) {
-                    metadata.push(...value.filter(isChatMessageMetadata));
-                  }
-
-                  return;
-                }
-
-                if (key === StreamType.PROGRESS) {
-                  onProgress?.(value as string);
-                  return;
-                }
-
-                // Only append known content types to the answer text
-                if (key === StreamType.TEXT || key === StreamType.IMAGE) {
-                  text += value;
-                }
-              });
-
-              onMessage(text, [], false);
+              data = JSON.parse(extracted.jsonStr);
             } catch (e) {
               console.error('Failed to parse JSON:', e);
+              continue;
             }
 
-            buffer = buffer.slice(extracted.nextIndex);
+            const streamError = parseStreamError(data);
+
+            if (streamError) {
+              throw streamError;
+            }
+
+            let textChanged = false;
+            let metadataChanged = false;
+
+            Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+              switch (key) {
+                case StreamType.META_DATA:
+                  if (Array.isArray(value)) {
+                    // The final sources may replace a provisional list streamed earlier.
+                    metadata = value.filter(isChatMessageMetadata);
+                    metadataChanged = true;
+                  }
+
+                  break;
+                case StreamType.PROGRESS:
+                  onProgress?.(String(value));
+                  break;
+                case StreamType.REASONING:
+                  reasoning += String(value);
+                  onReasoning?.(reasoning);
+                  break;
+                case StreamType.TEXT:
+                case StreamType.IMAGE:
+                  text += String(value);
+                  textChanged = true;
+                  break;
+                default:
+                  break;
+              }
+            });
+
+            if (textChanged || metadataChanged) {
+              onMessage(text, metadata, false);
+            }
           }
         }
 
         onMessage(text, metadata, true);
       } catch (error) {
-        console.error('Stream reading error:', error);
+        if (controller.signal.aborted || isAbortError(error)) {
+          // Stopping keeps whatever was already generated.
+          onMessage(text, metadata, true);
+          return;
+        }
+
+        throw error;
       } finally {
-        reader.releaseLock();
-        try {
-          await response.body?.cancel();
-        } catch (error) {
-          console.error('Error canceling stream:', error);
+        signal?.removeEventListener('abort', cancel);
+        if (body && !controller.signal.aborted) {
+          // A terminal error frame can end iteration while the response body is still open.
+          await body.cancel().catch(() => undefined);
         }
       }
     })();
 
     return { cancel, streamPromise };
+  }
+
+  /**
+   * Edits a question in place. With `generate_answer: false` the server removes the
+   * old answer and returns at once so the caller can stream a fresh one.
+   */
+  async updateQuestion(payload: UpdateQuestionPayload): Promise<void> {
+    const url = `/api/chat/${this.workspaceId}/${this.chatId}/message`;
+
+    const res = await this.axiosInstance.put<{
+      code: number;
+      message: string;
+    }>(url, payload);
+
+    if (res?.data.code === 0) {
+      return;
+    }
+
+    return Promise.reject(res?.data);
   }
 
   async saveAnswer(payload: { question_message_id: number; content: string; meta_data?: ChatMessageMetadata[] }) {

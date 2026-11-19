@@ -10,7 +10,7 @@ import {
 import type { ChatMessageMetadata } from '@/components/chat/types/request';
 
 const mockToastError = jest.fn();
-const mockSaveMessageContent = jest.fn();
+const mockSaveAnswerMessage = jest.fn();
 const mockStartFetchSuggestions = jest.fn();
 const mockRemoveMessages = jest.fn(() => []);
 const mockInsertMessage = jest.fn();
@@ -56,17 +56,18 @@ jest.mock('@/components/chat/provider/messages-provider', () => ({
   useChatMessagesContext: () => ({
     messageIds: [11],
     getMessage: () => ({ reply_message_id: 11 }),
+    getQuestionId: (id: number) => id === 11 ? 10 : undefined,
     addMessages: jest.fn(),
     insertMessage: mockInsertMessage,
     removeMessages: mockRemoveMessages,
-    saveMessageContent: mockSaveMessageContent,
+    saveAnswerMessage: mockSaveAnswerMessage,
   }),
 }));
 jest.mock('@/components/chat/provider/prompt-modal-provider', () => ({
   usePromptModal: () => ({ currentPromptId: null }),
 }));
 jest.mock('@/components/chat/provider/response-format-provider', () => ({
-  useResponseFormatContext: () => ({ setResponseFormatWithId: jest.fn() }),
+  useMessageResponseFormatContext: () => ({ setResponseFormatWithId: jest.fn(), resolveAnswerFormat: jest.fn() }),
 }));
 jest.mock('@/components/chat/provider/suggestions-provider', () => ({
   useSuggestionsContext: () => ({
@@ -102,37 +103,37 @@ function renderHandler() {
   );
 }
 
-function createStream(pendingHandle = false) {
+function createStream() {
   const completion = deferred<void>();
   const handle = { cancel: jest.fn(), streamPromise: completion.promise };
-  const response = deferred<typeof handle>();
   let emit!: (content: string, metadata: ChatMessageMetadata[], done?: boolean) => void;
   let progress!: (step: string) => void;
+  let reasoning!: (text: string) => void;
 
-  mockRequest.fetchAnswerStream.mockImplementationOnce((_payload, onMessage, onProgress) => {
+  mockRequest.fetchAnswerStream.mockImplementationOnce((_payload, onMessage, onProgress, onReasoning) => {
     emit = onMessage;
     progress = onProgress;
-    return response.promise;
+    reasoning = onReasoning;
+    return handle;
   });
-  if (!pendingHandle) response.resolve(handle);
 
   return {
     handle,
     completion,
-    response,
     emit: (content: string, metadata: ChatMessageMetadata[] = [], done = false) => emit(content, metadata, done),
     progress: (step: string) => progress(step),
+    reasoning: (text: string) => reasoning(text),
   };
 }
 
-async function startStream(onMessage = jest.fn(), onProgress = jest.fn()) {
+async function startStream(onMessage = jest.fn(), onProgress = jest.fn(), onReasoning = jest.fn()) {
   let pending!: Promise<void>;
 
   await act(async () => {
-    pending = messagesContext.fetchAnswerStream(10, undefined, onMessage, onProgress);
+    pending = messagesContext.fetchAnswerStream(10, undefined, onMessage, onProgress, onReasoning);
     await Promise.resolve();
   });
-  return { pending, onMessage, onProgress };
+  return { pending, onMessage, onProgress, onReasoning };
 }
 
 describe('MessagesHandlerProvider answer stream ownership', () => {
@@ -144,16 +145,17 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
     mockStartFetchSuggestions.mockResolvedValue(undefined);
   });
 
-  it('cancels on unmount and ignores late chunks, progress and completion', async () => {
+  it('cancels on unmount and ignores late chunks, progress, reasoning and completion', async () => {
     const stream = createStream();
     const view = renderHandler();
-    const { pending, onMessage, onProgress } = await startStream();
+    const { pending, onMessage, onProgress, onReasoning } = await startStream();
 
     view.unmount();
     expect(stream.handle.cancel).toHaveBeenCalledTimes(1);
     await act(async () => {
       stream.emit('late chunk');
       stream.progress('late progress');
+      stream.reasoning('late reasoning');
       stream.emit('late answer', [], true);
       stream.completion.resolve(undefined);
       await pending;
@@ -161,40 +163,39 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
 
     expect(onMessage).not.toHaveBeenCalled();
     expect(onProgress).not.toHaveBeenCalled();
+    expect(onReasoning).not.toHaveBeenCalled();
     expect(mockRequest.saveAnswer).not.toHaveBeenCalled();
     expect(mockStartFetchSuggestions).not.toHaveBeenCalled();
   });
 
-  it('cancels a handle that arrives after unmount without waiting for its stream', async () => {
-    const stream = createStream(true);
+  it('ignores a transport error that arrives after unmount', async () => {
+    const stream = createStream();
     const view = renderHandler();
     const { pending } = await startStream();
 
     view.unmount();
+    expect(stream.handle.cancel).toHaveBeenCalledTimes(1);
     await act(async () => {
-      stream.response.resolve(stream.handle);
+      stream.emit('late answer', [], true);
+      stream.completion.reject(new Error('cancelled transport'));
       await pending;
     });
-
-    expect(stream.handle.cancel).toHaveBeenCalledTimes(1);
-    stream.emit('late answer', [], true);
     expect(mockRequest.saveAnswer).not.toHaveBeenCalled();
-    stream.completion.reject(new Error('cancelled transport'));
-    await act(async () => undefined);
+    expect(mockToastError).not.toHaveBeenCalled();
   });
 
   it('aborts the transport on unmount while response headers are still pending', async () => {
-    const stream = createStream(true);
+    const stream = createStream();
     const view = renderHandler();
     const { pending } = await startStream();
-    const signal = mockRequest.fetchAnswerStream.mock.calls[0][3] as AbortSignal | undefined;
+    const signal = mockRequest.fetchAnswerStream.mock.calls[0][4] as AbortSignal | undefined;
 
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(signal?.aborted).toBe(false);
     view.unmount();
     expect(signal?.aborted).toBe(true);
     await act(async () => {
-      stream.response.reject(new DOMException('Aborted', 'AbortError'));
+      stream.completion.reject(new DOMException('Aborted', 'AbortError'));
       await pending;
     });
 
@@ -206,7 +207,7 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
     const stream = createStream();
     const view = renderHandler();
     const { pending, onMessage } = await startStream();
-    const signal = mockRequest.fetchAnswerStream.mock.calls[0][3] as AbortSignal;
+    const signal = mockRequest.fetchAnswerStream.mock.calls[0][4] as AbortSignal;
 
     if (identity === 'chat') mockChatId = 'chat-B';
     else mockWorkspaceId = 'workspace-B';
@@ -245,7 +246,7 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
       await pending;
     });
 
-    expect(mockSaveMessageContent).not.toHaveBeenCalled();
+    expect(mockSaveAnswerMessage).not.toHaveBeenCalled();
     expect(mockStartFetchSuggestions).not.toHaveBeenCalled();
   });
 
@@ -265,13 +266,13 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
     await act(async () => undefined);
 
     expect(onProgress).toHaveBeenCalledWith('Searching');
-    expect(onMessage).toHaveBeenCalledWith('answer chunk', false);
+    expect(onMessage).toHaveBeenCalledWith('answer chunk', false, []);
     expect(mockRequest.saveAnswer).toHaveBeenCalledWith({
       question_message_id: 10,
       content: 'complete answer',
       meta_data: metadata,
     });
-    expect(mockSaveMessageContent).toHaveBeenCalledWith(11, 'complete answer', metadata);
+    expect(mockSaveAnswerMessage).toHaveBeenCalledWith(10, 11, { message_id: 11, content: 'complete answer', meta_data: metadata });
     expect(mockStartFetchSuggestions).toHaveBeenCalledWith(10, expect.any(Function));
     const isCurrent = mockStartFetchSuggestions.mock.calls[0][1];
 
@@ -301,27 +302,27 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
   it('preserves current request limit errors for the assistant message to display', async () => {
     const error = { code: ERROR_CODE_NO_LIMIT, message: 'Response limit reached' };
 
-    mockRequest.fetchAnswerStream.mockRejectedValueOnce(error);
+    const stream = createStream();
     renderHandler();
     await act(async () => {
-      await expect(messagesContext.fetchAnswerStream(10)).rejects.toBe(error);
+      const pending = messagesContext.fetchAnswerStream(10);
+
+      stream.completion.reject(error);
+      await expect(pending).rejects.toBe(error);
     });
 
-    expect(mockToastError).toHaveBeenCalledWith(error.message);
+    expect(mockToastError).not.toHaveBeenCalled();
     expect(mockRemoveMessages).not.toHaveBeenCalled();
     expect(messagesContext.answerApplying).toBe(false);
   });
 
-  it('honors manual stop before the cancellation handle is available', async () => {
-    const stream = createStream(true);
+  it('honors manual stop while response headers are pending', async () => {
+    const stream = createStream();
 
     renderHandler();
     const { pending } = await startStream();
 
     await act(async () => messagesContext.cancelAnswerStream());
-    await act(async () => {
-      stream.response.resolve(stream.handle);
-    });
     expect(stream.handle.cancel).toHaveBeenCalledTimes(1);
     await act(async () => {
       stream.emit('partial answer', [], true);
@@ -331,16 +332,13 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
   });
 
   it('keeps a replacement stream active when an obsolete request finishes', async () => {
-    const first = createStream(true);
+    const first = createStream();
 
     renderHandler();
     const old = await startStream();
     const second = createStream();
     const current = await startStream();
 
-    await act(async () => {
-      first.response.resolve(first.handle);
-    });
     first.emit('obsolete answer', [], true);
     first.completion.resolve(undefined);
     await act(async () => old.pending);
@@ -460,7 +458,7 @@ describe('MessagesHandlerProvider answer stream ownership', () => {
     expect(stream.handle.cancel).not.toHaveBeenCalled();
     await act(async () => saved.resolve({ message_id: 11 }));
 
-    expect(mockSaveMessageContent).not.toHaveBeenCalled();
+    expect(mockSaveAnswerMessage).not.toHaveBeenCalled();
     expect(mockStartFetchSuggestions).not.toHaveBeenCalled();
   });
 });

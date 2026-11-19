@@ -164,4 +164,26 @@ describe('RelatedViews persistence', () => {
 
     expect(refreshRagScope).not.toHaveBeenCalled();
   });
+
+  it('flushes pending sources before refreshing the scope on open', async () => {
+    let resolveWrite!: () => void;
+    const write = new Promise<void>((resolve) => {
+      resolveWrite = resolve;
+    });
+
+    updateChatSettings.mockImplementationOnce(() => write);
+    render(<RelatedViews />);
+    fireEvent.click(screen.getByText('Toggle source'));
+    fireEvent.click(screen.getByTestId('open-popover'));
+
+    expect(updateChatSettings).toHaveBeenCalledWith({
+      rag_ids: ['parent-id', 'row-id'],
+      full_workspace: false,
+    });
+    expect(refreshRagScope).not.toHaveBeenCalled();
+
+    await act(async () => resolveWrite());
+
+    expect(refreshRagScope).toHaveBeenCalledTimes(1);
+  });
 });

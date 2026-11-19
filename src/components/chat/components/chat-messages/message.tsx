@@ -24,9 +24,9 @@ export const Message = ({
 }) => {
   const { animatingIds, completeAnimation } = useMessageAnimation();
   const shouldAnimate = animatingIds.has(id);
-  const {
-    getMessage,
-  } = useChatMessagesContext();
+  // The context value changes whenever a message is added, replaced or edited in
+  // place, so reading the message during render keeps it current.
+  const { getMessage } = useChatMessagesContext();
 
   const {
     messages,
@@ -36,7 +36,7 @@ export const Message = ({
     return message.message_id === id;
   }), [id, messages]);
 
-  const message = useMemo(() => getMessage(id), [id, getMessage]);
+  const message = getMessage(id);
 
   const renderMessage = useCallback(() => {
     if(!message) {
@@ -60,6 +60,7 @@ export const Message = ({
         />;
       default:
         return <HumanQuestion
+          id={message.message_id}
           fetchMember={fetchMember}
           userId={message.author.author_uuid}
           content={message.content}

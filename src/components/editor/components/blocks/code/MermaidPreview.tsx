@@ -1,16 +1,13 @@
 import { Dialog, Tooltip } from '@mui/material';
 import { Copy, Download, Maximize2, Minus, Plus, RotateCcw, X } from 'lucide-react';
-import { useContext, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 
 import { notify } from '@/components/_shared/notify';
-import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 
 import { copyDiagramImage, downloadDiagram } from './download-diagram';
-import { cachedMermaid, renderMermaid } from './mermaid-renderer';
-
-type RenderResult = { key: string; svg?: string; error?: string };
+import { MermaidStatus, useCodeBlockLabel, useMermaidDiagram } from './MermaidDiagram';
 
 export default function MermaidPreview({
   source,
@@ -23,47 +20,11 @@ export default function MermaidPreview({
   showPreview: boolean;
   onClose: () => void;
 }) {
-  const isDark = !!useContext(ThemeModeContext)?.isDark;
   const { t } = useTranslation();
-  const key = `${isDark}\n${source}`;
-  // A diagram rendered before (a revisit, or another copy of the same diagram) appears immediately.
-  const [result, setResult] = useState<RenderResult | undefined>(() => {
-    const svg = source.trim() ? cachedMermaid(source, isDark) : undefined;
-
-    return svg === undefined ? undefined : { key, svg };
-  });
+  const { svg, error } = useMermaidDiagram(source);
   const [localExpanded, setLocalExpanded] = useState(false);
   const [copying, setCopying] = useState(false);
-  const settled = result?.key === key;
-  const svg = settled ? result.svg : undefined;
-  const error = settled ? result.error : undefined;
-  const label = (key: string, fallback: string) => t(`document.plugins.codeBlock.${key}`, { defaultValue: fallback });
-
-  useEffect(() => {
-    if (!source.trim() || settled) return;
-    const cached = cachedMermaid(source, isDark);
-
-    if (cached !== undefined) {
-      setResult({ key, svg: cached });
-      return;
-    }
-
-    let current = true;
-    const timer = window.setTimeout(() => {
-      void renderMermaid(source, isDark, () => current)
-        .then((svg) => {
-          if (current) setResult({ key, svg });
-        })
-        .catch((failure: unknown) => {
-          if (current) setResult({ key, error: failure instanceof Error ? failure.message : String(failure) });
-        });
-    }, 200);
-
-    return () => {
-      current = false;
-      window.clearTimeout(timer);
-    };
-  }, [source, isDark, key, settled]);
+  const label = useCodeBlockLabel();
 
   const close = () => {
     setLocalExpanded(false);
@@ -93,19 +54,7 @@ export default function MermaidPreview({
     </Tooltip>
   );
 
-  const status = !source.trim() ? (
-    <div role='status' className='text-text-tertiary'>
-      {label('mermaidPlaceholder', 'Type Mermaid code to create a diagram')}
-    </div>
-  ) : error ? (
-    <div role='alert' className='mermaid-error'>
-      {error}
-    </div>
-  ) : !svg ? (
-    <div role='status' className='text-text-secondary'>
-      {label('rendering', 'Rendering diagram…')}
-    </div>
-  ) : null;
+  const status = <MermaidStatus source={source} svg={svg} error={error} />;
 
   return (
     <div contentEditable={false} className='mermaid-preview' data-testid='mermaid-preview'>

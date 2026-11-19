@@ -84,6 +84,28 @@ it('stops automatic retries at the budget and starts a fresh budget for explicit
   unmount();
 });
 
+it('retries a missing generated image on its configured schedule and waits for decode', async () => {
+  jest.useFakeTimers();
+  mockCheck
+    .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found', errorKind: 'not-found' })
+    .mockResolvedValueOnce(success('blob:generated'));
+  const { result } = renderHook(() =>
+    useImageWithRetry('/api/file_storage/generated.png', undefined, {
+      notFoundBackoffMs: [100],
+    })
+  );
+
+  await act(async () => {
+    // Includes the maximum 20% jitter on the custom schedule.
+    await jest.advanceTimersByTimeAsync(120);
+  });
+  expect(mockCheck).toHaveBeenCalledTimes(2);
+  expect(result.current.src).toBe('blob:generated');
+  expect(result.current.phase).toBe('loading');
+  act(() => result.current.onImageLoaded());
+  expect(result.current.phase).toBe('ready');
+});
+
 it('releases pending retries when the owner unmounts', async () => {
   jest.useFakeTimers();
   mockCheck.mockResolvedValue({ ok: false, status: 503, statusText: 'Pending', errorKind: 'not-ready' });

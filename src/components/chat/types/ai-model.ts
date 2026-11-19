@@ -16,6 +16,8 @@ export interface AvailableModel {
 
 export interface ModelList {
   models: AvailableModel[];
+  /** Whether the server has an image model configured. Older servers omit it. */
+  image_generation?: boolean;
 }
 
 // Extended interface for UI display purposes

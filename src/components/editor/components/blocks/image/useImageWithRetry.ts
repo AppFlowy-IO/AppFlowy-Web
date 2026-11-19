@@ -26,7 +26,16 @@ const MAX_BUDGET_MS = 5 * 60 * 1000;
  */
 const PENDING_AFTER_MS = 10_000;
 
-function backoffSchedule(kind: CheckImageErrorKind | undefined): number[] {
+export interface UseImageWithRetryOptions {
+  /**
+   * Replaces the slow schedule for 404 responses. AI-generated images are
+   * written to storage after their chat answer ends, so a steady short cadence
+   * shows them seconds after they exist instead of after the next long backoff.
+   */
+  notFoundBackoffMs?: number[];
+}
+
+function backoffSchedule(kind: CheckImageErrorKind | undefined, options?: UseImageWithRetryOptions): number[] {
   switch (kind) {
     case 'not-ready':
     case 'no-auth':
@@ -35,6 +44,7 @@ function backoffSchedule(kind: CheckImageErrorKind | undefined): number[] {
     case 'forbidden':
       return []; // terminal — don't retry
     case 'not-found':
+      return options?.notFoundBackoffMs ?? SLOW_BACKOFF_MS;
     case 'server-error':
     case 'network':
     case 'format':
@@ -93,7 +103,11 @@ export interface UseImageWithRetryResult {
  *   - Unit-testable with React Testing Library + a `fetch` mock; the JSX
  *     stays focused on accessibility / styling.
  */
-export function useImageWithRetry(url: string, onReady?: () => void): UseImageWithRetryResult {
+export function useImageWithRetry(
+  url: string,
+  onReady?: () => void,
+  options?: UseImageWithRetryOptions
+): UseImageWithRetryResult {
   const [phase, setPhase] = useState<LoadPhase>('loading');
   const [src, setSrc] = useState('');
   const [lastError, setLastError] = useState<CheckImageResult | null>(null);
@@ -102,6 +116,7 @@ export function useImageWithRetry(url: string, onReady?: () => void): UseImageWi
   // subscribing — keeps `runCheck`'s identity stable so its useEffect
   // doesn't tear down on every parent render.
   const onReadyRef = useLatest(onReady);
+  const optionsRef = useLatest(options);
   const urlRef = useLatest(url);
   const phaseRef = useLatest(phase);
   const currentUrlRef = useRef('');
@@ -243,7 +258,7 @@ export function useImageWithRetry(url: string, onReady?: () => void): UseImageWi
         setLastError(result);
         latestResult = result;
 
-        const schedule = backoffSchedule(result.errorKind);
+        const schedule = backoffSchedule(result.errorKind, optionsRef.current);
         const exhausted = attempt >= schedule.length;
         const elapsed = Date.now() - startedAt;
 
@@ -265,7 +280,8 @@ export function useImageWithRetry(url: string, onReady?: () => void): UseImageWi
         attempt += 1;
       }
     },
-    [cancelAllInflight, scheduleTimer]
+    // optionsRef is a stable ref; listing it satisfies the linter without re-creating runCheck.
+    [cancelAllInflight, scheduleTimer, optionsRef]
   );
 
   // Kick off (or restart) the check whenever the URL changes.

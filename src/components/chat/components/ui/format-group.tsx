@@ -19,30 +19,38 @@ export function FormatGroup({
   outputLayout,
   setOutputContent,
   setOutputLayout,
+  imageAvailable = true,
 }: {
   outputContent?: OutputContent;
   outputLayout?: OutputLayout;
   setOutputContent: (content: OutputContent) => void;
   setOutputLayout: (layout: OutputLayout) => void;
+  /** Hides the image answer types when the server has no image model. */
+  imageAvailable?: boolean;
 }) {
   const { t } = useTranslation();
 
-  const actions = useMemo(() => [{
-    Icon: TextIcon,
-    key: OutputContent.TEXT,
-    title: t('chat.input.button.text'),
-    onClick: () => setOutputContent(OutputContent.TEXT),
-  }, {
-    Icon: TextWithIcon,
-    key: OutputContent.RichTextImage,
-    title: t('chat.input.button.textWithImage'),
-    onClick: () => setOutputContent(OutputContent.RichTextImage),
-  }, {
-    Icon: ImageIcon,
-    key: OutputContent.IMAGE,
-    title: t('chat.input.button.imageOnly'),
-    onClick: () => setOutputContent(OutputContent.IMAGE),
-  }], [setOutputContent, t]);
+  const actions = useMemo(() => {
+    const all = [{
+      Icon: TextIcon,
+      key: OutputContent.TEXT,
+      title: t('chat.input.button.text'),
+      onClick: () => setOutputContent(OutputContent.TEXT),
+    }, {
+      Icon: TextWithIcon,
+      key: OutputContent.RichTextImage,
+      title: t('chat.input.button.textWithImage'),
+      onClick: () => setOutputContent(OutputContent.RichTextImage),
+    }, {
+      Icon: ImageIcon,
+      key: OutputContent.IMAGE,
+      title: t('chat.input.button.imageOnly'),
+      onClick: () => setOutputContent(OutputContent.IMAGE),
+    }];
+
+    // Without an image model only text answers are offered.
+    return imageAvailable ? all : all.filter((action) => action.key === OutputContent.TEXT);
+  }, [imageAvailable, setOutputContent, t]);
 
   const textFormats = useMemo(() => [
     {
@@ -77,7 +85,10 @@ export function FormatGroup({
     onClick?: () => void;
     key: OutputContent | OutputLayout, title: string
   }[], isLayout: boolean) => {
-    return options.map(({ Icon, key, title, onClick }) => (
+    return options.map(({ Icon, key, title, onClick }) => {
+      const selected = isLayout ? outputLayout === key : outputContent === key;
+
+      return (
       <Tooltip key={String(key)}>
         <TooltipTrigger asChild>
           <Button
@@ -87,8 +98,10 @@ export function FormatGroup({
             variant={'ghost'}
             size={'icon'}
             onClick={onClick}
+            aria-label={title}
+            aria-pressed={selected}
             className={cn(
-              (outputContent === key && !isLayout) || (outputLayout === key && isLayout) ? 'bg-fill-content-hover' : '',
+              selected ? 'bg-fill-content-hover' : '',
               'text-icon-secondary',
             )}
           >
@@ -107,7 +120,8 @@ export function FormatGroup({
           {title}
         </TooltipContent>
       </Tooltip>
-    ));
+      );
+    });
   };
 
   return (

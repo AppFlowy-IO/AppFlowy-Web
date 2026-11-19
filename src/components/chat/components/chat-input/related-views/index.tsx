@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import debounce from 'lodash-es/debounce';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ReactComponent as DocIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as ChevronDown } from '@/assets/icons/triangle_down.svg';
@@ -18,9 +18,27 @@ import { Separator } from '@/components/ui/separator';
 
 import { Spaces } from './spaces';
 
-export function RelatedViews() {
+export function RelatedViews({
+  open: controlledOpen,
+  onOpenChange,
+  triggerRef,
+}: {
+  /** Optional controlled state for embedding the picker. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Keyboard opening clicks the same trigger to flush selections and refresh scope. */
+  triggerRef?: Ref<HTMLButtonElement>;
+} = {}) {
   const [searchValue, setSearchValue] = useState('');
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = useCallback(
+    (nextOpen: boolean) => {
+      setUncontrolledOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange]
+  );
   const openGenerationRef = useRef(0);
 
   const {
@@ -109,13 +127,14 @@ export function RelatedViews() {
         })();
       }
     },
-    [flushPendingToggle, ragScopeState.status, refreshRagScope]
+    [flushPendingToggle, ragScopeState.status, refreshRagScope, setOpen]
   );
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange} modal>
       <PopoverTrigger asChild={true}>
         <Button
+          ref={triggerRef}
           disabled={viewsLoading || questionSending}
           size='sm'
           className='gap-0.5 px-1.5 text-sm text-text-secondary'

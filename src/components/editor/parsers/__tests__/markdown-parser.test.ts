@@ -1,4 +1,4 @@
-import { BlockType } from '@/application/types';
+import { BlockType, ImageType } from '@/application/types';
 
 import { parseMarkdown } from '../markdown-parser';
 
@@ -103,6 +103,50 @@ describe('markdown-parser', () => {
       const blocks = parseMarkdown('');
 
       expect(blocks).toEqual([]);
+    });
+
+    it('turns an image on its own line into an image block', () => {
+      const blocks = parseMarkdown('Intro\n\n![Generated Image](https://example.com/a.png)\n\nOutro');
+
+      expect(blocks.map((block) => block.type)).toEqual([BlockType.Paragraph, BlockType.ImageBlock, BlockType.Paragraph]);
+      expect(blocks[1].data).toEqual({ url: 'https://example.com/a.png', image_type: ImageType.External });
+    });
+
+    it('splits a paragraph at an image on its own line after a soft break', () => {
+      const blocks = parseMarkdown('Here it is:\n![Generated Image](https://example.com/a.png)\nand a caption');
+
+      expect(blocks.map((block) => block.type)).toEqual([BlockType.Paragraph, BlockType.ImageBlock, BlockType.Paragraph]);
+      expect(blocks[0].text).toBe('Here it is:');
+      expect(blocks[2].text).toBe('and a caption');
+    });
+
+    it('keeps an image inside a sentence in its paragraph', () => {
+      const blocks = parseMarkdown('An icon ![icon](https://example.com/icon.png) in a sentence.');
+
+      expect(blocks.map((block) => block.type)).toEqual([BlockType.Paragraph]);
+    });
+
+    it('keeps backslash-parenthesis math inline when asked and as display math by default', () => {
+      const markdown = 'Euler: \\( e^{i\\pi} + 1 = 0 \\) holds.';
+
+      expect(parseMarkdown(markdown).map((block) => block.type)).toEqual([
+        BlockType.Paragraph,
+        BlockType.EquationBlock,
+        BlockType.Paragraph,
+      ]);
+
+      const inline = parseMarkdown(markdown, { inlineParentheses: true });
+
+      expect(inline).toHaveLength(1);
+      expect(inline[0].text).toBe('Euler: $ holds.');
+      expect(inline[0].formats).toEqual([{ start: 7, end: 8, type: 'formula', data: { formula: 'e^{i\\pi} + 1 = 0' } }]);
+    });
+
+    it('keeps an image with surrounding text as a paragraph', () => {
+      const blocks = parseMarkdown('See ![alt](https://example.com/a.png) here');
+
+      expect(blocks[0].type).toBe(BlockType.Paragraph);
+      expect(blocks[0].text).toBe('See  here');
     });
 
     it('should parse simple paragraph', () => {

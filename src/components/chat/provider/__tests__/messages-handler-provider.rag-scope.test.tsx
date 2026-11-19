@@ -84,7 +84,7 @@ jest.mock('@/components/chat/provider/prompt-modal-provider', () => ({
 }));
 
 jest.mock('@/components/chat/provider/response-format-provider', () => ({
-  useResponseFormatContext: () => ({ setResponseFormatWithId: jest.fn() }),
+  useMessageResponseFormatContext: () => ({ setResponseFormatWithId: jest.fn() }),
 }));
 
 jest.mock('@/components/chat/provider/suggestions-provider', () => ({
