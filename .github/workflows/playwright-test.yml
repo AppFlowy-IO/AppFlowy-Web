@@ -313,12 +313,6 @@ jobs:
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 180
-    env:
-      APPFLOWY_BASE_URL: http://localhost:8000
-      APPFLOWY_GOTRUE_BASE_URL: http://localhost:9999
-      APPFLOWY_WS_BASE_URL: ws://localhost:8000/ws/v2
-      APPFLOWY_TEST_RUNTIME_CONFIG: '1'
-      BASE_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
       - name: Check out the private fixture and its backend
@@ -348,12 +342,20 @@ jobs:
         working-directory: AppFlowy-Cloud-Premium
         env:
           GH_TOKEN: ${{ secrets.CI_TOKEN }}
-        run: bash script/ci/start_search_ui_fixture.sh up "$RUNNER_TEMP/harbor"
+        # Compose reads its service addresses from the fixture's deploy.env.
+        run: env -u APPFLOWY_BASE_URL bash script/ci/start_search_ui_fixture.sh up "$RUNNER_TEMP/harbor"
       - uses: actions/download-artifact@v4
         with:
           name: build-dist
           path: dist/
       - name: Exercise cached focus, keyword search, and explicit submission
+        # These loopback URLs are reachable from Chromium running on the host.
+        env:
+          APPFLOWY_BASE_URL: http://localhost:8000
+          APPFLOWY_GOTRUE_BASE_URL: http://localhost:9999
+          APPFLOWY_WS_BASE_URL: ws://localhost:8000/ws/v2
+          APPFLOWY_TEST_RUNTIME_CONFIG: '1'
+          BASE_URL: http://localhost:3000
         run: |
           export APPFLOWY_SEARCH_OVERVIEW_FIXTURE="$RUNNER_TEMP/harbor/search-overviews.json"
           APPFLOWY_SEARCH_OVERVIEW_PASSWORD=$(cat "$RUNNER_TEMP/harbor/search-overview-fixture-password")
