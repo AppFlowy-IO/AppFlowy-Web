@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { debounce } from 'lodash-es';
+import { useCallback, useState } from 'react';
 
 import { SearchStreamUnsupportedError } from '@/application/services/domains/search';
 import type {
@@ -136,11 +137,12 @@ function createView(overrides: Partial<View> = {}): View {
   };
 }
 
-function renderBestMatch(searchValue = '', queryStartedAt?: number) {
+function renderBestMatch(searchValue = '', queryStartedAt?: number, submitted = false) {
   return render(
     <BestMatch
       askingAI={false}
       queryStartedAt={queryStartedAt}
+      submitted={submitted}
       searchValue={searchValue}
       onAskAI={jest.fn()}
       onClose={jest.fn()}
@@ -188,6 +190,7 @@ function paintResults(frames = 2) {
 describe('BestMatch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(debounce).mockImplementation(jest.requireActual('lodash').debounce);
     mockAppOutline = [];
     mockWorkspaceId = 'workspace-id';
     mockOverviewSources = [];
@@ -344,9 +347,7 @@ describe('BestMatch', () => {
     await screen.findByText('Launch plan');
     expect(mockListItems[0].evidence).toBeUndefined();
     fireEvent.click(screen.getByText('Load more'));
-    await waitFor(() =>
-      expect(mockListItems[0]).toMatchObject({ blockId: 'image-block', evidence: { kind: 'image' } })
-    );
+    await waitFor(() => expect(mockListItems[0]).toMatchObject({ blockId: 'image-block', evidence: { kind: 'image' } }));
     expect(mockListItems).toHaveLength(1);
   });
 
@@ -368,7 +369,7 @@ describe('BestMatch', () => {
     await screen.findByText('Renamed page');
     expect(screen.getByText('Second page')).toBeTruthy();
     expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(2);
-    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+    expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
   });
 
   it('ignores an old workspace response after switching workspaces with the same query', async () => {
@@ -397,7 +398,7 @@ describe('BestMatch', () => {
     });
     expect(screen.queryByText('Old workspace page')).toBeNull();
     expect(screen.getByText('New workspace page')).toBeTruthy();
-    expect(mockGenerateSearchSummary).toHaveBeenLastCalledWith('next-workspace', 'page', expect.any(AbortSignal));
+    expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
   });
 
   it('searches before the outline loads and uses the outline when it arrives', async () => {
@@ -415,7 +416,7 @@ describe('BestMatch', () => {
     rerender(<BestMatch askingAI={false} searchValue='page' onAskAI={jest.fn()} onClose={jest.fn()} />);
     await screen.findByText('Updated page');
     expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
-    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+    expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
   });
 
   it('loads view metadata for search results missing from the current outline', async () => {
@@ -445,7 +446,7 @@ describe('BestMatch', () => {
       summaries: [{ content: 'One open task', sources: ['row-id'] }],
     });
 
-    renderBestMatch('show my tasks');
+    renderBestMatch('show my tasks', undefined, true);
 
     await waitFor(() =>
       expect(mockGenerateSearchSummary).toHaveBeenCalledWith('workspace-id', 'show my tasks', expect.any(AbortSignal))
@@ -471,9 +472,13 @@ describe('BestMatch', () => {
     mockGenerateSearchSummary.mockResolvedValue({
       summaries: [{ content: 'Deep answer', sources: ['deep-view-id'] }],
     });
-    mockGetMultipleViews.mockResolvedValue([sourceView]);
+    const metadata = deferred<View[]>();
 
-    renderBestMatch('deep answer');
+    mockGetMultipleViews.mockReturnValue(metadata.promise);
+    renderBestMatch('deep answer', undefined, true);
+    expect(await screen.findByText('Deep answer')).toBeTruthy();
+    expect(mockCanAskFollowUp).toBe(false);
+    await act(async () => metadata.resolve([sourceView]));
 
     await waitFor(() =>
       expect(mockOverviewSources).toEqual([
@@ -506,6 +511,7 @@ describe('BestMatch', () => {
           workspace_id: 'workspace-id',
           score: 1,
           content: 'Launch project',
+          title: 'Calibrate the beacon',
           database_row_id: 'row-id',
           database_view_id: 'database-view-id',
           database_id: 'database-id',
@@ -517,12 +523,13 @@ describe('BestMatch', () => {
       summaries: [{ content: 'Launch summary', sources: ['row-id'] }],
     });
 
-    renderBestMatch('launch');
+    renderBestMatch('launch', undefined, true);
 
     await waitFor(() =>
       expect(mockOverviewSources).toEqual([
         expect.objectContaining({
           ragId: 'row-id',
+          name: 'Calibrate the beacon',
           ownerViewId: 'database-view-id',
           ownerDatabaseId: 'database-id',
         }),
@@ -531,7 +538,7 @@ describe('BestMatch', () => {
     expect(mockCanAskFollowUp).toBe(true);
   });
 
-  it('shows keyword rows before completion, replaces them with final ranking, then reuses final IDs for context', async () => {
+  it('shows keyword rows before completion, replaces them with final ranking, without requesting an overview while typing', async () => {
     const completion = deferred<{ outcome: string }>();
 
     mockSearchStream.mockReturnValue(completion.promise);
@@ -553,9 +560,7 @@ describe('BestMatch', () => {
     expect(screen.queryByText('Keyword page')).toBeNull();
     expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
     await act(async () => completion.resolve({ outcome: 'complete' }));
-    await waitFor(() =>
-      expect(mockGenerateProvidedSummary).toHaveBeenCalledWith('workspace-id', 'page', ['semantic'], options.signal)
-    );
+    expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
     expect(mockSearchWorkspaceDocumentPage).not.toHaveBeenCalled();
     expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
     expect(screen.getByTestId('view-list').getAttribute('data-loading')).toBe('false');
@@ -746,7 +751,7 @@ describe('BestMatch', () => {
     expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
   });
 
-  it('offers lazy keyword continuation when a full hybrid preview becomes a shorter final ranking', async () => {
+  it('offers lazy keyword continuation when a full keyword preview becomes a shorter final ranking', async () => {
     const completion = deferred<{ outcome: string }>();
     const preview = Array.from({ length: 10 }, (_, index) => result(`keyword-${index}`));
 
@@ -763,7 +768,7 @@ describe('BestMatch', () => {
     renderBestMatch('page');
     const options = await streamOptions();
 
-    expect(options.mode).toBe('hybrid');
+    expect(options.mode).toBe('keyword');
     act(() => options.onSnapshot(snapshot(preview)));
     expect(await screen.findByText('keyword-0')).toBeTruthy();
     act(() => options.onSnapshot(snapshot([result('semantic'), preview[0]], 'final')));
@@ -795,19 +800,19 @@ describe('BestMatch', () => {
     const preview = Array.from({ length: 10 }, (_, index) => result(`keyword-${index}`));
 
     mockSearchStream.mockReturnValue(completion.promise);
-    mockGenerateProvidedSummary.mockReturnValue(summary.promise);
+    mockGenerateSearchSummary.mockReturnValue(summary.promise);
     mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
     mockAppOutline = [
       ...preview.map((item) => createView({ view_id: item.object_id, name: item.object_id })),
       createView({ view_id: 'extra', name: 'Extra result' }),
     ];
-    renderBestMatch('page');
+    renderBestMatch('page', undefined, true);
     const options = await streamOptions();
 
     act(() => options.onSnapshot(snapshot(preview)));
     act(() => options.onSnapshot(snapshot([preview[0]], 'final')));
     await act(async () => completion.resolve({ outcome: 'complete' }));
-    await waitFor(() => expect(mockGenerateProvidedSummary).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
     fireEvent.click(await screen.findByText('Load more'));
     expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Load more').hasAttribute('disabled')).toBe(true);
@@ -826,12 +831,12 @@ describe('BestMatch', () => {
     const summary = deferred<unknown>();
 
     mockSearchStream.mockReturnValue(completion.promise);
-    mockGenerateProvidedSummary.mockReturnValue(summary.promise);
+    mockGenerateSearchSummary.mockReturnValue(summary.promise);
     mockAppOutline = [
       createView({ view_id: 'early', name: 'Early page' }),
       createView({ view_id: 'final', name: 'Final page' }),
     ];
-    const { unmount } = renderBestMatch('page', performance.now() - 300);
+    const { unmount } = renderBestMatch('page', performance.now() - 300, true);
     const options = await streamOptions();
 
     act(() => options.onSnapshot(snapshot([result('early')])));
@@ -847,7 +852,7 @@ describe('BestMatch', () => {
     const metrics = mockReportPresentation.mock.calls[0][1] as Record<string, number | string>;
 
     expect(mockReportPresentation.mock.calls[0][0]).toBe('workspace-id');
-    expect(metrics).toMatchObject({ transport: 'stream', mode: 'hybrid', outcome: 'complete' });
+    expect(metrics).toMatchObject({ transport: 'stream', mode: 'keyword', outcome: 'complete' });
     expect(metrics.first_result_visible_ms).toBeGreaterThanOrEqual(300);
     expect(metrics.final_results_visible_ms).toBeGreaterThanOrEqual(metrics.first_result_visible_ms as number);
     expect(metrics.all_results_received_ms).toBeGreaterThanOrEqual(metrics.final_results_visible_ms as number);
@@ -862,7 +867,7 @@ describe('BestMatch', () => {
         'final_results_visible_ms',
       ].sort()
     );
-    expect(mockGenerateProvidedSummary).toHaveBeenCalledTimes(1);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
     unmount();
     expect(mockReportPresentation).toHaveBeenCalledTimes(1);
   });
@@ -908,6 +913,7 @@ describe('BestMatch', () => {
     );
     expect(mockReportPresentation.mock.calls[0][1]).not.toHaveProperty('all_results_received_ms');
     expect(mockReportPresentation.mock.calls[0][1]).not.toHaveProperty('final_results_visible_ms');
+    await streamOptions(1);
     unmount();
     expect(mockSearchStream).toHaveBeenCalledTimes(2);
     expect(mockReportPresentation).toHaveBeenCalledTimes(2);
@@ -978,7 +984,7 @@ describe('BestMatch', () => {
     await act(async () => newCompletion.resolve({ outcome: 'complete' }));
     expect(mockReportPresentation).toHaveBeenLastCalledWith('next-workspace', {
       transport: 'stream',
-      mode: 'hybrid',
+      mode: 'keyword',
       outcome: 'complete',
       elapsed_ms: 300,
       first_result_visible_ms: 200,
@@ -1011,71 +1017,124 @@ describe('BestMatch', () => {
     expect(metrics.final_results_visible_ms).toBeGreaterThanOrEqual(metrics.all_results_received_ms);
   });
 
-  it('prefetches legacy context while the initial page is blocked and reuses an early summary once', async () => {
-    const page = deferred<{ items: SearchDocumentResponseItem[]; has_more: boolean; next_offset: null }>();
-    const summary = deferred<{ summaries: SearchSummary[] }>();
-
-    mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
-    mockGenerateSearchSummary.mockReturnValue(summary.promise);
-    mockAppOutline = [createView({ view_id: 'legacy', name: 'Legacy page' })];
-    renderBestMatch('legacy');
-    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
-    const signal = mockSearchWorkspaceDocumentPage.mock.calls[0][4] as AbortSignal;
-
-    expect(mockGenerateSearchSummary).toHaveBeenCalledWith('workspace-id', 'legacy', signal);
-    await act(async () =>
-      summary.resolve({ summaries: [{ content: 'Prefetched legacy context', sources: ['legacy'] }] })
-    );
-    expect(screen.queryByText('Legacy page')).toBeNull();
-    expect(screen.queryByText('Prefetched legacy context')).toBeNull();
-    expect(screen.getByTestId('view-list').getAttribute('data-loading')).toBe('true');
-    await act(async () => page.resolve({ items: [result('legacy')], has_more: false, next_offset: null }));
-    expect(await screen.findByText('Legacy page')).toBeTruthy();
-    expect(await screen.findByText('Prefetched legacy context')).toBeTruthy();
-    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
-    expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
-  });
-
-  it.each(['failed', 'cancelled'] as const)(
-    'keeps a late legacy summary out of the UI after its page is %s',
-    async (state) => {
+  it.each(['invoice', 'How does the policy work?'])(
+    'submits %s once during the keyword debounce and shows its answer before keyword retrieval finishes',
+    async (query) => {
       const page = deferred<{ items: SearchDocumentResponseItem[]; has_more: boolean; next_offset: null }>();
-      const summary = deferred<{ summaries: SearchSummary[] }>();
 
       mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
-      mockGenerateSearchSummary.mockReturnValue(summary.promise);
-      mockAppOutline = [createView({ view_id: 'legacy', name: 'Legacy page' })];
-      const { rerender } = renderBestMatch('legacy');
+      mockGenerateSearchSummary.mockResolvedValue({ summaries: [{ content: 'Explicit answer', sources: [] }] });
+      const { rerender } = renderBestMatch(query);
+      const submit = () =>
+        rerender(<BestMatch submitted askingAI={false} searchValue={query} onAskAI={jest.fn()} onClose={jest.fn()} />);
 
-      await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
-      if (state === 'failed') {
-        await act(async () => page.reject(new Error('page failed')));
-        expect(mockNotifyError).toHaveBeenCalledTimes(1);
-      } else {
-        rerender(<BestMatch askingAI={false} searchValue='' onAskAI={jest.fn()} onClose={jest.fn()} />);
-        const signal = mockSearchWorkspaceDocumentPage.mock.calls[0][4] as AbortSignal;
-
-        expect(signal.aborted).toBe(true);
-        await act(async () => page.resolve({ items: [result('legacy')], has_more: false, next_offset: null }));
-      }
-
-      await act(async () =>
-        summary.resolve({ summaries: [{ content: 'Obsolete legacy context', sources: ['legacy'] }] })
-      );
-      expect(screen.queryByText('Legacy page')).toBeNull();
-      expect(screen.queryByText('Obsolete legacy context')).toBeNull();
+      expect(mockSearchStream).not.toHaveBeenCalled();
+      submit();
+      expect(mockSearchStream).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText('Explicit answer')).toBeTruthy();
+      submit();
+      await act(async () => page.resolve({ items: [], has_more: false, next_offset: null }));
+      expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
       expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
       expect(mockGenerateProvidedSummary).not.toHaveBeenCalled();
-      expect(mockNotifyError).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
     }
   );
 
-  it('does not prefetch legacy context when AI is disabled', async () => {
+  it('allows an unchanged retry after a transport failure and deduplicates pending and successful submits', async () => {
+    const failed = deferred<{ summaries: SearchSummary[] }>();
+    const retry = deferred<{ summaries: SearchSummary[] }>();
+    const keyword = createView({ view_id: 'page', name: 'Keyword result' });
+
+    mockAppOutline = [keyword];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({ items: [result('page')], has_more: false });
+    mockGenerateSearchSummary.mockReturnValueOnce(failed.promise).mockReturnValueOnce(retry.promise);
+    function SubmittedResults() {
+      const [submitted, setSubmitted] = useState(false);
+      const release = useCallback(() => setSubmitted(false), []);
+
+      return (
+        <>
+          <button onClick={() => setSubmitted(true)}>Submit</button>
+          <BestMatch
+            submitted={submitted}
+            onOverviewFailure={release}
+            askingAI={false}
+            searchValue='term'
+            onAskAI={jest.fn()}
+            onClose={jest.fn()}
+          />
+        </>
+      );
+    }
+
+    render(<SubmittedResults />);
+    const submit = screen.getByText('Submit');
+
+    fireEvent.click(submit);
+    expect(await screen.findByText('Keyword result')).toBeTruthy();
+    fireEvent.click(submit);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+    await act(async () => failed.reject(new Error('503')));
+    expect(screen.getByText('Keyword result')).toBeTruthy();
+    fireEvent.click(submit);
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(2));
+    await act(async () => retry.resolve({ summaries: [] }));
+    fireEvent.click(submit);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(2);
+    expect(mockSearchStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release the current submission when an obsolete overview fails', async () => {
+    const old = deferred<{ summaries: SearchSummary[] }>();
+    const release = jest.fn();
+
+    mockGenerateSearchSummary.mockReturnValueOnce(old.promise).mockResolvedValue({ summaries: [] });
+    const props = {
+      submitted: true,
+      askingAI: false,
+      onOverviewFailure: release,
+      onAskAI: jest.fn(),
+      onClose: jest.fn(),
+    };
+    const { rerender } = render(<BestMatch {...props} searchValue='first' />);
+
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
+    rerender(<BestMatch {...props} searchValue='second' />);
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(2));
+    await act(async () => old.reject(new Error('obsolete')));
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('retains an explicitly requested answer if keyword retrieval fails', async () => {
+    mockSearchStream.mockRejectedValue(new Error('keyword failure'));
+    mockGenerateSearchSummary.mockResolvedValue({ summaries: [{ content: 'Independent answer', sources: [] }] });
+    renderBestMatch('invoice', undefined, true);
+    expect(await screen.findByText('Independent answer')).toBeTruthy();
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts a submitted overview and discards its late result when the query changes', async () => {
+    const summary = deferred<{ summaries: SearchSummary[] }>();
+
+    mockGenerateSearchSummary.mockReturnValue(summary.promise);
+    const { rerender } = renderBestMatch('legacy', undefined, true);
+
+    await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1));
+    const signal = mockGenerateSearchSummary.mock.calls[0][2] as AbortSignal;
+
+    rerender(<BestMatch askingAI={false} searchValue='edited' onAskAI={jest.fn()} onClose={jest.fn()} />);
+    expect(signal.aborted).toBe(true);
+    await act(async () => summary.resolve({ summaries: [{ content: 'Obsolete overview', sources: [] }] }));
+    expect(screen.queryByText('Obsolete overview')).toBeNull();
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits keyword search without a summary when AI is disabled', async () => {
     mockUseAIEnabled.mockReturnValue(false);
     const page = deferred<{ items: SearchDocumentResponseItem[]; has_more: boolean; next_offset: null }>();
 
     mockSearchWorkspaceDocumentPage.mockReturnValue(page.promise);
-    renderBestMatch('keyword');
+    renderBestMatch('keyword', undefined, true);
     await waitFor(() => expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1));
     expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
     await act(async () => page.resolve({ items: [], has_more: false, next_offset: null }));

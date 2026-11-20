@@ -34,6 +34,8 @@ export interface SearchDocumentResponseItem {
   object_id: string;
   workspace_id: string;
   score: number;
+  /** Canonical row or page title when available. */
+  title?: string | null;
   content: string;
   preview?: string | null;
   database_view_id?: string | null;
@@ -53,6 +55,23 @@ export interface SearchSummary {
   content: string;
   highlights?: string;
   sources: string[];
+  source_sections?: Array<{ source_id: string; title?: string | null; content: string }>;
+}
+
+export interface RecentOverviewTopic {
+  title: string;
+  generated_at: string;
+  summary: SearchSummary;
+}
+
+/** Read ranked, previously generated overviews for the current workspace member. */
+export function getRecentOverviews(workspaceId: string, signal: AbortSignal) {
+  return executeAPIRequest<{ topics: RecentOverviewTopic[] }>(() =>
+    getAxios()?.get<APIResponse<{ topics: RecentOverviewTopic[] }>>(
+      `/api/search/${workspaceId}/recent-overviews`,
+      { signal, skipTransportRetry: true }
+    )
+  );
 }
 
 export interface SearchSummaryResult {
@@ -126,6 +145,7 @@ export async function generateSearchSummary(workspaceId: string, query: string, 
   return executeAPIRequest<SearchSummaryResult>(() =>
     getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
       headers,
+      skipTransportRetry: true,
       ...(signal ? { signal } : {}),
     })
   );

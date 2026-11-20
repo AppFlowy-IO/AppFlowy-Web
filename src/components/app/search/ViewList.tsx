@@ -76,7 +76,8 @@ function ViewList({
 
   useLayoutEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!listItems?.length) return;
+      if (!listItems?.length || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+      if (e.target instanceof Element && e.target.closest('button')) return;
       if (createHotkey(HOT_KEY_NAME.ENTER)(e) && selectedItemId) {
         e.preventDefault();
         e.stopPropagation();

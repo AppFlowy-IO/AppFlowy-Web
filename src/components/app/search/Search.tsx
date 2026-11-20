@@ -1,5 +1,5 @@
 import { Dialog, InputBase } from '@mui/material';
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View, ViewLayout } from '@/application/types';
@@ -21,11 +21,14 @@ import {
 import RecentViews from '@/components/app/search/RecentViews';
 import ViewList from '@/components/app/search/ViewList';
 import { findAncestors } from '@/components/chat/lib/views';
+import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
+import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
+const RecentOverviews = lazy(() => import('@/components/app/search/RecentOverviews'));
 const BestMatch = lazy(() => import('@/components/app/search/BestMatch'));
 
 function getFallbackAIChatParent(outline: View[] | undefined) {
@@ -39,9 +42,13 @@ export function Search() {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
   const [queryStartedAt, setQueryStartedAt] = useState<number>();
+  const [hasRecentTopics, setHasRecentTopics] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [submittedWorkspace, setSubmittedWorkspace] = useState<string>();
   const [askingAI, setAskingAI] = useState<boolean>(false);
   const outline = useAppOutline();
   const currentViewId = useAppViewId();
+  const accountId = useAuthenticatedUserIdOptional();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const aiEnabled = useAIEnabled();
   const { addPage } = useAppOperations();
@@ -49,7 +56,15 @@ export function Search() {
   const handleClose = useCallback(() => {
     setOpen(false);
     setSearchValue('');
+    setSubmittedWorkspace(undefined);
+    setComposing(false);
   }, []);
+
+  useLayoutEffect(() => {
+    setSubmittedWorkspace(undefined);
+  }, [accountId, currentWorkspaceId, aiEnabled]);
+
+  const handleOverviewFailure = useCallback(() => setSubmittedWorkspace(undefined), []);
 
   const handleAskAI = useCallback(
     async (query: string, sources?: AIChatRagSource[]) => {
@@ -187,7 +202,30 @@ export function Search() {
           paper: 'overflow-hidden min-w-[600px] w-[600px] max-w-[70vw]',
         }}
       >
-        <div className={'flex w-full gap-2 border-b border-line-default p-4'}>
+        <form
+          className='flex w-full gap-2 border-b border-line-default p-4'
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!composing && searchValue.trim()) setSubmittedWorkspace(currentWorkspaceId);
+          }}
+          onCompositionStart={() => {
+            setComposing(true);
+            setSubmittedWorkspace(undefined);
+          }}
+          onCompositionEnd={() => {
+            setComposing(false);
+            setQueryStartedAt(performance.now());
+          }}
+          onKeyDown={(event) => {
+            // Keep the ranked topic buttons reachable before Recent's document-level Tab shortcut.
+            if (event.key === 'Tab' && hasRecentTopics && !searchValue.trim()) event.stopPropagation();
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || composing) {
+              event.stopPropagation();
+              // Some IMEs end composition just before dispatching their confirmation key.
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.preventDefault();
+            }
+          }}
+        >
           <div className={'flex w-full items-center gap-4'}>
             <SearchIcon className={'mr-[1px] h-5 w-5 opacity-60'} />
 
@@ -195,6 +233,7 @@ export function Search() {
               value={searchValue}
               onChange={(e) => {
                 setQueryStartedAt(performance.now());
+                setSubmittedWorkspace(undefined);
                 setSearchValue(e.target.value);
               }}
               autoFocus={true}
@@ -210,21 +249,40 @@ export function Search() {
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 e.preventDefault();
+                setSubmittedWorkspace(undefined);
                 setSearchValue('');
               }}
             >
               <CloseIcon className={'h-3 w-3'} />
             </span>
+            <Button type='submit' size='sm' disabled={!searchValue.trim() || composing}>
+              {t('button.search')}
+            </Button>
           </div>
-        </div>
-        {!searchValue ? (
-          <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
+        </form>
+        {composing ? null : !searchValue.trim() ? (
+          <>
+            {open && aiEnabled && accountId && currentWorkspaceId && (
+              <Suspense fallback={null}>
+                <RecentOverviews
+                  key={`${accountId}:${currentWorkspaceId}`}
+                  workspaceId={currentWorkspaceId}
+                  onAvailabilityChange={setHasRecentTopics}
+                  onClose={handleClose}
+                />
+              </Suspense>
+            )}
+            <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
+          </>
         ) : (
           <Suspense fallback={<ViewList loading title={t('commandPalette.bestMatches')} onClose={handleClose} />}>
             <BestMatch
+              key={accountId}
               askingAI={askingAI}
               queryStartedAt={queryStartedAt}
               searchValue={searchValue}
+              submitted={Boolean(currentWorkspaceId && currentWorkspaceId === submittedWorkspace)}
+              onOverviewFailure={handleOverviewFailure}
               onAskAI={handleAskAI}
               onClose={handleClose}
             />

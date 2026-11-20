@@ -52,6 +52,7 @@ function validItem(value: unknown): value is SearchDocumentResponseItem {
     typeof value.score === 'number' &&
     Number.isFinite(value.score) &&
     typeof value.content === 'string' &&
+    nullableString(value.title) &&
     nullableString(value.preview) &&
     nullableString(value.database_view_id) &&
     nullableString(value.database_id) &&

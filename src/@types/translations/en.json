@@ -3911,6 +3911,8 @@
     "image": "Image"
   },
   "commandPalette": {
+    "recentOverviews": "Recent AI overviews",
+    "overviewGeneratedAt": "Generated {{time}}",
     "placeholder": "Type to search...",
     "bestMatches": "Best matches",
     "recentHistory": "Recent history",

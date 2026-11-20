@@ -1565,6 +1565,8 @@
     "doNotAllow": "不允許"
   },
   "commandPalette": {
+    "recentOverviews": "最近的 AI 概覽",
+    "overviewGeneratedAt": "產生於 {{time}}",
     "bestMatches": "最佳匹配",
     "recentHistory": "最近歷史",
     "loadingTooltip": "我們正在尋找結果...",

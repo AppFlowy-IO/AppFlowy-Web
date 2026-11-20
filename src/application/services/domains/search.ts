@@ -1,11 +1,13 @@
 export {
   generateSearchSummary,
   generateSearchSummaryForDocuments,
+  getRecentOverviews,
   searchWorkspace,
   searchWorkspaceDocumentPage,
   searchWorkspaceDocuments,
 } from '../js-services/http/misc-api';
 export type {
+  RecentOverviewTopic,
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
   SearchEvidence,
