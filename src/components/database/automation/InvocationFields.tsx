@@ -54,7 +54,7 @@ export function InvocationFields({
   const sending = useRef(false);
   const [runId, setRunId] = useState<string>();
   const [next, setNext] = useState<string | null>();
-  const request = useRef<{ row: string; id: string }>();
+  const requests = useRef(new Map<string, string>());
   const rows = useRowOrdersSelector({ publish: false });
 
   useEffect(() => {
@@ -149,16 +149,11 @@ export function InvocationFields({
         back();
       } else {
         if (!schedule.row_id) return;
-        if (request.current?.row !== schedule.row_id) request.current = { row: schedule.row_id, id: uuid() };
-        const result = await ruleApi.run(
-          workspace,
-          database,
-          rule.id,
-          revision,
-          schedule.row_id,
-          request.current.id,
-          ...scope
-        );
+        const key = JSON.stringify([workspace, database, rule.id, revision, rowScope, schedule.row_id]);
+        const requestId = requests.current.get(key) || uuid();
+
+        requests.current.set(key, requestId);
+        const result = await ruleApi.run(workspace, database, rule.id, revision, schedule.row_id, requestId, ...scope);
 
         setRunId(result);
       }

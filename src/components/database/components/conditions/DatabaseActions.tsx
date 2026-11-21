@@ -106,7 +106,9 @@ export function DatabaseActions() {
       className={`flex min-w-fit items-center justify-end ${compact ? 'gap-0.5' : 'gap-1.5'}`}
       data-testid='database-actions'
     >
-      {!readOnly && dataSource?.type !== 'history' && <AutomationButton />}
+      {layout !== null && layout !== DatabaseViewLayout.Form && !readOnly && dataSource?.type !== 'history' && (
+        <AutomationButton />
+      )}
       {has('filter') ? <FiltersButton compact={compact} /> : null}
       {has('sort') ? <SortsButton compact={compact} /> : null}
       {isDocumentBlock && (

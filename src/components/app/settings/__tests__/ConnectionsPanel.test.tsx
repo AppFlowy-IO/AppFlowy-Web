@@ -138,9 +138,24 @@ describe('Connections settings', () => {
     open.mockReturnValue(popup);
     api.connectProvider.mockRejectedValue(new Error('Network unavailable'));
     fireEvent.click(screen.getByTestId('connect-google-drive'));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Unable to connect this account. Please try again.'));
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('Unable to connect this account. Please try again.')
+    );
     expect(popup.close).toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it.each(['gmail', 'slack'])('disconnects a saved automation %s account', async (provider) => {
+    api.listConnections.mockResolvedValue([{ ...drive, provider, id: 'grant' }]);
+    render(<ConnectionsPanel workspaceId='workspace' />);
+    const row = await screen.findByTestId('connection-grant');
+
+    openMenu(within(row).getByRole('button'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Disconnect account' }));
+    fireEvent.click(await screen.findByTestId('confirm-disconnect-connection'));
+    await waitFor(() => expect(screen.queryByTestId('connection-grant')).toBeNull());
+    expect(api.disconnectConnection).toHaveBeenCalledWith('grant', expect.any(AbortSignal));
+    expect(api.getConnectionEmail).not.toHaveBeenCalled();
   });
 
   it('allows disconnecting an existing account when its provider is no longer configured', async () => {

@@ -28,7 +28,7 @@ export function useDestinationSchema(workspace: string, database?: string) {
       .databases(workspace, offset, ac.signal)
       .then((p) => {
         if (!ac.signal.aborted) {
-          setDbs((old) => (offset ? [...old, ...p.databases] : p.databases));
+          setDbs((old) => [...old.slice(0, offset), ...p.databases]);
           setMore(p.has_more);
         }
       })

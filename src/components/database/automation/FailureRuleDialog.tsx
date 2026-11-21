@@ -8,7 +8,7 @@ import { YjsDatabaseKey } from '@/application/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 import { failureRuleFromSearch, FailureRule } from './failure-link';
-import { useAutomationCapabilities } from './useAutomationCapabilities';
+import { useEditorCapabilities } from './useAutomationCapabilities';
 
 import type { Capabilities } from './model';
 
@@ -42,7 +42,7 @@ function RoutedFailureRule() {
 function CurrentDatabaseFailure({ target, close }: { target: FailureRule; close: () => void }) {
   const { workspaceId, dataSource } = useDatabaseContext();
   const database = useDatabase()?.get(YjsDatabaseKey.id);
-  const caps = useAutomationCapabilities();
+  const { caps, waiting } = useEditorCapabilities();
 
   if (
     !workspaceId ||
@@ -58,6 +58,7 @@ function CurrentDatabaseFailure({ target, close }: { target: FailureRule; close:
       workspace={workspaceId}
       target={target}
       caps={caps}
+      waiting={waiting}
       close={close}
     />
   );
@@ -67,11 +68,13 @@ function EditableFailure({
   workspace,
   target,
   caps,
+  waiting,
   close,
 }: {
   workspace: string;
   target: FailureRule;
   caps: Capabilities;
+  waiting: boolean;
   close: () => void;
 }) {
   const { t } = useTranslation();
@@ -116,18 +119,21 @@ function EditableFailure({
           loading
         ) : (
           <Suspense fallback={loading}>
-            <RuleForm
-              workspace={workspace}
-              database={database}
-              id={id}
-              rowScope={row}
-              base={rule}
-              fields={properties}
-              caps={caps}
-              copyFilters={() => view?.get(YjsDatabaseKey.filters)?.toJSON() || []}
-              back={close}
-              saved={close}
-            />
+            <fieldset disabled={waiting}>
+              {waiting && <p role='status'>{t('databaseAutomation.loadError')}</p>}
+              <RuleForm
+                workspace={workspace}
+                database={database}
+                id={id}
+                rowScope={row}
+                base={rule}
+                fields={properties}
+                caps={caps}
+                copyFilters={() => view?.get(YjsDatabaseKey.filters)?.toJSON() || []}
+                back={close}
+                saved={close}
+              />
+            </fieldset>
           </Suspense>
         )}
       </DialogContent>

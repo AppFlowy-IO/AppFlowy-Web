@@ -151,14 +151,24 @@ function SearchQueryProbe() {
   return <output data-testid='database-search-query'>{query}</output>;
 }
 
+jest.mock('@/components/database/automation/AutomationButton', () => ({
+  __esModule: true,
+  default: () => <button>Automations</button>,
+}));
+
 describe('DatabaseActions template support', () => {
   it('shows Form Settings instead of Filter/Sort and keeps preview/share actions', async () => {
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Form);
-    render(<DatabaseActions />);
+    const { rerender } = render(<DatabaseActions />);
+
+    expect(screen.queryByRole('button', { name: 'Automations' })).toBeNull();
     expect(screen.getByTestId('database-actions-settings')).toBeTruthy();
     expect(screen.queryByTestId('sorts-button')).toBeNull();
     expect(screen.queryByTestId('filters-button')).toBeNull();
     expect(await screen.findByTestId('form-actions')).toBeTruthy();
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+    rerender(<DatabaseActions />);
+    expect(screen.getByRole('button', { name: 'Automations' })).toBeTruthy();
   });
   afterEach(() => {
     jest.useRealTimers();

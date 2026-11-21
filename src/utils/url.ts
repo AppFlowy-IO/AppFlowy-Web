@@ -69,7 +69,11 @@ export function workspaceIdFromAppPathname(pathname: string): string | undefined
  * reference. A `v` tab target without a row still cannot be represented by a
  * page mention and remains a plain link.
  */
-export function parseAppFlowyPageLink(input: string, appHostname: string): AppFlowyPageLink | undefined {
+export function parseAppFlowyPageLink(
+  input: string,
+  appHostname: string,
+  allowDatabaseTab = false
+): AppFlowyPageLink | undefined {
   const normalized = processUrl(input);
 
   if (!normalized) return;
@@ -103,6 +107,15 @@ export function parseAppFlowyPageLink(input: string, appHostname: string): AppFl
         rowId,
         ...(databaseViewId ? { databaseViewId } : {}),
       };
+    }
+
+    if (
+      allowDatabaseTab &&
+      databaseViewId &&
+      UUID_VALUE.test(databaseViewId) &&
+      [...url.searchParams.keys()].every((key) => key === 'v')
+    ) {
+      return { workspaceId: match[1], viewId: match[2], databaseViewId };
     }
 
     for (const key of url.searchParams.keys()) {

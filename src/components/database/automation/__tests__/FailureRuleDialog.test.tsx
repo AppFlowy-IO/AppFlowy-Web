@@ -18,7 +18,7 @@ jest.mock('@/application/database-yjs', () => ({
   usePropertiesSelector: () => ({ properties: [] }),
 }));
 jest.mock('../useAutomationCapabilities', () => ({
-  useAutomationCapabilities: () => ({ enabled: true, rowScoped: true }),
+  useEditorCapabilities: () => ({ caps: { enabled: true, rowScoped: true }, waiting: false }),
 }));
 jest.mock('@/application/services/js-services/http/automation-api', () => ({ ruleApi: { get: jest.fn() } }));
 jest.mock('../AutomationEditor', () => ({

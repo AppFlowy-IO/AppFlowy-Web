@@ -6,6 +6,7 @@ import {
   IntegrationProvider,
   integrationProviders,
   isIntegrationProvider,
+  isAutomationProvider,
 } from '@/application/integrations/types';
 import * as IntegrationService from '@/application/services/domains/integration';
 import { ReactComponent as GoogleCalendarIcon } from '@/assets/icons/google_calendar.svg';
@@ -267,7 +268,7 @@ function ConnectionRow({
   useEffect(() => {
     // Reuse successful lookups (including an empty result), but retry failures
     // after a refresh or when an administrator enables this provider.
-    if (hasEmailResult || !canConnect) return;
+    if (hasEmailResult || !canConnect || !isIntegrationProvider(provider)) return;
     const controller = new AbortController();
 
     void IntegrationService.getConnectionEmail(workspaceId, { id, provider }, controller.signal)
@@ -280,19 +281,31 @@ function ConnectionRow({
     return () => controller.abort();
   }, [id, provider, workspaceId, refreshVersion, emailKey, hasEmailResult, canConnect]);
 
-  if (!isIntegrationProvider(provider)) return null;
+  if (!isIntegrationProvider(provider) && !isAutomationProvider(provider)) return null;
+  const automationName = provider === 'slack' ? 'Slack' : 'Gmail';
   const email = hasEmailResult ? emailResult.email : undefined;
-  const account = email || connection.account_identifier || t(`settings.connections.${providers[provider].name}`);
+  const account =
+    email ||
+    connection.account_identifier ||
+    (isIntegrationProvider(provider) ? t(`settings.connections.${providers[provider].name}`) : automationName);
 
   return (
     <tr className='border-b border-border-primary' data-testid={`connection-${connection.id}`}>
       <td className='py-4 pr-4'>
-        <ProviderLabel provider={provider} />
+        {isIntegrationProvider(provider) ? (
+          <ProviderLabel provider={provider} />
+        ) : (
+          <span className='font-medium'>{automationName}</span>
+        )}
         <p className='mt-1 truncate text-xs text-text-secondary' title={account}>
           {account}
         </p>
       </td>
-      <td className='py-4 pr-3 text-text-primary'>{t(`settings.connections.${providers[provider].access}`)}</td>
+      <td className='py-4 pr-3 text-text-primary'>
+        {isIntegrationProvider(provider)
+          ? t(`settings.connections.${providers[provider].access}`)
+          : t(provider === 'slack' ? 'databaseAutomation.kinds.slack' : 'databaseAutomation.kinds.connected_email')}
+      </td>
       <td>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
@@ -306,9 +319,11 @@ function ConnectionRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' container={menuContainer}>
-            <DropdownMenuItem onSelect={() => void onConnect(provider)} disabled={disabled || !canConnect}>
-              {t('settings.connections.connectAnotherAccount')}
-            </DropdownMenuItem>
+            {isIntegrationProvider(provider) && (
+              <DropdownMenuItem onSelect={() => void onConnect(provider)} disabled={disabled || !canConnect}>
+                {t('settings.connections.connectAnotherAccount')}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem variant='destructive' onSelect={() => onDisconnect(account)} disabled={disabled}>
               {t('settings.connections.disconnectAccount')}
             </DropdownMenuItem>

@@ -368,6 +368,26 @@ describe('field metadata production hooks use database history', () => {
       label: 'Approve',
       confirmation: 'Send now?',
     });
+    for (const data of [
+      { type: 'url', url: 'https://example.org' },
+      { type: 'page', view_id: 'de5d2db5-f27a-4914-99d9-468701412053' },
+    ]) {
+      const nested = new Y.Map(Object.entries(data));
+
+      act(() => {
+        presentation.set('open_target', nested);
+        copy = hooks.result.current.duplicate(textFieldId);
+      });
+      const copied = f.fields.get(copy).get(YjsDatabaseKey.type_option).get('20').get('open_target');
+
+      expect(copied.toJSON()).toEqual(data);
+      expect(copied).not.toBe(nested);
+      act(() => {
+        nested.set('type', 'changed');
+      });
+      expect(copied.toJSON()).toEqual(data);
+    }
+
     act(() => hooks.result.current.save({ label: 'Approve', automation_id: '', confirmation: '', open_target: null }));
     expect(presentation.has('confirmation')).toBe(false);
     expect(presentation.has('open_target')).toBe(false);

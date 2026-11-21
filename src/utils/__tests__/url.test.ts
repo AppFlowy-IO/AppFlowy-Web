@@ -46,6 +46,16 @@ describe('parseAppFlowyPageLink', () => {
     });
   });
 
+  it('resolves a selected tab for Button page navigation', () => {
+    const page = `http://localhost:3000/app/${workspaceId}/${viewId}`;
+    expect(parseAppFlowyPageLink(`${page}?v=${databaseViewId}`, 'localhost', true)).toEqual({
+      workspaceId,
+      viewId,
+      databaseViewId,
+    });
+    expect(parseAppFlowyPageLink(`${page}?v=invalid`, 'localhost', true)).toBeUndefined();
+  });
+
   it('rejects a link with a database tab selection that a page mention cannot represent', () => {
     expect(
       parseAppFlowyPageLink(`http://localhost:3000/app/${workspaceId}/${viewId}?v=${viewId}`, 'localhost')

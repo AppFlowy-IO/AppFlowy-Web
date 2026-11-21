@@ -559,6 +559,7 @@ export function WorkflowFields({
   previous,
   extended,
   webhookHeaders,
+  webhookReceipts,
   scheduled,
   hasRow,
   expressionFields,
@@ -572,13 +573,14 @@ export function WorkflowFields({
   previous: RuleAction[];
   extended: boolean;
   webhookHeaders: boolean;
+  webhookReceipts: boolean;
   scheduled: boolean;
   hasRow: boolean;
   expressionFields?: RuleField[];
 }) {
   const { t } = useTranslation();
   const { users, fetchUsers } = useMentionableUsers();
-  const [targets, setTargets] = useState<Item[]>([]);
+  const [targets, setTargets] = useState<(Item & { key_version?: number })[]>([]);
   const [channels, setChannels] = useState<Item[]>([]);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -713,7 +715,11 @@ export function WorkflowFields({
       )}
       {['webhook', 'webhook_properties'].includes(action.type) && (
         <EndpointControls
+          key={action.type}
           allowHeaders={webhookHeaders}
+          receipts={webhookReceipts}
+          selectedEndpoint={targets.find((item) => item.id === action.endpoint_id)}
+          refresh={() => setRetry((n) => n + 1)}
           workspace={workspace}
           selected={action.endpoint_id}
           onChange={(endpoint_id) => {
@@ -767,6 +773,7 @@ export function WorkflowFields({
             change={([connection_id]) => change({ ...action, connection_id })}
           />
           <ConnectAccount
+            key={action.type}
             provider='gmail'
             workspace={workspace}
             connected={(connection_id) => {

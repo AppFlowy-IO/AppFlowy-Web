@@ -70,6 +70,7 @@ export function ruleCapabilities(info?: ServerInfo) {
     rowScoped: info?.database_automation_scope_features?.includes('row_scoped_v1') === true,
     triggers,
     actions,
+    webhookReceipts: info?.database_automation_webhook_features?.includes('endpoint_receipts_v1') === true,
     webhookHeaders: info?.database_automation_webhook_features?.includes('headers_v1') === true,
     workspaceWebhookPolicy: info?.database_automation_webhook_features?.includes('workspace_policy_v1') === true,
     richActionText: info?.database_automation_value_features?.includes('rich_action_text_v1') === true,
@@ -470,12 +471,12 @@ export function scheduleRequiresSourceRow(rule: DatabaseRule) {
   });
 }
 
+export function includesDeletion(trigger: RuleTrigger): boolean {
+  return trigger.type === 'row_deleted' || !!trigger.triggers?.some((event) => event.type === 'row_deleted');
+}
+
 export function hasSourceRow(trigger: RuleTrigger, calendarHasRow: boolean) {
-  return (
-    (trigger.type !== 'scheduled' || calendarHasRow) &&
-    trigger.type !== 'row_deleted' &&
-    !trigger.triggers?.some((event) => event.type === 'row_deleted')
-  );
+  return (trigger.type !== 'scheduled' || calendarHasRow) && !includesDeletion(trigger);
 }
 
 export function validRowId(id?: string) {
@@ -511,13 +512,13 @@ export function validRule(
     (rule.trigger.type === 'row_events' && (!rule.trigger.triggers?.length || !rule.trigger.triggers.every(validEvent)))
   )
     return false;
+  const deletesRow = includesDeletion(rule.trigger);
+
   if (
-    rule.trigger.type === 'row_deleted' &&
+    deletesRow &&
     (rule.conditions.length || rule.actions.some((a) => a.type === 'set_property' || a.person_field_ids?.length))
   )
     return false;
-  const deletesRow =
-    rule.trigger.type === 'row_deleted' || rule.trigger.triggers?.some((trigger) => trigger.type === 'row_deleted');
 
   return rule.actions.every((a, index) => {
     const previous = rule.actions.slice(0, index);
@@ -554,8 +555,17 @@ export function validRule(
             return !p.value.includes('\0');
         }
       });
-    const resolved = (v?: PropertyValue): boolean =>
-      !!v && validValue(v) && (v.kind !== 'variable' || named(v.name)) && (v.kind !== 'template' || parts(v.parts));
+    const resolved = (v?: PropertyValue): boolean => {
+      if (v?.kind === 'formula') {
+        const f = formula(v);
+
+        return !!f && arithmetic.includes(f.operator) && resolved(f.left) && resolved(f.right);
+      }
+
+      return (
+        !!v && validValue(v) && (v.kind !== 'variable' || named(v.name)) && (v.kind !== 'template' || parts(v.parts))
+      );
+    };
 
     if (a.row?.type === 'variable' && !relationVariables(previous, fields).includes(a.row.name)) return false;
     if (a.row?.type === 'step' && !compatibleCreateSteps(previous, a.database_id).includes(a.row.action_index))

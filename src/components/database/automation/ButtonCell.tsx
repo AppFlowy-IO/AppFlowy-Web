@@ -18,13 +18,13 @@ import {
 } from '@/components/ui/dialog';
 
 import { type Capabilities } from './model';
-import { useAutomationCapabilities } from './useAutomationCapabilities';
+import { useEditorCapabilities } from './useAutomationCapabilities';
 
 const ButtonControl = lazy(() => import('./ButtonControl').then((mod) => ({ default: mod.ButtonControl })));
 
 export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: string; field: YDatabaseField }) {
   const { t } = useTranslation();
-  const caps = useAutomationCapabilities();
+  const { caps, waiting } = useEditorCapabilities();
   const db = useDatabase();
   const context = useDatabaseContextOptional();
   const user = useCurrentUserOptional();
@@ -46,7 +46,7 @@ export function ButtonCell({ rowId, fieldId, field }: { rowId: string; fieldId: 
     context?.dataSource?.type === 'history'
   )
     return <span className='truncate'>{label}</span>;
-  return <ActiveButtonCell key={scope} {...{ workspace, database, rowId, fieldId, caps, label }} />;
+  return <ActiveButtonCell key={scope} {...{ workspace, database, rowId, fieldId, caps, label, waiting }} />;
 }
 
 function ActiveButtonCell({
@@ -56,6 +56,7 @@ function ActiveButtonCell({
   fieldId,
   caps,
   label,
+  waiting,
 }: {
   workspace: string;
   database: string;
@@ -63,6 +64,7 @@ function ActiveButtonCell({
   fieldId: string;
   caps: Capabilities;
   label: string;
+  waiting: boolean;
 }) {
   const { t } = useTranslation();
   const [gesture, setGesture] = useState<string>();
@@ -72,6 +74,8 @@ function ActiveButtonCell({
     active.current = false;
     setGesture(undefined);
   }, []);
+
+  if (waiting && !open) return <span className='truncate'>{label}</span>;
 
   return (
     <Dialog
@@ -107,11 +111,14 @@ function ActiveButtonCell({
         </DialogHeader>
         {open && (
           <Suspense fallback={<p role='status'>{t('databaseAutomation.loading')}</p>}>
-            <ButtonControl
-              initialClickId={gesture}
-              onNavigated={dismiss}
-              {...{ workspace, database, row: rowId, field: fieldId, caps }}
-            />
+            <fieldset disabled={waiting}>
+              {waiting && <p role='status'>{t('databaseAutomation.loadError')}</p>}
+              <ButtonControl
+                initialClickId={gesture}
+                onNavigated={dismiss}
+                {...{ workspace, database, row: rowId, field: fieldId, caps }}
+              />
+            </fieldset>
           </Suspense>
         )}
       </DialogContent>

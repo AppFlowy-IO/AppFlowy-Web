@@ -31,16 +31,14 @@ export function ButtonDefaults({ fieldId }: { fieldId: string }) {
     context?.canWrite !== false &&
     !context?.dataSource;
   const options = field && getTypeOptions(field, FieldType.Button)?.toJSON();
-  const [label, setLabel] = useState(typeof options?.label === 'string' ? options.label : '');
-  const [id, setId] = useState(typeof options?.automation_id === 'string' ? options.automation_id : '');
-  const [savedConfirmation, setSavedConfirmation] = useState(
-    typeof options?.confirmation === 'string' ? options.confirmation : ''
-  );
-  const [confirmation, setConfirmation] = useState(savedConfirmation);
-  const [savedTarget, setSavedTarget] = useState<ButtonOpenTarget | undefined>(() =>
-    readButtonOpenTarget(options?.open_target)
-  );
-  const [target, setTarget] = useState(savedTarget);
+  const [draftLabel, setLabel] = useState<string>();
+  const [draftId, setId] = useState<string>();
+  const [draftConfirmation, setConfirmation] = useState<string>();
+  const [draftTarget, setTarget] = useState<ButtonOpenTarget | null>();
+  const label = draftLabel ?? (typeof options?.label === 'string' ? options.label : '');
+  const id = draftId ?? (typeof options?.automation_id === 'string' ? options.automation_id : '');
+  const confirmation = draftConfirmation ?? (typeof options?.confirmation === 'string' ? options.confirmation : '');
+  const target = draftTarget === undefined ? readButtonOpenTarget(options?.open_target) : draftTarget;
   const futureTarget =
     options?.open_target !== undefined && options?.open_target !== null && !readButtonOpenTarget(options.open_target);
   const [rules, setRules] = useState<DatabaseRule[]>();
@@ -113,7 +111,7 @@ export function ButtonDefaults({ fieldId }: { fieldId: string }) {
                       ? { type: 'url', url: '' }
                       : v === 'created_row'
                       ? { type: 'created_row', action_index: -1 }
-                      : undefined
+                      : null
                   )
                 }
               />
@@ -130,7 +128,7 @@ export function ButtonDefaults({ fieldId }: { fieldId: string }) {
                     value={target.view_id}
                     onChange={(e) => {
                       const raw = e.target.value.trim();
-                      const page = parseAppFlowyPageLink(raw, window.location.hostname);
+                      const page = parseAppFlowyPageLink(raw, window.location.hostname, true);
 
                       setTarget({
                         ...target,
@@ -170,19 +168,20 @@ export function ButtonDefaults({ fieldId }: { fieldId: string }) {
           (caps.buttonInteractions && (!validButtonText(confirmation, 256) || !validTarget))
         }
         onClick={() => {
-          update({
-            label: label.trim(),
-            automation_id: id,
+          const updates = {
+            ...(draftLabel !== undefined && { label: draftLabel.trim() }),
+            ...(draftId !== undefined && { automation_id: draftId }),
             ...(caps.buttonInteractions && {
-              ...(confirmation.trim() !== savedConfirmation && { confirmation: confirmation.trim() }),
-              ...(!futureTarget &&
-                JSON.stringify(target) !== JSON.stringify(savedTarget) && {
-                  open_target: target || null,
-                }),
+              ...(draftConfirmation !== undefined && { confirmation: draftConfirmation.trim() }),
+              ...(!futureTarget && draftTarget !== undefined && { open_target: draftTarget }),
             }),
-          });
-          setSavedConfirmation(confirmation.trim());
-          setSavedTarget(target);
+          };
+
+          if (Object.keys(updates).length) update(updates);
+          setLabel(undefined);
+          setId(undefined);
+          setConfirmation(undefined);
+          setTarget(undefined);
         }}
       >
         {t('databaseAutomation.save')}

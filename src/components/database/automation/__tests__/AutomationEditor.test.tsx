@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 
 import strings from '@/@types/translations/en.json';
@@ -30,6 +30,7 @@ import AutomationButton from '../AutomationButton';
 import { RuleManager } from '../AutomationEditor';
 import { ButtonCell } from '../ButtonCell';
 import { ButtonControl } from '../ButtonControl';
+import { useDestinationSchema } from '../DestinationSchema';
 import { ButtonDefaults } from '../ButtonDefaults';
 import { ButtonResult } from '../ButtonResult';
 import {
@@ -132,6 +133,7 @@ jest.mock('@/application/services/js-services/http/integration-api', () => ({
   confirmConnection: jest.fn(),
 }));
 jest.mock('@/utils/server-info', () => ({
+  ...jest.requireActual('@/utils/server-info'),
   getServerInfoSnapshot: jest.fn(),
   subscribeToServerInfo: () => () => undefined,
 }));
@@ -158,6 +160,8 @@ jest.mock('@/application/services/js-services/http/automation-api', () => ({
     workspaceWebhookPolicy: jest.fn(),
     webhooks: jest.fn(),
     createWebhook: jest.fn(),
+    rotateWebhook: jest.fn(),
+    removeWebhook: jest.fn(),
   },
 }));
 const api = ruleApi as jest.Mocked<typeof ruleApi>;
@@ -250,6 +254,13 @@ test('conflicts retain unsaved edits until explicit reload and preserve unknown 
   await screen.findByDisplayValue('Other author');
 });
 test('pages run history under a POSIX locale using its cursor and deletes with the current revision after confirmation', async () => {
+  const localize = Date.prototype.toLocaleString;
+  const formatter = jest
+    .spyOn(Date.prototype, 'toLocaleString')
+    .mockImplementation(function (this: Date, locale, options) {
+      // eslint-disable-next-line no-invalid-this -- the formatter must receive the run's real Date instance.
+      return localize.call(this, locale, { ...options, timeZone: 'UTC' });
+    });
   const result = {
     id: 'a',
     row_id: 'r',
@@ -264,6 +275,9 @@ test('pages run history under a POSIX locale using its cursor and deletes with t
     .mockResolvedValueOnce({ items: [{ ...result, id: 'b', status: 'skipped' }] });
   manager();
   fireEvent.click(await screen.findByText('Run history'));
+  expect((await screen.findByText(/Succeeded/)).textContent).toBe('1/15/2026, 8:00:00 AM · Succeeded');
+  expect(formatter).toHaveBeenCalledWith('en-US');
+  formatter.mockRestore();
   fireEvent.click(await screen.findByText('Load more'));
   await screen.findByText(/Skipped/);
   expect(api.runs.mock.calls[1].slice(0, 4)).toEqual(['w', 'd', 'rule', 42]);
@@ -285,6 +299,7 @@ const extended = {
   formulaExpression: false,
   customRecurrence: false,
   webhookHeaders: false,
+  webhookReceipts: true,
 };
 const fullManager = () => render(<RuleManager workspace='w' database='d' caps={extended} />);
 
@@ -344,16 +359,24 @@ const row = 'e5e8c286-c7c7-4c44-8e15-12f6e4987004';
 
 test('manual invocation retries ambiguous requests with the same key and revision', async () => {
   api.list.mockResolvedValue({ items: [{ ...rule, trigger: { type: 'manual' } }] });
-  api.run.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce('the-run');
+  api.run
+    .mockRejectedValueOnce(new Error('network'))
+    .mockRejectedValueOnce(new Error('network'))
+    .mockResolvedValueOnce('the-run');
   fullManager();
   fireEvent.click(await screen.findByText('Run now'));
   fireEvent.change(screen.getByLabelText('Row ID'), { target: { value: row } });
   fireEvent.click(screen.getByText('Run now'));
   await screen.findByRole('alert');
+  fireEvent.change(screen.getByLabelText('Row ID'), { target: { value: 'c9469022-17d5-4f12-9397-61814e159329' } });
+  fireEvent.click(screen.getByText('Run now'));
+  await screen.findByRole('alert');
+  fireEvent.change(screen.getByLabelText('Row ID'), { target: { value: row } });
   fireEvent.click(screen.getByText('Run now'));
   await screen.findByText('Run queued.');
   expect(api.run.mock.calls[0]).toEqual(['w', 'd', 'rule', 5, row, expect.any(String)]);
-  expect(api.run.mock.calls[1]).toEqual(api.run.mock.calls[0]);
+  expect(api.run.mock.calls[1][5]).not.toEqual(api.run.mock.calls[0][5]);
+  expect(api.run.mock.calls[2]).toEqual(api.run.mock.calls[0]);
 });
 
 test('a row menu runs only enabled manual rules owned by the current member and binds retries to the open row', async () => {
@@ -913,6 +936,11 @@ test('webhook property actions store selected IDs and write-only headers stay wi
   };
 
   expect(ruleCapabilities(info as ServerInfo).actions).toEqual(['webhook']);
+  expect(ruleCapabilities(info as ServerInfo).webhookReceipts).toBe(false);
+  expect(
+    ruleCapabilities({ ...info, database_automation_webhook_features: ['endpoint_receipts_v1'] } as ServerInfo)
+      .webhookReceipts
+  ).toBe(true);
   const server = ruleCapabilities({
     ...info,
     database_automation_webhook_features: ['headers_v1', 'selected_properties_v1'],
@@ -935,9 +963,15 @@ test('webhook property actions store selected IDs and write-only headers stay wi
   fireEvent.change(header, { target: { value: 'private-fixture' } });
   fireEvent.click(screen.getByText('Confirm'));
   await waitFor(() =>
-    expect(api.createWebhook).toHaveBeenCalledWith('w', 'Review webhook', 'https://example.org/review', {
-      Authorization: 'private-fixture',
-    })
+    expect(api.createWebhook).toHaveBeenCalledWith(
+      'w',
+      'Review webhook',
+      'https://example.org/review',
+      {
+        Authorization: 'private-fixture',
+      },
+      undefined
+    )
   );
   expect(screen.queryByDisplayValue('private-fixture')).toBeNull();
   const property = screen.getByLabelText('Webhook properties');
@@ -2496,18 +2530,24 @@ test('field authors can save, clear and preserve negotiated Button confirmation 
       .mockReturnValue({ field: { get: () => ({ get: () => ({ toJSON: () => options }) }) } } as unknown as ReturnType<
         typeof useFieldSelector
       >);
+    save.mockImplementation((patch) => Object.assign(options, patch));
     return render(<ButtonDefaults fieldId='send' />);
   };
 
   const base = ['row_scoped_v1'],
     advanced = [...base, 'button_interactions_v1'];
   const future = { type: 'url', url: 'https://example.org', extra: 1 };
-  const first = setup(base, { label: 'Schedule', confirmation: 'Original', open_target: future });
+  const liveOptions = { label: 'Schedule', automation_id: 'old', confirmation: 'Original', open_target: future };
+  const first = setup(base, liveOptions);
 
   await waitFor(() => expect(screen.getByText('Save').disabled).toBe(false));
   expect(screen.queryByLabelText('Confirmation message')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Button label'), { target: { value: 'Review' } });
+  liveOptions.automation_id = 'collaborator';
+  first.rerender(<ButtonDefaults fieldId='send' />);
   fireEvent.click(screen.getByText('Save'));
-  expect(save).toHaveBeenLastCalledWith({ label: 'Schedule', automation_id: '' });
+  expect(save).toHaveBeenLastCalledWith({ label: 'Review' });
+  expect(liveOptions.automation_id).toBe('collaborator');
   first.unmount();
   const unknown = setup(advanced, { label: 'Schedule', confirmation: 'Original', open_target: future });
 
@@ -2515,8 +2555,13 @@ test('field authors can save, clear and preserve negotiated Button confirmation 
   await waitFor(() => expect(screen.getByText('Save').disabled).toBe(false));
   fireEvent.change(screen.getByLabelText('Confirmation message'), { target: { value: 'Changed' } });
   fireEvent.click(screen.getByText('Save'));
-  expect(save).toHaveBeenLastCalledWith({ label: 'Schedule', automation_id: '', confirmation: 'Changed' });
+  expect(save).toHaveBeenLastCalledWith({ confirmation: 'Changed' });
   unknown.unmount();
+  const workspace = '9084d361-3b4c-4256-ad58-06912829e56b';
+
+  jest
+    .mocked(useDatabaseContextOptional)
+    .mockReturnValue({ workspaceId: workspace, canWrite: true } as ReturnType<typeof useDatabaseContextOptional>);
   setup(advanced, {});
   await waitFor(() => expect(screen.getByText('Save').disabled).toBe(false));
   const confirmation = screen.getByLabelText('Confirmation message');
@@ -2532,15 +2577,21 @@ test('field authors can save, clear and preserve negotiated Button confirmation 
   fireEvent.change(url, { target: { value: 'https://example.org' } });
   fireEvent.click(screen.getByText('Save'));
   expect(save).toHaveBeenLastCalledWith({
-    label: '',
-    automation_id: '',
     confirmation: '🌿'.repeat(256),
     open_target: { type: 'url', url: 'https://example.org' },
   });
   fireEvent.change(confirmation, { target: { value: '' } });
   fireEvent.change(screen.getByLabelText(strings.databaseAutomation.afterSuccess), { target: { value: '' } });
   fireEvent.click(screen.getByText('Save'));
-  expect(save).toHaveBeenLastCalledWith({ label: '', automation_id: '', confirmation: '', open_target: null });
+  expect(save).toHaveBeenLastCalledWith({ confirmation: '', open_target: null });
+  const tab = '67bed5eb-6c5a-426c-922d-13552dc1f809';
+
+  fireEvent.change(screen.getByLabelText(strings.databaseAutomation.afterSuccess), { target: { value: 'page' } });
+  fireEvent.change(screen.getByLabelText(strings.databaseAutomation.pageId), {
+    target: { value: `${window.location.origin}/app/${workspace}/${row}?v=${tab}` },
+  });
+  fireEvent.click(screen.getByText('Save'));
+  expect(save).toHaveBeenLastCalledWith({ open_target: { type: 'page', view_id: tab } });
 });
 
 test('a pending Button only reads six times until the member checks the same receipt again', async () => {
@@ -2839,7 +2890,7 @@ test('rich text saves stable choices and a formula using the triggering row in a
   expect(writes).toHaveBeenLastCalledWith({ parts: [{ type: 'group', group_id: id }] });
   fireEvent.click(screen.getByRole('button', { name: strings.databaseAutomation.addPart }));
   fireEvent.change(screen.getAllByLabelText('Value source')[1], { target: { value: 'expression' } });
-  expect((screen.getByRole('option', { name: 'Projects' })).value).toBe('related');
+  expect(screen.getByRole('option', { name: 'Projects' }).value).toBe('related');
   fireEvent.change(screen.getByLabelText('Formula expression'), { target: { value: 'prop("related").length()' } });
   expect(writes).toHaveBeenLastCalledWith({
     parts: [
@@ -2941,4 +2992,231 @@ test('capabilities protect older clients and validate rich text dates, IDs, sche
 
   expect(scheduleRequiresSourceRow(scheduled('now()'))).toBe(false);
   expect(scheduleRequiresSourceRow(scheduled('prop("related").length()'))).toBe(true);
+});
+
+test('field refresh at the second page preserves the next destination offset', async () => {
+  api.databases.mockImplementation(async (_workspace, offset) => ({
+    databases: Array.from({ length: 50 }, (_, i) => ({ database_id: String(offset + i), views: [] })),
+    has_more: offset < 100,
+  }));
+  api.fields.mockRejectedValueOnce(new Error('offline')).mockResolvedValue([]);
+  const { result, rerender } = renderHook(({ db }: { db?: string }) => useDestinationSchema('w', db), {
+    initialProps: { db: undefined as string | undefined },
+  });
+
+  await waitFor(() => expect(result.current.dbs.length).toBe(50));
+  act(() => result.current.loadMore());
+  await waitFor(() => expect(result.current.dbs.length).toBe(100));
+  rerender({ db: 'd' });
+  await waitFor(() => expect(result.current.err).toBe(true));
+  await act(async () => result.current.retry());
+  await act(async () => result.current.loadMore());
+  expect(result.current.dbs.map((d) => Number(d.database_id))).toEqual(Array.from({ length: 150 }, (_, i) => i));
+});
+
+test('delete events in a group exclude live-row conditions and actions', () => {
+  const trigger = { type: 'row_events', triggers: [{ type: 'row_created' }, { type: 'row_deleted' }] };
+
+  expect(validRule({ ...rule, trigger })).toBe(true);
+  expect(validRule({ ...rule, trigger, conditions: [{}] })).toBe(false);
+  expect(
+    validRule({
+      ...rule,
+      trigger,
+      actions: [{ type: 'set_property', field_id: 'f', value: { kind: 'number', value: 1 } }],
+    })
+  ).toBe(false);
+  expect(validRule({ ...rule, trigger, actions: [{ type: 'notify', person_field_ids: ['f'] }] })).toBe(false);
+});
+
+test('nested arithmetic variables must be defined before the consuming step', () => {
+  const number = { kind: 'number', value: 1 };
+  const definition = { type: 'define_variable', name: 'number', value: number };
+  const operand: PropertyValue = {
+    kind: 'formula',
+    value: { operator: 'add', left: number, right: { kind: 'variable', name: 'number' } },
+  };
+  const consuming: RuleAction = {
+    type: 'set_property',
+    field_id: 'f',
+    value: { kind: 'formula', value: { operator: 'add', left: operand, right: number } },
+  };
+
+  expect(validRule({ ...rule, actions: [definition, consuming] })).toBe(true);
+  expect(validRule({ ...rule, actions: [consuming, definition] })).toBe(false);
+  expect(validRule({ ...rule, actions: [consuming] })).toBe(false);
+});
+
+test.each(['reorder', 'remove'])('a pending webhook targets only its original step after %s', async (operation) => {
+  const endpoint = { id: 'new', name: 'New', disabled: false, key_version: 1 };
+
+  api.webhooks.mockResolvedValue({ items: [endpoint] });
+  let finish!: () => void;
+
+  api.createWebhook.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = () => resolve({ endpoint, signing_secret: 'secret' });
+      })
+  );
+  fullManager();
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Draft' } });
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'webhook' } });
+  fireEvent.click(screen.getByText('Register endpoint'));
+  fireEvent.change(screen.getAllByLabelText('Name')[1], { target: { value: 'Register' } });
+  fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org' } });
+  fireEvent.click(screen.getByText('Confirm'));
+  fireEvent.click(screen.getByText('Add action'));
+  fireEvent.change(screen.getAllByLabelText('Notification message')[0], { target: { value: 'current draft' } });
+  fireEvent.click(operation === 'reorder' ? screen.getByText('Move down') : screen.getAllByText('Remove action')[0]);
+  await act(async () => finish());
+  expect(screen.getAllByLabelText('Action').map((el) => (el as HTMLSelectElement).value)).toEqual(
+    operation === 'reorder' ? ['notify', 'webhook'] : ['notify']
+  );
+  if (operation === 'reorder') {
+    expect(screen.getByLabelText('Webhook endpoint').value).toBe('new');
+    expect(screen.getByDisplayValue('current draft')).toBeTruthy();
+  }
+});
+
+test('endpoint creation recovers the same request and rotation uses the confirmed version', async () => {
+  const endpoint = { id: 'new', name: 'New', disabled: false, key_version: 7 };
+
+  api.webhooks.mockResolvedValue({ items: [endpoint] });
+  api.createWebhook
+    .mockRejectedValueOnce(new Error('timeout'))
+    .mockResolvedValue({ endpoint, signing_secret: 'secret' });
+  api.rotateWebhook.mockRejectedValueOnce(new Error('version conflict')).mockResolvedValue({
+    endpoint: { ...endpoint, key_version: 9 },
+    signing_secret: 'rotated-key',
+  });
+  fullManager();
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'webhook' } });
+  fireEvent.click(screen.getByText('Register endpoint'));
+  fireEvent.change(screen.getAllByLabelText('Name')[1], { target: { value: 'Register' } });
+  fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org' } });
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByDisplayValue('secret');
+  expect(api.createWebhook.mock.calls[1]).toEqual(api.createWebhook.mock.calls[0]);
+  expect(api.createWebhook.mock.calls[1][4]).toEqual(expect.any(String));
+  await waitFor(() => expect(screen.getByText('Rotate signing secret').matches(':disabled')).toBe(false));
+  fireEvent.click(screen.getByText('Rotate signing secret'));
+  api.webhooks.mockResolvedValue({ items: [{ ...endpoint, key_version: 8 }] });
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByRole('alert');
+  expect(api.rotateWebhook).toHaveBeenLastCalledWith('w', 'new', 7);
+  await waitFor(() => expect(screen.getByText('Rotate signing secret').matches(':disabled')).toBe(false));
+  fireEvent.click(screen.getByText('Rotate signing secret'));
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByDisplayValue('rotated-key');
+  expect(api.rotateWebhook).toHaveBeenLastCalledWith('w', 'new', 8);
+  fireEvent.click(screen.getByText('Delete endpoint'));
+  expect(screen.getByText(strings.databaseAutomation.confirmRemoveEndpoint).textContent).toContain(
+    'All saved automations'
+  );
+  expect(api.removeWebhook).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Confirm'));
+  await waitFor(() => expect(api.removeWebhook).toHaveBeenCalledWith('w', 'new'));
+});
+
+test('a capability outage suspends the open draft and restores the edited form', async () => {
+  jest.mocked(useCurrentUserOptional).mockReturnValue({ uuid: 'author' } as ReturnType<typeof useCurrentUserOptional>);
+  jest
+    .mocked(useUserWorkspaceInfoOptional)
+    .mockReturnValue({ workspaces: [{ id: 'w', role: Role.Member }] } as ReturnType<
+      typeof useUserWorkspaceInfoOptional
+    >);
+  const snapshot = {
+    status: 'available',
+    info: {
+      enable_database_automations: true,
+      database_automation_actions: ['notify'],
+      database_automation_triggers: ['row_created'],
+    },
+  } as ReturnType<typeof getServerInfoSnapshot>;
+  const store = jest.mocked(getServerInfoSnapshot);
+
+  store.mockReturnValue(snapshot);
+  const { rerender } = render(<AutomationButton />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Automations' }));
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Keep this draft' } });
+  store.mockReturnValue({ status: 'unavailable' });
+  rerender(<AutomationButton />);
+  expect(screen.getByDisplayValue('Keep this draft')).toBeTruthy();
+  expect(screen.getByText('Save').matches(':disabled')).toBe(true);
+  store.mockReturnValue(snapshot);
+  rerender(<AutomationButton />);
+  expect(screen.getByDisplayValue('Keep this draft')).toBeTruthy();
+  expect(screen.getByText('Save').matches(':disabled')).toBe(false);
+  fireEvent.click(screen.getByText('Save'));
+  await waitFor(() => expect(api.create.mock.calls[0][3].name).toBe('Keep this draft'));
+});
+
+test.each(['slack', 'connected_email'])(
+  'finishing %s authorization after moving a step preserves its edits',
+  async (type) => {
+    const provider = type === 'slack' ? 'slack' : 'gmail';
+    const account = {
+      id: 'active-id',
+      provider,
+      account_identifier: 'Current account',
+      status: 'active',
+      connected_at: 'now',
+    };
+
+    jest.mocked(listConnections).mockResolvedValue([account]);
+    let finish!: () => void;
+
+    jest.mocked(authorizeIntegration).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ connectionId: account.id, oauthQuery: 'query' });
+        })
+    );
+    jest.mocked(confirmConnection).mockResolvedValue({ success: true });
+    fullManager();
+    fireEvent.click(await screen.findByText('New automation'));
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: type } });
+    fireEvent.click(screen.getByText(type === 'slack' ? 'Connect Slack' : 'Connect Gmail'));
+    fireEvent.click(screen.getByText('Add action'));
+    fireEvent.change(screen.getAllByLabelText('Notification message')[0], { target: { value: 'Still here' } });
+    fireEvent.click(screen.getByText('Move down'));
+    await act(async () => finish());
+    expect(screen.getAllByLabelText('Action').map((el) => (el as HTMLSelectElement).value)).toEqual(['notify', type]);
+    expect(screen.getByDisplayValue('Still here')).toBeTruthy();
+    expect(
+      screen.getByLabelText(type === 'slack' ? strings.databaseAutomation.connection : strings.databaseAutomation.gmail)
+        .value
+    ).toEqual(account.id);
+  }
+);
+
+test('legacy endpoint failures refresh the catalog before another registration or rotation', async () => {
+  const endpoint = { id: 'legacy', name: 'Registered', disabled: false, key_version: 4 };
+
+  api.webhooks.mockResolvedValue({ items: [endpoint] });
+  api.createWebhook.mockRejectedValue(Error('timeout'));
+  api.rotateWebhook.mockRejectedValue(Error('timeout'));
+  render(<RuleManager workspace='w' database='d' caps={{ ...extended, webhookReceipts: false }} />);
+  fireEvent.click(await screen.findByText('New automation'));
+  fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'webhook' } });
+  fireEvent.click(screen.getByText('Register endpoint'));
+  fireEvent.change(screen.getAllByLabelText('Name')[1], { target: { value: 'Register' } });
+  fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org' } });
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByText(strings.databaseAutomation.checkEndpointAfterError);
+  expect(api.createWebhook.mock.calls[0][4]).toBeUndefined();
+  expect(screen.queryByText('Confirm')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Webhook endpoint'), { target: { value: 'legacy' } });
+  fireEvent.click(screen.getByText('Rotate signing secret'));
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByText(strings.databaseAutomation.checkEndpointAfterError);
+  expect(api.rotateWebhook.mock.calls).toEqual([['w', 'legacy', undefined]]);
+  expect(screen.queryByText('Confirm')).toBeNull();
 });

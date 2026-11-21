@@ -2535,7 +2535,14 @@ export function useDuplicatePropertyDispatch() {
                       typeof target === 'object' &&
                       'type' in target &&
                       target.type === 'created_row'
-                    ) return;
+                    ) {
+                      return;
+                    }
+
+                    if (key === 'open_target' && value instanceof Y.Map) {
+                      newFieldTypeOption.set(key, value.clone());
+                      return;
+                    }
                   }
 
                   // Reciprocal metadata is owned by the original field. Copying it
@@ -4690,7 +4697,12 @@ export function useUpdateButtonTypeOption(fieldId: string) {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (updates: { label: string; automation_id: string; confirmation?: string; open_target?: ButtonOpenTarget | null }) => {
+    (updates: {
+      label?: string;
+      automation_id?: string;
+      confirmation?: string;
+      open_target?: ButtonOpenTarget | null;
+    }) => {
       executeOperations(
         sharedRoot,
         [

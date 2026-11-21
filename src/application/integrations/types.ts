@@ -10,6 +10,10 @@ export interface IntegrationConnection {
   account_identifier?: string;
 }
 
+export function isAutomationProvider(provider: string): provider is 'slack' | 'gmail' {
+  return provider === 'slack' || provider === 'gmail';
+}
+
 export function isIntegrationProvider(provider: string): provider is IntegrationProvider {
   return integrationProviders.some((value) => value === provider);
 }

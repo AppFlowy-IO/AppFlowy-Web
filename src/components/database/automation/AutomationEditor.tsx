@@ -24,6 +24,7 @@ import {
   canEditRule,
   Capabilities,
   hasSourceRow,
+  includesDeletion,
   isWebhookAction,
   newAction,
   newRule,
@@ -301,6 +302,7 @@ export function RuleForm({
   const [draft, setDraft] = useState<RuleDefinition>(
     () => base || { ...newRule(caps), ...(buttonScope && { trigger: { type: 'button', field_id: buttonScope.field } }) }
   );
+  const [stepKeys, setStepKeys] = useState(() => draft.actions.map(() => uuid()));
   const [error, setError] = useState<'saveError' | 'conflict' | 'incompatibleOptions'>();
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -334,13 +336,12 @@ export function RuleForm({
   const supported = !original || canEditRule(original, caps);
   const change = (changes: Partial<RuleDefinition>) => setDraft((prev) => ({ ...prev, ...changes }));
   const updateActions = (index: number, next: RuleDefinition['actions'][number]) =>
-    change({
-      actions: draft.actions.map((a, i) => (i === index ? next : a)),
-    });
+    setDraft((current) => ({ ...current, actions: current.actions.map((a, i) => (i === index ? next : a)) }));
   const moveAction = (index: number, offset: number) => {
     const actions = draft.actions.slice();
 
     [actions[index], actions[index + offset]] = [actions[index + offset], actions[index]];
+    setStepKeys(actions.map((action) => stepKeys[draft.actions.indexOf(action)]));
     change({ actions: reorderActions(draft.actions, actions) });
   };
 
@@ -411,6 +412,7 @@ export function RuleForm({
 
       setOriginal(latest);
       setDraft(latest);
+      setStepKeys(latest.actions.map(() => uuid()));
       setError(undefined);
       setDeleting(false);
     } catch {
@@ -479,7 +481,7 @@ export function RuleForm({
             </label>
             <div className='flex flex-wrap items-center gap-2'>
               <span>{t('databaseAutomation.filterCount', { count: draft.conditions.length })}</span>
-              {!buttonScope && draft.trigger.type !== 'row_deleted' && (
+              {!buttonScope && !includesDeletion(draft.trigger) && (
                 <Button type='button' variant='ghost' size='sm' onClick={() => change({ conditions: copyFilters() })}>
                   {t('databaseAutomation.useFilters')}
                 </Button>
@@ -490,7 +492,7 @@ export function RuleForm({
                 </Button>
               )}
             </div>
-            {draft.trigger.type !== 'row_deleted' && (
+            {!includesDeletion(draft.trigger) && (
               <>
                 <Button type='button' size='sm' variant='ghost' onClick={() => setEditingConditions((open) => !open)}>
                   {t(editingConditions ? 'databaseAutomation.closeConditions' : 'databaseAutomation.editConditions')}
@@ -506,7 +508,10 @@ export function RuleForm({
               </>
             )}
             {draft.actions.map((action, index) => (
-              <fieldset className='flex flex-col gap-2 rounded-400 border border-border-primary p-3' key={index}>
+              <fieldset
+                className='flex flex-col gap-2 rounded-400 border border-border-primary p-3'
+                key={stepKeys[index]}
+              >
                 <legend>{t('databaseAutomation.step', { n: index + 1 })}</legend>
                 <ActionFields
                   workspace={workspace}
@@ -518,7 +523,7 @@ export function RuleForm({
                   webhooksAllowed={webhooksAllowed}
                   expressionRow={hasSourceRow(draft.trigger, boundRow)}
                   scheduled={draft.trigger.type === 'scheduled'}
-                  deleted={draft.trigger.type === 'row_deleted'}
+                  deleted={includesDeletion(draft.trigger)}
                   change={(a) => updateActions(index, a)}
                 />
                 <div className='flex gap-2'>
@@ -537,14 +542,15 @@ export function RuleForm({
                     size='sm'
                     type='button'
                     disabled={draft.actions.length === 1}
-                    onClick={() =>
+                    onClick={() => {
+                      setStepKeys(stepKeys.filter((_, i) => i !== index));
                       change({
                         actions: reorderActions(
                           draft.actions,
                           draft.actions.filter((_, i) => i !== index)
                         ),
-                      })
-                    }
+                      });
+                    }}
                   >
                     {t('databaseAutomation.remove')}
                   </Button>
@@ -555,7 +561,10 @@ export function RuleForm({
               <Button
                 variant='outline'
                 type='button'
-                onClick={() => change({ actions: [...draft.actions, newAction(actionChoices[0])] })}
+                onClick={() => {
+                  setStepKeys([...stepKeys, uuid()]);
+                  change({ actions: [...draft.actions, newAction(actionChoices[0])] });
+                }}
               >
                 {t('databaseAutomation.addAction')}
               </Button>

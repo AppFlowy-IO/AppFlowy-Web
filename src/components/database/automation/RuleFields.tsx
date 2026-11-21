@@ -469,6 +469,7 @@ export function ActionFields({
           schemaFields={fields}
           expressionFields={caps.formulaExpression ? (expressionRow ? fields : []) : undefined}
           webhookHeaders={caps.webhookHeaders}
+          webhookReceipts={caps.webhookReceipts}
           {...{ workspace, sourceDatabase, action, previous, change }}
           fields={expressionRow ? fields : []}
           extended={caps.actions.includes('define_variable')}

@@ -78,6 +78,7 @@ export interface WebhookMetadata {
   id: string;
   name: string;
   disabled: boolean;
+  key_version?: number;
 }
 export interface WebhookCreated {
   endpoint: WebhookMetadata;
@@ -188,35 +189,39 @@ export function parseRuleList(data: unknown): unknown {
   return JSON.parse(data.replace(tokens, (token) => token.replace(/^("owner_uid"\s*:\s*)(-?\d+)$/, '$1"$2"')));
 }
 
+const timeout = 30_000;
+
 export const ruleApi = {
   list: (w: string, d: string, signal?: AbortSignal, row?: string) =>
     executeAPIRequest<{ items: DatabaseRule[] }>(() =>
-      getAxios()?.get(path(w, d, row), { signal, transformResponse: [parseRuleList] })
+      getAxios()?.get(path(w, d, row), { timeout, signal, transformResponse: [parseRuleList] })
     ),
   get: (w: string, d: string, id: string, signal?: AbortSignal, row?: string) =>
-    executeAPIRequest<DatabaseRule>(() => getAxios()?.get(item(w, d, id, row), { signal })),
+    executeAPIRequest<DatabaseRule>(() => getAxios()?.get(item(w, d, id, row), { timeout, signal })),
   create: (w: string, d: string, id: string, draft: RuleDefinition, row?: string) =>
-    executeAPIRequest<DatabaseRule>(() => getAxios()?.post(path(w, d, row), { id, ...draft })),
+    executeAPIRequest<DatabaseRule>(() => getAxios()?.post(path(w, d, row), { id, ...draft }, { timeout })),
   patch: (w: string, d: string, id: string, revision: number, changes: Partial<RuleDefinition>, row?: string) =>
     executeAPIRequest<DatabaseRule>(() =>
-      getAxios()?.patch(item(w, d, id, row), { expected_revision: revision, ...changes })
+      getAxios()?.patch(item(w, d, id, row), { expected_revision: revision, ...changes }, { timeout })
     ),
   remove: (w: string, d: string, id: string, revision: number, row?: string) =>
-    executeAPIVoidRequest(() => getAxios()?.delete(item(w, d, id, row), { params: { expected_revision: revision } })),
+    executeAPIVoidRequest(() =>
+      getAxios()?.delete(item(w, d, id, row), { timeout, params: { expected_revision: revision } })
+    ),
   resolveButton: (w: string, d: string, row: string, field: string, signal?: AbortSignal) =>
-    executeAPIRequest<ButtonBinding>(() => getAxios()?.get(buttonPath(w, d, row, field), { signal })),
+    executeAPIRequest<ButtonBinding>(() => getAxios()?.get(buttonPath(w, d, row, field), { timeout, signal })),
   buttonResult: (w: string, d: string, row: string, field: string, request: string, signal?: AbortSignal) =>
     executeAPIRequest<{ status: string; target?: unknown }>(() =>
-      getAxios()?.get(buttonPath(w, d, row, field) + '/run/' + encodeURIComponent(request), { signal })
+      getAxios()?.get(buttonPath(w, d, row, field) + '/run/' + encodeURIComponent(request), { timeout, signal })
     ),
   invokeButton: (w: string, d: string, row: string, field: string, body: ButtonInvocation) =>
-    executeAPIRequest<string>(() => getAxios()?.post(buttonPath(w, d, row, field) + '/run', body)),
+    executeAPIRequest<string>(() => getAxios()?.post(buttonPath(w, d, row, field) + '/run', body, { timeout })),
   run: (w: string, d: string, id: string, revision: number, row_id: string, request_id: string, row?: string) =>
     executeAPIRequest<string>(() =>
-      getAxios()?.post(item(w, d, id, row) + '/run', { row_id, request_id, expected_revision: revision })
+      getAxios()?.post(item(w, d, id, row) + '/run', { row_id, request_id, expected_revision: revision }, { timeout })
     ),
   getSchedule: (w: string, d: string, id: string, signal?: AbortSignal, row?: string) =>
-    executeAPIRequest<ScheduleState>(() => getAxios()?.get(item(w, d, id, row) + '/schedule', { signal })),
+    executeAPIRequest<ScheduleState>(() => getAxios()?.get(item(w, d, id, row) + '/schedule', { timeout, signal })),
   putSchedule: (
     w: string,
     d: string,
@@ -226,53 +231,75 @@ export const ruleApi = {
     row?: string
   ) =>
     executeAPIRequest<ScheduleState>(() =>
-      getAxios()?.put(item(w, d, id, row) + '/schedule', { expected_revision: revision, ...schedule })
+      getAxios()?.put(item(w, d, id, row) + '/schedule', { expected_revision: revision, ...schedule }, { timeout })
     ),
   databases: (w: string, offset: number, signal?: AbortSignal) =>
     executeAPIRequest<{ databases: TargetDatabase[]; has_more: boolean }>(() =>
-      getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/database', { params: { offset, limit: 50 }, signal })
+      getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/database', {
+        timeout,
+        params: { offset, limit: 50 },
+        signal,
+      })
     ),
   fields: (w: string, d: string, signal?: AbortSignal) =>
     executeAPIRequest<TargetField[]>(() =>
       getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/database/' + encodeURIComponent(d) + '/fields', {
+        timeout,
         signal,
       })
     ),
-  createWebhook: (w: string, name: string, url: string, headers?: Record<string, string>) =>
-    executeAPIRequest<WebhookCreated>(
-      () =>
-        getAxios()?.post('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', {
-          name,
-          url,
-          ...(headers && { headers }),
-        }),
-      { suppressResponseDataLogging: true }
-    ),
-  rotateWebhook: (w: string, id: string) =>
+  createWebhook: (w: string, name: string, url: string, headers?: Record<string, string>, requestId?: string) =>
     executeAPIRequest<WebhookCreated>(
       () =>
         getAxios()?.post(
-          '/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks/' + encodeURIComponent(id) + '/rotate'
+          '/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks',
+          {
+            name,
+            url,
+            ...(headers && { headers }),
+            ...(requestId && { request_id: requestId }),
+          },
+          { timeout }
+        ),
+      { suppressResponseDataLogging: true }
+    ),
+  rotateWebhook: (w: string, id: string, expectedVersion?: number) =>
+    executeAPIRequest<WebhookCreated>(
+      () =>
+        getAxios()?.post(
+          '/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks/' + encodeURIComponent(id) + '/rotate',
+          undefined,
+          { timeout, params: { expected_version: expectedVersion } }
         ),
       { suppressResponseDataLogging: true }
     ),
   removeWebhook: (w: string, id: string) =>
     executeAPIVoidRequest(() =>
-      getAxios()?.delete('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks/' + encodeURIComponent(id))
+      getAxios()?.delete('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks/' + encodeURIComponent(id), {
+        timeout,
+      })
     ),
   workspaceWebhookPolicy: (workspace: string, signal?: AbortSignal) =>
     executeAPIRequest<{ disable_automation_webhooks: boolean }>(() =>
-      getAxios()?.get('/api/workspace/' + encodeURIComponent(workspace) + '/settings', { signal })
+      getAxios()?.get('/api/workspace/' + encodeURIComponent(workspace) + '/settings', { timeout, signal })
     ),
   setWorkspaceWebhookPolicy: (workspace: string, disabled: boolean) =>
     executeAPIRequest<{ disable_automation_webhooks: boolean }>(() =>
-      getAxios()?.post('/api/workspace/' + encodeURIComponent(workspace) + '/settings', {
-        disable_automation_webhooks: disabled,
-      })
+      getAxios()?.post(
+        '/api/workspace/' + encodeURIComponent(workspace) + '/settings',
+        {
+          disable_automation_webhooks: disabled,
+        },
+        { timeout }
+      )
     ),
   webhooks: (w: string, after?: string, signal?: AbortSignal) =>
-    executeAPIRequest<{ items: { id: string; name: string; disabled: boolean }[]; next_cursor?: string }>(() =>
-      getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', { params: { after }, signal })
+    executeAPIRequest<{ items: WebhookMetadata[]; next_cursor?: string }>(() =>
+      getAxios()?.get('/api/workspace/' + encodeURIComponent(w) + '/automation-webhooks', {
+        timeout,
+        params: { after },
+        signal,
+      })
     ),
   runs: (
     w: string,
@@ -285,6 +312,7 @@ export const ruleApi = {
   ) =>
     executeAPIRequest<RunPage>(() =>
       getAxios()?.get<APIResponse<RunPage>>(`${item(w, d, id, row)}/runs`, {
+        timeout,
         params: { before, limit: 25, ...(includeDatabase ? { include_database_runs: true } : {}) },
         signal,
       })

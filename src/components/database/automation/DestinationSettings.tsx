@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { v4 as uuid } from 'uuid';
 import { useTranslation } from 'react-i18next';
 
+import { notifyConnectionsChanged } from '@/application/integrations/connection-events';
 import { authorizeIntegration } from '@/application/integrations/oauth';
 import { ruleApi } from '@/application/services/js-services/http/automation-api';
 import { confirmConnection } from '@/application/services/js-services/http/integration-api';
@@ -17,11 +19,14 @@ export function ConnectAccount({
   provider?: 'slack' | 'gmail';
 }) {
   const { t } = useTranslation();
+  const onConnected = useRef(connected);
+
+  onConnected.current = connected;
   const active = useRef<AbortController>();
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(false);
 
-  useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => () => active.current?.abort(), [workspace, provider]);
   async function connect() {
     if (active.current) return;
     const ac = new AbortController();
@@ -34,7 +39,10 @@ export function ConnectAccount({
       const result = await confirmConnection(workspace, provider, connectionId, oauthQuery, ac.signal);
 
       if (!result.success) throw Error();
-      if (!ac.signal.aborted) connected(connectionId);
+      if (!ac.signal.aborted) {
+        notifyConnectionsChanged(workspace);
+        onConnected.current(connectionId);
+      }
     } catch {
       if (!ac.signal.aborted) setError(true);
     } finally {
@@ -57,21 +65,43 @@ export function EndpointControls({
   workspace,
   selected,
   allowHeaders,
+  receipts,
+  selectedEndpoint,
+  refresh,
   onChange,
 }: {
   workspace: string;
   selected?: string;
   allowHeaders: boolean;
+  receipts: boolean;
+  selectedEndpoint?: { id: string; key_version?: number };
+  refresh: () => void;
   onChange: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const [operation, setOperation] = useState<'new' | 'rotate' | 'remove'>();
+  const [pending, setOperation] = useState<
+    { kind: 'new' } | { kind: 'rotate'; id: string; version?: number } | { kind: 'remove'; id: string }
+  >();
+  const operation = pending?.kind;
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [secret, setSecret] = useState('');
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<'saveError' | 'checkEndpointAfterError'>();
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
+  const mounted = useRef(false);
+  const onChanged = useRef(onChange);
+  const currentSelected = useRef(selected);
+  const createRequest = useRef<{ body: string; id: string }>();
+
+  onChanged.current = onChange;
+  currentSelected.current = selected;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [headers, setHeaders] = useState<{ id: number; name: string; value: string }[]>([]);
   const nextHeaderId = useRef(0);
   const validHeaders =
@@ -86,28 +116,39 @@ export function EndpointControls({
     if (running.current) return;
     running.current = true;
     setBusy(true);
-    setError(false);
+    setError(undefined);
     try {
       if (operation === 'new') {
-        const result =
-          headers.length && allowHeaders
-            ? await ruleApi.createWebhook(
-                workspace,
-                name,
-                url,
-                Object.fromEntries(headers.map((h) => [h.name, h.value]))
-              )
-            : await ruleApi.createWebhook(workspace, name, url);
+        const headerValues =
+          allowHeaders && headers.length ? Object.fromEntries(headers.map((h) => [h.name, h.value])) : undefined;
+        const body = JSON.stringify([workspace, name, url, headerValues]);
+
+        if (createRequest.current?.body !== body) createRequest.current = { body, id: uuid() };
+        const result = await ruleApi.createWebhook(
+          workspace,
+          name,
+          url,
+          headerValues,
+          receipts ? createRequest.current.id : undefined
+        );
+
+        createRequest.current = undefined;
+        if (!mounted.current) return;
+        setSecret(result.signing_secret);
+        if (currentSelected.current === selected) onChanged.current(result.endpoint.id);
+        else refresh();
+      } else if (pending?.kind === 'rotate' && pending.id === selected) {
+        const result = await ruleApi.rotateWebhook(workspace, pending.id, pending.version);
+
+        if (!mounted.current) return;
 
         setSecret(result.signing_secret);
-        onChange(result.endpoint.id);
-      } else if (operation === 'rotate' && selected) {
-        const result = await ruleApi.rotateWebhook(workspace, selected);
-
-        setSecret(result.signing_secret);
-      } else if (operation === 'remove' && selected) {
-        await ruleApi.removeWebhook(workspace, selected);
-        onChange('');
+        refresh();
+      } else if (pending?.kind === 'remove' && pending.id === selected) {
+        await ruleApi.removeWebhook(workspace, pending.id);
+        if (!mounted.current) return;
+        if (currentSelected.current === selected) onChanged.current('');
+        else refresh();
       }
 
       setName('');
@@ -115,7 +156,15 @@ export function EndpointControls({
       setHeaders([]);
       setOperation(undefined);
     } catch {
-      setError(true);
+      if (!mounted.current) return;
+      const legacyMutation = !receipts && (operation === 'new' || operation === 'rotate');
+
+      if (operation === 'rotate' || legacyMutation) {
+        refresh();
+        setOperation(undefined);
+      }
+
+      setError(legacyMutation ? 'checkEndpointAfterError' : 'saveError');
     } finally {
       setBusy(false);
       running.current = false;
@@ -139,8 +188,8 @@ export function EndpointControls({
             type='button'
             variant='ghost'
             onClick={() => {
-              setError(false);
-              setOperation('new');
+              setError(undefined);
+              setOperation({ kind: 'new' });
             }}
           >
             {t('databaseAutomation.newEndpoint')}
@@ -150,9 +199,15 @@ export function EndpointControls({
               <Button
                 type='button'
                 variant='ghost'
+                disabled={!selectedEndpoint || (receipts && selectedEndpoint.key_version === undefined)}
                 onClick={() => {
-                  setError(false);
-                  setOperation('rotate');
+                  setError(undefined);
+                  if (selectedEndpoint)
+                    setOperation({
+                      kind: 'rotate',
+                      id: selectedEndpoint.id,
+                      version: receipts ? selectedEndpoint.key_version : undefined,
+                    });
                 }}
               >
                 {t('databaseAutomation.rotateEndpoint')}
@@ -161,8 +216,8 @@ export function EndpointControls({
                 type='button'
                 variant='ghost'
                 onClick={() => {
-                  setError(false);
-                  setOperation('remove');
+                  setError(undefined);
+                  setOperation({ kind: 'remove', id: selected });
                 }}
               >
                 {t('databaseAutomation.removeEndpoint')}
@@ -234,7 +289,11 @@ export function EndpointControls({
           <div className='flex gap-2'>
             <Button
               type='button'
-              disabled={operation === 'new' && (!name.trim() || !url.startsWith('https://') || !validHeaders)}
+              disabled={
+                pending?.kind === 'new'
+                  ? !name.trim() || !url.startsWith('https://') || !validHeaders
+                  : pending?.id !== selected
+              }
               onClick={() => void submit()}
             >
               {t('databaseAutomation.confirm')}
@@ -243,10 +302,11 @@ export function EndpointControls({
               type='button'
               variant='ghost'
               onClick={() => {
+                createRequest.current = undefined;
                 setOperation(undefined);
                 setUrl('');
                 setHeaders([]);
-                setError(false);
+                setError(undefined);
               }}
             >
               {t('databaseAutomation.cancel')}
@@ -254,7 +314,7 @@ export function EndpointControls({
           </div>
         </fieldset>
       )}
-      {error && <p role='alert'>{t('databaseAutomation.saveError')}</p>}
+      {error && <p role='alert'>{t(`databaseAutomation.${error}`)}</p>}
     </div>
   );
 }

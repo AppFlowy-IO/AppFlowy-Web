@@ -12,21 +12,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 
 import { Capabilities } from './model';
-import { useAutomationCapabilities } from './useAutomationCapabilities';
+import { useEditorCapabilities } from './useAutomationCapabilities';
 
 const RuleManager = lazy(() => import('./AutomationEditor').then((module) => ({ default: module.RuleManager })));
 
 type Props = { rowId?: string; prepare?: () => Promise<boolean>; standaloneRow?: boolean };
 
 export default function AutomationButton(props: Props = {}) {
-  const caps = useAutomationCapabilities();
+  const { caps, waiting } = useEditorCapabilities();
 
   if (!caps.enabled) return null;
-  if (props.rowId === undefined) return <AvailableAutomationButton {...props} caps={caps} />;
+  if (props.rowId === undefined) return <AvailableAutomationButton {...props} caps={caps} waiting={waiting} />;
   return (
     <>
-      {caps.rowScoped && <AvailableAutomationButton {...props} caps={caps} scoped />}
-      {!props.standaloneRow && caps.triggers.includes('manual') && <AvailableAutomationButton {...props} caps={caps} />}
+      {caps.rowScoped && <AvailableAutomationButton {...props} caps={caps} waiting={waiting} scoped />}
+      {!props.standaloneRow && caps.triggers.includes('manual') && (
+        <AvailableAutomationButton {...props} caps={caps} waiting={waiting} />
+      )}
     </>
   );
 }
@@ -36,8 +38,9 @@ function AvailableAutomationButton({
   prepare,
   caps,
   scoped,
+  waiting,
   standaloneRow,
-}: Props & { caps: Capabilities; scoped?: boolean }) {
+}: Props & { caps: Capabilities; waiting: boolean; scoped?: boolean }) {
   const { t } = useTranslation();
   const { workspaceId, readOnly, canWrite, dataSource } = useDatabaseContext();
   const account = useUserWorkspaceInfoOptional();
@@ -69,6 +72,7 @@ function AvailableAutomationButton({
   }, [scoped, eligible, workspaceId, databaseId, rowId, key]);
 
   if (
+    (waiting && !open) ||
     (rowId !== undefined && (!rowId || (!scoped && !owner))) ||
     (scoped ? accessKey !== key : !account) ||
     (!scoped && role !== Role.Member && role !== Role.Owner) ||
@@ -109,15 +113,18 @@ function AvailableAutomationButton({
         </DialogHeader>
         {open && (
           <Suspense fallback={<p role='status'>{t('databaseAutomation.loading')}</p>}>
-            <RuleManager
-              row={row}
-              viewerUid={owner || undefined}
-              rowScope={scoped ? rowId : undefined}
-              key={[workspaceId, databaseId, owner, rowId].join('/')}
-              workspace={workspaceId}
-              database={databaseId}
-              caps={caps}
-            />
+            <fieldset disabled={waiting}>
+              {waiting && <p role='status'>{t('databaseAutomation.loadError')}</p>}
+              <RuleManager
+                row={row}
+                viewerUid={owner || undefined}
+                rowScope={scoped ? rowId : undefined}
+                key={[workspaceId, databaseId, owner, rowId].join('/')}
+                workspace={workspaceId}
+                database={databaseId}
+                caps={caps}
+              />
+            </fieldset>
           </Suspense>
         )}
       </DialogContent>

@@ -1,14 +1,31 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ruleApi } from '@/application/services/js-services/http/automation-api';
-import { getServerInfoSnapshot, SERVER_INFO_LOADING, subscribeToServerInfo } from '@/utils/server-info';
+import { configuredServerUrl, getServerInfoSnapshot, SERVER_INFO_LOADING, subscribeToServerInfo } from '@/utils/server-info';
 
-import { ruleCapabilities } from './model';
+import { ruleCapabilities, type Capabilities } from './model';
 
 export function useAutomationCapabilities() {
-  const { info } = useSyncExternalStore(subscribeToServerInfo, getServerInfoSnapshot, () => SERVER_INFO_LOADING);
+  const { info, status } = useSyncExternalStore(subscribeToServerInfo, getServerInfoSnapshot, () => SERVER_INFO_LOADING);
 
-  return useMemo(() => ruleCapabilities(info), [info]);
+  return useMemo(
+    () => ({ ...ruleCapabilities(info), temporarilyUnavailable: status === 'loading' || status === 'unavailable' }),
+    [info, status]
+  );
+}
+
+// Keep an already open form mounted across a transient server-info refresh.
+export function useEditorCapabilities() {
+  const current = useAutomationCapabilities();
+  const server = configuredServerUrl();
+  const previous = useRef<{ server: string; caps: Capabilities }>();
+  const waiting = current.temporarilyUnavailable;
+
+  useEffect(() => {
+    if (!waiting) previous.current = { server, caps: current };
+  }, [waiting, current, server]);
+
+  return { caps: waiting && previous.current?.server === server ? previous.current.caps : current, waiting };
 }
 
 /** Read once when an editor opens. An unavailable policy leaves ordinary actions editable. */

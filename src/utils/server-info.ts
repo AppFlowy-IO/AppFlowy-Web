@@ -11,7 +11,7 @@ export type ServerHostingMode = 'unknown' | 'cloud' | 'self-hosted';
 const listeners = new Set<() => void>();
 let snapshot: { serverUrl: string; state: ServerInfoState } | undefined;
 
-function configuredServerUrl(): string {
+export function configuredServerUrl(): string {
   return getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
 }
 
