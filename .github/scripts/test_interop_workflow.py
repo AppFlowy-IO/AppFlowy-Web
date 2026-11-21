@@ -18,6 +18,50 @@ class InteropWorkflowTest(unittest.TestCase):
     def step(self, name):
         return next(step for step in WORKFLOW["jobs"]["test"]["steps"] if step.get("name") == name)
 
+    def test_cached_browser_setup_is_bounded_in_both_database_jobs(self):
+        for job in ("test", "dashboard-large-database"):
+            with self.subTest(job=job):
+                steps = WORKFLOW["jobs"][job]["steps"]
+                cache = next(step for step in steps if step.get("id") == "playwright-cache")
+                install = next(step for step in steps if step.get("uses") == "./.github/actions/install-chromium")
+                self.assertLess(steps.index(cache), steps.index(install))
+                self.assertGreater(install["timeout-minutes"], 0)
+                self.assertLessEqual(install["timeout-minutes"], 25)
+                self.assertEqual(install["with"]["cache-hit"], "${{ steps.playwright-cache.outputs.cache-hit }}")
+
+    def test_chromium_dependencies_and_downloads_follow_the_browser_cache(self):
+        action = yaml.safe_load((ROOT / ".github/actions/install-chromium/action.yml").read_text())
+        checkout, install = action["runs"]["steps"]
+        self.assertEqual(checkout["with"]["repository"], "AppFlowy-IO/AppFlowy-CI")
+        self.assertRegex(checkout["with"]["ref"], r"^[a-f0-9]{40}$")
+        self.assertFalse(checkout["with"]["persist-credentials"])
+        self.assertEqual(install["env"]["PLAYWRIGHT_CACHE_HIT"], "${{ inputs.cache-hit }}")
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            trace = temporary / "commands"
+            # Shell functions record attempts and preserve failures from package setup.
+            shell = '''
+                sudo() { printf '%s\\n' "$*" >> "$TRACE"; }
+                pnpm() {
+                    printf '%s\\n' "$*" >> "$TRACE"
+                    [[ "$*" != "exec playwright install-deps chromium" ]] || return "$DEPENDENCY_EXIT"
+                }
+            ''' + install["run"]
+            for cached, dep_exit in (("true", 0), ("false", 0), ("", 0), ("false", 7)):
+                with self.subTest(cached=cached, dep_exit=dep_exit):
+                    trace.write_text("")
+                    env = {**os.environ, "TRACE": str(trace), "GITHUB_WORKSPACE": directory,
+                           "PLAYWRIGHT_CACHE_HIT": cached, "DEPENDENCY_EXIT": str(dep_exit)}
+                    result = subprocess.run(["bash", "-eo", "pipefail", "-c", shell], env=env)
+                    self.assertEqual(result.returncode, dep_exit)
+                    setup, *commands = trace.read_text().splitlines()
+                    script = temporary / checkout["with"]["path"] / ".github/scripts/configure_flutter_apt.py"
+                    self.assertEqual(setup, f"--preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 {script} --network-only")
+                    expected = ["exec playwright install-deps chromium"]
+                    if cached != "true" and not dep_exit:
+                        expected.append("exec playwright install chromium")
+                    self.assertEqual(commands, expected)
+
     def selection(self, **values):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "outputs"
@@ -110,6 +154,41 @@ printf '%s\\n' "$GH_MERGE_BASE"
         self.assertNotIn("docker build", script)
         self.assertEqual(self.step("Upload exact Cloud runtime manifest")["if"],
                          "always() && steps.cloud-input.outputs.needs-tools == 'true'")
+
+    def test_live_row_editor_requires_paired_images_and_enables_the_feature_before_startup(self):
+        select = next(step for step in WORKFLOW["jobs"]["build"]["steps"] if step.get("name") == "Select test groups")
+        with tempfile.TemporaryDirectory() as directory:
+            for source, image, interop, accepted in [
+                ("", "", "true", False), ("b" * 40, "", "true", False),
+                ("b" * 40, "0", "true", False), ("main", "123", "true", False),
+                ("b" * 40, "123", "false", False), ("b" * 40, "123", "true", True),
+            ]:
+                with self.subTest(source=source, image=image, interop=interop):
+                    output = Path(directory) / "output"
+                    output.write_text("")
+                    env = {**os.environ, "GITHUB_OUTPUT": str(output), "INTEROP_ONLY": interop,
+                           "CLOUD_SOURCE_SHA": source, "CLOUD_IMAGE_RUN_ID": image, "REQUIRE_ROW_AUTOMATIONS": "true"}
+                    rc = subprocess.run(["bash", "-c", select["run"]], cwd=ROOT, env=env, capture_output=True)
+                    self.assertEqual(rc.returncode == 0, accepted, rc.stderr)
+        enable = self.step("Enable row automations for the paired editor test")
+        case = self.step("Test the live Web row automation editor")
+        steps = WORKFLOW["jobs"]["test"]["steps"]
+        self.assertEqual(enable["if"], "matrix.test-group.name == 'template-interop' && (inputs.require_row_automations || inputs.require_workspace_webhook_policy)")
+        self.assertEqual(case["if"], enable["if"])
+        self.assertLess(steps.index(enable), steps.index(self.step("Start Docker services")))
+        self.assertLess(steps.index(self.step("Start Docker services")), steps.index(case))
+        self.assertIn("APPFLOWY_DATABASE_AUTOMATIONS_ENABLED=true", enable["run"])
+        self.assertEqual(case["env"]["APPFLOWY_TEST_REQUIRE_ROW_AUTOMATIONS"], "true")
+        self.assertTrue((ROOT / "playwright/e2e/database/automation-row-editor.spec.ts").is_file())
+        self.assertIn("playwright/e2e/database/automation-row-editor.spec.ts", case["run"])
+
+    def test_workspace_webhook_policy_uses_the_paired_editor_and_requires_exact_images(self):
+        select = next(step for step in WORKFLOW["jobs"]["build"]["steps"] if step.get("id") == "groups")
+        self.assertIn("inputs.require_workspace_webhook_policy", select["env"]["REQUIRE_ROW_AUTOMATIONS"])
+        case = self.step("Test the live Web row automation editor")
+        self.assertIn("inputs.require_workspace_webhook_policy", case["if"])
+        self.assertEqual(case["env"]["APPFLOWY_TEST_REQUIRE_WORKSPACE_WEBHOOK_POLICY"],
+                         "${{ inputs.require_workspace_webhook_policy }}")
 
     def test_exact_inputs_cannot_be_ignored_by_a_noninterop_run(self):
         step = next(step for step in WORKFLOW["jobs"]["build"]["steps"]

@@ -69,6 +69,13 @@ resolves its immutable digest and source revision before starting the stack.
 Ordinary Web jobs continue using published images. Exact artifact inputs require
 `interop_only=true`, and an incomplete pair or mixed selection fails immediately.
 
+For database automation releases, set `require_row_automations=true` with
+`interop_only=true`, the Server commit and its private image run ID. The job
+enables automation on Cloud and Worker, opens a row in Chromium, saves and runs
+a manual rule, and checks the resulting notification count and run history.
+The same Playwright case runs in the regular database shards, where the row
+menu follows the published server's capabilities.
+
 Initial delivery requires the companion Web (#679), Desktop (#1547), and Cloud
 changes. Validate their exact revisions together; normal runs use peer `main` and
 the current verified Cloud image after they land. This adds automatic checks without changing branch-protection settings.

@@ -33,6 +33,14 @@ export interface ServerInfo {
   enable_atomic_creation_defaults?: boolean;
   /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
   enable_database_history?: boolean;
+  enable_database_automations?: boolean;
+  database_automation_triggers?: string[];
+  database_automation_value_features?: string[];
+  database_automation_scope_features?: string[];
+  database_automation_trigger_features?: string[];
+  database_automation_actions?: string[];
+  database_automation_webhook_features?: string[];
+  database_automation_schedule_features?: string[];
   /**
    * Rollout authorization for the relative_date filter format. Only advertise
    * this after incompatible clients are excluded from the shared data; server

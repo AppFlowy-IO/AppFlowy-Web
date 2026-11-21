@@ -180,7 +180,7 @@ function GridFieldMenu({
         },
       },
       // A formula column has no stored cells, so there is nothing to clear.
-      ...(type === FieldType.Formula
+      ...([FieldType.Formula, FieldType.Button].includes(type)
         ? []
         : [
             {

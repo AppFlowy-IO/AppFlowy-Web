@@ -6,11 +6,15 @@ import { DatabaseContext, type DatabaseContextState } from '@/application/databa
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
   useDuplicatePropertyDispatch,
+  useSwitchPropertyType,
+  useUpdateButtonTypeOption,
+  useUpdateCellDispatch,
   useReorderColumnDispatch,
   useUpdateNumberTypeOption,
   useUpdatePropertyIconDispatch,
   useUpdatePropertyNameDispatch,
 } from '@/application/database-yjs/dispatch';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { NumberFormat } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
@@ -312,6 +316,97 @@ describe('field metadata production hooks use database history', () => {
     expect(getFieldOrderIds(fixture)).toEqual([relationFieldId, textFieldId, secondTextFieldId, numberFieldId]);
   });
 
+  it('switches Button without touching stored rows, blocks direct writes, and clears its binding on duplication', async () => {
+    const f = createFixture();
+    const wrapper = createWrapper(f);
+    const hooks = renderHook(
+      () => ({
+        changeType: useSwitchPropertyType(),
+        save: useUpdateButtonTypeOption(textFieldId),
+        write: useUpdateCellDispatch(rowId, textFieldId),
+        duplicate: useDuplicatePropertyDispatch(),
+      }),
+      { wrapper }
+    );
+    const cell = getRow(f).get(YjsDatabaseKey.cells).get(textFieldId);
+    const before = Y.encodeStateAsUpdate(f.rowDoc);
+
+    await act(async () => {
+      await hooks.result.current.changeType(textFieldId, FieldType.Button);
+    });
+    act(() => hooks.result.current.save({ label: 'Approve', automation_id: 'de5d2db5-f27a-4914-99d9-468701412053' }));
+    const original = f.fields.get(textFieldId);
+
+    const presentation = original.get(YjsDatabaseKey.type_option).get(String(FieldType.Button));
+
+    act(() =>
+      hooks.result.current.save({
+        label: 'Approve',
+        automation_id: 'de5d2db5-f27a-4914-99d9-468701412053',
+        confirmation: 'Send now?',
+        open_target: { type: 'created_row', action_index: 0 },
+      })
+    );
+    act(() => hooks.result.current.save({ label: 'Approve', automation_id: 'de5d2db5-f27a-4914-99d9-468701412053' }));
+    expect(presentation.toJSON()).toMatchObject({
+      confirmation: 'Send now?',
+      open_target: { type: 'created_row', action_index: 0 },
+    });
+    expect(parseYDatabaseCellToCell(cell, original).data).toBeNull();
+    let status;
+
+    await act(async () => {
+      status = await hooks.result.current.write('do not store');
+    });
+    expect(status).toBe('cancelled');
+    let copy = '';
+
+    act(() => {
+      copy = hooks.result.current.duplicate(textFieldId);
+    });
+    expect(f.fields.get(copy).get(YjsDatabaseKey.type_option).get('20')?.toJSON()).toEqual({
+      label: 'Approve',
+      confirmation: 'Send now?',
+    });
+    for (const data of [
+      { type: 'url', url: 'https://example.org' },
+      { type: 'page', view_id: 'de5d2db5-f27a-4914-99d9-468701412053' },
+    ]) {
+      const nested = new Y.Map(Object.entries(data));
+
+      act(() => {
+        presentation.set('open_target', nested);
+        copy = hooks.result.current.duplicate(textFieldId);
+      });
+      const copied = f.fields.get(copy).get(YjsDatabaseKey.type_option).get('20').get('open_target');
+
+      expect(copied.toJSON()).toEqual(data);
+      expect(copied).not.toBe(nested);
+      act(() => {
+        nested.set('type', 'changed');
+      });
+      expect(copied.toJSON()).toEqual(data);
+    }
+
+    act(() => hooks.result.current.save({ label: 'Approve', automation_id: '', confirmation: '', open_target: null }));
+    expect(presentation.has('confirmation')).toBe(false);
+    expect(presentation.has('open_target')).toBe(false);
+    expect(getRow(f).get(YjsDatabaseKey.cells).has(copy)).toBe(false);
+    const options = original.get(YjsDatabaseKey.type_option).get(String(FieldType.Button));
+
+    act(() => {
+      options.set('future_display_option', 'preserve-me');
+      hooks.result.current.save({ label: 'Approve', automation_id: '' });
+    });
+    expect(options.toJSON()).toEqual({ label: 'Approve', future_display_option: 'preserve-me' });
+    act(() => hooks.result.current.save({ label: '', automation_id: '' }));
+    expect(options.toJSON()).toEqual({ future_display_option: 'preserve-me' });
+    expect(Y.encodeStateAsUpdate(f.rowDoc)).toEqual(before);
+    await act(async () => {
+      await hooks.result.current.changeType(textFieldId, FieldType.RichText);
+    });
+    expect(parseYDatabaseCellToCell(cell, original).data).toBe('Text value');
+  });
   it('duplicates a non-relation field atomically and undoes and redoes every local copy', () => {
     const fixture = createFixture();
     const { result } = renderHook(useFieldMetadataHistory, { wrapper: createWrapper(fixture) });

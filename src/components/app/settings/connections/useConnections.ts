@@ -9,6 +9,7 @@ import {
   IntegrationProvider,
   integrationProviders,
   isIntegrationProvider,
+  isAutomationProvider,
 } from '@/application/integrations/types';
 import * as IntegrationService from '@/application/services/domains/integration';
 import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
@@ -45,7 +46,11 @@ export function useConnections(workspaceId: string) {
       ]);
 
       if (!controller.signal.aborted) {
-        setConnections(result.filter((connection) => isIntegrationProvider(connection.provider)));
+        setConnections(
+          result.filter(
+            (connection) => isIntegrationProvider(connection.provider) || isAutomationProvider(connection.provider)
+          )
+        );
         setConfiguredProviders(configured);
         setRefreshVersion((version) => version + 1);
       }

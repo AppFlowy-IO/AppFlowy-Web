@@ -15,6 +15,8 @@ export type NotificationType =
   | 'person_property_assigned'
   | 'workspace_invite'
   | 'workspace_role_changed'
+  | 'automation_notification'
+  | 'automation_run_failed'
   | 'unknown';
 
 /**

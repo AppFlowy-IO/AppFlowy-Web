@@ -233,6 +233,7 @@ export function writeCellToRow({
   historyOptions?: CellHistoryOptions;
   actorUid?: AttributionUid;
 }): CellWriteStatus {
+  if (fieldType === FieldType.Button) return 'cancelled';
   const { richText: requestedRichText, shouldWrite, ...historyDescriptor } = historyOptions ?? {};
   // Formatting belongs to Text cells only (URL cells share the text editor).
   const richText = fieldType === FieldType.RichText ? requestedRichText : undefined;
@@ -327,6 +328,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           return;
         }
 
+        if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Button) return 'cancelled';
         let rowDoc = rowMap?.[rowId];
         let target = rowDoc ? getWritableRowTarget(rowDoc) : null;
 
@@ -389,6 +391,7 @@ export function useUpdateAnyCellDispatch() {
           return;
         }
 
+        if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Button) return 'cancelled';
         let rowDoc = rowMap?.[rowId];
         let target = rowDoc ? getWritableRowTarget(rowDoc) : null;
 

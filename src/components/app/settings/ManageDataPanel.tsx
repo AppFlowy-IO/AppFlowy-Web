@@ -6,6 +6,7 @@ import { ExportService } from '@/application/services/domains';
 import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as HelpIcon } from '@/assets/icons/help.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { WorkspaceWebhookSetting } from '@/components/app/settings/WorkspaceWebhookSetting';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,7 +16,13 @@ import { openUrl } from '@/utils/url';
 const IMPORT_GUIDE_URL = 'https://appflowy.com/guide/import-from-AppFlowy';
 const BACKUP_GUIDE_URL = 'https://appflowy.com/guide/back-up-your-data';
 
-export function ManageDataPanel({ onImport }: { onImport: () => void }) {
+export function ManageDataPanel({
+  onImport,
+  webhookPolicyWorkspace,
+}: {
+  onImport: () => void;
+  webhookPolicyWorkspace?: string;
+}) {
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
@@ -55,6 +62,7 @@ export function ManageDataPanel({ onImport }: { onImport: () => void }) {
       </div>
 
       <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
+        {webhookPolicyWorkspace && <WorkspaceWebhookSetting key={webhookPolicyWorkspace} workspace={webhookPolicyWorkspace} />}
         {/* Import your workspace */}
         <section className='flex items-center justify-between gap-4 py-4'>
           <div className='min-w-0'>

@@ -18,7 +18,7 @@ export class IntegrationOAuthError extends Error {
 /** Opens synchronously from the user's click so browsers do not block the popup. */
 export async function authorizeIntegration(
   workspaceId: string,
-  provider: IntegrationProvider,
+  provider: IntegrationProvider | 'slack' | 'gmail',
   signal: AbortSignal
 ): Promise<{ connectionId: string; oauthQuery: string }> {
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');

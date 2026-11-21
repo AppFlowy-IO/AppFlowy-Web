@@ -10,6 +10,7 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
+import AutomationButton from '@/components/database/automation/AutomationButton';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import { RowPeekBannerActionsProvider } from '@/components/database/row-peek/RowPeekBannerActions';
 import { RowPeekHeader } from '@/components/database/row-peek/RowPeekHeader';
@@ -197,6 +198,7 @@ function DatabaseRowModal({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align='end' className='row-peek-menu w-60 rounded-xl'>
                     <DropdownMenuGroup>
+                      <AutomationButton key={rowId} rowId={rowId} prepare={prepare} />
                       <DropdownMenuItem
                         data-testid='row-detail-duplicate'
                         disabled={duplicateLoading}
@@ -241,7 +243,9 @@ function DatabaseRowModal({
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              ) : null}
+              ) : (
+                <AutomationButton key={rowId} rowId={rowId} standaloneRow />
+              )}
             </RowPeekHeader>
             {/* Each row starts at the top; the surrounding shell persists across rows. */}
             <AFScroller key={rowId} overflowXHidden className='appflowy-scroll-container w-full flex-1'>

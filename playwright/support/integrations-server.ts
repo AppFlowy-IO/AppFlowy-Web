@@ -17,6 +17,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
         optimizeDeps: {
           entries: [
             'playwright/support/connections.fixture.tsx',
+            'playwright/support/automation-button.fixture.tsx',
             'playwright/support/integrations.fixture.tsx',
             'playwright/support/math-equation.fixture.tsx',
             'playwright/support/code-block.fixture.tsx',
@@ -47,6 +48,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
 export function fixtureHTML(
   entry:
     | 'connections'
+    | 'automation-button'
     | 'integrations'
     | 'math-equation'
     | 'code-block'

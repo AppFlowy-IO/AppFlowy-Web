@@ -79,6 +79,7 @@ import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDoc
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
+import { FailureRuleDialog } from './automation/FailureRuleDialog';
 import { DatabaseContextProvider } from './DatabaseContext';
 import { usePublishMountedDatabase } from './mounted-database';
 
@@ -2506,6 +2507,7 @@ function Database(props: Database2Props) {
         <DatabaseExtraFiltersContext.Provider value={extraFilters}>
           <div className={'flex min-h-0 w-full flex-1 justify-center'}>
             <DatabaseContextProvider value={mainContextValue}>
+              {!_isDocumentBlock && !isDashboardWidget && <FailureRuleDialog />}
               {rowId ? (
                 <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
               ) : (

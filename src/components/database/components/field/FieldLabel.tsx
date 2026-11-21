@@ -50,6 +50,8 @@ export function getFieldTypeName(type: FieldType, t: Translate): string {
       return t('grid.field.timeFieldName');
     case FieldType.Rollup:
       return t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
+    case FieldType.Button:
+      return t('databaseAutomation.buttonProperty');
     case FieldType.Formula:
       return t('grid.field.formulaFieldName', { defaultValue: 'Formula' });
     default:

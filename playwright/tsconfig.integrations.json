@@ -8,6 +8,7 @@
     "e2e/embeded/image/**/*.ts",
     "support/connections.ts",
     "support/connections.fixture.tsx",
+    "support/automation-button.fixture.tsx",
     "support/integrations-server.ts",
     "support/integrations.fixture.tsx",
     "support/math-equation.fixture.tsx",

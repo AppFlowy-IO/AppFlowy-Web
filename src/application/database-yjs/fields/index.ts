@@ -52,6 +52,8 @@ export function getFieldName (fieldType: FieldType) {
       return 'Time';
     case FieldType.Rollup:
       return 'Rollup';
+    case FieldType.Button:
+      return 'Button';
     case FieldType.Formula:
       return 'Formula';
     default:

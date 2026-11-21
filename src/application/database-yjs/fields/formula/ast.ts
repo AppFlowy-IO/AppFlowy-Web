@@ -90,6 +90,17 @@ export function collectPropRefs(node: FormulaNode, out: string[] = []): string[]
   return out;
 }
 
+/** Whether evaluation reads the source row, including references inside conditional branches. */
+export function formulaReadsSourceRow(node: FormulaNode): boolean {
+  for (const current of walkFormulaNodes(node)) {
+    if (current.kind === 'prop' || (current.kind === 'call' && current.name === 'id' && current.args.length === 0)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /** Whether this expression directly reads the wall clock. */
 export function formulaUsesClock(node: FormulaNode): boolean {
   for (const current of walkFormulaNodes(node)) {

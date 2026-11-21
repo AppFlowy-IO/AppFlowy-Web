@@ -158,7 +158,10 @@ function database(selected: Contract[], formulas: Record<string, string>) {
 }
 
 it('covers every field type and keeps independently authored case IDs unique', () => {
-  const all = Object.values(FieldType).filter((value): value is FieldType => typeof value === 'number');
+  // Buttons have no value-bearing states. The field-type suite exercises their invariant empty result.
+  const all = Object.values(FieldType).filter(
+    (value): value is FieldType => typeof value === 'number' && value !== FieldType.Button
+  );
 
   expect(new Set(contracts.map((contract) => contract.field_type))).toEqual(new Set(all));
   expect(new Set(contracts.map((contract) => contract.id)).size).toBe(contracts.length);

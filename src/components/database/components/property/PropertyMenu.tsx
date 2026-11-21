@@ -11,6 +11,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { ButtonDefaults } from '@/components/database/automation/ButtonDefaults';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -179,6 +180,8 @@ function PropertyMenu({
         return <TranslatePropertyMenuContext {...props} />;
       case FieldType.Rollup:
         return <RollupPropertyMenuContent {...props} />;
+      case FieldType.Button:
+        return <ButtonDefaults {...props} />;
       case FieldType.Formula:
         return <FormulaPropertyMenuContent {...props} onRequestEditor={handleRequestFormula} />;
       default:

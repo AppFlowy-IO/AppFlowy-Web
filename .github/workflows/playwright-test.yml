@@ -26,6 +26,14 @@ on:
         description: Run only the Web/Desktop template compatibility suite
         type: boolean
         default: false
+      require_row_automations:
+        description: Verify the live row automation editor against the paired Cloud and Worker
+        type: boolean
+        default: false
+      require_workspace_webhook_policy:
+        description: Verify that an owner can disable and restore outgoing webhooks in the paired workspace
+        type: boolean
+        default: false
       correlation_id:
         description: Caller correlation ID for the Desktop CI check
         required: false
@@ -198,7 +206,12 @@ jobs:
     if: github.event_name != 'schedule' && !inputs.interop_only
     name: 'Connections (Chromium, Firefox, WebKit)'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    # Match the browser binaries to the Playwright version in pnpm-lock.yaml.
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-noble
+      # The hosted runner owns the mounted workspace and home as uid 1001.
+      options: --user pwuser --shm-size=1g
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -209,8 +222,6 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install test browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Typecheck integration tests
         run: pnpm exec tsc --project playwright/tsconfig.integrations.json
       - name: Test connections and connected features
@@ -234,6 +245,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Test browser setup and paired runtime selection
+        run: python3 .github/scripts/test_interop_workflow.py
 
       - name: Test Web backend fixture selection
         run: python3 .github/scripts/test_web_ci_compose.py
@@ -277,6 +291,7 @@ jobs:
         id: groups
         env:
           INTEROP_ONLY: ${{ inputs.interop_only }}
+          REQUIRE_ROW_AUTOMATIONS: ${{ inputs.require_row_automations || inputs.require_workspace_webhook_policy }}
           CLOUD_SOURCE_SHA: ${{ inputs.cloud_source_sha }}
           CLOUD_IMAGE_RUN_ID: ${{ inputs.cloud_image_run_id }}
         run: |
@@ -285,6 +300,11 @@ jobs:
             const groups = require("./.github/playwright-groups.json");
             if ((process.env.CLOUD_SOURCE_SHA || process.env.CLOUD_IMAGE_RUN_ID) && process.env.INTEROP_ONLY !== "true") {
               throw new Error("Exact Cloud artifacts require interop_only=true");
+            }
+            if (process.env.REQUIRE_ROW_AUTOMATIONS === "true" && (process.env.INTEROP_ONLY !== "true"
+                || !/^[a-f0-9]{40}$/.test(process.env.CLOUD_SOURCE_SHA || "")
+                || !/^[1-9][0-9]*$/.test(process.env.CLOUD_IMAGE_RUN_ID || ""))) {
+              throw new Error("The row automation editor requires a paired immutable Cloud and image run");
             }
             const selected = process.env.INTEROP_ONLY === "true"
               ? groups.filter(group => group.name === "template-interop")
@@ -328,6 +348,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Enable row automations for the paired editor test
+        if: matrix.test-group.name == 'template-interop' && (inputs.require_row_automations || inputs.require_workspace_webhook_policy)
+        run: echo "APPFLOWY_DATABASE_AUTOMATIONS_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Validate compatibility runtime selection
         id: cloud-input
@@ -542,13 +566,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright deps (cached browsers)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+      - name: Install Chromium for database tests
+        uses: ./.github/actions/install-chromium
+        timeout-minutes: 20
+        with:
+          cache-hit: ${{ steps.playwright-cache.outputs.cache-hit }}
 
       - name: Setup environment
         run: cp deploy.env .env
@@ -658,6 +680,14 @@ jobs:
           cargo build --locked -p event-integration-test --example row_template_interop --features dart
           echo "APPFLOWY_DESKTOP_INTEROP_BIN=$PWD/target/debug/examples/row_template_interop" >> "$GITHUB_ENV"
           echo "Desktop under test: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test the live Web row automation editor
+        if: matrix.test-group.name == 'template-interop' && (inputs.require_row_automations || inputs.require_workspace_webhook_policy)
+        env:
+          APPFLOWY_TEST_REQUIRE_ROW_AUTOMATIONS: 'true'
+          APPFLOWY_TEST_REQUIRE_WORKSPACE_WEBHOOK_POLICY: ${{ inputs.require_workspace_webhook_policy }}
+          BASE_URL: http://localhost:3000
+        run: pnpm exec playwright test playwright/e2e/database/automation-row-editor.spec.ts --project=chromium --workers=1 --retries=0 --reporter=list
 
       - name: Generate BDD tests
         if: ${{ matrix.test-group.bdd == 'true' }}
@@ -936,13 +966,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright deps (cached browsers)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+      - name: Install Chromium for database tests
+        uses: ./.github/actions/install-chromium
+        timeout-minutes: 20
+        with:
+          cache-hit: ${{ steps.playwright-cache.outputs.cache-hit }}
 
       - name: Setup environment
         run: cp deploy.env .env
