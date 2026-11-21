@@ -3085,6 +3085,7 @@ test('endpoint creation recovers the same request and rotation uses the confirme
 
   api.webhooks.mockResolvedValue({ items: [endpoint] });
   api.createWebhook
+    .mockRejectedValueOnce({ code: 1008, message: 'Invalid URL' })
     .mockRejectedValueOnce(new Error('timeout'))
     .mockResolvedValue({ endpoint, signing_secret: 'secret' });
   api.rotateWebhook.mockRejectedValueOnce(new Error('version conflict')).mockResolvedValue({
@@ -3099,9 +3100,18 @@ test('endpoint creation recovers the same request and rotation uses the confirme
   fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org' } });
   fireEvent.click(screen.getByText('Confirm'));
   await screen.findByRole('alert');
+  const url = screen.getByLabelText('HTTPS URL');
+
+  expect(url.matches(':disabled')).toBe(false);
+  fireEvent.change(url, { target: { value: 'https://example.org/fixed' } });
+  fireEvent.click(screen.getByText('Confirm'));
+  await screen.findByRole('alert');
+  expect(url.matches(':disabled')).toBe(true);
+  expect(screen.getAllByLabelText('Name')[1].matches(':disabled')).toBe(true);
   fireEvent.click(screen.getByText('Confirm'));
   await screen.findByDisplayValue('secret');
-  expect(api.createWebhook.mock.calls[1]).toEqual(api.createWebhook.mock.calls[0]);
+  expect(api.createWebhook.mock.calls[1][4]).not.toBe(api.createWebhook.mock.calls[0][4]);
+  expect(api.createWebhook.mock.calls[2]).toEqual(api.createWebhook.mock.calls[1]);
   expect(api.createWebhook.mock.calls[1][4]).toEqual(expect.any(String));
   await waitFor(() => expect(screen.getByText('Rotate signing secret').matches(':disabled')).toBe(false));
   fireEvent.click(screen.getByText('Rotate signing secret'));

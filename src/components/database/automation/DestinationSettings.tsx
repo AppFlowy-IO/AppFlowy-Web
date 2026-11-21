@@ -8,6 +8,7 @@ import { ruleApi } from '@/application/services/js-services/http/automation-api'
 import { confirmConnection } from '@/application/services/js-services/http/integration-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { getAPIErrorCode } from '@/utils/errors';
 
 export function ConnectAccount({
   workspace,
@@ -92,7 +93,7 @@ export function EndpointControls({
   const mounted = useRef(false);
   const onChanged = useRef(onChange);
   const currentSelected = useRef(selected);
-  const createRequest = useRef<{ body: string; id: string }>();
+  const createRequest = useRef<string>();
 
   onChanged.current = onChange;
   currentSelected.current = selected;
@@ -114,6 +115,8 @@ export function EndpointControls({
 
   async function submit() {
     if (running.current) return;
+    const retryingCreate = createRequest.current !== undefined;
+
     running.current = true;
     setBusy(true);
     setError(undefined);
@@ -121,16 +124,8 @@ export function EndpointControls({
       if (operation === 'new') {
         const headerValues =
           allowHeaders && headers.length ? Object.fromEntries(headers.map((h) => [h.name, h.value])) : undefined;
-        const body = JSON.stringify([workspace, name, url, headerValues]);
-
-        if (createRequest.current?.body !== body) createRequest.current = { body, id: uuid() };
-        const result = await ruleApi.createWebhook(
-          workspace,
-          name,
-          url,
-          headerValues,
-          receipts ? createRequest.current.id : undefined
-        );
+        const requestId = receipts ? (createRequest.current ??= uuid()) : undefined;
+        const result = await ruleApi.createWebhook(workspace, name, url, headerValues, requestId);
 
         createRequest.current = undefined;
         if (!mounted.current) return;
@@ -155,8 +150,13 @@ export function EndpointControls({
       setUrl('');
       setHeaders([]);
       setOperation(undefined);
-    } catch {
+    } catch (cause) {
       if (!mounted.current) return;
+      const code = getAPIErrorCode(cause);
+
+      // Only a rejection of the first submission proves the endpoint was never registered.
+      if (!retryingCreate && (code === 400 || code === 1008)) createRequest.current = undefined;
+
       const legacyMutation = !receipts && (operation === 'new' || operation === 'rotate');
 
       if (operation === 'rotate' || legacyMutation) {
@@ -228,7 +228,7 @@ export function EndpointControls({
       ) : (
         <fieldset disabled={busy} className='flex flex-col gap-2'>
           {operation === 'new' ? (
-            <>
+            <fieldset className='flex flex-col gap-2' disabled={createRequest.current !== undefined}>
               <label>
                 {t('databaseAutomation.name')}
                 <Input value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
@@ -278,7 +278,7 @@ export function EndpointControls({
                   </Button>
                 </>
               )}
-            </>
+            </fieldset>
           ) : (
             <p>
               {t(
