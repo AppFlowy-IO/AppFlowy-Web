@@ -30,9 +30,9 @@ import AutomationButton from '../AutomationButton';
 import { RuleManager } from '../AutomationEditor';
 import { ButtonCell } from '../ButtonCell';
 import { ButtonControl } from '../ButtonControl';
-import { useDestinationSchema } from '../DestinationSchema';
 import { ButtonDefaults } from '../ButtonDefaults';
 import { ButtonResult } from '../ButtonResult';
+import { useDestinationSchema } from '../DestinationSchema';
 import {
   actionTypes,
   canEditRule,
@@ -3079,6 +3079,40 @@ test.each(['reorder', 'remove'])('a pending webhook targets only its original st
     expect(screen.getByDisplayValue('current draft')).toBeTruthy();
   }
 });
+
+test.each([-3, 409])(
+  'a retired endpoint creation receipt (%s) refreshes the catalog and ends the retry',
+  async (code) => {
+    const endpoint = { id: 'registered', name: 'Sales', key_version: 2, disabled: false };
+
+    api.webhooks.mockResolvedValue({ items: [] });
+    api.createWebhook
+      .mockRejectedValueOnce(new Error('lost create response'))
+      .mockRejectedValueOnce({ code, message: 'webhook creation request already used' })
+      .mockResolvedValue({ endpoint, signing_secret: 'new-key' });
+    fullManager();
+    fireEvent.click(await screen.findByText('New automation'));
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'webhook' } });
+    function register() {
+      fireEvent.click(screen.getByText('Register endpoint'));
+      fireEvent.change(screen.getAllByLabelText('Name')[1], { target: { value: 'Sales' } });
+      fireEvent.change(screen.getByLabelText('HTTPS URL'), { target: { value: 'https://example.org' } });
+      fireEvent.click(screen.getByText('Confirm'));
+    }
+
+    register();
+    await screen.findByRole('alert');
+    api.webhooks.mockResolvedValue({ items: [endpoint] });
+    fireEvent.click(screen.getByText('Confirm'));
+    await screen.findByText(strings.databaseAutomation.checkEndpointAfterError);
+    await screen.findByRole('option', { name: 'Sales' });
+    expect(api.createWebhook.mock.calls[1]).toEqual(api.createWebhook.mock.calls[0]);
+    expect(screen.queryByText('Confirm')).toBeNull();
+    register();
+    await screen.findByDisplayValue('new-key');
+    expect(api.createWebhook.mock.calls[2][4]).not.toBe(api.createWebhook.mock.calls[0][4]);
+  }
+);
 
 test('endpoint creation recovers the same request and rotation uses the confirmed version', async () => {
   const endpoint = { id: 'new', name: 'New', disabled: false, key_version: 7 };

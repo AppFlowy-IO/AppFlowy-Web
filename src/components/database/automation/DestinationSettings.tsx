@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { v4 as uuid } from 'uuid';
 import { useTranslation } from 'react-i18next';
+import { v4 as uuid } from 'uuid';
 
+import { ERROR_CODE } from '@/application/constants';
 import { notifyConnectionsChanged } from '@/application/integrations/connection-events';
 import { authorizeIntegration } from '@/application/integrations/oauth';
 import { ruleApi } from '@/application/services/js-services/http/automation-api';
@@ -113,6 +114,13 @@ export function EndpointControls({
         new Blob([value]).size <= 2048
     ) && new Set(headers.map((h) => h.name.toLowerCase())).size === headers.length;
 
+  function clearRegistration() {
+    createRequest.current = undefined;
+    setName('');
+    setUrl('');
+    setHeaders([]);
+  }
+
   async function submit() {
     if (running.current) return;
     const retryingCreate = createRequest.current !== undefined;
@@ -127,7 +135,6 @@ export function EndpointControls({
         const requestId = receipts ? (createRequest.current ??= uuid()) : undefined;
         const result = await ruleApi.createWebhook(workspace, name, url, headerValues, requestId);
 
-        createRequest.current = undefined;
         if (!mounted.current) return;
         setSecret(result.signing_secret);
         if (currentSelected.current === selected) onChanged.current(result.endpoint.id);
@@ -146,25 +153,26 @@ export function EndpointControls({
         else refresh();
       }
 
-      setName('');
-      setUrl('');
-      setHeaders([]);
+      clearRegistration();
       setOperation(undefined);
     } catch (cause) {
       if (!mounted.current) return;
       const code = getAPIErrorCode(cause);
 
       // Only a rejection of the first submission proves the endpoint was never registered.
-      if (!retryingCreate && (code === 400 || code === 1008)) createRequest.current = undefined;
+      if (!retryingCreate && (code === 400 || code === ERROR_CODE.INVALID_REQUEST)) createRequest.current = undefined;
 
-      const legacyMutation = !receipts && (operation === 'new' || operation === 'rotate');
+      // The server cannot return the creation secret once the endpoint was rotated or removed.
+      const retiredReceipt = operation === 'new' && (code === ERROR_CODE.RECORD_ALREADY_EXISTS || code === 409);
+      const reviewEndpoints = retiredReceipt || (!receipts && (operation === 'new' || operation === 'rotate'));
 
-      if (operation === 'rotate' || legacyMutation) {
+      if (retiredReceipt) clearRegistration();
+      if (operation === 'rotate' || reviewEndpoints) {
         refresh();
         setOperation(undefined);
       }
 
-      setError(legacyMutation ? 'checkEndpointAfterError' : 'saveError');
+      setError(reviewEndpoints ? 'checkEndpointAfterError' : 'saveError');
     } finally {
       setBusy(false);
       running.current = false;
@@ -302,10 +310,8 @@ export function EndpointControls({
               type='button'
               variant='ghost'
               onClick={() => {
-                createRequest.current = undefined;
+                clearRegistration();
                 setOperation(undefined);
-                setUrl('');
-                setHeaders([]);
                 setError(undefined);
               }}
             >
