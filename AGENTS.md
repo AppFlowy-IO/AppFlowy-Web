@@ -78,6 +78,8 @@ This is a regression checklist and record of user expectations, not a claim that
 
 ## CI regression history
 
+- PR #737 CI follow-up (2026-11-26): since #736, Calendar meetings require server info with `enable_meeting`. The integrations fixture must load server info through `useServerInfo` under the configured base URL, and its mock must opt in; otherwise the Calendar integration renders nothing. Quarter timeline labels omit the year: resolve each to the year nearest today, because late-November views include next January.
+
 - PR #731 CI follow-up (2026-11-17): dashboard Done flushes owned-view deletion separately from the collab outbox. Await the authoritative owned-view list before reloading, then retain the post-reload assertion; an early reload can cancel the move-to-trash request. Current main also retries transient trash `RetryLater` replies. SSR smoke-test failure logs must include nginx's error file, which is absent from `docker logs`.
 - PR #719 CI follow-up (2026-11-15): wait for the row-text fixture editor to mount before asserting AppTheme's `data-dark-mode`; a cold Vite module graph can still be loading when the shorter theme assertion expires. Form preview BDD must assert the success toast, retained typed answer, and no submission request, matching the desktop preview contract rather than the public form's confirmation screen.
 - Regression checked 2026-11-14: freeze the clock in relative-date editor interaction tests and pick a calendar date different from the resolved relative date. On November 14, Tomorrow is the 15th; clicking the selected 15th clears the value to `timestamp: null`.

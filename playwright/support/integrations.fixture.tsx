@@ -12,12 +12,14 @@ import { BlockType, CollabOrigin, CreatePagePayload, YjsEditorKey } from '@/appl
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
+import { useServerInfo } from '@/components/app/hooks/useServerInfo';
 import { GoogleCalendarIntegration } from '@/components/app/integrations/GoogleCalendarIntegration';
 import { AIMeetingRecording } from '@/components/editor/components/blocks/ai-meeting/AIMeetingRecording';
 import { GoogleDriveBrowser } from '@/components/editor/components/blocks/google-drive/GoogleDriveBrowser';
 import { EditorContextProvider } from '@/components/editor/EditorContext';
 import '@/i18n/config';
 import '@/styles/global.css';
+import { getConfigValue } from '@/utils/runtime-config';
 
 initAPIService({ baseURL: location.origin, gotrueURL: location.origin, wsURL: '' });
 
@@ -84,6 +86,8 @@ function Recording({ payload }: { payload: CreatePagePayload }) {
 }
 
 function Fixture() {
+  // Like the app's auth layer: Calendar meetings follow the server's `enable_meeting` opt-in.
+  useServerInfo(true, getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'));
   const [selected, setSelected] = useState('');
   const [payload, setPayload] = useState<CreatePagePayload>();
   const [privateSpace, setPrivateSpace] = useState<number>();

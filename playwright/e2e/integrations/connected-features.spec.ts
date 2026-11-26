@@ -30,7 +30,7 @@ test('connected Drive browsing and Calendar reminders lead to private, transcrib
     const body = route.request().postDataJSON() as Record<string, unknown> | null;
     let data: unknown = {};
 
-    if (path === '/api/server-info') data = { connections: ['google-drive', 'google-calendar'] };
+    if (path === '/api/server-info') data = { connections: ['google-drive', 'google-calendar'], enable_meeting: true };
     else if (path === '/api/integrations/connections')
       data = {
         connections: [
