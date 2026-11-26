@@ -8,5 +8,5 @@ export function useMeetingDisabledReason(): string | undefined {
   const { t } = useTranslation();
 
   if (info?.enable_meeting === true && info.ai_enabled !== false) return undefined;
-  return `${t('userError.FEATURE_UNAVAILABLE')} ${t('landingPage.error.contactAdministrator')}`;
+  return t('document.aiMeeting.transcriptionUnavailable');
 }

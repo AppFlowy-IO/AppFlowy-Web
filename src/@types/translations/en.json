@@ -2441,6 +2441,7 @@
     "menuName": "Document",
     "aiMeeting": {
       "titleDefault": "Meeting",
+      "transcriptionUnavailable": "Meeting transcription is unavailable. Contact your workspace administrator to enable AssemblyAI.",
       "import": {
         "title": "AI transcript",
         "welcome": "Get organized, share-ready notes from every meeting",

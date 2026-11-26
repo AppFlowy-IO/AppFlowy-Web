@@ -4,7 +4,7 @@ import { fixtureHTML, test } from '../../support/integrations-server';
 import { mockServerInfo } from '../../support/server-info-helpers';
 
 const path = '/app/00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002';
-const unavailable = "You can't use this feature here. Contact your workspace administrator for help.";
+const unavailable = 'Meeting transcription is unavailable. Contact your workspace administrator to enable AssemblyAI.';
 
 for (const enabled of [false, undefined, true]) {
   test(`AI Transcript follows enable_meeting=${enabled}`, async ({ page, integrationsURL }) => {
