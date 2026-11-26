@@ -39,7 +39,7 @@ interface SearchAIOverviewProps {
   onClose: () => void;
 }
 
-function MarkdownSummary({
+export function MarkdownSummary({
   content,
   sources,
   onClose,
@@ -211,7 +211,7 @@ export function SearchAIOverview({
   }
 
   return (
-    <div className='px-2 pb-5 pt-3'>
+    <section aria-label={t('commandPalette.aiOverview', { defaultValue: 'AI overview' })} className='px-2 pb-5 pt-3'>
       <div className='mb-3 flex items-center gap-2 text-sm font-medium leading-[22px] tracking-[0.2px] text-text-secondary'>
         <AISearchingIcon className='h-5 w-5 shrink-0' />
         <span>{t('commandPalette.aiOverview', { defaultValue: 'AI overview' })}</span>
@@ -239,6 +239,6 @@ export function SearchAIOverview({
           {t('commandPalette.aiAskFollowUp', { defaultValue: 'Ask follow-up' })}
         </button>
       )}
-    </div>
+    </section>
   );
 }

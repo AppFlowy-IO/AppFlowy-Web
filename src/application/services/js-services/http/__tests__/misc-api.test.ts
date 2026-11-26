@@ -3,6 +3,7 @@ import { executeAPIRequest, getAxios } from '@/application/services/js-services/
 import {
   generateSearchSummary,
   generateSearchSummaryForDocuments,
+  getRecentOverviews,
   searchWorkspaceDocumentPage,
 } from '../misc-api';
 
@@ -11,6 +12,19 @@ jest.mock('@/application/services/js-services/http/core', () => ({
   executeAPIVoidRequest: jest.fn(),
   getAxios: jest.fn(),
 }));
+
+it('reads the ranked topics with the active signal and never generates when the palette opens', async () => {
+  jest.clearAllMocks();
+  const get = jest.fn();
+  const post = jest.fn();
+  const signal = new AbortController().signal;
+
+  jest.mocked(getAxios).mockReturnValue({ get, post } as never);
+  await getRecentOverviews('workspace-id', signal);
+  await jest.mocked(executeAPIRequest).mock.calls[0][0]();
+  expect(get).toHaveBeenCalledWith('/api/search/workspace-id/recent-overviews', { signal, skipTransportRetry: true });
+  expect(post).not.toHaveBeenCalled();
+});
 
 describe('generateSearchSummary', () => {
   beforeEach(() => {
@@ -35,6 +49,7 @@ describe('generateSearchSummary', () => {
         only_context: true,
       },
       {
+        skipTransportRetry: true,
         headers: {
           'x-request-time': expect.any(String),
         },
@@ -61,6 +76,7 @@ describe('generateSearchSummary', () => {
       '/api/search/workspace-id/summary',
       { query: 'show my tasks', only_context: true },
       {
+        skipTransportRetry: true,
         headers: { 'x-request-time': expect.any(String) },
         signal: controller.signal,
       }

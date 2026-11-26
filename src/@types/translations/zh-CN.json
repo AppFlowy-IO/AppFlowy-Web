@@ -1976,6 +1976,8 @@
     "image": "图像"
   },
   "commandPalette": {
+    "recentOverviews": "最近的 AI 概览",
+    "overviewGeneratedAt": "生成于 {{time}}",
     "placeholder": "输入你要搜索的内容..."
   },
   "space": {

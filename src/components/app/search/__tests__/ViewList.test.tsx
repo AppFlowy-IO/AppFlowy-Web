@@ -95,7 +95,9 @@ describe('ViewList', () => {
     // A new query keeps the item for the same page mounted, and it matched a different image.
     const forecast = '/api/file_storage/workspace-id/v1/blob/page-id/forecast.png';
 
-    rerender(list([{ ...imageResult, evidence: { kind: 'image', matchedText: 'Revenue forecast', imageUrl: forecast } }]));
+    rerender(
+      list([{ ...imageResult, evidence: { kind: 'image', matchedText: 'Revenue forecast', imageUrl: forecast } }])
+    );
     expect(screen.getByTestId('evidence-thumbnail').getAttribute('src')).toBe(forecast);
   });
 
@@ -121,6 +123,20 @@ describe('ViewList', () => {
     fireEvent.keyDown(document, { key: 'Enter', keyCode: 13, which: 13 });
 
     expect(mockToView).toHaveBeenCalledWith('page-id', 'final-image-block');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets unselected Enter submit and consumes Enter only for a keyboard-selected result', () => {
+    const onClose = renderList([imageResult]);
+    const enter = { key: 'Enter', keyCode: 13, which: 13 };
+
+    expect(fireEvent.keyDown(document, enter)).toBe(true);
+    expect(mockToView).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'ArrowDown', keyCode: 40, which: 40 });
+    expect(fireEvent.keyDown(document, { ...enter, isComposing: true })).toBe(true);
+    expect(mockToView).not.toHaveBeenCalled();
+    expect(fireEvent.keyDown(document, enter)).toBe(false);
+    expect(mockToView).toHaveBeenCalledWith('page-id', 'image-block');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
