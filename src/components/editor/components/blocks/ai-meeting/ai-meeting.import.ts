@@ -5,10 +5,12 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import {
   assertDocExists,
+  createBlock,
   dataStringTOJson,
   deleteBlock,
   getBlock,
   getChildrenArray,
+  updateBlockParent,
 } from '@/application/slate-yjs/utils/yjs';
 import { AIMeetingBlockData, BlockType, YjsEditorKey } from '@/application/types';
 
@@ -49,15 +51,16 @@ export function initializeMeetingSections(editor: YjsEditor, blockId: string) {
         continue;
       }
 
-      const section = {
-        type,
-        data: {},
-        children: [
-          { type: BlockType.Paragraph, data: {}, children: [{ type: YjsEditorKey.text, children: [{ text: '' }] }] },
-        ],
-      };
+      // As in Flutter's aiMeetingNode(), only Notes starts with an empty paragraph. Flutter shows
+      // Summary once its section has any child block, so a new Summary section stays childless.
+      const section = createBlock(editor.sharedRoot, { ty: type, data: {} });
 
-      slateContentInsertToYData(blockId, insertIndex++, [section] as unknown as Element[], doc);
+      updateBlockParent(editor.sharedRoot, section, block, insertIndex++);
+      if (type === BlockType.AIMeetingNotesBlock) {
+        const paragraph = { type: BlockType.Paragraph, data: {}, children: [{ type: YjsEditorKey.text, children: [{ text: '' }] }] };
+
+        slateContentInsertToYData(section.get(YjsEditorKey.block_id), 0, [paragraph] as unknown as Element[], doc);
+      }
     }
   });
 }

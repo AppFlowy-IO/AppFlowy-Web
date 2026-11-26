@@ -12,7 +12,11 @@ import { ReactComponent as WarningIcon } from '@/assets/icons/ai_reference_warni
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_summary_ref_notes.svg';
 import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_summary_ref_transcript.svg';
 import { RichTooltip } from '@/components/_shared/popover';
-import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
+import {
+  formatTimestamp,
+  getFlutterTabKeys,
+  hasChildBlocks,
+} from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -121,7 +125,8 @@ const findInNotes = (node: Element, blockId: string): ReferenceBlockStatus | nul
   return null;
 };
 
-const getAvailableTabs = (meetingNode: Element) => {
+// `selected_tab_index` is shared with Flutter, so store positions in Flutter's tabs.
+const getFlutterTabs = (meetingNode: Element) => {
   const children = meetingNode.children ?? [];
   const summaryNode = children.find(
     (child) => Element.isElement(child) && child.type === BlockType.AIMeetingSummaryBlock
@@ -129,23 +134,12 @@ const getAvailableTabs = (meetingNode: Element) => {
   const transcriptNode = children.find(
     (child) => Element.isElement(child) && child.type === BlockType.AIMeetingTranscriptionBlock
   ) as Element | undefined;
-  const notesNode = children.find(
-    (child) => Element.isElement(child) && child.type === BlockType.AIMeetingNotesBlock
-  ) as Element | undefined;
+  const hasContent = (section?: Element) => Boolean(section && buildContent(section).length > 0);
 
-  const tabs: Array<'summary' | 'notes' | 'transcript'> = [];
-
-  if (summaryNode && [summaryNode, transcriptNode, notesNode].some((section) => section && buildContent(section).length > 0)) {
-    tabs.push('summary');
-  }
-
-  tabs.push('notes');
-
-  if (transcriptNode && buildContent(transcriptNode).length > 0) {
-    tabs.push('transcript');
-  }
-
-  return tabs;
+  return getFlutterTabKeys({
+    summary: hasChildBlocks(summaryNode) || hasContent(summaryNode),
+    transcript: hasContent(transcriptNode) || hasContent(summaryNode),
+  });
 };
 
 const buildStatuses = (meetingNode: Element, blockIds: string[]): ReferenceBlockStatus[] => {
@@ -244,7 +238,7 @@ const ReferencePopoverContent = memo(({
       let shouldDelayScroll = false;
 
       if (meetingNode.blockId) {
-        const tabs = getAvailableTabs(meetingNode);
+        const tabs = getFlutterTabs(meetingNode);
         const targetKey = status.sourceType === 'transcript' ? 'transcript' : 'notes';
         const targetIndex = Math.max(0, tabs.indexOf(targetKey));
 

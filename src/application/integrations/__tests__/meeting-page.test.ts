@@ -30,7 +30,7 @@ it('creates the same native meeting sections, scheduling metadata and attendee n
             scheduled_end_time: '2026-09-21T09:00:00.000Z',
           },
           children: [
-            { type: BlockType.AIMeetingSummaryBlock },
+            { type: BlockType.AIMeetingSummaryBlock, children: [] },
             {
               type: BlockType.AIMeetingNotesBlock,
               children: [
@@ -39,7 +39,7 @@ it('creates the same native meeting sections, scheduling metadata and attendee n
                 expect.anything(),
               ],
             },
-            { type: BlockType.AIMeetingTranscriptionBlock },
+            { type: BlockType.AIMeetingTranscriptionBlock, children: [] },
           ],
         },
       ],

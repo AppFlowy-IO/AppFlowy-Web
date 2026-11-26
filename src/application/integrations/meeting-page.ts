@@ -26,7 +26,8 @@ export function calendarMeetingPage(event: CalendarEvent, title: string, attende
             ...(event.end ? { scheduled_end_time: new Date(event.end).toISOString() } : {}),
           },
           children: [
-            { type: BlockType.AIMeetingSummaryBlock, children: [paragraph()] },
+            // Childless like Flutter's: its Summary tab appears once a summary is written.
+            { type: BlockType.AIMeetingSummaryBlock, children: [] },
             {
               type: BlockType.AIMeetingNotesBlock,
               children: [
@@ -41,7 +42,7 @@ export function calendarMeetingPage(event: CalendarEvent, title: string, attende
                 paragraph(),
               ],
             },
-            { type: BlockType.AIMeetingTranscriptionBlock, children: [paragraph()] },
+            { type: BlockType.AIMeetingTranscriptionBlock, children: [] },
           ],
         },
       ],
