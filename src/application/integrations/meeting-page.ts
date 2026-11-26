@@ -18,7 +18,8 @@ export function calendarMeetingPage(event: CalendarEvent, title: string, attende
             date: new Date(event.start).toISOString(),
             recording_state: 'idle',
             created_at: new Date().toISOString(),
-            show_notes_directly: false,
+            // Like Flutter's MeetingPageCreator: open on the attendee notes, not the welcome screen.
+            show_notes_directly: true,
             meeting_source: 'google_calendar',
             meeting_app_name: 'Google Meet',
             scheduled_start_time: new Date(event.start).toISOString(),
