@@ -95,7 +95,7 @@ import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
-import { useMeetingDisabledReason } from '@/components/app/hooks/useMeetingDisabledReason';
+import { useMeetingEnabled } from '@/components/app/hooks/useMeetingEnabled';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
@@ -606,7 +606,7 @@ export function SlashPanel({
 
   const { askAIAnything, continueWriting } = useAIWriter();
   const aiEnabled = useAIEnabled();
-  const meetingDisabledReason = useMeetingDisabledReason();
+  const meetingEnabled = useMeetingEnabled();
 
   const loadDatabasesForPicker = useCallback(async () => {
     if (!workspaceId) return false;
@@ -874,7 +874,7 @@ export function SlashPanel({
             {
               label: t('document.aiMeeting.import.title'),
               key: 'aiTranscript',
-              disabledReason: meetingDisabledReason,
+              disabledReason: meetingEnabled ? undefined : t('document.aiMeeting.transcriptionUnavailable'),
               icon: <TranscriptIcon />,
               group: SlashMenuGroupKey.AppFlowyAI,
               keywords: ['ai', 'transcript', 'transcription', 'meeting', 'audio', 'video'],
@@ -1865,7 +1865,7 @@ export function SlashPanel({
     chars,
     getBeforeContent,
     aiEnabled,
-    meetingDisabledReason,
+    meetingEnabled,
     askAIAnything,
     continueWriting,
     turnInto,

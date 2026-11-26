@@ -12,7 +12,7 @@ import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_tran
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_notes.svg';
 import { ReactComponent as SummaryIcon } from '@/assets/icons/ai_summary_tab.svg';
 import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
-import { useMeetingDisabledReason } from '@/components/app/hooks/useMeetingDisabledReason';
+import { useMeetingEnabled } from '@/components/app/hooks/useMeetingEnabled';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -73,7 +73,7 @@ export const AIMeetingBlock = memo(
       const { t } = useTranslation();
       const editor = useSlateStatic() as YjsEditor;
       const slateReadOnly = useReadOnly();
-      const meetingDisabledReason = useMeetingDisabledReason();
+      const meetingEnabled = useMeetingEnabled();
       const readOnly = slateReadOnly || editor.isElementReadOnly(node as unknown as Element);
       const data = node.data ?? {};
       const { workspaceId, viewId } = useEditorContext();
@@ -169,7 +169,7 @@ export const AIMeetingBlock = memo(
       // --- Regenerate hook ---
       const regenerate = useAIMeetingRegenerate({
         node,
-        meetingEnabled: !meetingDisabledReason,
+        meetingEnabled,
       });
 
       const importer = useAIMeetingImport({
@@ -179,7 +179,7 @@ export const AIMeetingBlock = memo(
         transcriptTabIndex: Number(Boolean(sectionNodes.notesNode)) + Number(hasSummary),
         hasTranscript,
         readOnly,
-        enabled: regenerate.isAIEnabled && !meetingDisabledReason,
+        enabled: regenerate.isAIEnabled && meetingEnabled,
         onFinished: () => {
           void regenerate.handleTranscriptReady();
         },
@@ -327,7 +327,7 @@ export const AIMeetingBlock = memo(
       const summaryControl = !readOnly && regenerate.isAIEnabled && !importer.busy && !regenerate.isRegeneratingSummary && (hasSource || hasSummary) ? (
         <RegenerateMenu
           action={hasSummary ? 'regenerate' : 'generate'}
-          disabledReason={meetingDisabledReason}
+          disabledReason={meetingEnabled ? undefined : t('document.aiMeeting.notesUnavailable')}
           isRegenerating={regenerate.isRegeneratingSummary}
           menuOpen={regenerate.regenerateMenuOpen}
           onMenuOpenChange={regenerate.setRegenerateMenuOpen}
@@ -401,7 +401,7 @@ export const AIMeetingBlock = memo(
               )}
               {!hasSummary && summaryControl}
             </div>
-            {!readOnly && regenerate.isAIEnabled && !meetingDisabledReason && workspaceId && viewId && (
+            {!readOnly && regenerate.isAIEnabled && meetingEnabled && workspaceId && viewId && (
               <AIMeetingRecording
                 key={`${workspaceId}:${viewId}:${node.blockId}`}
                 workspaceId={workspaceId}
@@ -476,7 +476,7 @@ export const AIMeetingBlock = memo(
               <AIMeetingErrorBanner
                 message={importer.message}
                 onRetry={
-                  importer.canRetry && !readOnly && !meetingDisabledReason
+                  importer.canRetry && !readOnly && meetingEnabled
                     ? () => {
                         void importer.retry();
                       }
@@ -490,7 +490,7 @@ export const AIMeetingBlock = memo(
                 message={regenerate.summaryError}
                 errorCode={regenerate.summaryErrorCode}
                 workspaceId={workspaceId}
-                readOnly={readOnly || Boolean(meetingDisabledReason)}
+                readOnly={readOnly || !meetingEnabled}
                 onRetry={() => { void regenerate.handleRegenerateSummary(); }}
                 onDismiss={regenerate.dismissSummaryError}
                 dismissLabel={t('document.aiMeeting.regenerate.dismissError', { defaultValue: 'Dismiss summary error' })}
@@ -499,7 +499,7 @@ export const AIMeetingBlock = memo(
             <AIMeetingImportActions
               state={importer}
               showWelcome={showWelcome}
-              disabledReason={readOnly ? undefined : meetingDisabledReason}
+              disabledReason={readOnly || meetingEnabled ? undefined : t('document.aiMeeting.transcriptionUnavailable')}
             />
             {importer.busy ? (
               <AIMeetingImportProgress stage={importer.stage} progress={importer.progress} />

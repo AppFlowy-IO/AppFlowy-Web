@@ -18,15 +18,15 @@ import {
   useCurrentWorkspaceId,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
-import { useMeetingDisabledReason } from '@/components/app/hooks/useMeetingDisabledReason';
+import { useMeetingEnabled } from '@/components/app/hooks/useMeetingEnabled';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/utils/errors';
 
 export function GoogleCalendarIntegration() {
   const workspaceId = useCurrentWorkspaceId();
-  const meetingDisabledReason = useMeetingDisabledReason();
+  const meetingEnabled = useMeetingEnabled();
   const workspace = useUserWorkspaceInfo();
-  const enabled = !meetingDisabledReason && workspace?.selectedWorkspace.role !== Role.Guest;
+  const enabled = meetingEnabled && workspace?.selectedWorkspace.role !== Role.Guest;
 
   return enabled && workspaceId ? <WorkspaceCalendar key={workspaceId} workspaceId={workspaceId} /> : null;
 }
