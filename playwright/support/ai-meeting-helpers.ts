@@ -23,7 +23,7 @@ export interface AIMeetingBlockOptions {
   summary?: string;
   notes?: string;
   speakers?: SpeakerInput[];
-  /** When true, tabs are hidden and notes are shown directly */
+  /** Desktop's notes-first flag: starts on Notes until a summary exists, without hiding tabs */
   showNotesDirectly?: boolean;
   /** Persisted tab index (0=summary, 1=notes, 2=transcript) */
   selectedTabIndex?: number;

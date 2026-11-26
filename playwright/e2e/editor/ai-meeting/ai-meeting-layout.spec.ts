@@ -57,7 +57,7 @@ test.describe('AI Meeting Block - Layout', () => {
     await expect(AIMeetingSelectors.tab(page, 'transcript')).toBeVisible();
   });
 
-  test('should hide tabs when show_notes_directly is true', async ({ page, request }) => {
+  test('should keep tabs and start on Notes when show_notes_directly is true', async ({ page, request }) => {
     await setupEditorWithCleanPage(page, request, testEmail);
 
     const available = await areTestUtilitiesAvailable(page);
@@ -68,15 +68,17 @@ test.describe('AI Meeting Block - Layout', () => {
 
     await injectAIMeetingBlock(page, {
       title: 'Quick Notes',
-      notes: 'Just some quick notes without tabs.',
+      notes: 'Just some quick notes.',
       showNotesDirectly: true,
     });
     await page.waitForTimeout(1500);
 
-    // Then I should not see any tab buttons
-    await expect(page.locator('.ai-meeting-tabs')).not.toBeVisible();
+    // Desktop's notes-first flag replaces the welcome screen without hiding tabs
+    await expect(AIMeetingSelectors.tab(page, 'summary')).toBeVisible();
+    await expect(AIMeetingSelectors.tab(page, 'notes')).toBeVisible();
 
-    // And the notes section should be visible
+    // And the meeting starts on Notes until a summary exists
+    await expect(AIMeetingSelectors.block(page)).toHaveAttribute('data-ai-meeting-active', 'notes');
     await expect(AIMeetingSelectors.notesSection(page)).toBeVisible();
   });
 

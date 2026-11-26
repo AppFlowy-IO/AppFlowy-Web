@@ -60,6 +60,12 @@ This is a regression checklist and record of user expectations, not a claim that
 - Calendar-unit shifts preserve the input's time setting. Cover both arithmetic directions, range
   endpoints, ordering, equality, and deduplication without removing date-only comparison behavior.
 
+## AI meeting notes-first flag (reported 2026-11-26)
+
+- Desktop's MeetingPageCreator and `/AI Meeting Notes` set `show_notes_directly: true` and never clear it. On desktop it only replaces the welcome screen; Summary and Transcript tabs remain available.
+- Web hid the tabs and pinned Notes for that flag, so desktop-recorded meetings opened as a title and an empty Notes placeholder. The report blamed "Move to" another space, but the server move is folder-only and leaves the document unchanged.
+- Keep tabs visible for the flag. Start on Notes only while no summary exists (Flutter has no Summary tab before one exists); otherwise honor `selected_tab_index`. Cover recorded, read-only and notes-only desktop meetings with the real editor fixture.
+
 ## Row duplication relation regressions
 
 - Re-read the activated source cell and its membership after related database or row hydration. A newer edit or undo must prevent a delayed reciprocal insertion from restoring a removed link.

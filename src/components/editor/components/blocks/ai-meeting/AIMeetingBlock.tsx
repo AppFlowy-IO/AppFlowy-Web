@@ -207,12 +207,21 @@ export const AIMeetingBlock = memo(
         });
       }, [sectionNodes, importer.busy, data.transcript_id, regenerate.isRegeneratingSummary, hasSummary, hasTranscript, hasSource, readOnly]);
 
-      const showNotesDirectly = Boolean(data.show_notes_directly);
-      const showTabs = !showWelcome && !showNotesDirectly && availableTabs.length > 1;
+      // Flutter sets `show_notes_directly` on the meetings it creates and never clears it. The
+      // flag only replaces the welcome screen: Summary and Transcript remain available as tabs.
+      // Flutter has no Summary tab until a summary exists, so its stored index 0 means Notes.
+      const startsOnNotes = Boolean(data.show_notes_directly) && !hasSummary && !regenerate.isRegeneratingSummary;
+      const showTabs = !showWelcome && availableTabs.length > 1;
       const fallbackTab = availableTabs[0] ?? TAB_DEFS[1];
 
       const selectedIndex = useMemo(() => {
         if (readOnly) return 0;
+
+        if (startsOnNotes) {
+          const notesIndex = availableTabs.findIndex((tab) => tab.key === 'notes');
+
+          if (notesIndex >= 0) return notesIndex;
+        }
 
         const raw = data.selected_tab_index;
 
@@ -225,7 +234,7 @@ export const AIMeetingBlock = memo(
         }
 
         return 0;
-      }, [readOnly, data.selected_tab_index]);
+      }, [availableTabs, readOnly, startsOnNotes, data.selected_tab_index]);
 
       const [activeIndex, setActiveIndex] = useState(0);
 
@@ -236,13 +245,12 @@ export const AIMeetingBlock = memo(
         setActiveIndex(safeIndex);
       }, [availableTabs.length, selectedIndex]);
 
-      const notesTab = TAB_DEFS.find((tab) => tab.key === 'notes') ?? fallbackTab;
-      const activeTab = showNotesDirectly ? notesTab : (availableTabs[activeIndex] ?? fallbackTab);
+      const activeTab = availableTabs[activeIndex] ?? fallbackTab;
       const activeTabKey: TabKey = activeTab?.key ?? 'notes';
 
       const handleLocalTabSwitch = useCallback(
         (tabKey?: string) => {
-          if (!tabKey || showNotesDirectly) return;
+          if (!tabKey) return;
 
           const index = availableTabs.findIndex((tab) => tab.key === tabKey);
 
@@ -250,7 +258,7 @@ export const AIMeetingBlock = memo(
 
           setActiveIndex(index);
         },
-        [availableTabs, showNotesDirectly]
+        [availableTabs]
       );
 
       // Listen for tab switch custom events (used by InlineReference in readonly mode)
