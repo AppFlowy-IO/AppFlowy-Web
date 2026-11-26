@@ -2,17 +2,25 @@ import * as fs from 'fs';
 
 import * as Y from 'yjs';
 
+import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import {
+  convertAnchoredViewsToArray,
   copyRowPlacements,
+  databaseOfView,
   isAnchoredView,
   moveRowInAnchoredView,
+  observeViewRowOrders,
   placeRowInAnchoredView,
   readRowPlacements,
+  reorderRowInAnchoredView,
   repairAnchoredViewsBeforeRemoval,
+  setAnchoredViewOrder,
+  storageRowOrders,
   storageViewId,
+  viewMembershipRowOrders,
   viewRowOrderEntries,
+  viewRowOrdersJSON,
 } from '@/application/database-yjs/row-placements-doc';
-import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { YDatabase, YDatabaseView, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import documents from './__fixtures__/row_placement_documents.json';
@@ -33,7 +41,7 @@ function open(state: string): { doc: Y.Doc; database: YDatabase } {
   return { doc, database };
 }
 
-const viewOf = (database: YDatabase, id: string) => database.get(YjsDatabaseKey.views).get(id) as YDatabaseView;
+const viewOf = (database: YDatabase, id: string) => database.get(YjsDatabaseKey.views).get(id);
 const ids = (rows: Array<{ id: string }> | undefined) => (rows ?? []).map((row) => row.id);
 
 function shown(database: YDatabase, view: YDatabaseView): string[] {
@@ -220,5 +228,170 @@ describe('writes to an anchored view', () => {
         JSON.stringify({ database_id: largest.database_id, view_id: anchored.id, rows: order })
       );
     }
+  });
+});
+
+describe('what the app reads and writes through the mode-aware helpers', () => {
+  const largest = documents.cases[documents.cases.length - 1];
+  const [storage, array, anchored, copy] = largest.views;
+
+  it('reads a view in array mode exactly as its own array', () => {
+    for (const item of documents.cases) {
+      const { database } = open(item.state);
+
+      for (const expected of item.views.filter((view) => !view.anchored)) {
+        const view = viewOf(database, expected.id);
+        const own = view.get(YjsDatabaseKey.row_orders);
+
+        expect(viewRowOrdersJSON(database, view)).toEqual(own.toJSON());
+        expect(viewRowOrderEntries(database, view)).toEqual(own.toArray());
+        // Compared as a boolean: a failed comparison of two Yjs types cannot be printed.
+        expect(viewMembershipRowOrders(database, view) === own).toBe(true);
+      }
+    }
+  });
+
+  it('names the rows of an anchored view by the storage view', () => {
+    const { database } = open(largest.state);
+    const view = viewOf(database, anchored.id);
+    const stored = viewOf(database, storage.id).get(YjsDatabaseKey.row_orders);
+
+    expect(databaseOfView(view) === database).toBe(true);
+    expect(storageRowOrders(database, view) === stored).toBe(true);
+    expect(viewMembershipRowOrders(database, view) === stored).toBe(true);
+    expect(ids(viewRowOrdersJSON(database, view))).toEqual(anchored.rows);
+    expect(ids(viewRowOrdersJSON(database, view)).slice().sort()).toEqual(ids(stored.toArray()).sort());
+  });
+
+  it('moves a row after another row the way the array move of a drag does', () => {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, anchored.id);
+    const next = random(23);
+    let order = ids(viewRowOrderEntries(database, view));
+
+    for (let step = 0; step < 80; step++) {
+      const row = order[next(order.length)];
+      const others = order.filter((id) => id !== row);
+      // Every third move goes to the start, as a drop above the first row does.
+      const previous = step % 3 === 0 ? undefined : others[next(others.length)];
+
+      doc.transact(() => {
+        expect(reorderRowInAnchoredView(database, view, row, previous)).toBe(true);
+      });
+      order =
+        previous === undefined
+          ? [row, ...others]
+          : [...others.slice(0, others.indexOf(previous) + 1), row, ...others.slice(others.indexOf(previous) + 1)];
+      expect(ids(viewRowOrderEntries(database, view))).toEqual(order);
+    }
+
+    expect(view.get(YjsDatabaseKey.row_orders).length).toBe(0);
+    // A row the Database lacks before it means the start, as in the array move.
+    doc.transact(() => reorderRowInAnchoredView(database, view, order[4], 'not-a-row'));
+    expect(ids(viewRowOrderEntries(database, view))[0]).toBe(order[4]);
+    doc.transact(() => {
+      expect(reorderRowInAnchoredView(database, view, 'not-a-row', order[0])).toBe(false);
+    });
+  });
+
+  it('gives an anchored view a whole order', () => {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, anchored.id);
+    const canonical = ids(viewOf(database, storage.id).get(YjsDatabaseKey.row_orders).toArray());
+    const next = random(5);
+
+    for (let round = 0; round < 40; round++) {
+      const target = canonical.slice();
+
+      for (let swap = 0; swap < 1 + next(30); swap++) {
+        const left = next(target.length);
+        const right = next(target.length);
+
+        [target[left], target[right]] = [target[right], target[left]];
+      }
+
+      doc.transact(() => {
+        expect(setAnchoredViewOrder(database, view, target)).toBe(true);
+      });
+      expect(ids(viewRowOrderEntries(database, view))).toEqual(target);
+    }
+
+    // Rows that are left out keep their canonical place; unknown and repeated ids are ignored.
+    const listed = [canonical[6], canonical[2], 'not-a-row', canonical[6], canonical[4]];
+    const expected = canonical.slice();
+
+    expected[2] = canonical[6];
+    expected[4] = canonical[2];
+    expected[6] = canonical[4];
+    doc.transact(() => setAnchoredViewOrder(database, view, listed));
+    expect(ids(viewRowOrderEntries(database, view))).toEqual(expected);
+    doc.transact(() => setAnchoredViewOrder(database, view, []));
+    expect(ids(viewRowOrderEntries(database, view))).toEqual(canonical);
+    expect(readRowPlacements(view).size).toBe(0);
+    expect(view.get(YjsDatabaseKey.row_orders).length).toBe(0);
+  });
+
+  it('rewrites a copy of the Database in array mode with the same rows in every view', () => {
+    for (const item of documents.cases) {
+      const { doc, database } = open(item.state);
+      const anchoredViews = item.views.filter((view) => view.anchored).length;
+
+      doc.transact(() => {
+        expect(convertAnchoredViewsToArray(database)).toBe(anchoredViews);
+      });
+
+      for (const expected of item.views) {
+        const view = viewOf(database, expected.id);
+
+        expect(isAnchoredView(view)).toBe(false);
+        expect(view.has(YjsDatabaseKey.row_placements)).toBe(false);
+        // What a client that knows nothing of placements reads.
+        expect(ids(view.get(YjsDatabaseKey.row_orders).toArray())).toEqual(expected.rows);
+        expect(shown(database, view)).toEqual(expected.shown);
+      }
+
+      doc.transact(() => {
+        expect(convertAnchoredViewsToArray(database)).toBe(0);
+      });
+    }
+  });
+
+  it('reports each change of an anchored view once, and follows a change of mode', () => {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, anchored.id);
+    const stored = viewOf(database, storage.id).get(YjsDatabaseKey.row_orders);
+    const order = ids(viewRowOrderEntries(database, view));
+    let calls = 0;
+    const stop = observeViewRowOrders(database, view, () => {
+      calls += 1;
+    });
+    const expectCalls = (expected: number, change: () => void) => {
+      calls = 0;
+      doc.transact(change);
+      expect(calls).toBe(expected);
+    };
+
+    // A drag in the view.
+    expectCalls(1, () => moveRowInAnchoredView(database, view, order[0], order[5]));
+    // A row that joins the Database, and a delete with its repair, in one transaction each.
+    expectCalls(1, () => stored.push([{ id: 'ffffffff-0000-4000-8000-000000000001', height: 60 }]));
+    expectCalls(1, () => {
+      repairAnchoredViewsBeforeRemoval(database, [order[5]]);
+      stored.delete(
+        ids(stored.toArray()).indexOf(order[5]),
+        1
+      );
+    });
+    // A change of another view, or of this view's name, is not a row change.
+    expectCalls(0, () => viewOf(database, array.id).get(YjsDatabaseKey.row_orders).delete(0, 1));
+    expectCalls(0, () => view.set(YjsDatabaseKey.name, 'renamed'));
+    // The view turns into an array view: one call, and from then on its own array counts.
+    expectCalls(1, () => convertAnchoredViewsToArray(database));
+    expectCalls(1, () => view.get(YjsDatabaseKey.row_orders).delete(0, 1));
+    expectCalls(0, () => stored.push([{ id: 'ffffffff-0000-4000-8000-000000000002', height: 60 }]));
+
+    stop();
+    expectCalls(0, () => view.get(YjsDatabaseKey.row_orders).delete(0, 1));
+    expect(copy.anchored).toBe(true);
   });
 });

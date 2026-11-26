@@ -16,8 +16,8 @@ import {
 import { AbstractType, Map as YMap, type Transaction, type YEvent } from 'yjs';
 
 import { subscribeRowDocRelease } from '@/application/database-blob/row-doc-retention';
-import { readBoardGroupCalculation } from '@/application/database-yjs/board-group-calculation';
 import { BOARD_GROUPABLE_FIELD_TYPES, resolveDefaultBoardGroup } from '@/application/database-yjs/board-default-group';
+import { readBoardGroupCalculation } from '@/application/database-yjs/board-group-calculation';
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -136,6 +136,7 @@ import { retainRollupSource } from '@/application/database-yjs/rollup/source-syn
 import { captureRowDocRevision, hasRowDocRevision, RowDocRevision } from '@/application/database-yjs/row-doc-revision';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
+import { viewRowOrdersJSON } from '@/application/database-yjs/row-placements-doc';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
@@ -2052,6 +2053,7 @@ const DATABASE_GROUPING_VIEW_KEYS = new Set<string>([
   YjsDatabaseKey.groups,
   YjsDatabaseKey.layout_settings,
   YjsDatabaseKey.row_orders,
+  YjsDatabaseKey.row_placements,
   YjsDatabaseKey.sorts,
 ]);
 
@@ -2428,10 +2430,10 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const allRowOrders = useMemo(() => {
     void groupingViewRevision;
 
-    const sourceRowOrders = (rawRowOrders?.toJSON() as Row[] | undefined) ?? rowOrders;
+    const sourceRowOrders = (viewRowOrdersJSON(database, view) as Row[] | undefined) ?? rowOrders;
 
     return materializeVisibleRowOrders(sourceRowOrders, inlineRowOrders?.toJSON() as Row[] | undefined);
-  }, [groupingViewRevision, inlineRowOrders, rawRowOrders, rowOrders]);
+  }, [database, groupingViewRevision, inlineRowOrders, rowOrders, view]);
   const groupingRowsSnapshot = useSyncExternalStore(
     groupingRowsStore.subscribe,
     groupingRowsStore.getSnapshot,
@@ -3056,6 +3058,9 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   const rows = useRowMap();
   const view = useDatabaseView();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+  // An anchored view lists no rows of its own: its rows are the storage view's, ordered by the
+  // placements stored here (`row-placements.ts`).
+  const rowPlacements = view?.get(YjsDatabaseKey.row_placements);
   const viewId = useDatabaseViewId();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
@@ -3213,7 +3218,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     const conditionSignature = getConditionSignature(sorts, filters, fields);
     const visibleRowOrders = conditionSignature
       ? materializeVisibleRowOrders(
-          rowOrders?.toJSON() as Row[] | undefined,
+          viewRowOrdersJSON(database, view) as Row[] | undefined,
           inlineRowOrders?.toJSON() as Row[] | undefined
         )
       : undefined;
@@ -3477,11 +3482,15 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   );
 
   const readVisibleRowOrders = useCallback(() => {
-    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    // `rowOrders` and `rowPlacements` are dependencies because a view can change mode.
+    void rowOrders;
+    void rowPlacements;
+
+    const rawRowOrders = viewRowOrdersJSON(database, view) as Row[] | undefined;
     const canonicalRowOrders = inlineRowOrders?.toJSON() as Row[] | undefined;
 
     return materializeVisibleRowOrders(rawRowOrders, canonicalRowOrders);
-  }, [inlineRowOrders, rowOrders]);
+  }, [database, inlineRowOrders, rowOrders, rowPlacements, view]);
 
   const syncUnconditionedRowOrders = useCallback(() => {
     const originalRowOrders = readVisibleRowOrders();
@@ -3917,6 +3926,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     };
 
     rowOrders?.observeDeep(handleRowOrdersChange);
+    rowPlacements?.observeDeep(handleRowOrdersChange);
     if (inlineRowOrders !== rowOrders) {
       inlineRowOrders?.observeDeep(handleRowOrdersChange);
     }
@@ -4035,6 +4045,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
 
     return () => {
       rowOrders?.unobserveDeep(handleRowOrdersChange);
+      rowPlacements?.unobserveDeep(handleRowOrdersChange);
       if (inlineRowOrders !== rowOrders) {
         inlineRowOrders?.unobserveDeep(handleRowOrdersChange);
       }
@@ -4050,6 +4061,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     onConditionsChange,
     refreshConditions,
     rowOrders,
+    rowPlacements,
     inlineRowOrders,
     fields,
     filters,

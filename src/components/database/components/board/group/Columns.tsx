@@ -25,10 +25,11 @@ import {
   useFieldType,
   useReadOnly,
 } from '@/application/database-yjs';
+import { getRenderedBoardColumns } from '@/application/database-yjs/board-grouping';
+import { databaseOfView, viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
 import { YjsDatabaseKey } from '@/application/types';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { BoardCardFieldsContext, CardFieldInfo } from '@/components/database/components/board/card/CardPrimitive';
-import { getRenderedBoardColumns } from '@/application/database-yjs/board-grouping';
 import { Column } from '@/components/database/components/board/column';
 import {
   CardListSizingContext,
@@ -291,7 +292,8 @@ const Columns = forwardRef<
   // The view's rows count too: they are known before its rows load and are
   // grouped, so a large board never starts as a small one, mounting cards in
   // every column it then unmounts.
-  const viewRowCount = useDatabaseView()?.get(YjsDatabaseKey.row_orders)?.length ?? 0;
+  const boardView = useDatabaseView();
+  const viewRowCount = viewMembershipRowOrders(databaseOfView(boardView), boardView)?.length ?? 0;
   const isLargeWidgetBoard = isWidget && Math.max(cardCount, viewRowCount) > LARGE_WIDGET_BOARD_CARDS;
   const cardListSizing = useMemo(
     () => ({

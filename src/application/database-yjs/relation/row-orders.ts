@@ -1,4 +1,5 @@
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
+import { viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
 import { YDatabase, YDatabaseRowOrders, YjsDatabaseKey } from '@/application/types';
 
 interface RelationRowOrder {
@@ -47,12 +48,13 @@ export function getRelationRowOrders(database: YDatabase, viewId: string): YData
 
   if (!views) return null;
 
-  const named = views.get(viewId)?.get(YjsDatabaseKey.row_orders);
+  // An anchored view lists no rows of its own; its rows are the storage view's.
+  const named = viewMembershipRowOrders(database, views.get(viewId));
 
   if (named) return named;
 
   for (const id of views.keys()) {
-    const rowOrders = views.get(id)?.get(YjsDatabaseKey.row_orders);
+    const rowOrders = viewMembershipRowOrders(database, views.get(id));
 
     if (rowOrders) return rowOrders;
   }

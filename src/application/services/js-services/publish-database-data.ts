@@ -8,8 +8,9 @@
  */
 import * as Y from 'yjs';
 
-import { openCollabDB } from '@/application/db';
+import { convertAnchoredViewsToArray } from '@/application/database-yjs/row-placements-doc';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { openCollabDB } from '@/application/db';
 import { createRow } from '@/application/services/js-services/cache';
 import { YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -37,6 +38,8 @@ function createDatabasePublishSnapshot(dbDoc: Y.Doc): { doc: Y.Doc; rowIds: stri
   const views = database?.get(YjsDatabaseKey.views);
 
   publishDoc.transact(() => {
+    // A published page is read by clients of any age, so its copy keeps every view in array mode.
+    convertAnchoredViewsToArray(database);
     views?.forEach((view) => {
       const rowOrders = view.get(YjsDatabaseKey.row_orders);
 

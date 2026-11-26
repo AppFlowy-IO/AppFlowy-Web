@@ -33,6 +33,12 @@ import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@
 import { shareCanonicalRowDoc } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import { readViewLayout, readViewOpenPagesIn, resolveRecordOpening } from '@/application/database-yjs/open-pages-in';
 import { createRowOrdersStore } from '@/application/database-yjs/row-orders-store';
+import {
+  isAnchoredView,
+  observeViewRowOrders,
+  viewMembershipRowOrders,
+  viewRowOrderEntries,
+} from '@/application/database-yjs/row-placements-doc';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
@@ -791,6 +797,12 @@ function Database(props: Database2Props) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+
+    if (isAnchoredView(view)) {
+      // The first rows of an anchored view follow its placements, not an array of its own.
+      return (viewRowOrderEntries(database, view) ?? []).slice(0, PRIORITY_ROW_SEED_LIMIT).map((row) => row.id);
+    }
+
     const rowOrders = view?.get(YjsDatabaseKey.row_orders);
 
     if (!rowOrders || rowOrders.length === 0) return [];
@@ -814,7 +826,7 @@ function Database(props: Database2Props) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
 
-    return database?.get(YjsDatabaseKey.views)?.get(activeViewId)?.get(YjsDatabaseKey.row_orders)?.length;
+    return viewMembershipRowOrders(database, database?.get(YjsDatabaseKey.views)?.get(activeViewId))?.length;
   }, [doc, activeViewId]);
 
   /**
@@ -1901,22 +1913,20 @@ function Database(props: Database2Props) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
-    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
 
-    if (!rowOrders) return;
+    if (!view?.get(YjsDatabaseKey.row_orders)) return;
 
-    let knownOrderedRowIds = new Set(
-      (rowOrders.toJSON() as { id: string; is_deleted?: boolean }[])
-        .filter((row) => !row.is_deleted)
-        .map((row) => row.id)
-    );
-
-    const handleRowOrdersChange: Parameters<typeof rowOrders.observeDeep>[0] = (_events, transaction) => {
-      const nextOrderedRowIds = new Set(
-        (rowOrders.toJSON() as { id: string; is_deleted?: boolean }[])
+    // An anchored view holds the rows of the Database, which the storage view lists.
+    const readOrderedRowIds = () =>
+      new Set(
+        ((viewMembershipRowOrders(database, view)?.toJSON() ?? []) as { id: string; is_deleted?: boolean }[])
           .filter((row) => !row.is_deleted)
           .map((row) => row.id)
       );
+    let knownOrderedRowIds = readOrderedRowIds();
+
+    const handleRowOrdersChange = (transaction: { local: boolean }) => {
+      const nextOrderedRowIds = readOrderedRowIds();
       const lifecycleReconciliationRows = remoteRowsNeedingReconciliationRef.current;
 
       if (!transaction.local) {
@@ -1935,10 +1945,7 @@ function Database(props: Database2Props) {
       knownOrderedRowIds = nextOrderedRowIds;
     };
 
-    rowOrders.observeDeep(handleRowOrdersChange);
-    return () => {
-      rowOrders.unobserveDeep(handleRowOrdersChange);
-    };
+    return observeViewRowOrders(database, view, handleRowOrdersChange);
   }, [activeViewId, createRow, doc, readOnly]);
 
   useLayoutEffect(() => {

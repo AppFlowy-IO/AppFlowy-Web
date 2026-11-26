@@ -3,6 +3,7 @@ import {
   keyBetween,
   placementAt,
   placementForMove,
+  placementsForOrder,
   repairAfterRemoval,
   RowPlacement,
   RowPlacements,
@@ -126,5 +127,76 @@ describe('row placements agree with the shared vectors', () => {
 
       expect(numbers(anchoredOrder(remaining, current))).toEqual(item.order);
     }
+  });
+});
+
+// The vectors do not cover the conversion of an order to placements: any keys that give the
+// order are right, so it is checked against the order rule the vectors do cover.
+describe('placements for a given order', () => {
+  const random = (seed: number) => {
+    let state = seed;
+
+    return (below: number) => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state % below;
+    };
+  };
+
+  const asMap = (written: Array<[string, RowPlacement]>): RowPlacements => new Map(written);
+
+  it('shows the order it was asked for, with no placement for rows that keep their relative order', () => {
+    const next = random(3);
+
+    for (let round = 0; round < 300; round++) {
+      const size = 1 + next(40);
+      const canonical = rows(Array.from({ length: size }, (_, index) => index + 1));
+      const target = canonical.map((row) => row.id);
+
+      // A few swaps for some rounds, a full shuffle for the others.
+      const swaps = round % 3 === 0 ? size * 2 : next(4);
+
+      for (let swap = 0; swap < swaps; swap++) {
+        const left = next(size);
+        const right = next(size);
+
+        [target[left], target[right]] = [target[right], target[left]];
+      }
+
+      const written = placementsForOrder(canonical, target, writer('7', round));
+
+      expect(written).not.toBeNull();
+      expect(anchoredOrder(canonical, asMap(written ?? [])).map((row) => row.id)).toEqual(target);
+      // No more rows are placed than the rows off a longest run that is already in order.
+      expect((written ?? []).length).toBeLessThan(size);
+      (written ?? []).forEach(([, placement]) => expect(placement.key[placement.key.length - 1]).toBe(1));
+    }
+  });
+
+  it('writes nothing for the canonical order and all but one row for the reverse', () => {
+    const canonical = rows([1, 2, 3, 4, 5, 6]);
+    const order = canonical.map((row) => row.id);
+
+    expect(placementsForOrder(canonical, order, writer('1', 0))).toEqual([]);
+    expect(placementsForOrder(canonical, order.slice().reverse(), writer('1', 0))?.length).toBe(5);
+  });
+
+  it('keeps a long run of placed rows in order with short keys', () => {
+    const size = 3000;
+    const canonical = rows(Array.from({ length: size }, (_, index) => index + 1));
+    const target = canonical.map((row) => row.id).reverse();
+    const written = placementsForOrder(canonical, target, writer('9', 4)) ?? [];
+
+    expect(anchoredOrder(canonical, asMap(written)).map((row) => row.id)).toEqual(target);
+    expect(Math.max(...written.map(([, placement]) => placement.key.length))).toBe(17);
+  });
+
+  it('refuses an order that is not exactly the canonical rows', () => {
+    const canonical = rows([1, 2, 3]);
+    const [one, two, three] = canonical.map((row) => row.id);
+
+    expect(placementsForOrder(canonical, [one, two], writer('1', 0))).toBeNull();
+    expect(placementsForOrder(canonical, [one, two, two], writer('1', 0))).toBeNull();
+    expect(placementsForOrder(canonical, [one, two, rowId(9)], writer('1', 0))).toBeNull();
+    expect(placementsForOrder(canonical, [three, one, two], writer('1', 0))).not.toBeNull();
   });
 });

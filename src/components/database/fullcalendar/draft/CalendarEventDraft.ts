@@ -8,6 +8,7 @@ import { populateNewRowCells } from '@/application/database-yjs/dispatch/new-row
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { getTypeOptions } from '@/application/database-yjs/fields/type_option';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
+import { viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
 import { generateRowMeta } from '@/application/database-yjs/row_meta';
 import { readDatabaseRowTemplateState } from '@/application/database-yjs/template';
 import {
@@ -245,9 +246,9 @@ export class CalendarEventDraft {
         // Publication is the ownership boundary. A later reciprocal-link error
         // must never leave a real row offering the local-only discard action.
         const liveDatabase = this.source.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
-        const orders = liveDatabase.get(YjsDatabaseKey.views).get(this.source.activeViewId)?.get(YjsDatabaseKey.row_orders);
+        const liveView = liveDatabase.get(YjsDatabaseKey.views).get(this.source.activeViewId);
 
-        if (orders?.toArray().some((row) => row.id === this.id)) {
+        if (viewMembershipRowOrders(liveDatabase, liveView)?.toArray().some((row) => row.id === this.id)) {
           this.savedId = this.id;
           // The published row already references these options even if a
           // later reciprocal-link update failed.

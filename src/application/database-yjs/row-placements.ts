@@ -156,6 +156,11 @@ export function keyBetween(lower: Uint8Array | null, upper: Uint8Array | null, w
     prefix = [0x80];
   }
 
+  return finishKey(prefix, writer);
+}
+
+/** A key from its ordering prefix: the prefix, the writer's client id and clock, and a final 1. */
+function finishKey(prefix: number[], writer: KeyWriter): Uint8Array {
   const key = new Uint8Array(prefix.length + 13);
   const view = new DataView(key.buffer);
 
@@ -417,4 +422,84 @@ export function repairAfterRemoval<T extends RowLike>(
   });
 
   return { remove, write };
+}
+
+/** For each element of a sequence of distinct numbers: whether it is on one longest increasing subsequence. */
+function onLongestIncreasingSubsequence(sequence: number[]): boolean[] {
+  // `tails[length - 1]` is the index of the smallest value that ends an increasing run of `length`.
+  const tails: number[] = [];
+  const previous: Array<number | undefined> = new Array(sequence.length).fill(undefined);
+
+  sequence.forEach((value, index) => {
+    let low = 0;
+    let high = tails.length;
+
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+
+      if (sequence[tails[middle]] < value) low = middle + 1;
+      else high = middle;
+    }
+
+    if (low > 0) previous[index] = tails[low - 1];
+    tails[low] = index;
+  });
+
+  const keep: boolean[] = new Array(sequence.length).fill(false);
+  let cursor = tails.length > 0 ? tails[tails.length - 1] : undefined;
+
+  while (cursor !== undefined) {
+    keep[cursor] = true;
+    cursor = previous[cursor];
+  }
+
+  return keep;
+}
+
+/**
+ * The placements that make an anchored view show `target`, or `null` when `target` does not hold
+ * exactly the canonical rows, each once.
+ *
+ * The rows on a longest increasing subsequence of canonical positions need no placement. Every
+ * other row is placed after the last unplaced row before it, with keys spread evenly so that a
+ * long run of placed rows does not produce long keys.
+ */
+export function placementsForOrder<T extends RowLike>(
+  canonical: T[],
+  target: string[],
+  writer: KeyWriter
+): Array<[string, RowPlacement]> | null {
+  const index = new Map<string, number>();
+
+  canonical.forEach((row, position) => index.set(row.id, position));
+  if (
+    index.size !== canonical.length ||
+    target.length !== canonical.length ||
+    new Set(target).size !== target.length ||
+    target.some((rowId) => !index.has(rowId))
+  ) {
+    return null;
+  }
+
+  const keep = onLongestIncreasingSubsequence(target.map((rowId) => index.get(rowId) as number));
+  const runs: Array<{ anchor: string | null; rows: string[] }> = [{ anchor: null, rows: [] }];
+
+  target.forEach((rowId, position) => {
+    if (keep[position]) runs.push({ anchor: rowId, rows: [] });
+    else runs[runs.length - 1].rows.push(rowId);
+  });
+
+  const placements: Array<[string, RowPlacement]> = [];
+
+  runs.forEach(({ anchor, rows }) => {
+    rows.forEach((rowId, position) => {
+      // The fraction (position + 1) / (rows + 1) of the 32-bit range, as four bytes.
+      const spread = Number((BigInt(position + 1) << 32n) / BigInt(rows.length + 1));
+      const prefix = [(spread >>> 24) & 0xff, (spread >>> 16) & 0xff, (spread >>> 8) & 0xff, spread & 0xff];
+
+      placements.push([rowId, { anchor, key: finishKey(prefix, writer) }]);
+    });
+  });
+
+  return placements;
 }

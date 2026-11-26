@@ -28,6 +28,7 @@ import {
 import { executeDatabaseOperations as executeOperations } from './history';
 import { normalizeCreatedDatabaseListView, removeCreatedDatabaseView } from './list-layout';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from './row-order-visibility';
+import { databaseOfView, isAnchoredView, setAnchoredViewOrder, viewRowOrdersJSON } from './row-placements-doc';
 
 import type { DatabaseContextState } from './context';
 
@@ -691,7 +692,22 @@ export function copyDatabaseViewConfiguration(
     return;
   }
 
-  const visibleRowOrders = materializeVisibleRowOrders(sourceRowOrders.toJSON(), canonicalRowOrders?.toJSON()) ?? [];
+  // The source's rows in its order, whichever mode it is in.
+  const sourceRows = viewRowOrdersJSON(databaseOfView(source), source) ?? [];
+
+  if (
+    isAnchoredView(target) &&
+    setAnchoredViewOrder(
+      databaseOfView(target),
+      target,
+      sourceRows.map((row) => row.id)
+    )
+  ) {
+    // An anchored copy lists no rows of its own: it shows the source's order through placements.
+    return;
+  }
+
+  const visibleRowOrders = materializeVisibleRowOrders(sourceRows, canonicalRowOrders?.toJSON()) ?? [];
   const copiedRowOrders = new Y.Array() as YDatabaseRowOrders;
 
   copiedRowOrders.push(

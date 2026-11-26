@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
 import { assertAtomicCreationAvailable, captureAtomicCreationOwner } from '@/application/atomic-creation/owner';
+import { viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
 import { getMetaJSON } from '@/application/database-yjs/row_meta';
 import type { DatabaseRowTemplate } from '@/application/database-yjs/template';
 import {
@@ -224,10 +225,8 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
       if (
         id === sourceViewId ||
         !anchor ||
-        view
-          .get(YjsDatabaseKey.row_orders)
-          .toArray()
-          .some((row) => row.id === anchor && !row.is_deleted)
+        // An anchored view holds every row of the Database, so it holds the anchor too.
+        (viewMembershipRowOrders(database, view)?.toArray() ?? []).some((row) => row.id === anchor && !row.is_deleted)
       )
         positionViewIds.push(id);
     });

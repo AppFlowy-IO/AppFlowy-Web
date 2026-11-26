@@ -29,6 +29,7 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
 import { initializeDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import {
   convertViewToDashboard,
@@ -42,7 +43,6 @@ import {
   DatabaseViewDocDeps,
   deleteDatabaseViewInDoc,
 } from '@/application/database-yjs/database-view-doc-ops';
-import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
 import {
   AITranslateLanguage,
   CalculationType,
@@ -56,6 +56,7 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { withAnchoredViewRepair } from '@/application/database-yjs/dispatch/utils';
 import {
   collectFormulaExternalReferences,
   evaluateFormulaCell,
@@ -71,11 +72,11 @@ import {
   SelectTypeOption,
 } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
-import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
+import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import { checkExistingCellWrite, shouldSkipBulkRewrite } from '@/application/database-yjs/fields/text/rich-text-guard';
 import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
@@ -123,6 +124,11 @@ import {
   migrateRollupFilters, migrateRollupsForRelation,
   rollupResultType,
 } from '@/application/database-yjs/rollup/filter';
+import {
+  databaseOfView,
+  isAnchoredView,
+  reorderRowInAnchoredView,
+} from '@/application/database-yjs/row-placements-doc';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import {
@@ -1553,6 +1559,12 @@ export function useToggleHideEmptyGroups() {
 }
 
 function reorderRow(rowId: string, beforeRowId: string | undefined, view: YDatabaseView) {
+  if (isAnchoredView(view)) {
+    // An anchored view has no row list to move in: the drag writes one placement.
+    reorderRowInAnchoredView(databaseOfView(view), view, rowId, beforeRowId);
+    return;
+  }
+
   const rows = view.get(YjsDatabaseKey.row_orders);
 
   if (!rows) {
@@ -1617,7 +1629,7 @@ export function useDeleteRowDispatch() {
       executeOperationWithAllViews(
         sharedRoot,
         database,
-        (view) => {
+        withAnchoredViewRepair(database, [rowId], (view) => {
           if (!view) {
             throw new Error(`Unable to delete row`);
           }
@@ -1631,7 +1643,7 @@ export function useDeleteRowDispatch() {
           const sourceIndex = rowArray.findIndex((row) => row.id === rowId);
 
           rows.delete(sourceIndex);
-        },
+        }),
         'deleteRowDispatch'
       );
       void deleteOutboxByObjectId(rowId);
@@ -1652,7 +1664,7 @@ export function useBulkDeleteRowDispatch() {
       executeOperationWithAllViews(
         sharedRoot,
         database,
-        (view) => {
+        withAnchoredViewRepair(database, rowIds, (view) => {
           if (!view) {
             throw new Error(`Unable to bulk delete rows`);
           }
@@ -1671,7 +1683,7 @@ export function useBulkDeleteRowDispatch() {
               rows.delete(sourceIndex);
             }
           });
-        },
+        }),
         'bulkDeleteRowDispatch',
         historyGroup
       );

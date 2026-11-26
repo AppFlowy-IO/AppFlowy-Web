@@ -3,7 +3,30 @@
  */
 
 import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
+import { repairAnchoredViewsBeforeRemoval } from '@/application/database-yjs/row-placements-doc';
 import { YDatabase, YDatabaseView, YjsDatabaseKey, YSharedRoot } from '@/application/types';
+
+/**
+ * Wraps the per-view step of a permanent row delete. Before the first view loses the rows, the
+ * anchored views are repaired, so that rows moved next to a deleted row stay where they are.
+ * The rows themselves leave an anchored view when they leave the storage view.
+ */
+export function withAnchoredViewRepair(
+  database: YDatabase,
+  rowIds: string[],
+  operation: (view: YDatabaseView, viewId: string) => void
+): (view: YDatabaseView, viewId: string) => void {
+  let repaired = false;
+
+  return (view, viewId) => {
+    if (!repaired) {
+      repaired = true;
+      repairAnchoredViewsBeforeRemoval(database, rowIds);
+    }
+
+    operation(view, viewId);
+  };
+}
 
 /**
  * Execute an operation across all database views

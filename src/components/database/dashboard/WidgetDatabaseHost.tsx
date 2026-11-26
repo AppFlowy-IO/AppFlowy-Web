@@ -1,10 +1,11 @@
 import { ComponentProps, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
-import { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { isDatabaseSourceResident } from '@/application/database-blob';
+import { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
+import { databaseOfView, viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
 import { setOverlaySuspended } from '@/application/database-yjs/view-conditions-overlay';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
-import { UIVariant, ViewLayout, YDatabaseView, YDoc, YjsDatabaseKey } from '@/application/types';
+import { UIVariant, ViewLayout, YDatabaseView, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 import {
   EmbeddedDatabasePermissions,
@@ -270,7 +271,10 @@ export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }:
   );
 
   // The open source's size, for the dashboard's row budget.
-  useReportSourceRows(databaseId, source.snapshot.view?.get(YjsDatabaseKey.row_orders)?.length);
+  useReportSourceRows(
+    databaseId,
+    viewMembershipRowOrders(databaseOfView(source.snapshot.view), source.snapshot.view)?.length
+  );
   // The host's permissions are those of its database, which is the widget's.
   const hostPermissions = useMemo<EmbeddedDatabasePermissions>(
     () => ({

@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 
 import { FieldType } from '@/application/database-yjs';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
+import { viewRowOrderEntries } from '@/application/database-yjs/row-placements-doc';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { AIService, ViewService } from '@/application/services/domains';
 import { duplicateRowDocument as duplicateRowDocumentAPI } from '@/application/services/js-services/http/collab-api';
@@ -19,8 +20,8 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { openRowSubDocument } from '@/application/view-loader';
 import { isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
+import { openRowSubDocument } from '@/application/view-loader';
 import { PromptDatabaseConfiguration } from '@/components/chat';
 import { Log } from '@/utils/log';
 
@@ -107,7 +108,7 @@ export function useDatabaseOperations(
       const doc = await loadView?.(viewId);
       const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
       const view = database.get(YjsDatabaseKey.views).get(viewId);
-      const rowOrders = view?.get(YjsDatabaseKey.row_orders) || [];
+      const rowOrders = viewRowOrderEntries(database, view) ?? [];
 
       const rowPromises = rowOrders
         .map(async (row: { id: string }) => {

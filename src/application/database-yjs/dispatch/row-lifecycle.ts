@@ -9,12 +9,13 @@
  * imperatively opened database collab.
  */
 
-import { deleteCollabDB } from '@/application/db';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
+import { viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
+import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { YDatabase, YDoc, YjsDatabaseKey, YSharedRoot } from '@/application/types';
 
-import { executeOperationWithAllViews } from './utils';
+import { executeOperationWithAllViews, withAnchoredViewRepair } from './utils';
 
 interface RowOrderEntry {
   id: string;
@@ -89,7 +90,7 @@ export function removeRowsFromDatabase(
   executeOperationWithAllViews(
     sharedRoot,
     database,
-    (view) => {
+    withAnchoredViewRepair(database, rowIds, (view) => {
       const rows = view.get(YjsDatabaseKey.row_orders);
 
       if (!rows) {
@@ -104,7 +105,7 @@ export function removeRowsFromDatabase(
           rows.delete(sourceIndex);
         }
       });
-    },
+    }),
     'removeRowsFromDatabase'
   );
 
@@ -118,7 +119,8 @@ export function removeRowsFromDatabase(
 
 export function isRowOrderTombstoned(database: YDatabase, viewId: string, rowId: string): boolean {
   const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-  const rowArray = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as RowOrderEntry[] | undefined;
+  // An anchored view takes the flag from the storage view's rows.
+  const rowArray = viewMembershipRowOrders(database, view)?.toJSON() as RowOrderEntry[] | undefined;
 
   return Boolean(rowArray?.find((entry) => entry.id === rowId)?.is_deleted);
 }
