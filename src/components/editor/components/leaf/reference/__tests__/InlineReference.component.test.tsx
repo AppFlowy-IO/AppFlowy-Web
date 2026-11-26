@@ -21,7 +21,12 @@ jest.mock('@/components/editor/EditorContext', () => ({ useEditorLocalState: () 
 jest.mock('@/components/editor/components/toolbar/selection-toolbar/ToolbarActions', () => ({ __esModule: true, default: () => <span>Formatting actions</span> }));
 jest.mock('@/components/editor/components/toolbar/selection-toolbar/utils', () => ({ getSelectionPosition: () => ({ top: 10, left: 10, width: 20, height: 20 }) }));
 
-function fixture({ readOnly = false, source = 'The search button and shortcut are not functioning properly.', referenceInNotes = false } = {}) {
+function fixture({
+  readOnly = false,
+  source = 'The search button and shortcut are not functioning properly.',
+  referenceInNotes = false,
+  summaryWithoutBlocks = false,
+} = {}) {
   const editor = Object.assign(withReact(createEditor()), { isElementReadOnly: () => false });
   const value: Descendant[] = [{
     blockId: 'meeting', type: BlockType.AIMeetingBlock, data: { selected_tab_index: 0 },
@@ -37,6 +42,8 @@ function fixture({ readOnly = false, source = 'The search button and shortcut ar
 
     (notes.children[0]).children = (summary.children[0]).children;
     (summary.children[0]).children = [{ text: '' }];
+    // Flutter creates the Summary section without child blocks until a summary is written.
+    if (summaryWithoutBlocks) summary.children = [{ text: '' }];
   }
 
   const renderLeaf = ({ attributes, children, leaf, text }: RenderLeafProps) => {
@@ -129,6 +136,14 @@ describe('real Slate summary source popover', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View sources' }));
     fireEvent.click(await screen.findByRole('button', { name: /06:43/ }));
     expect(CustomEditor.setBlockData).toHaveBeenCalledWith(expect.anything(), 'meeting', { selected_tab_index: 2 });
+  });
+
+  it("stores Flutter's Transcript index when the Summary section has no child blocks", async () => {
+    fixture({ referenceInNotes: true, summaryWithoutBlocks: true });
+    fireEvent.click(screen.getByRole('button', { name: 'View sources' }));
+    fireEvent.click(await screen.findByRole('button', { name: /06:43/ }));
+    // Flutter's tabs are Notes and Transcript until the Summary section has a child block.
+    expect(CustomEditor.setBlockData).toHaveBeenCalledWith(expect.anything(), 'meeting', { selected_tab_index: 1 });
   });
 
   it('updates an open source preview when the transcript changes', async () => {

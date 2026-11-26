@@ -27,13 +27,16 @@ function fixture(data = {}) {
 }
 
 describe('Flutter transcript document persistence', () => {
-  it('creates Summary, Notes and Transcript with empty paragraphs for a new web block', () => {
+  it('creates sections shaped like Flutter: only Notes starts with an empty paragraph', () => {
     const { editor, blockId, sharedRoot } = fixture();
     const before = traverseBlock(blockId, sharedRoot);
+    const sections = before!.children.filter(Element.isElement);
 
-    expect(before?.children.map((section) => 'type' in section ? section.type : '')).toEqual([
+    expect(sections.map((section) => section.type)).toEqual([
       BlockType.AIMeetingSummaryBlock, BlockType.AIMeetingNotesBlock, BlockType.AIMeetingTranscriptionBlock,
     ]);
+    // Flutter shows Summary once its section has any child block, so it starts without one.
+    expect(sections.map((section) => section.children.filter((child) => Element.isElement(child) && child.blockId).length)).toEqual([0, 1, 0]);
     initializeMeetingSections(editor, blockId);
     expect(traverseBlock(blockId, sharedRoot)).toEqual(before);
   });

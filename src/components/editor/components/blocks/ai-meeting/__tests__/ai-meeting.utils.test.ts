@@ -1,8 +1,13 @@
 import { expect, describe, it } from '@jest/globals';
+import { Element } from 'slate';
+
+import { BlockType } from '@/application/types';
 
 import {
   documentFragmentToHTML,
   formatTimestamp,
+  getFlutterTabKeys,
+  hasChildBlocks,
   isRangeInsideElement,
   normalizeAppFlowyClipboardHTML,
   plainTextToHTML,
@@ -11,6 +16,22 @@ import {
   stripTranscriptReferences,
   shouldUseRichCopyForTab,
 } from '../ai-meeting.utils';
+
+describe('Flutter meeting tabs', () => {
+  const section = (children: Element['children']) => ({ blockId: 'summary', type: BlockType.AIMeetingSummaryBlock, children }) as Element;
+
+  it('counts child blocks, not the empty text leaf of a childless section', () => {
+    expect(hasChildBlocks(section([{ text: '' }]))).toBe(false);
+    expect(hasChildBlocks(section([{ blockId: 'p', type: BlockType.Paragraph, children: [{ text: '' }] } as Element]))).toBe(true);
+    expect(hasChildBlocks(undefined)).toBe(false);
+  });
+
+  it('orders Flutter tabs so stored indexes resolve to the same tab', () => {
+    expect(getFlutterTabKeys({ summary: false, transcript: false })).toEqual(['notes']);
+    expect(getFlutterTabKeys({ summary: false, transcript: true })).toEqual(['notes', 'transcript']);
+    expect(getFlutterTabKeys({ summary: true, transcript: true })).toEqual(['summary', 'notes', 'transcript']);
+  });
+});
 
 describe('formatTimestamp', () => {
   describe('valid timestamps', () => {

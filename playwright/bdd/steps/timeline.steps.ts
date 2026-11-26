@@ -1410,19 +1410,26 @@ When('I choose Monday as the timeline week start', async ({ page }) => {
 
 Then('the timeline quarter labels fall on Mondays', async ({ page }) => {
   // Quarter labels sit on week starts; the first week of each month carries the
-  // month name ("Oct 5"), which is enough to resolve the weekday unambiguously.
+  // month name ("Oct 5"). The canvas spans about four months either side of today,
+  // so each label belongs to the year that puts it nearest today: in late November
+  // "Jan 4" is next January, and in early January "Oct 5" is last October.
   const labels = await TimelineSelectors.header(page)
     .locator('span')
     .filter({ hasText: /^[A-Z][a-z]{2} \d{1,2}$/ })
     .allTextContents();
-  const year = new Date().getFullYear();
+  const now = new Date();
 
   expect(labels.length).toBeGreaterThan(0);
   for (const label of labels) {
     const [monthName, day] = label.trim().split(' ');
-    const month = new Date(`${monthName} 1, ${year}`).getMonth();
+    const month = new Date(`${monthName} 1, 2000`).getMonth();
+    const date = [-1, 0, 1]
+      .map((offset) => new Date(now.getFullYear() + offset, month, Number(day)))
+      .reduce((nearest, candidate) =>
+        Math.abs(candidate.getTime() - now.getTime()) < Math.abs(nearest.getTime() - now.getTime()) ? candidate : nearest
+      );
 
-    expect(new Date(year, month, Number(day)).getDay()).toBe(1);
+    expect(date.getDay(), label).toBe(1);
   }
 });
 

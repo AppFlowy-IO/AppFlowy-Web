@@ -257,7 +257,8 @@ describe('Flutter transcript block integration', () => {
   it.each([
     ['none', 'idle', false], ['realtime', 'idle', false], ['realtime', 'recording', true], ['audioFile', 'recorded', true], ['urlSource', 'recorded', true],
   ] as const)('keeps Flutter language-editing rules for %s in %s', async (type, recording, disabled) => {
-    renderBlock(meeting({ transcription_type: type, recording_state: recording, selected_tab_index: 2 }, ['', '', 'Transcript text']));
+    // Without a summary, Flutter's tabs are Notes and Transcript, so Transcript is index 1.
+    renderBlock(meeting({ transcription_type: type, recording_state: recording, selected_tab_index: 1 }, ['', '', 'Transcript text']));
     await waitFor(() => expect(screen.getByRole('combobox').disabled).toBe(disabled));
   });
 

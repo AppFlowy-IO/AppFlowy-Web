@@ -5,6 +5,21 @@ import { BlockType } from '@/application/types';
 
 export type TabKey = 'summary' | 'notes' | 'transcript';
 
+/** Whether a section has a child block. The empty text leaf of a childless section does not count. */
+export const hasChildBlocks = (node?: SlateNode) =>
+  Boolean(node && Element.isElement(node) && node.children.some((child) => Element.isElement(child) && Boolean(child.blockId)));
+
+/**
+ * Flutter's meeting tabs, in order. `selected_tab_index` is a position in this list, which differs
+ * from Web's tabs: Flutter shows Summary once its section has any child block, and Transcript once
+ * the transcript or the summary has content. Web reads and writes the index against these tabs.
+ */
+export const getFlutterTabKeys = ({ summary, transcript }: { summary: boolean; transcript: boolean }): TabKey[] => [
+  ...(summary ? (['summary'] as const) : []),
+  'notes',
+  ...(transcript ? (['transcript'] as const) : []),
+];
+
 export type CopyLabelKey =
   | 'document.aiMeeting.copy.summary'
   | 'document.aiMeeting.copy.notes'

@@ -60,6 +60,15 @@ This is a regression checklist and record of user expectations, not a claim that
 - Calendar-unit shifts preserve the input's time setting. Cover both arithmetic directions, range
   endpoints, ordering, equality, and deduplication without removing date-only comparison behavior.
 
+## AI meeting notes-first flag (reported 2026-11-26)
+
+- Desktop's MeetingPageCreator and `/AI Meeting Notes` set `show_notes_directly: true` and never clear it. On desktop it only replaces the welcome screen; Summary and Transcript tabs remain available.
+- Web hid the tabs and pinned Notes for that flag, so desktop-recorded meetings opened as a title and an empty Notes placeholder. The report blamed "Move to" another space, but the server move is folder-only and leaves the document unchanged.
+- Keep tabs visible for the flag. Cover recorded, read-only and notes-only desktop meetings with the real editor fixture, including the first painted tab.
+- `selected_tab_index` is a position in Flutter's tabs: Summary once its section has any child block, Notes always, and Transcript once the transcript or summary has content. Every Web reader and writer (tab clicks, imports, summary references) uses `getFlutterTabKeys`; Web's tab for generating a first summary is never stored. Work running in the editor counts toward the tab it fills, as in Flutter.
+- Create Summary and Transcript sections without child blocks, like Flutter's `aiMeetingNode()`; only Notes starts with an empty paragraph. A placeholder paragraph makes desktop show an empty Summary tab and shifts every stored index. Viewing a desktop meeting on Web must not add child blocks.
+- Web-created Google Calendar meeting pages match Flutter's MeetingPageCreator: `show_notes_directly: true` and childless Summary/Transcript. With `false`, desktop hid their attendee notes behind its welcome screen.
+
 ## Row duplication relation regressions
 
 - Re-read the activated source cell and its membership after related database or row hydration. A newer edit or undo must prevent a delayed reciprocal insertion from restoring a removed link.
@@ -68,6 +77,8 @@ This is a regression checklist and record of user expectations, not a claim that
 - Late completion must join the original history group without consuming newer actions or discarding their redo. Cover deferred hydration, real Yjs replica merging, displacement, and undo/redo.
 
 ## CI regression history
+
+- PR #737 CI follow-up (2026-11-26): since #736, Calendar meetings require server info with `enable_meeting`. The integrations fixture must load server info through `useServerInfo` under the configured base URL, and its mock must opt in; otherwise the Calendar integration renders nothing. Quarter timeline labels omit the year: resolve each to the year nearest today, because late-November views include next January.
 
 - PR #731 CI follow-up (2026-11-17): dashboard Done flushes owned-view deletion separately from the collab outbox. Await the authoritative owned-view list before reloading, then retain the post-reload assertion; an early reload can cancel the move-to-trash request. Current main also retries transient trash `RetryLater` replies. SSR smoke-test failure logs must include nginx's error file, which is absent from `docker logs`.
 - PR #719 CI follow-up (2026-11-15): wait for the row-text fixture editor to mount before asserting AppTheme's `data-dark-mode`; a cold Vite module graph can still be loading when the shorter theme assertion expires. Form preview BDD must assert the success toast, retained typed answer, and no submission request, matching the desktop preview contract rather than the public form's confirmation screen.

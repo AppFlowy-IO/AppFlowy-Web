@@ -24,12 +24,13 @@ it('creates the same native meeting sections, scheduling metadata and attendee n
         {
           type: BlockType.AIMeetingBlock,
           data: {
+            show_notes_directly: true,
             meeting_source: 'google_calendar',
             scheduled_start_time: '2026-09-21T08:00:00.000Z',
             scheduled_end_time: '2026-09-21T09:00:00.000Z',
           },
           children: [
-            { type: BlockType.AIMeetingSummaryBlock },
+            { type: BlockType.AIMeetingSummaryBlock, children: [] },
             {
               type: BlockType.AIMeetingNotesBlock,
               children: [
@@ -38,7 +39,7 @@ it('creates the same native meeting sections, scheduling metadata and attendee n
                 expect.anything(),
               ],
             },
-            { type: BlockType.AIMeetingTranscriptionBlock },
+            { type: BlockType.AIMeetingTranscriptionBlock, children: [] },
           ],
         },
       ],

@@ -18,7 +18,16 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import { initializeMeetingSections } from './ai-meeting.import';
-import { buildCopyText, COPY_META, type CopyMeta, type TabKey, getBaseSpeakerId, parseSpeakerInfoMap } from './ai-meeting.utils';
+import {
+  buildCopyText,
+  COPY_META,
+  type CopyMeta,
+  type TabKey,
+  getBaseSpeakerId,
+  getFlutterTabKeys,
+  hasChildBlocks,
+  parseSpeakerInfoMap,
+} from './ai-meeting.utils';
 import {
   AIMeetingErrorBanner,
   AIMeetingImportActions,
@@ -65,6 +74,13 @@ const hasNodeContent = (node?: Node) => {
   const text = CustomEditor.getBlockTextContent(node).trim();
 
   return text.length > 0;
+};
+
+/** The stored tab index may be a number or a numeric string. */
+const parseTabIndex = (raw: unknown) => {
+  const index = typeof raw === 'string' && raw.trim() ? Number(raw) : raw;
+
+  return typeof index === 'number' && !Number.isNaN(index) ? index : 0;
 };
 
 export const AIMeetingBlock = memo(
@@ -136,6 +152,8 @@ export const AIMeetingBlock = memo(
       const hasTranscript = useMemo(() => hasNodeContent(sectionNodes.transcriptNode), [sectionNodes.transcriptNode]);
       const hasNotes = useMemo(() => hasNodeContent(sectionNodes.notesNode), [sectionNodes.notesNode]);
       const hasSource = hasTranscript || hasNotes;
+      // Flutter shows Summary once its section has any child block; summary text always has one.
+      const summaryHasBlocks = hasSummary || hasChildBlocks(sectionNodes.summaryNode);
       const needsSections = !sectionNodes.summaryNode || !sectionNodes.notesNode || !sectionNodes.transcriptNode;
 
       useEffect(() => {
@@ -176,7 +194,8 @@ export const AIMeetingBlock = memo(
         blockId: node.blockId,
         data,
         transcriptBlockId: (sectionNodes.transcriptNode as { blockId?: string } | undefined)?.blockId,
-        transcriptTabIndex: Number(Boolean(sectionNodes.notesNode)) + Number(hasSummary),
+        // Flutter's Transcript position once the imported transcript exists.
+        transcriptTabIndex: getFlutterTabKeys({ summary: summaryHasBlocks, transcript: true }).indexOf('transcript'),
         hasTranscript,
         readOnly,
         enabled: regenerate.isAIEnabled && meetingEnabled,
@@ -207,42 +226,36 @@ export const AIMeetingBlock = memo(
         });
       }, [sectionNodes, importer.busy, data.transcript_id, regenerate.isRegeneratingSummary, hasSummary, hasTranscript, hasSource, readOnly]);
 
-      const showNotesDirectly = Boolean(data.show_notes_directly);
-      const showTabs = !showWelcome && !showNotesDirectly && availableTabs.length > 1;
+      // Flutter's `show_notes_directly` only skips its welcome screen; it never hides these tabs.
+      const showTabs = !showWelcome && availableTabs.length > 1;
       const fallbackTab = availableTabs[0] ?? TAB_DEFS[1];
-
-      const selectedIndex = useMemo(() => {
-        if (readOnly) return 0;
-
-        const raw = data.selected_tab_index;
-
-        if (typeof raw === 'number' && !Number.isNaN(raw)) return raw;
-
-        if (typeof raw === 'string' && raw.trim()) {
-          const parsed = Number(raw);
-
-          if (!Number.isNaN(parsed)) return parsed;
-        }
-
-        return 0;
-      }, [readOnly, data.selected_tab_index]);
-
-      const [activeIndex, setActiveIndex] = useState(0);
+      // `selected_tab_index` is a position in Flutter's tabs. As in Flutter, work running or pending
+      // here counts toward the tab it fills: summary generation or its error keeps Summary, and an
+      // import or transcript job keeps Transcript.
+      const flutterSummaryTab = summaryHasBlocks || regenerate.isRegeneratingSummary || Boolean(regenerate.summaryError);
+      const flutterTranscriptTab = hasTranscript || hasSummary || importer.busy || Boolean(data.transcript_id);
+      const flutterTabs = useMemo(
+        () => getFlutterTabKeys({ summary: flutterSummaryTab, transcript: flutterTranscriptTab }),
+        [flutterSummaryTab, flutterTranscriptTab]
+      );
+      const storedIndex = parseTabIndex(data.selected_tab_index);
+      // Like Flutter, an index outside its tabs selects the first tab.
+      const storedTab = flutterTabs[storedIndex] ?? flutterTabs[0];
+      const storedTabIndex = availableTabs.findIndex((tab) => tab.key === storedTab);
+      const selectedIndex = readOnly || storedTabIndex < 0 ? 0 : storedTabIndex;
+      // Start on the resolved tab: syncing only in the effect would paint the first tab for a frame.
+      const [activeIndex, setActiveIndex] = useState(selectedIndex);
 
       useEffect(() => {
-        const maxIndex = Math.max(availableTabs.length - 1, 0);
-        const safeIndex = Math.min(Math.max(selectedIndex, 0), maxIndex);
-
-        setActiveIndex(safeIndex);
+        setActiveIndex(selectedIndex);
       }, [availableTabs.length, selectedIndex]);
 
-      const notesTab = TAB_DEFS.find((tab) => tab.key === 'notes') ?? fallbackTab;
-      const activeTab = showNotesDirectly ? notesTab : (availableTabs[activeIndex] ?? fallbackTab);
+      const activeTab = availableTabs[activeIndex] ?? fallbackTab;
       const activeTabKey: TabKey = activeTab?.key ?? 'notes';
 
       const handleLocalTabSwitch = useCallback(
         (tabKey?: string) => {
-          if (!tabKey || showNotesDirectly) return;
+          if (!tabKey) return;
 
           const index = availableTabs.findIndex((tab) => tab.key === tabKey);
 
@@ -250,7 +263,7 @@ export const AIMeetingBlock = memo(
 
           setActiveIndex(index);
         },
-        [availableTabs, showNotesDirectly]
+        [availableTabs]
       );
 
       // Listen for tab switch custom events (used by InlineReference in readonly mode)
@@ -280,11 +293,15 @@ export const AIMeetingBlock = memo(
       const handleTabChange = useCallback(
         (index: number) => {
           setActiveIndex(index);
-          if (!readOnly && editor && index !== selectedIndex) {
-            CustomEditor.setBlockData(editor, node.blockId, { selected_tab_index: index });
+          const tabKey = availableTabs[index]?.key;
+          // Flutter has no tab for generating a first summary, so that choice is not stored.
+          const flutterIndex = tabKey ? flutterTabs.indexOf(tabKey) : -1;
+
+          if (!readOnly && editor && flutterIndex >= 0 && flutterIndex !== storedIndex) {
+            CustomEditor.setBlockData(editor, node.blockId, { selected_tab_index: flutterIndex });
           }
         },
-        [editor, node.blockId, readOnly, selectedIndex]
+        [availableTabs, editor, flutterTabs, node.blockId, readOnly, storedIndex]
       );
 
       // --- Copy item ---
