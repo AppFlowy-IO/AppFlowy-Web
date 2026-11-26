@@ -2,6 +2,7 @@ import { toBase64 } from 'lib0/buffer';
 import * as Y from 'yjs';
 
 import type { AtomicCreationOwner } from '@/application/atomic-creation/owner';
+import { WEB_CLIENT_REPORTED_VERSION } from '@/application/compatibility/client-version';
 import { ERROR_CODE } from '@/application/constants';
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
@@ -263,7 +264,8 @@ export async function updateCollab(
       },
       {
         headers: {
-          'client-version': 'web',
+          'client-version': WEB_CLIENT_REPORTED_VERSION,
+          'x-platform': 'web',
           'device-id': deviceId,
         },
       }
@@ -361,7 +363,8 @@ export async function collabFullSyncBatch(
     ...(owner ? ownedRequestConfig(owner, options?.signal) : {}),
     headers: {
       'Content-Type': 'application/octet-stream',
-      'client-version': 'web',
+      'client-version': WEB_CLIENT_REPORTED_VERSION,
+      'x-platform': 'web',
       'device-id': deviceId,
       ...(options?.syncLane ? { 'x-appflowy-sync-lane': options.syncLane } : {}),
     },
@@ -453,7 +456,8 @@ async function getDatabaseCollabBinary(workspaceId: string, databaseId: string, 
     signal,
     headers: {
       'Content-Type': 'application/octet-stream',
-      'client-version': 'web',
+      'client-version': WEB_CLIENT_REPORTED_VERSION,
+      'x-platform': 'web',
       'device-id': getOrCreateDeviceId(),
     },
     responseType: 'arraybuffer',

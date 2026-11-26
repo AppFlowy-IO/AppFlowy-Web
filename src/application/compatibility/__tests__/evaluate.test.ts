@@ -1,3 +1,4 @@
+import { reportedClientVersion, WEB_CLIENT_REPORTED_VERSION } from '../client-version';
 import { evaluateCompatibility, normalizeVersion, updateBannerSession, type BannerSession } from '../evaluate';
 import policy from '../web-server-compatibility.json';
 
@@ -123,5 +124,29 @@ describe('session dismissal identity', () => {
     ] as const) {
       expect(updateBannerSession(session, verdict, server).dismissed).toBe(false);
     }
+  });
+});
+
+describe('the version reported to the server', () => {
+  it.each([
+    ['0.20.11', '0.20.11'],
+    ['v0.21.0', '0.21.0'],
+    ['0.21.0-rc.1', '0.21.0-rc.1'],
+    // Build metadata does not order versions and has no place in a query string.
+    ['0.21.0+build.7', '0.21.0'],
+    // Test images are tagged with the release they were built from.
+    ['0.20.11_test', '0.20.11'],
+    // A build without numbers reports the reviewed version.
+    ['local-4f2a9c1', '0.18.6'],
+    ['', '0.18.6'],
+    ['01.2.3', '0.18.6'],
+  ])('reports %s as %s', (buildVersion, expected) => {
+    expect(reportedClientVersion(buildVersion, '0.18.6')).toBe(expected);
+  });
+
+  it('is a version the server can compare, never the constant older builds sent', () => {
+    expect(WEB_CLIENT_REPORTED_VERSION).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
+    expect(WEB_CLIENT_REPORTED_VERSION).toBe(policy.reviewed_through_client_version);
+    expect(WEB_CLIENT_REPORTED_VERSION).not.toBe('0.10.0');
   });
 });

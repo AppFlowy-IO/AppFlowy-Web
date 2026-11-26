@@ -2,6 +2,7 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
+import { WEB_CLIENT_REPORTED_VERSION } from '@/application/compatibility/client-version';
 import { CollabSendWindow } from '@/application/realtime/send-window';
 import { isAuthRefreshFailure } from '@/application/services/js-services/http/auth-refresh-error';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
@@ -143,7 +144,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   // freshest session token.
   const socketUrl = useCallback(() => {
     const token = options.token || getTokenParsed()?.access_token;
-    const baseUrl = `${wsUrl}/${options.workspaceId}/?clientId=${clientId}&deviceId=${deviceId}&token=${token}&cv=0.10.0&cp=web`;
+    const baseUrl = `${wsUrl}/${options.workspaceId}/?clientId=${clientId}&deviceId=${deviceId}&token=${token}&cv=${encodeURIComponent(WEB_CLIENT_REPORTED_VERSION)}&cp=web`;
 
     return reconnectNonce > 0 ? `${baseUrl}&_rc=${reconnectNonce}` : baseUrl;
   }, [wsUrl, options.workspaceId, options.token, clientId, deviceId, reconnectNonce]);
