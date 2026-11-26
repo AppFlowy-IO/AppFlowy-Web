@@ -41,6 +41,8 @@ export interface ServerInfo {
    */
   enable_relative_date_comparisons?: boolean;
   ai_enabled?: boolean;
+  /** Explicit opt-in for meeting transcription. Older servers omit it. */
+  enable_meeting?: boolean;
   /**
    * Whether this deployment is self-hosted. Only the official AppFlowy cloud
    * runs the billing service, so pricing surfaces require `false`.

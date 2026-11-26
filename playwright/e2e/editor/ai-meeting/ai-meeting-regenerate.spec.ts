@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { mockServerInfoPreservingCapabilities } from '../../../support/server-info-helpers';
 import { generateRandomEmail } from '../../../support/test-config';
 import {
   areTestUtilitiesAvailable,
@@ -19,6 +20,7 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
 
   test.beforeEach(async ({ page }) => {
     setupPageErrorFilter(page);
+    await mockServerInfoPreservingCapabilities(page, { ai_enabled: true, enable_meeting: true });
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 

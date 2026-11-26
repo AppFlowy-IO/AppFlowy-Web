@@ -30,7 +30,7 @@ const mockT = (key: string, options?: Record<string, unknown>) => {
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockT }) }));
 jest.mock('slate-react', () => ({ useReadOnly: () => mockReadOnly, useSlateStatic: () => mockEditor }));
 jest.mock('@/components/app/app.hooks', () => ({ useAIEnabled: () => true }));
-jest.mock('@/components/app/hooks/useServerInfo', () => ({ useIsOfficialHosted: () => true }));
+jest.mock('@/components/app/hooks/useServerInfo', () => ({ useIsOfficialHosted: () => true, useServerInfoState: () => ({ info: { enable_meeting: true } }) }));
 jest.mock('@/application/services/domains/billing', () => ({ getSubscriptionLink: jest.fn() }));
 jest.mock('@/components/editor/EditorContext', () => ({ useEditorContext: () => ({ workspaceId: 'workspace', viewId: 'view' }) }));
 jest.mock('@/components/chat/request/writer-request', () => ({ WriterRequest: jest.fn().mockImplementation(() => ({ fetchAIAssistant: mockFetch })) }));

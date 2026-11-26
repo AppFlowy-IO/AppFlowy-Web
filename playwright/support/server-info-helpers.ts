@@ -7,6 +7,7 @@ export interface MockServerInfo {
   enable_page_history: boolean;
   enable_database_history?: boolean;
   ai_enabled: boolean;
+  enable_meeting?: boolean;
   enable_atomic_creation?: boolean;
   enable_atomic_creation_defaults?: boolean;
 }
@@ -23,6 +24,7 @@ export async function mockServerInfo(
   let serverInfo: MockServerInfo = {
     enable_page_history: true,
     ai_enabled: true,
+    enable_meeting: true,
     // Mocking an unrelated feature should retain the current creation contract.
     // Tests for unsupported servers can explicitly override either capability.
     enable_atomic_creation: true,

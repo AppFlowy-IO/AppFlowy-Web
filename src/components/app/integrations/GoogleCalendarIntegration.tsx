@@ -13,20 +13,20 @@ import { calendarMeetingPage, createCalendarMeetingPage } from '@/application/in
 import { requestMeetingStart } from '@/application/integrations/meeting-start';
 import { Role } from '@/application/types';
 import {
-  useAIEnabled,
   useAppOperations,
   useAppOutline,
   useCurrentWorkspaceId,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { useMeetingEnabled } from '@/components/app/hooks/useMeetingEnabled';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/utils/errors';
 
 export function GoogleCalendarIntegration() {
   const workspaceId = useCurrentWorkspaceId();
-  const aiEnabled = useAIEnabled();
+  const meetingEnabled = useMeetingEnabled();
   const workspace = useUserWorkspaceInfo();
-  const enabled = aiEnabled && workspace?.selectedWorkspace.role !== Role.Guest;
+  const enabled = meetingEnabled && workspace?.selectedWorkspace.role !== Role.Guest;
 
   return enabled && workspaceId ? <WorkspaceCalendar key={workspaceId} workspaceId={workspaceId} /> : null;
 }
