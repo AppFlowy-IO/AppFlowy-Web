@@ -15,6 +15,13 @@ const mockT = (key: string, options?: Record<string, unknown>) => {
   return typeof value === 'string' ? value : options?.defaultValue ?? key;
 };
 
+let mockMeetingEnabled: boolean | undefined = true;
+
+jest.mock('@/components/app/hooks/useServerInfo', () => ({
+  ...jest.requireActual('@/components/app/hooks/useServerInfo'),
+  useServerInfoState: () => ({ info: { enable_meeting: mockMeetingEnabled } }),
+}));
+
 let mockReadOnly = false;
 let mockRegeneratingSummary = false;
 let mockPreprocessingSpeakers = false;
@@ -82,6 +89,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
   mockReadOnly = false;
+  mockMeetingEnabled = true;
   mockRegeneratingSummary = false;
   mockPreprocessingSpeakers = false;
   mockSummaryError = undefined;
@@ -150,6 +158,16 @@ describe('Flutter transcript block integration', () => {
       getItem.mockRestore();
       setItem.mockRestore();
     }
+  });
+
+  it.each([false, undefined])('blocks recording and import when enable_meeting is %s', (value) => {
+    mockMeetingEnabled = value;
+    renderBlock();
+
+    expect(mockImportOptions).toEqual(expect.objectContaining({ enabled: false }));
+    expect(mockRecording).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: translations.document.aiMeeting.import.upload })).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: translations.document.aiMeeting.import.pasteUrl })).disabled).toBe(true);
   });
 
   it('renders the two import actions and hides live meeting creation', () => {

@@ -51,7 +51,7 @@ function fixture(data: AIMeetingBlockData = { title: 'Search review', speaker_in
   initializeMeetingSections(mockEditor, blockId);
   const [summaryId, notesId, transcriptId] = getChildrenArray(meeting.get(YjsEditorKey.block_children), sharedRoot).toArray();
   const staleNode = traverseBlock(blockId, sharedRoot) as AIMeetingNode;
-  const hook = renderHook(() => useAIMeetingRegenerate({ node: staleNode }));
+  const hook = renderHook(() => useAIMeetingRegenerate({ node: staleNode, meetingEnabled: true }));
   const applyTranscript = () => applyAudioTranscript(mockEditor, blockId, transcriptId, {
     id: 'job', text: 'The search shortcut is broken.', language: 'en',
     segments: [{ speaker: 'A', start: 403, end: 410, text: 'The search shortcut is broken.' }],

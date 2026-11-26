@@ -95,6 +95,7 @@ import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { useMeetingDisabledReason } from '@/components/app/hooks/useMeetingDisabledReason';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
@@ -417,7 +418,7 @@ export function SlashPanel({
   const executeOption = useCallback(
     (option: SlashMenuOption) => {
       // Decide before removing slash text or flushing changes, including keyboard selection.
-      if (!checkCreationRef.current(option.creationLayout, closePanel)) return;
+      if (option.disabledReason || !checkCreationRef.current(option.creationLayout, closePanel)) return;
       handleSelectOption(option.key);
       option.onClick?.();
     },
@@ -605,6 +606,7 @@ export function SlashPanel({
 
   const { askAIAnything, continueWriting } = useAIWriter();
   const aiEnabled = useAIEnabled();
+  const meetingDisabledReason = useMeetingDisabledReason();
 
   const loadDatabasesForPicker = useCallback(async () => {
     if (!workspaceId) return false;
@@ -872,6 +874,7 @@ export function SlashPanel({
             {
               label: t('document.aiMeeting.import.title'),
               key: 'aiTranscript',
+              disabledReason: meetingDisabledReason,
               icon: <TranscriptIcon />,
               group: SlashMenuGroupKey.AppFlowyAI,
               keywords: ['ai', 'transcript', 'transcription', 'meeting', 'audio', 'video'],
@@ -1862,6 +1865,7 @@ export function SlashPanel({
     chars,
     getBeforeContent,
     aiEnabled,
+    meetingDisabledReason,
     askAIAnything,
     continueWriting,
     turnInto,
@@ -2051,12 +2055,13 @@ export function SlashPanel({
                 <div className={'px-2 py-1 text-xs font-medium text-text-secondary'}>{groupLabels[group]}</div>
                 {groupOptions.map((option) => {
                   const action = getAction(option.creationLayout);
+                  const disabled = Boolean(option.disabledReason) || action.type === 'disabled';
 
                   return (
                     <DatabaseViewCreationHint
                       key={option.key}
-                      enabled={isLimitedDatabaseViewLayout(option.creationLayout)}
-                      reason={action.reason}
+                      enabled={option.key === 'aiTranscript' || isLimitedDatabaseViewLayout(option.creationLayout)}
+                      reason={option.disabledReason ?? action.reason}
                     >
                       <Button
                         size='small'
@@ -2064,11 +2069,11 @@ export function SlashPanel({
                         startIcon={option.icon}
                         data-testid={`slash-menu-${option.key}`}
                         data-option-key={option.key}
-                        aria-disabled={action.type === 'disabled'}
+                        aria-disabled={disabled}
                         onClick={() => executeOption(option)}
                         className={`w-full scroll-m-2 justify-start hover:bg-fill-content-hover ${
                           selectedOption === option.key ? 'bg-fill-content-hover' : ''
-                        } ${action.type === 'disabled' ? 'opacity-50' : ''}`}
+                        } ${disabled ? 'opacity-50' : ''}`}
                       >
                         {option.label}
                         {action.requiresPro && <DatabaseViewProBadge />}

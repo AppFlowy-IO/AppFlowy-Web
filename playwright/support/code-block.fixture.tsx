@@ -14,12 +14,14 @@ import { slateContentInsertToYData, yDocToSlateContent } from '@/application/sla
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { initializeDocumentStructure, getDocument } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, CreatePagePayload, View, ViewLayout, YDoc, YjsEditorKey } from '@/application/types';
+import { useServerInfo } from '@/components/app/hooks/useServerInfo';
 import { Editor } from '@/components/editor';
 import AppTheme from '@/components/main/AppTheme';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { i18nInstance } from '@/i18n/config';
 import en from '@/@types/translations/en.json';
 import '@/styles/global.css';
+import { getConfigValue } from '@/utils/runtime-config';
 
 initAPIService({ baseURL: location.origin, gotrueURL: location.origin, wsURL: '' });
 const doc = new Y.Doc() as YDoc;
@@ -45,6 +47,7 @@ const events = new EventEmitter();
 let editor: YjsEditor;
 
 function Fixture() {
+  useServerInfo(new URLSearchParams(location.search).has('server-info'), getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'));
   const [readOnly, setReadOnly] = useState(false);
   const [snapshot, setSnapshot] = useState('');
   const [ready, setReady] = useState(false);

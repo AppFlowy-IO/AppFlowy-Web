@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 
 import { AIMeetingUrlDialog } from './AIMeetingUrlDialog';
+import { MeetingActionHint } from './MeetingActionHint';
 import { AIMeetingImportState } from './useAIMeetingImport';
 
 export { AIMeetingUrlDialog } from './AIMeetingUrlDialog';
@@ -59,11 +60,13 @@ export function AIMeetingTranscriptLanguage({
 export function AIMeetingWelcome({
   disabled,
   uploadDisabled = false,
+  disabledReason,
   onPasteUrl,
   onUpload,
 }: {
   disabled: boolean;
   uploadDisabled?: boolean;
+  disabledReason?: string;
   onPasteUrl: () => void;
   onUpload: () => void;
 }) {
@@ -72,29 +75,31 @@ export function AIMeetingWelcome({
   return (
     <div className='ai-meeting-welcome flex flex-col items-center gap-4 px-4 py-5 text-center' contentEditable={false}>
       <p className='text-base font-semibold leading-[22px]'>{t('document.aiMeeting.import.welcome')}</p>
-      <div className='flex max-w-full flex-col items-center gap-2'>
-        <Button
-          type='button'
-          variant='outline'
-          className='h-8 w-[200px] max-w-full rounded-lg font-medium'
-          disabled={disabled || uploadDisabled}
-          onClick={onUpload}
-        >
-          {t('document.aiMeeting.import.upload')}
-        </Button>
-        <Button
-          type='button'
-          variant='outline'
-          className='h-8 w-[200px] max-w-full rounded-lg font-medium'
-          disabled={disabled}
-          onClick={onPasteUrl}
-        >
-          {t('document.aiMeeting.import.pasteUrl')}
-        </Button>
-        <p className='text-xs leading-[18px] tracking-[0.1px] text-text-secondary'>
-          {t('document.aiMeeting.import.supportedTypes')}
-        </p>
-      </div>
+      <MeetingActionHint reason={disabledReason}>
+        <div className='flex max-w-full flex-col items-center gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            className='h-8 w-[200px] max-w-full rounded-lg font-medium'
+            disabled={disabled || uploadDisabled}
+            onClick={onUpload}
+          >
+            {t('document.aiMeeting.import.upload')}
+          </Button>
+          <Button
+            type='button'
+            variant='outline'
+            className='h-8 w-[200px] max-w-full rounded-lg font-medium'
+            disabled={disabled}
+            onClick={onPasteUrl}
+          >
+            {t('document.aiMeeting.import.pasteUrl')}
+          </Button>
+          <p className='text-xs leading-[18px] tracking-[0.1px] text-text-secondary'>
+            {t('document.aiMeeting.import.supportedTypes')}
+          </p>
+        </div>
+      </MeetingActionHint>
     </div>
   );
 }
@@ -269,7 +274,11 @@ export function AIMeetingUpgradeBanner({ onDismiss }: { onDismiss: () => void })
   );
 }
 
-export function AIMeetingImportActions({ state, showWelcome }: { state: AIMeetingImportState; showWelcome: boolean }) {
+export function AIMeetingImportActions({ state, showWelcome, disabledReason }: {
+  state: AIMeetingImportState;
+  showWelcome: boolean;
+  disabledReason?: string;
+}) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
   const [urlOpen, setUrlOpen] = useState(false);
@@ -303,7 +312,8 @@ export function AIMeetingImportActions({ state, showWelcome }: { state: AIMeetin
       />
       {showWelcome && (
         <AIMeetingWelcome
-          disabled={!state.available || state.busy}
+          disabled={!state.available || state.busy || Boolean(disabledReason)}
+          disabledReason={disabledReason}
           uploadDisabled={state.quotaExceeded}
           onUpload={() => input.current?.click()}
           onPasteUrl={() => {

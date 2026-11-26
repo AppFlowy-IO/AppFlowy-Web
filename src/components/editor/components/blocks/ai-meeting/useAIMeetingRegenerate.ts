@@ -44,7 +44,9 @@ export { SUMMARY_LANGUAGE_OPTIONS, type SummaryTemplateOption };
 
 export function useAIMeetingRegenerate({
   node,
+  meetingEnabled,
 }: {
+  meetingEnabled: boolean;
   node: { blockId: string; data?: AIMeetingBlockData };
 }) {
   const { t } = useTranslation();
@@ -53,6 +55,7 @@ export function useAIMeetingRegenerate({
   const readOnly = slateReadOnly || Boolean(editor.isElementReadOnly?.(node as Element));
   const { workspaceId, viewId, requestInstance } = useEditorContext();
   const isAIEnabled = useAIEnabled();
+  const canGenerate = isAIEnabled && meetingEnabled;
   const data = node.data ?? ({} as AIMeetingBlockData);
 
   const [summaryTemplateConfig, setSummaryTemplateConfig] = useState<SummaryRegenerateTemplateConfig>(
@@ -82,7 +85,7 @@ export function useAIMeetingRegenerate({
     setSummaryError(undefined);
     setRegenerateMenuOpen(false);
     return handleCancelSummary;
-  }, [editor, handleCancelSummary, isAIEnabled, node.blockId, readOnly, viewId, workspaceId]);
+  }, [editor, handleCancelSummary, canGenerate, node.blockId, readOnly, viewId, workspaceId]);
 
   const selectedSummaryTemplate = getSummaryTemplateId(
     data.summary_template,
@@ -103,7 +106,7 @@ export function useAIMeetingRegenerate({
   );
 
   useEffect(() => {
-    if (!isAIEnabled) return;
+    if (!canGenerate) return;
 
     let cancelled = false;
 
@@ -117,7 +120,7 @@ export function useAIMeetingRegenerate({
     return () => {
       cancelled = true;
     };
-  }, [isAIEnabled, requestInstance]);
+  }, [canGenerate, requestInstance]);
 
   const handleRegenerateSummary = useCallback(async (overrides?: {
     templateId?: string;
@@ -125,7 +128,7 @@ export function useAIMeetingRegenerate({
     languageCode?: string;
     skipSummaryIfPresent?: boolean;
   }) => {
-    if (!isAIEnabled || readOnly || isRegeneratingRef.current) return;
+    if (!canGenerate || readOnly || isRegeneratingRef.current) return;
 
     // Transcription writes to Yjs before Slate's next render. Read that current
     // tree so automatic summaries include the new paragraphs and their IDs.
@@ -312,7 +315,7 @@ export function useAIMeetingRegenerate({
   }, [
     editor,
     handleRegenerateMenuClose,
-    isAIEnabled,
+    canGenerate,
     node.blockId,
     readOnly,
     requestInstance,

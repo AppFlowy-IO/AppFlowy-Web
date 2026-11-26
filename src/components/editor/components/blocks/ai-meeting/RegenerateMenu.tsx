@@ -25,10 +25,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
+import { MeetingActionHint } from './MeetingActionHint';
 import type { SummaryDetailOption, SummaryLanguageOption, SummaryTemplateOption, SummaryTemplateSection } from './ai-meeting.summary-regenerate';
 
 interface RegenerateMenuProps {
   action?: 'generate' | 'regenerate';
+  disabledReason?: string;
   isRegenerating: boolean;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
@@ -59,6 +61,7 @@ function OptionIndicator({ selected, applyOnHover = false }: { selected: boolean
 
 export const RegenerateMenu = memo(({
   action = 'regenerate',
+  disabledReason,
   isRegenerating,
   menuOpen,
   onMenuOpenChange,
@@ -81,43 +84,45 @@ export const RegenerateMenu = memo(({
 
   return (
     <DropdownMenu
-      open={menuOpen}
+      open={menuOpen && !disabledReason}
       onOpenChange={(open) => {
-        if (open && isRegenerating) return;
+        if (open && (isRegenerating || disabledReason)) return;
         if (open) setShowAllSections(false);
         onMenuOpenChange(open);
       }}
     >
-      <div className={cn('relative inline-flex shrink-0 items-stretch', isInitialGeneration ? 'h-10 rounded-full bg-fill-theme-thick' : 'h-8 rounded-lg', isRegenerating && 'opacity-60')}>
-        <Button
-          type='button'
-          variant={isInitialGeneration ? 'default' : 'ghost'}
-          disabled={isRegenerating}
-          onClick={onRegenerate}
-          className={cn('h-full gap-1.5 rounded-r-none py-0 text-sm font-medium leading-5 focus-visible:ring-2 focus-visible:ring-border-theme-thick/50', isInitialGeneration ? 'rounded-l-full pl-4 pr-3' : 'rounded-l-lg pl-3 pr-[10px]')}
-        >
-          {isRegenerating ? (
-            <CircularProgress size={20} thickness={4.5} sx={{ color: 'currentColor' }} />
-          ) : (
-            <ActionIcon aria-hidden className='h-5 w-5 [&_[stroke]]:stroke-current' />
-          )}
-          <span>{t(isRegenerating ? 'document.aiMeeting.regenerate.generating' : isInitialGeneration ? 'document.aiMeeting.generateSummary' : 'document.aiMeeting.regenerate.regenerate')}</span>
-        </Button>
-        <DropdownMenuTrigger asChild>
+      <MeetingActionHint reason={disabledReason}>
+        <div className={cn('relative inline-flex shrink-0 items-stretch', isInitialGeneration ? 'h-10 rounded-full bg-fill-theme-thick' : 'h-8 rounded-lg', isRegenerating && 'opacity-60')}>
           <Button
             type='button'
             variant={isInitialGeneration ? 'default' : 'ghost'}
-            disabled={isRegenerating}
-            aria-label={t('document.aiMeeting.regenerate.menuLabel')}
-            className={cn('relative h-full rounded-l-none py-0 focus-visible:ring-2 focus-visible:ring-border-theme-thick/50', isInitialGeneration ? 'rounded-r-full pl-3 pr-4 data-[state=open]:bg-fill-theme-thick-hover' : 'rounded-r-lg pl-1.5 pr-2 text-icon-secondary data-[state=open]:bg-fill-content-hover')}
+            disabled={isRegenerating || Boolean(disabledReason)}
+            onClick={onRegenerate}
+            className={cn('h-full gap-1.5 rounded-r-none py-0 text-sm font-medium leading-5 focus-visible:ring-2 focus-visible:ring-border-theme-thick/50', isInitialGeneration ? 'rounded-l-full pl-4 pr-3' : 'rounded-l-lg pl-3 pr-[10px]')}
           >
-            <span aria-hidden className={cn('pointer-events-none absolute inset-y-0 left-0 w-px', isInitialGeneration ? 'bg-text-on-fill' : 'bg-border-primary')} />
-            <ArrowDownIcon aria-hidden className='h-5 w-3 [&_[stroke]]:stroke-current' />
+            {isRegenerating ? (
+              <CircularProgress size={20} thickness={4.5} sx={{ color: 'currentColor' }} />
+            ) : (
+              <ActionIcon aria-hidden className='h-5 w-5 [&_[stroke]]:stroke-current' />
+            )}
+            <span>{t(isRegenerating ? 'document.aiMeeting.regenerate.generating' : isInitialGeneration ? 'document.aiMeeting.generateSummary' : 'document.aiMeeting.regenerate.regenerate')}</span>
           </Button>
-        </DropdownMenuTrigger>
-        {/* Figma's inside strokes do not add to the controls' layout dimensions. */}
-        {!isInitialGeneration && <span aria-hidden className='pointer-events-none absolute inset-0 rounded-lg border border-border-primary' />}
-      </div>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type='button'
+              variant={isInitialGeneration ? 'default' : 'ghost'}
+              disabled={isRegenerating || Boolean(disabledReason)}
+              aria-label={t('document.aiMeeting.regenerate.menuLabel')}
+              className={cn('relative h-full rounded-l-none py-0 focus-visible:ring-2 focus-visible:ring-border-theme-thick/50', isInitialGeneration ? 'rounded-r-full pl-3 pr-4 data-[state=open]:bg-fill-theme-thick-hover' : 'rounded-r-lg pl-1.5 pr-2 text-icon-secondary data-[state=open]:bg-fill-content-hover')}
+            >
+              <span aria-hidden className={cn('pointer-events-none absolute inset-y-0 left-0 w-px', isInitialGeneration ? 'bg-text-on-fill' : 'bg-border-primary')} />
+              <ArrowDownIcon aria-hidden className='h-5 w-3 [&_[stroke]]:stroke-current' />
+            </Button>
+          </DropdownMenuTrigger>
+          {/* Figma's inside strokes do not add to the controls' layout dimensions. */}
+          {!isInitialGeneration && <span aria-hidden className='pointer-events-none absolute inset-0 rounded-lg border border-border-primary' />}
+        </div>
+      </MeetingActionHint>
       <DropdownMenuContent
         align='end'
         sideOffset={6}
