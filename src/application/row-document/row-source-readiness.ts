@@ -3,10 +3,11 @@ import * as Y from 'yjs';
 import { assertNotAborted } from '@/application/database-yjs/creation/source-readiness';
 import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { getInlineViewRowOrders, materializeVisibleRowOrders, RowOrderVisibilityEntry } from '@/application/database-yjs/row-order-visibility';
+import { viewRowOrdersJSON } from '@/application/database-yjs/row-placements-doc';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { parseDatabaseRowTemplate } from '@/application/database-yjs/template/codec';
 import { readTemplateRecords } from '@/application/database-yjs/template/storage';
-import { YDatabase, YDoc, YjsEditorKey } from '@/application/types';
+import { YDatabase, YDatabaseView, YDoc, YjsEditorKey } from '@/application/types';
 
 export interface CollabState {
   object_id: string;
@@ -54,8 +55,9 @@ export function hasCurrentRowDocumentSource(database: Y.Map<unknown>, viewId: st
   const orders = view instanceof Y.Map ? view.get('row_orders') : undefined;
 
   if (!(orders instanceof Y.Array)) return false;
+  // The rows of the view in either mode: an anchored view lists none of its own.
   const visibleOrders = materializeVisibleRowOrders(
-    orders.toJSON() as RowOrderVisibilityEntry[],
+    viewRowOrdersJSON(database as YDatabase, view as unknown as YDatabaseView) as RowOrderVisibilityEntry[],
     getInlineViewRowOrders(database as YDatabase)?.toJSON() as RowOrderVisibilityEntry[] | undefined
   );
 

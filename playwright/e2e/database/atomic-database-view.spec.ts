@@ -23,6 +23,7 @@ import {
 import { grantTestProSubscription, mockProBillingResponses } from '../../support/subscription-test-helpers';
 import { generateRandomEmail } from '../../support/test-config';
 import { expectViewCreationAvailable } from '../../support/view-creation-availability';
+import { viewRowIds } from '../../support/view-rows';
 
 const viewRoute = '**/v2/page-view/database-view/default{,?**}';
 const viewPath = '/v2/page-view/database-view/default';
@@ -145,8 +146,7 @@ for (const layout of [
 
         expect(database.get('id')).toBe(source.databaseId);
         expect(Number(view.get('layout'))).toBe(layout.value);
-        expect((view.get('row_orders') as Y.Array<{ id: string }>).toArray().map((row) => row.id).sort())
-          .toEqual([...source.rowIds].sort());
+        expect(viewRowIds(database, view).sort()).toEqual([...source.rowIds].sort());
         if (layout.value === 1) {
           const groups = view.get('groups') as Y.Array<Y.Map<unknown>>;
 

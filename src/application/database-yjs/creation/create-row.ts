@@ -16,7 +16,7 @@ import { ClientValidationError } from '@/application/errors/client-validation-er
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
 import { postDefaultRowCreation } from '@/application/services/js-services/http/atomic-row-creation-api';
 import { readCollabStates } from '@/application/services/js-services/http/collab-api';
-import { CollabOrigin, Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { CollabOrigin, Types, YDatabase, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
 import { decodeBase64Bytes, decodeCreatedRowCollab, encodeCreationCollab } from './encoded-collab';
@@ -145,7 +145,11 @@ function assertMembership(doc: Y.Doc, databaseId: string, viewId: string, rowId:
   const database = doc.getMap('data').get('database');
   const views = database instanceof Y.Map ? database.get('views') : undefined;
   const view = views instanceof Y.Map ? views.get(viewId) : undefined;
-  const orders = view instanceof Y.Map ? view.get('row_orders') : undefined;
+  // An anchored view lists no rows of its own: a row is its member once the storage view lists it.
+  const orders =
+    view instanceof Y.Map
+      ? viewMembershipRowOrders(database as YDatabase, view as unknown as YDatabaseView)
+      : undefined;
 
   if (
     doc.store.pendingDs ||

@@ -13,6 +13,7 @@ import { isRowOrderTombstoned, removeRowsFromDatabase } from '@/application/data
 import { getRelationRowOrders } from '@/application/database-yjs/relation/row-orders';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { isAnchoredView, readRowPlacements, viewRowOrderEntries } from '@/application/database-yjs/row-placements-doc';
+import { hasCurrentRowDocumentSource } from '@/application/row-document/row-source-readiness';
 import { YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useRowPeekRowDeletion } from '@/components/database/row-peek/useRowPeekRowDeletion';
 
@@ -240,6 +241,18 @@ describe('an anchored view in the app', () => {
       cleanupLocalCollab: false,
     }));
     expect(onDeleted).toHaveBeenCalledTimes(1);
+  });
+
+  it('finds the source of a row page that was opened from an anchored view', () => {
+    const { database } = open();
+    const root = database as unknown as Y.Map<unknown>;
+    const trashed = anchored.rows.find((id) => !anchored.shown.includes(id)) as string;
+
+    expect(hasCurrentRowDocumentSource(root, anchored.id, anchored.shown[2])).toBe(true);
+    expect(hasCurrentRowDocumentSource(root, array.id, array.shown[2])).toBe(true);
+    // A trashed row and a row the Database lacks have no current source.
+    expect(hasCurrentRowDocumentSource(root, anchored.id, trashed)).toBe(false);
+    expect(hasCurrentRowDocumentSource(root, anchored.id, 'ffffffff-0000-4000-8000-0000000000bb')).toBe(false);
   });
 
   it('offers the rows of the Database to a relation that names an anchored view', () => {

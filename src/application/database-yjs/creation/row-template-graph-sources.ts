@@ -2,8 +2,9 @@ import { v5 as uuidv5 } from 'uuid';
 import * as Y from 'yjs';
 
 import { atomicRead } from '@/application/atomic-creation';
+import { convertAnchoredViewsToArray } from '@/application/database-yjs/row-placements-doc';
 import { readCollabStates } from '@/application/services/js-services/http/collab-api';
-import { Types, View } from '@/application/types';
+import { Types, View, YDatabase } from '@/application/types';
 import { isEmbeddedDatabaseViewWithoutChildren } from '@/application/view-utils';
 
 import { detachedDocument, excludeInactiveRows, GRAPH_LIMIT, record, templateJson, uuid } from './row-template-graph-data';
@@ -224,6 +225,9 @@ export class TemplateSources {
       const root = doc.getMap('data').get('database');
 
       if (!(root instanceof Y.Map) || root.get('id') !== id) throw new Error('Template database identity changed');
+      // This document is a private copy. A copy of a Database lists the rows of every view, so
+      // an anchored view is written out as an array before the copy is read as plain data.
+      doc.transact(() => convertAnchoredViewsToArray(root as unknown as YDatabase));
       const value = record(templateJson(root.toJSON()), 'database');
       const views = Object.values(record(value.views, 'database views')).map((view): TemplateDatabaseView => {
         const source = record(view, 'database view');
