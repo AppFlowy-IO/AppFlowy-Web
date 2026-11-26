@@ -728,6 +728,8 @@ export enum YjsDatabaseKey {
   layout_settings = 'layout_settings',
   modified_at = 'modified_at',
   row_orders = 'row_orders',
+  /// Present on an anchored view, which lists no rows; see `database-yjs/row-placements.ts`.
+  row_placements = 'row_placements',
   sorts = 'sorts',
   height = 'height',
   cells = 'cells',
@@ -1130,6 +1132,9 @@ export interface YDatabaseView extends Y.Map<unknown> {
 
   get(key: YjsDatabaseKey.row_orders): YDatabaseRowOrders;
 
+  /// Present only on an anchored view. Read it through `database-yjs/row-placements-doc.ts`.
+  get(key: YjsDatabaseKey.row_placements): YDatabaseRowPlacements | undefined;
+
   get(key: YjsDatabaseKey.calculations): YDatabaseCalculations;
 
   get(key: YjsDatabaseKey.is_inline): boolean;
@@ -1148,6 +1153,9 @@ export type YDatabaseRowOrders = Y.Array<{
   height: number;
   is_deleted?: boolean;
 }>; // [ { id: RowId, height: number, is_deleted?: boolean } ]
+
+/// row id -> { a: anchor row id, or '' for the start slot, p: order key }
+export type YDatabaseRowPlacements = Y.Map<{ a: string; p: Uint8Array }>;
 
 export type YDatabaseGroups = Y.Array<YDatabaseGroup>;
 
