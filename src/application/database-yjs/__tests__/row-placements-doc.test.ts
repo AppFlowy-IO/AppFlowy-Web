@@ -331,6 +331,45 @@ describe('what the app reads and writes through the mode-aware helpers', () => {
     expect(view.get(YjsDatabaseKey.row_orders).length).toBe(0);
   });
 
+  it('shows a row of an anchored view once when the storage view lists it twice', () => {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, anchored.id);
+    const stored = viewOf(database, storage.id).get(YjsDatabaseKey.row_orders);
+    const repeated = (stored.toArray() as Array<{ id: string; height: number }>).slice(0, 2);
+
+    doc.transact(() => {
+      stored.push(repeated.map((row) => ({ ...row })));
+    });
+
+    expect(ids(stored.toArray())).toHaveLength(storage.rows.length + 2);
+    // The first entry of an id is the row's place; the repeated entries add nothing.
+    expect(ids(viewRowOrderEntries(database, view))).toEqual(anchored.rows);
+    expect(ids(viewRowOrdersJSON(database, view))).toEqual(anchored.rows);
+  });
+
+  it('reads a storage view without a row list as a Database without rows', () => {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, anchored.id);
+    const anchoredViews = largest.views.filter((item) => item.anchored).length;
+
+    doc.transact(() => {
+      (viewOf(database, storage.id) as unknown as Y.Map<unknown>).delete(YjsDatabaseKey.row_orders);
+      // What a client that knows nothing of placements writes when it creates a row.
+      view.get(YjsDatabaseKey.row_orders).push([{ id: 'left-by-an-older-client', height: 60 }]);
+    });
+
+    expect(storageRowOrders(database, view)).toBeUndefined();
+    expect(viewMembershipRowOrders(database, view)).toBeUndefined();
+    expect(viewRowOrderEntries(database, view)).toEqual([]);
+    expect(viewRowOrdersJSON(database, view)).toEqual([]);
+
+    doc.transact(() => {
+      expect(convertAnchoredViewsToArray(database)).toBe(anchoredViews);
+    });
+    expect(isAnchoredView(view)).toBe(false);
+    expect(view.get(YjsDatabaseKey.row_orders).toArray()).toEqual([]);
+  });
+
   it('rewrites a copy of the Database in array mode with the same rows in every view', () => {
     for (const item of documents.cases) {
       const { doc, database } = open(item.state);

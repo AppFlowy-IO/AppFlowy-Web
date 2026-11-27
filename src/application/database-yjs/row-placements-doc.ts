@@ -77,22 +77,26 @@ export function databaseOfView(view: YDatabaseView | undefined): YDatabase | und
 }
 
 /**
+ * The storage view of the Database a view belongs to. `undefined` for a legacy Database, which
+ * has none; such a Database has no anchored view.
+ */
+function storageViewOf(database: YDatabase | undefined, view: YDatabaseView | undefined): YDatabaseView | undefined {
+  const databaseId = view?.get(YjsDatabaseKey.database_id);
+
+  if (!database || !databaseId || !isUuid(databaseId)) return undefined;
+
+  return database.get(YjsDatabaseKey.views)?.get(storageViewId(databaseId));
+}
+
+/**
  * The storage view's row list for the Database a view belongs to. `undefined` when the Database
- * has no storage view, which is the case for a legacy Database; such a Database has no anchored
- * view.
+ * has no storage view, and when its storage view has no row list yet.
  */
 export function storageRowOrders(
   database: YDatabase | undefined,
   view: YDatabaseView | undefined
 ): YDatabaseRowOrders | undefined {
-  const databaseId = view?.get(YjsDatabaseKey.database_id);
-
-  if (!database || !databaseId || !isUuid(databaseId)) return undefined;
-
-  return database
-    .get(YjsDatabaseKey.views)
-    ?.get(storageViewId(databaseId))
-    ?.get(YjsDatabaseKey.row_orders);
+  return storageViewOf(database, view)?.get(YjsDatabaseKey.row_orders);
 }
 
 /**
@@ -107,20 +111,29 @@ export function viewMembershipRowOrders(
   const own = view?.get(YjsDatabaseKey.row_orders);
 
   if (!isAnchoredView(view)) return own;
-  return storageRowOrders(database, view) ?? own;
+
+  const storage = storageViewOf(database, view);
+
+  // Without a storage view the view is read as it is stored.
+  return storage ? storage.get(YjsDatabaseKey.row_orders) : own;
 }
 
 /**
  * The canonical rows of the Database a view belongs to: the rows of its storage view, each id
- * once, trashed rows included. `undefined` when the Database has no storage view.
+ * once, trashed rows included. `undefined` when the Database has no storage view. A storage view
+ * that has no row list yet, as in a Database that never had a row, has no rows.
  */
 export function canonicalRowOrders(
   database: YDatabase | undefined,
   view: YDatabaseView | undefined
 ): RowOrderEntry[] | undefined {
-  const stored = storageRowOrders(database, view);
+  const storage = storageViewOf(database, view);
 
-  if (!stored) return undefined;
+  if (!storage) return undefined;
+
+  const stored = storage.get(YjsDatabaseKey.row_orders);
+
+  if (!stored) return [];
 
   // The first entry of an id wins, as it does wherever the storage view's rows are looked up.
   const seen = new Set<string>();
