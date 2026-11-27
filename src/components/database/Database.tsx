@@ -36,6 +36,7 @@ import { createRowOrdersStore } from '@/application/database-yjs/row-orders-stor
 import {
   isAnchoredView,
   observeViewRowOrders,
+  showsDefaultOrder,
   viewMembershipRowOrders,
   viewRowOrderEntries,
 } from '@/application/database-yjs/row-placements-doc';
@@ -798,8 +799,9 @@ function Database(props: Database2Props) {
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
 
-    if (isAnchoredView(view)) {
-      // The first rows of an anchored view follow its placements, not an array of its own.
+    if (isAnchoredView(view) || showsDefaultOrder(database, view)) {
+      // The first rows of an anchored view follow its placements, not an array of its own, and
+      // a view without rows of its own shows the storage view's.
       return (viewRowOrderEntries(database, view) ?? []).slice(0, PRIORITY_ROW_SEED_LIMIT).map((row) => row.id);
     }
 
@@ -1914,9 +1916,10 @@ function Database(props: Database2Props) {
     const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
 
-    if (!view?.get(YjsDatabaseKey.row_orders)) return;
+    if (!view || !viewMembershipRowOrders(database, view)) return;
 
-    // An anchored view holds the rows of the Database, which the storage view lists.
+    // An anchored view, and a view without rows of its own, holds the rows of the Database,
+    // which the storage view lists.
     const readOrderedRowIds = () =>
       new Set(
         ((viewMembershipRowOrders(database, view)?.toJSON() ?? []) as { id: string; is_deleted?: boolean }[])

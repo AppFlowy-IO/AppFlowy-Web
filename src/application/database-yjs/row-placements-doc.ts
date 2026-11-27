@@ -89,6 +89,28 @@ function storageViewOf(database: YDatabase | undefined, view: YDatabaseView | un
 }
 
 /**
+ * Whether a view in array mode shows the default order: its own row list is missing or empty, so
+ * it has no rows of its own to show, and the Database has a storage view to take them from.
+ *
+ * Such a view comes from a race or from damage: it was created while another device added the
+ * rows, an older client copied an anchored view, or its list was lost. Showing nothing would
+ * hide every row of the Database, so it is read like an anchored view without placements, as the
+ * server reads it. The storage view itself is never read this way, and neither is a view of a
+ * legacy Database, which has no storage view.
+ */
+export function showsDefaultOrder(database: YDatabase | undefined, view: YDatabaseView | undefined): boolean {
+  if (!view || isAnchoredView(view) || view.get(YjsDatabaseKey.is_inline)) return false;
+
+  const own = view.get(YjsDatabaseKey.row_orders);
+
+  if (own && own.length > 0) return false;
+
+  const storage = storageViewOf(database, view);
+
+  return storage !== undefined && storage !== view;
+}
+
+/**
  * The storage view's row list for the Database a view belongs to. `undefined` when the Database
  * has no storage view, and when its storage view has no row list yet.
  */
@@ -102,7 +124,8 @@ export function storageRowOrders(
 /**
  * The array that names the rows a view holds, for the places that need the rows but not their
  * order (counts, loading, membership): the view's own array, or the storage view's when the view
- * is anchored, since an anchored view holds exactly the rows of the Database.
+ * is anchored or shows the default order, since such a view holds exactly the rows of the
+ * Database.
  */
 export function viewMembershipRowOrders(
   database: YDatabase | undefined,
@@ -110,7 +133,7 @@ export function viewMembershipRowOrders(
 ): YDatabaseRowOrders | undefined {
   const own = view?.get(YjsDatabaseKey.row_orders);
 
-  if (!isAnchoredView(view)) return own;
+  if (!isAnchoredView(view) && !showsDefaultOrder(database, view)) return own;
 
   const storage = storageViewOf(database, view);
 
@@ -146,8 +169,26 @@ export function canonicalRowOrders(
 }
 
 /**
+ * The rows of a view that does not show its own array, trashed rows included: an anchored view,
+ * in placement order, or a view that shows the default order. `undefined` for every other view.
+ */
+function derivedRowOrders(
+  database: YDatabase | undefined,
+  view: YDatabaseView | undefined
+): RowOrderEntry[] | undefined {
+  if (isAnchoredView(view)) {
+    const canonical = canonicalRowOrders(database, view);
+
+    return canonical && anchoredOrder(canonical, readRowPlacements(view));
+  }
+
+  return showsDefaultOrder(database, view) ? canonicalRowOrders(database, view) : undefined;
+}
+
+/**
  * The rows a view holds, trashed rows included: its own array in array mode, the canonical rows
- * in placement order in anchored mode. An anchored view's own array is not read: it is empty,
+ * in placement order in anchored mode, and the canonical rows when a view in array mode has no
+ * rows of its own (`showsDefaultOrder`). An anchored view's own array is not read: it is empty,
  * apart from rows an older client inserted.
  */
 export function viewRowOrderEntries(
@@ -156,38 +197,69 @@ export function viewRowOrderEntries(
 ): RowOrderEntry[] | undefined {
   if (!view) return undefined;
 
-  if (isAnchoredView(view)) {
-    const canonical = canonicalRowOrders(database, view);
-
-    if (canonical) return anchoredOrder(canonical, readRowPlacements(view));
-  }
-
-  return view.get(YjsDatabaseKey.row_orders)?.toArray() as RowOrderEntry[] | undefined;
+  return (
+    derivedRowOrders(database, view) ??
+    (view.get(YjsDatabaseKey.row_orders)?.toArray() as RowOrderEntry[] | undefined)
+  );
 }
 
 /**
  * The rows a view holds, as plain values, for the places that read a view's `row_orders` with
- * `toJSON()`. A view in array mode is read exactly that way; an anchored view gives the
- * canonical rows in placement order.
+ * `toJSON()`. A view in array mode that lists rows is read exactly that way; an anchored view
+ * gives the canonical rows in placement order, and a view that shows the default order the
+ * canonical rows.
  */
 export function viewRowOrdersJSON(
   database: YDatabase | undefined,
   view: YDatabaseView | undefined
 ): RowOrderEntry[] | undefined {
-  if (isAnchoredView(view)) {
-    const canonical = canonicalRowOrders(database, view);
+  return (
+    derivedRowOrders(database, view) ??
+    (view?.get(YjsDatabaseKey.row_orders)?.toJSON() as RowOrderEntry[] | undefined)
+  );
+}
 
-    if (canonical) return anchoredOrder(canonical, readRowPlacements(view));
+/** The most rows a drag copies into a view that shows the default order; the server's limit. */
+export const DEFAULT_ORDER_FILL_LIMIT = 10000;
+
+/**
+ * Gives a view that shows the default order a row list of its own, so that a row can be moved
+ * in it: the canonical rows are written into its own array, which is created when the view has
+ * none. Afterwards the view is an ordinary view in array mode that every client reads alike.
+ * Nothing is written for any other view, nor when the storage view lists more than `limit` rows.
+ * Returns how many rows it wrote.
+ */
+export function fillDefaultOrder(
+  database: YDatabase | undefined,
+  view: YDatabaseView,
+  limit = DEFAULT_ORDER_FILL_LIMIT
+): number {
+  if (!showsDefaultOrder(database, view)) return 0;
+  if ((storageRowOrders(database, view)?.length ?? 0) > limit) return 0;
+
+  const rows = (canonicalRowOrders(database, view) ?? []).map((row) => ({ ...row }));
+
+  if (rows.length === 0) return 0;
+
+  const own = view.get(YjsDatabaseKey.row_orders);
+
+  if (own) {
+    own.push(rows);
+  } else {
+    const created = new Y.Array() as YDatabaseRowOrders;
+
+    created.push(rows);
+    view.set(YjsDatabaseKey.row_orders, created);
   }
 
-  return view?.get(YjsDatabaseKey.row_orders)?.toJSON() as RowOrderEntry[] | undefined;
+  return rows.length;
 }
 
 /**
  * Calls `handler` once for every transaction that can change the rows a view holds or their
- * order: a change of the view's own array, of its placements, or, while the view is anchored, of
- * the storage view's rows. It follows a view that changes mode. Returns the function that stops
- * it.
+ * order: a change of the view's own array, of its placements, or, while the view is anchored or
+ * shows the default order, of the storage view's rows. It follows a view that changes mode, or
+ * that gets or loses the rows of its own. Returns the function that stops it.
  */
 export function observeViewRowOrders(
   database: YDatabase | undefined,
@@ -196,8 +268,11 @@ export function observeViewRowOrders(
 ): () => void {
   let lastTransaction: Y.Transaction | undefined;
   let detach = () => undefined as void;
+  let readsStorage = false;
 
   const notify = (_events: unknown, transaction: Y.Transaction) => {
+    // A view that got or lost the rows of its own starts or stops reading the storage view.
+    if ((isAnchoredView(view) || showsDefaultOrder(database, view)) !== readsStorage) attach();
     // One transaction usually changes several of the observed parts.
     if (lastTransaction === transaction) return;
     lastTransaction = transaction;
@@ -210,7 +285,10 @@ export function observeViewRowOrders(
     const own = view.get(YjsDatabaseKey.row_orders);
     const stored = view.get(YjsDatabaseKey.row_placements) as unknown;
     const placements = stored instanceof Y.Map ? stored : undefined;
-    const canonical = isAnchoredView(view) ? storageRowOrders(database, view) : undefined;
+
+    readsStorage = isAnchoredView(view) || showsDefaultOrder(database, view);
+
+    const canonical = readsStorage ? storageRowOrders(database, view) : undefined;
     const storage = canonical && canonical !== own ? canonical : undefined;
 
     own?.observeDeep(notify);
@@ -413,15 +491,19 @@ export function setAnchoredViewOrder(database: YDatabase | undefined, view: YDat
 
 /**
  * Rewrites every anchored view of a Database in array mode: the view's own array gets its rows
- * in its order, and the placements go away. For copies that readers of any age get, such as a
- * published page; never for the live document. Returns how many views it rewrote.
+ * in its order, and the placements go away. A view that shows the default order gets its list
+ * too, whatever the number of rows. For copies that readers of any age get, such as a published
+ * page; never for the live document. Returns how many views it rewrote.
  */
 export function convertAnchoredViewsToArray(database: YDatabase | undefined): number {
   const views = database?.get(YjsDatabaseKey.views);
   let converted = 0;
 
   views?.forEach((view) => {
-    if (!isAnchoredView(view)) return;
+    if (!isAnchoredView(view)) {
+      if (fillDefaultOrder(database, view, Infinity) > 0) converted += 1;
+      return;
+    }
 
     const rows = viewRowOrderEntries(database, view) ?? [];
     const own = view.get(YjsDatabaseKey.row_orders);

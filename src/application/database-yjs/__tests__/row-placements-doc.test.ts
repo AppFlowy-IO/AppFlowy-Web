@@ -7,6 +7,7 @@ import {
   convertAnchoredViewsToArray,
   copyRowPlacements,
   databaseOfView,
+  fillDefaultOrder,
   isAnchoredView,
   moveRowInAnchoredView,
   observeViewRowOrders,
@@ -15,6 +16,7 @@ import {
   reorderRowInAnchoredView,
   repairAnchoredViewsBeforeRemoval,
   setAnchoredViewOrder,
+  showsDefaultOrder,
   storageRowOrders,
   storageViewId,
   viewMembershipRowOrders,
@@ -432,5 +434,179 @@ describe('what the app reads and writes through the mode-aware helpers', () => {
     stop();
     expectCalls(0, () => view.get(YjsDatabaseKey.row_orders).delete(0, 1));
     expect(copy.anchored).toBe(true);
+  });
+});
+
+describe('a view in array mode without rows of its own', () => {
+  const largest = documents.cases[documents.cases.length - 1];
+  const [storage, array, anchored] = largest.views;
+
+  /** Opens the largest document and takes the rows of its view in array mode away. */
+  function openWithoutRows(kind: 'an empty list' | 'no list') {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, array.id);
+
+    doc.transact(() => {
+      const own = view.get(YjsDatabaseKey.row_orders);
+
+      if (kind === 'an empty list') own.delete(0, own.length);
+      else (view as unknown as Y.Map<unknown>).delete(YjsDatabaseKey.row_orders);
+    });
+
+    return { doc, database, view, stored: viewOf(database, storage.id).get(YjsDatabaseKey.row_orders) };
+  }
+
+  it.each(['an empty list', 'no list'] as const)('shows the default order with %s', (kind) => {
+    const { database, view, stored } = openWithoutRows(kind);
+
+    expect(showsDefaultOrder(database, view)).toBe(true);
+    expect(isAnchoredView(view)).toBe(false);
+    // The rows of the storage view, in its order, with its trash flags.
+    expect(ids(viewRowOrderEntries(database, view))).toEqual(storage.rows);
+    expect(ids(viewRowOrdersJSON(database, view))).toEqual(storage.rows);
+    expect(shown(database, view)).toEqual(storage.shown);
+    expect(viewMembershipRowOrders(database, view) === stored).toBe(true);
+
+    // Only a view in array mode that lists nothing is read this way.
+    expect(showsDefaultOrder(database, viewOf(database, storage.id))).toBe(false);
+    expect(showsDefaultOrder(database, viewOf(database, anchored.id))).toBe(false);
+    expect(ids(viewRowOrderEntries(database, viewOf(database, anchored.id)))).toEqual(anchored.rows);
+  });
+
+  it('is not the default order while the view lists rows', () => {
+    for (const item of documents.cases) {
+      const { database } = open(item.state);
+
+      for (const expected of item.views) {
+        const view = viewOf(database, expected.id);
+        const own = view.get(YjsDatabaseKey.row_orders);
+
+        expect(showsDefaultOrder(database, view)).toBe(
+          !expected.anchored && expected.id !== storageViewId(item.database_id) && own.length === 0
+        );
+      }
+    }
+  });
+
+  it('never reads the storage view this way, also when its flag is gone', () => {
+    const { doc, database } = open(largest.state);
+    const view = viewOf(database, storage.id);
+
+    // The storage view is told by its id. A damaged one can lack the flag and the rows.
+    doc.transact(() => {
+      const own = view.get(YjsDatabaseKey.row_orders);
+
+      own.delete(0, own.length);
+      (view as unknown as Y.Map<unknown>).delete(YjsDatabaseKey.is_inline);
+    });
+
+    expect(showsDefaultOrder(database, view)).toBe(false);
+    expect(viewRowOrderEntries(database, view)).toEqual([]);
+    doc.transact(() => {
+      expect(fillDefaultOrder(database, view)).toBe(0);
+    });
+  });
+
+  it('stays as it is in a legacy Database, which has no storage view', () => {
+    const doc = new Y.Doc();
+    const views = new Y.Map<YDatabaseView>();
+    const databaseId = '9d8a1b3e-0c1f-4a2b-8c3d-1e2f3a4b5c6d';
+    const view = (id: string, rows: string[], inline: boolean) => {
+      const created = new Y.Map<unknown>();
+      const orders = new Y.Array<unknown>();
+
+      orders.push(rows.map((rowId) => ({ id: rowId, height: 60 })));
+      created.set(YjsDatabaseKey.id, id);
+      created.set(YjsDatabaseKey.database_id, databaseId);
+      created.set(YjsDatabaseKey.is_inline, inline);
+      created.set(YjsDatabaseKey.row_orders, orders);
+      views.set(id, created as unknown as YDatabaseView);
+    };
+    const database = new Y.Map<unknown>();
+
+    doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    database.set(YjsDatabaseKey.views, views);
+    // The canonical view of a legacy Database is one of its tabs, under an id of its own.
+    view('11111111-1111-4111-8111-111111111111', ['a', 'b', 'c'], true);
+    view('22222222-2222-4222-8222-222222222222', [], false);
+
+    const typed = database as unknown as YDatabase;
+    const empty = viewOf(typed, '22222222-2222-4222-8222-222222222222');
+
+    expect(showsDefaultOrder(typed, empty)).toBe(false);
+    expect(viewRowOrderEntries(typed, empty)).toEqual([]);
+    expect(viewRowOrdersJSON(typed, empty)).toEqual([]);
+    expect(viewMembershipRowOrders(typed, empty) === empty.get(YjsDatabaseKey.row_orders)).toBe(true);
+  });
+
+  it.each(['an empty list', 'no list'] as const)('gets its list before a drag, starting with %s', (kind) => {
+    const { doc, database, view } = openWithoutRows(kind);
+
+    doc.transact(() => {
+      // Above the limit nothing is written.
+      expect(fillDefaultOrder(database, view, storage.rows.length - 1)).toBe(0);
+    });
+    expect(showsDefaultOrder(database, view)).toBe(true);
+
+    doc.transact(() => {
+      expect(fillDefaultOrder(database, view)).toBe(storage.rows.length);
+    });
+    expect(showsDefaultOrder(database, view)).toBe(false);
+    // What a client that knows nothing of this reads: every row, in the default order.
+    expect(ids(view.get(YjsDatabaseKey.row_orders).toArray())).toEqual(storage.rows);
+    expect(shown(database, view)).toEqual(storage.shown);
+
+    doc.transact(() => {
+      expect(fillDefaultOrder(database, view)).toBe(0);
+      expect(fillDefaultOrder(database, viewOf(database, anchored.id))).toBe(0);
+      expect(fillDefaultOrder(database, viewOf(database, storage.id))).toBe(0);
+    });
+    expect(view.get(YjsDatabaseKey.row_orders).length).toBe(storage.rows.length);
+  });
+
+  it('gets its list in a copy of the Database for readers of any age', () => {
+    const { doc, database, view } = openWithoutRows('an empty list');
+    const anchoredViews = largest.views.filter((item) => item.anchored).length;
+
+    doc.transact(() => {
+      expect(convertAnchoredViewsToArray(database)).toBe(anchoredViews + 1);
+    });
+    expect(ids(view.get(YjsDatabaseKey.row_orders).toArray())).toEqual(storage.rows);
+    doc.transact(() => {
+      expect(convertAnchoredViewsToArray(database)).toBe(0);
+    });
+  });
+
+  it('follows the storage view while it shows the default order', () => {
+    const { doc, database, view, stored } = openWithoutRows('an empty list');
+    let calls = 0;
+    const stop = observeViewRowOrders(database, view, () => {
+      calls += 1;
+    });
+    const expectCalls = (expected: number, change: () => void) => {
+      calls = 0;
+      doc.transact(change);
+      expect(calls).toBe(expected);
+    };
+    const row = (n: number) => ({ id: `ffffffff-0000-4000-8000-00000000000${n}`, height: 60 });
+
+    // A row that joins the Database shows in the view.
+    expectCalls(1, () => stored.push([row(1)]));
+    expect(ids(viewRowOrderEntries(database, view))).toEqual([...storage.rows, row(1).id]);
+    // The view gets its list: one call, and from then on its own list counts.
+    expectCalls(1, () => fillDefaultOrder(database, view));
+    expectCalls(0, () => stored.push([row(2)]));
+    expectCalls(1, () => view.get(YjsDatabaseKey.row_orders).push([row(2)]));
+    // It loses its rows again, and follows the storage view again.
+    expectCalls(1, () => {
+      const own = view.get(YjsDatabaseKey.row_orders);
+
+      own.delete(0, own.length);
+    });
+    expectCalls(1, () => stored.push([row(3)]));
+    expect(ids(viewRowOrderEntries(database, view))).toEqual([...storage.rows, row(1).id, row(2).id, row(3).id]);
+
+    stop();
+    expectCalls(0, () => stored.push([row(4)]));
   });
 });

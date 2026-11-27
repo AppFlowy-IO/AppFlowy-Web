@@ -12,7 +12,13 @@ import {
 import { isRowOrderTombstoned, removeRowsFromDatabase } from '@/application/database-yjs/dispatch/row-lifecycle';
 import { getRelationRowOrders } from '@/application/database-yjs/relation/row-orders';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
-import { isAnchoredView, readRowPlacements, viewRowOrderEntries } from '@/application/database-yjs/row-placements-doc';
+import {
+  databaseOfView,
+  isAnchoredView,
+  readRowPlacements,
+  showsDefaultOrder,
+  viewRowOrderEntries,
+} from '@/application/database-yjs/row-placements-doc';
 import { hasCurrentRowDocumentSource } from '@/application/row-document/row-source-readiness';
 import { YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useRowPeekRowDeletion } from '@/components/database/row-peek/useRowPeekRowDeletion';
@@ -165,6 +171,83 @@ describe('an anchored view in the app', () => {
     removeAndCheck(() => view.result.current.removeManyModule([anchors[2]]), [anchors[2]]);
     expect(isAnchoredView(viewOf(anchored.id))).toBe(true);
     expect(database.get(YjsDatabaseKey.views).size).toBe(largest.views.length);
+  });
+
+  // The app has two copies of the drag hook. Each has to give the view its list, so each gets
+  // the first drag once.
+  it.each([
+    ['the hook of dispatch.ts', false],
+    ['the hook of dispatch/row.ts', true],
+  ])('shows the rows of the Database in a view that lost its own, and moves a row there with %s', (_name, moduleFirst) => {
+    const { doc, viewOf, shown } = open();
+
+    // The view in array mode loses the rows of its own, as damage or a race leaves it.
+    doc.transact(() => {
+      const own = viewOf(array.id).get(YjsDatabaseKey.row_orders);
+
+      own.delete(0, own.length);
+    });
+
+    const view = renderHook(
+      () => ({
+        rows: useRowOrdersSelector(),
+        reorder: useReorderRowDispatch(),
+        reorderModule: useReorderRowDispatchModule(),
+      }),
+      { wrapper: wrapperFor(doc, array.id) }
+    );
+    const rows = () => ids(view.result.current.rows);
+    const settle = () => act(() => void jest.advanceTimersByTime(500));
+
+    settle();
+    // The default order: the storage view's rows, without the one in the trash.
+    expect(rows()).toEqual(storage.shown);
+    expect(showsDefaultOrder(databaseOfView(viewOf(array.id)), viewOf(array.id))).toBe(true);
+
+    // A row that joins the Database shows in the view, which still lists nothing.
+    const added = 'ffffffff-0000-4000-8000-0000000000bb';
+    let expected = [...storage.shown, added];
+
+    act(() => {
+      doc.transact(() => {
+        viewOf(storage.id)
+          .get(YjsDatabaseKey.row_orders)
+          .push([{ id: added, height: 60 }]);
+      }, 'remote');
+    });
+    settle();
+    expect(rows()).toEqual(expected);
+    expect(viewOf(array.id).get(YjsDatabaseKey.row_orders).length).toBe(0);
+
+    // A drag writes the default order into the view, then moves the row, through both copies of
+    // the hook the app has.
+    const drag = (reorder: (rowId: string, beforeRowId?: string) => void, row: string, previous?: string) => {
+      act(() => reorder(row, previous));
+      settle();
+
+      const others = expected.filter((id) => id !== row);
+
+      expected =
+        previous === undefined
+          ? [row, ...others]
+          : [...others.slice(0, others.indexOf(previous) + 1), row, ...others.slice(others.indexOf(previous) + 1)];
+      expect(rows()).toEqual(expected);
+    };
+
+    const [first, second] = moduleFirst
+      ? [view.result.current.reorderModule, view.result.current.reorder]
+      : [view.result.current.reorder, view.result.current.reorderModule];
+
+    drag(first, expected[6], expected[1]);
+    // The view lists every row of the Database itself now, the trashed one included, so a client
+    // that knows nothing of the default order reads the same.
+    expect(viewOf(array.id).get(YjsDatabaseKey.row_orders).length).toBe(storage.rows.length + 1);
+    expect(shown(array.id)).toEqual(expected);
+    drag(second, expected[10]);
+    expect(viewOf(array.id).get(YjsDatabaseKey.row_orders).length).toBe(storage.rows.length + 1);
+    // No other view changed.
+    expect(shown(anchored.id)).toEqual([...anchored.shown, added]);
+    expect(shown(storage.id)).toEqual([...storage.shown, added]);
   });
 
   it('deletes rows from the trash flow and reads the trash flag of a row', () => {

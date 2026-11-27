@@ -126,6 +126,7 @@ import {
 } from '@/application/database-yjs/rollup/filter';
 import {
   databaseOfView,
+  fillDefaultOrder,
   isAnchoredView,
   reorderRowInAnchoredView,
 } from '@/application/database-yjs/row-placements-doc';
@@ -1564,6 +1565,9 @@ function reorderRow(rowId: string, beforeRowId: string | undefined, view: YDatab
     reorderRowInAnchoredView(databaseOfView(view), view, rowId, beforeRowId);
     return;
   }
+
+  // A view that shows the default order has no entry to move: it gets that order as its list.
+  fillDefaultOrder(databaseOfView(view), view);
 
   const rows = view.get(YjsDatabaseKey.row_orders);
 
