@@ -25,10 +25,11 @@ import {
   materializeVisibleRowOrders,
   RowOrderVisibilityEntry,
 } from '@/application/database-yjs/row-order-visibility';
+import { viewMembershipRowOrders } from '@/application/database-yjs/row-placements-doc';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openRowCollabDBWithProvider } from '@/application/db';
-import { YDatabaseRowOrders, YDoc, YjsDatabaseKey } from '@/application/types';
+import { YDatabaseRowOrders, YDoc } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
 const BACKGROUND_CONCURRENCY = 12;
@@ -769,8 +770,11 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   const rows = useRowMap();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
-  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
-  const inlineRowOrders = getInlineViewRowOrders(useDatabase());
+  const database = useDatabase();
+  // An anchored view lists no rows of its own: it holds the rows of the Database, so those are
+  // the rows to load. Their order in the view only decides which rows load first.
+  const rowOrders = viewMembershipRowOrders(database, view);
+  const inlineRowOrders = getInlineViewRowOrders(database);
   const databaseContext = useDatabaseContext();
   const {
     databaseDoc,

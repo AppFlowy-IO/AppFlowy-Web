@@ -23,6 +23,7 @@ import {
 import { useFormulaReadContext } from '@/application/database-yjs/formula/read-context';
 import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
+import { viewRowOrdersJSON } from '@/application/database-yjs/row-placements-doc';
 import { Row, useFieldSelector, usePrimaryFieldId } from '@/application/database-yjs/selector';
 import { YDatabaseRow, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
@@ -111,7 +112,7 @@ export function FormulaEditor({
   // Row ids in view order, read once. The picker does not need the live
   // sort/filter pipeline useRowOrdersSelector would run while the editor is open.
   const rowIds = useMemo(() => {
-    const rowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as Row[] | undefined;
+    const rowOrders = viewRowOrdersJSON(database, view) as Row[] | undefined;
     const canonical = getInlineViewRowOrders(database)?.toJSON() as Row[] | undefined;
 
     return (materializeVisibleRowOrders(rowOrders, canonical) ?? []).map((row) => row.id);

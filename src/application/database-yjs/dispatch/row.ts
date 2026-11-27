@@ -50,6 +50,13 @@ import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/i
 import { createNumberGroupingPolicy } from '@/application/database-yjs/number-grouping';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
+import {
+  databaseOfView,
+  fillDefaultOrder,
+  isAnchoredView,
+  reorderRowInAnchoredView,
+  viewMembershipRowOrders,
+} from '@/application/database-yjs/row-placements-doc';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { getPrimaryFieldId, useCalendarLayoutSetting, useDatabaseViewLayout } from '@/application/database-yjs/selector';
 import {
@@ -93,7 +100,7 @@ import { Log } from '@/utils/log';
 import { populateNewRowCells, NewRowCellsData } from './new-row-cells';
 import { applyRelationReciprocalInserts } from './relation';
 import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
-import { executeOperationWithAllViews } from './utils';
+import { executeOperationWithAllViews, withAnchoredViewRepair } from './utils';
 
 export { collectNewRowPrefillFilters } from './new-row-cells';
 
@@ -101,6 +108,15 @@ export { collectNewRowPrefillFilters } from './new-row-cells';
  * Helper: Reorder a row within a view's row_orders
  */
 function reorderRow(rowId: string, beforeRowId: string | undefined, view: YDatabaseView) {
+  if (isAnchoredView(view)) {
+    // An anchored view has no row list to move in: the drag writes one placement.
+    reorderRowInAnchoredView(databaseOfView(view), view, rowId, beforeRowId);
+    return;
+  }
+
+  // A view that shows the default order has no entry to move: it gets that order as its list.
+  fillDefaultOrder(databaseOfView(view), view);
+
   const rows = view.get(YjsDatabaseKey.row_orders);
 
   if (!rows) {
@@ -352,7 +368,7 @@ export function useDeleteRowDispatch() {
       executeOperationWithAllViews(
         sharedRoot,
         database,
-        (view) => {
+        withAnchoredViewRepair(database, [rowId], (view) => {
           if (!view) {
             throw new Error(`Unable to delete row`);
           }
@@ -366,7 +382,7 @@ export function useDeleteRowDispatch() {
           const sourceIndex = rowArray.findIndex((row) => row.id === rowId);
 
           rows.delete(sourceIndex);
-        },
+        }),
         'deleteRowDispatch'
       );
       void deleteOutboxByObjectId(rowId);
@@ -387,7 +403,7 @@ export function useBulkDeleteRowDispatch() {
       executeOperationWithAllViews(
         sharedRoot,
         database,
-        (view) => {
+        withAnchoredViewRepair(database, rowIds, (view) => {
           if (!view) {
             throw new Error(`Unable to bulk delete rows`);
           }
@@ -406,7 +422,7 @@ export function useBulkDeleteRowDispatch() {
               rows.delete(sourceIndex);
             }
           });
-        },
+        }),
         'bulkDeleteRowDispatch',
         historyGroup
       );
@@ -706,10 +722,9 @@ export function useNewRowDispatch() {
       // applies the latest draft and repairs links, without duplicating the row.
       const alreadyPublished =
         !!draft &&
-        currentView
-          .get(YjsDatabaseKey.row_orders)
-          .toArray()
-          .some((row) => row.id === rowId);
+        (viewMembershipRowOrders(databaseOfView(currentView), currentView)?.toArray() ?? []).some(
+          (row) => row.id === rowId
+        );
       const rowKey = getRowKey(guid, rowId);
       const selectedTemplate = await templatePromise;
 

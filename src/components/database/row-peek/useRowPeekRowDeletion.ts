@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
-import { YDatabase, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { databaseOfView, viewRowOrderEntries } from '@/application/database-yjs/row-placements-doc';
+import { YDatabase, YDatabaseView } from '@/application/types';
 
 /** Filtered navigation orders cannot distinguish hidden rows from deleted rows. */
 export function useRowPeekRowDeletion(
@@ -16,11 +17,11 @@ export function useRowPeekRowDeletion(
     let dismissed = false;
     const checkRow = () => {
       if (dismissed) return;
-      const orders = view.get(YjsDatabaseKey.row_orders);
+      // The rows of the view in either mode: an anchored view lists none of its own.
+      const rawOrders = viewRowOrderEntries(database ?? databaseOfView(view), view);
 
       // A direct row link may mount before its database has hydrated.
-      if (!orders) return;
-      const rawOrders = orders.toArray();
+      if (!rawOrders) return;
       const visibleOrders = materializeVisibleRowOrders(rawOrders, getInlineViewRowOrders(database)?.toArray());
       const isPresent = visibleOrders?.some((order) => order.id === rowId);
 

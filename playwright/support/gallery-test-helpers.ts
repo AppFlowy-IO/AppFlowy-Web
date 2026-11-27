@@ -109,13 +109,12 @@ export async function getActiveDatabaseFields(page: Page): Promise<GalleryFieldI
 export async function getActiveRowIds(page: Page): Promise<string[]> {
   await waitForDatabaseTestContext(page);
   return page.evaluate(() => {
-    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
-    const database = ctx.databaseDoc.getMap('data').get('database');
-    const view = database.get('views').get(ctx.activeViewId);
+    const win = window as any;
+    const ctx = win.__TEST_DATABASE_CONTEXT__;
 
-    return view
-      .get('row_orders')
-      .toArray()
+    // Through the app's reader: an anchored view does not list its rows in its own array.
+    return win
+      .__TEST_DATABASE_VIEW_ROWS__(ctx.activeViewId)
       .filter((row: { is_deleted?: boolean }) => !row.is_deleted)
       .map((row: { id: string }) => row.id);
   });
@@ -161,9 +160,9 @@ export async function seedPrimaryTitlesDirect(page: Page, titles: string[]): Pro
     const fieldOrders = view.get('field_orders').toArray() as Array<{ id: string }>;
     const primaryFieldId =
       fieldOrders.find(({ id }) => Boolean(fields.get(id)?.get('is_primary')))?.id ?? fieldOrders[0]?.id;
-    const activeRows = (view.get('row_orders').toArray() as Array<{ id: string; is_deleted?: boolean }>).filter(
-      (row) => !row.is_deleted
-    );
+    const activeRows = (
+      win.__TEST_DATABASE_VIEW_ROWS__(ctx.activeViewId) as Array<{ id: string; is_deleted?: boolean }>
+    ).filter((row) => !row.is_deleted);
 
     if (!primaryFieldId) throw new Error('Cannot seed Gallery titles without a primary field');
     if (activeRows.length < rowTitles.length) {

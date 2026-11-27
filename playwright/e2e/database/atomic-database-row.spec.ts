@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { writeFile } from 'node:fs/promises';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { viewRowIds } from '../../support/view-rows';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import { DatabaseGridSelectors } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
@@ -114,13 +115,10 @@ test('new row waits for one cloud command, is durable before editing, and surviv
 
     try {
       expect((row.getMap('data').get('data') as Y.Map<unknown>).get('database_id')).toBe(databaseId);
-      const views = (database.getMap('data').get('database') as Y.Map<unknown>).get('views') as Y.Map<Y.Map<unknown>>;
+      const root = database.getMap('data').get('database') as Y.Map<unknown>;
+      const views = root.get('views') as Y.Map<Y.Map<unknown>>;
 
-      views.forEach((view) =>
-        expect(
-          (view.get('row_orders') as Y.Array<{ id: string }>).toArray().filter((item) => item.id === rowId)
-        ).toHaveLength(1)
-      );
+      views.forEach((view) => expect(viewRowIds(root, view).filter((id) => id === rowId)).toHaveLength(1));
     } finally {
       row.destroy();
       database.destroy();
@@ -357,14 +355,11 @@ test('a self-linked template keeps one shared database and includes the committe
   const database = await readCollab(page, databaseId, 1);
 
   try {
-    const views = (database.getMap('data').get('database') as Y.Map<unknown>).get('views') as Y.Map<Y.Map<unknown>>;
+    const root = database.getMap('data').get('database') as Y.Map<unknown>;
+    const views = root.get('views') as Y.Map<Y.Map<unknown>>;
 
     expect(views.size).toBeGreaterThan(2);
-    views.forEach((view) =>
-      expect(
-        (view.get('row_orders') as Y.Array<{ id: string }>).toArray().filter((item) => item.id === rowId)
-      ).toHaveLength(1)
-    );
+    views.forEach((view) => expect(viewRowIds(root, view).filter((id) => id === rowId)).toHaveLength(1));
   } finally {
     database.destroy();
   }

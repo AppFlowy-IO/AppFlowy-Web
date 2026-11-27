@@ -4,7 +4,9 @@ import type {
   runDatabaseAction,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
+import { RowOrderEntry, viewRowOrderEntries } from '@/application/database-yjs/row-placements-doc';
 import { setYMapBigInt } from '@/application/database-yjs/yjs-bigint';
+import { YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 export type DatabaseTestHistory = {
   getOrCreateDatabaseHistoryManager: typeof getOrCreateDatabaseHistoryManager;
@@ -18,7 +20,19 @@ export type DatabaseTestWindow = Window & {
   __TEST_DATABASE_CONTEXT__?: DatabaseContextState;
   __TEST_DATABASE_HISTORY__?: DatabaseTestHistory;
   __TEST_DATABASE_SET_BIGINT__?: typeof setYMapBigInt;
+  /**
+   * The rows a view of the exposed Database holds, in its order. Tests read a view's rows
+   * through this, because an anchored view does not list them in its own `row_orders`.
+   */
+  __TEST_DATABASE_VIEW_ROWS__?: (viewId: string) => RowOrderEntry[];
 };
+
+function viewRows(testWindow: DatabaseTestWindow, viewId: string): RowOrderEntry[] {
+  const doc = testWindow.__TEST_DATABASE_CONTEXT__?.databaseDoc;
+  const database = doc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+  return viewRowOrderEntries(database, database?.get(YjsDatabaseKey.views)?.get(viewId)) ?? [];
+}
 
 const activeTestContexts = new WeakMap<DatabaseTestWindow, Map<symbol, DatabaseContextState>>();
 
@@ -38,6 +52,7 @@ export function exposeDatabaseTestContext(
   testWindow.__TEST_DATABASE_VIEW_ID__ = value.activeViewId;
   testWindow.__TEST_DATABASE_CONTEXT__ = value;
   testWindow.__TEST_DATABASE_SET_BIGINT__ = setYMapBigInt;
+  testWindow.__TEST_DATABASE_VIEW_ROWS__ = (viewId) => viewRows(testWindow, viewId);
   if (history) testWindow.__TEST_DATABASE_HISTORY__ = history;
 
   return () => {
@@ -60,6 +75,7 @@ export function exposeDatabaseTestContext(
     if (contexts.size === 0) {
       delete testWindow.__TEST_DATABASE_HISTORY__;
       delete testWindow.__TEST_DATABASE_SET_BIGINT__;
+      delete testWindow.__TEST_DATABASE_VIEW_ROWS__;
       activeTestContexts.delete(testWindow);
     }
   };
