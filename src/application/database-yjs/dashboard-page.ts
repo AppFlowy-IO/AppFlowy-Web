@@ -187,8 +187,8 @@ async function writeLinkedDashboardView(
 }
 
 /**
- * A new linked Dashboard view of an existing database (the `/linked`
- * dashboard slash command). It starts empty.
+ * A new linked Dashboard view of an existing database (the database itself
+ * picked in `/Linked Dashboard`). It starts empty.
  *
  * Desktop seeds every linked Dashboard view (`resolve_linked_view_layout_deps`)
  * and the server seeds none, so seed the empty rows / global filters here as the
@@ -221,9 +221,10 @@ export async function createLinkedDatabaseDashboardView(
 }
 
 /**
- * The linked Dashboard view of a duplicated block: the new dashboard copies
- * the whole layout setting of `sourceViewId` and gets its own copies of the
- * views the source's widgets own (WP05 §1.7). The copy either succeeds
+ * The linked Dashboard view of a duplicated block, or of an existing dashboard
+ * picked in `/Linked Dashboard`: the new dashboard copies the whole layout
+ * setting of `sourceViewId` and gets its own copies of the views the source's
+ * widgets own (WP05 §1.7). The copy either succeeds
  * completely or the new view is removed and the error rethrown: no partial
  * dashboards. That guarantee is why every dependency is required here.
  *

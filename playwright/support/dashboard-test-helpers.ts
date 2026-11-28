@@ -1617,14 +1617,14 @@ export async function readDashboardSetting(
   return setting as PersistedDashboardSetting;
 }
 
-/** The dashboard setting as the server stores it. */
+/** The dashboard setting as the server stores it (another dashboard of the host database with `viewId`). */
 export async function readServerDashboardSetting(
   page: Page,
-  request: APIRequestContext
+  request: APIRequestContext,
+  viewId = dashboardViewId(page)
 ): Promise<PersistedDashboardSetting> {
   const world = dashboardWorld(page);
   const host = hostDatabase(page);
-  const viewId = dashboardViewId(page);
 
   return readServerDatabaseDoc(
     request,
@@ -1646,13 +1646,13 @@ export async function readServerDashboardSetting(
 }
 
 /** Wait until the server holds the same rows and global filters as the browser. */
-export async function waitForDashboardSync(page: Page, request: APIRequestContext) {
-  const local = await readDashboardSetting(page);
+export async function waitForDashboardSync(page: Page, request: APIRequestContext, viewId = dashboardViewId(page)) {
+  const local = await readDashboardSetting(page, viewId);
 
   await expect
     .poll(
       async () => {
-        const remote = await readServerDashboardSetting(page, request).catch(() => null);
+        const remote = await readServerDashboardSetting(page, request, viewId).catch(() => null);
 
         return (
           remote !== null &&
