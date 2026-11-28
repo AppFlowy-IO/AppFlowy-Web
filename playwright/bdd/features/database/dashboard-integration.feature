@@ -48,24 +48,6 @@ Feature: Dashboard widget integration
     When I link the "Projects" database as a dashboard through the slash menu
     Then the document contains a dashboard block titled "View of Projects"
 
-  Scenario: The slash menu links an existing dashboard with a copy of its widgets
-    Given I added a dashboard to "Projects"
-    And the dashboard has these widgets:
-      | row | widget        |
-      | 1   | Projects Grid |
-      | 1   | Tasks Grid    |
-    And I am editing a new document in the fixture workspace
-    When I open the linked dashboard picker and search for "Projects"
-    Then the picker lists the dashboard of "Projects" under the database
-    When I pick the dashboard of "Projects" in the picker
-    Then the document's dashboard shows the widgets "Projects Grid, Tasks Grid"
-    And the document's dashboard is in View mode
-    When I reload the document
-    Then the document's dashboard shows the widgets "Projects Grid, Tasks Grid"
-    When I delete widget 2 of the document's dashboard
-    Then the document's dashboard shows the widgets "Projects Grid"
-    And the "Projects" dashboard still shows the widgets "Projects Grid, Tasks Grid"
-
   Scenario: A table widget opens a row page
     Given I added a dashboard to "Projects"
     And the dashboard has these widgets:

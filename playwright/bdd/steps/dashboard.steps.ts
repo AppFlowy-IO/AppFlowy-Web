@@ -186,6 +186,14 @@ Then('the document contains a dashboard block titled {string}', async ({ page },
 
 // An existing dashboard picked in `/Linked Dashboard`: the block gets its own
 // dashboard, starting with a copy of the picked one's widgets.
+
+/** The existing dashboard a scenario links: a fixture database's tab, or one made with `/dashboard`. */
+interface SourceDashboard {
+  viewId: string;
+  databaseId: string;
+}
+
+const madeDashboards = new WeakMap<Page, SourceDashboard>();
 const linkedDashboardViewIds = new WeakMap<Page, string>();
 
 function linkedDashboardViewId(page: Page) {
@@ -195,42 +203,129 @@ function linkedDashboardViewId(page: Page) {
   return viewId;
 }
 
+function madeDashboard(page: Page) {
+  const dashboard = madeDashboards.get(page);
+
+  if (!dashboard) throw new Error('No dashboard was made with /dashboard in this scenario');
+  return dashboard;
+}
+
 async function dashboardWidgetViewIds(page: Page, viewId: string) {
   return allWidgets(await readDashboardSetting(page, viewId)).map((widget) => widget.view_id);
 }
 
-When('I open the linked dashboard picker and search for {string}', async ({ page }, search: string) => {
-  await openLinkedDashboardPicker(page, documentViewId(page), search);
-});
-
-Then('the picker lists the dashboard of {string} under the database', async ({ page }, database: string) => {
-  const databaseRow = linkedDatabasePickerOption(page, fixtureDatabase(page, database).pageId);
-
+/** The picker shows the dashboard nested in the database row's tree item, without expanding it. */
+async function expectPickerListsDashboardUnder(page: Page, databaseRow: Locator, dashboardViewId: string) {
   await expect(databaseRow).toBeVisible();
-  // Nested in the database's tree item and shown without expanding it.
   await expect(
-    databaseRow.locator('xpath=..').locator(`[data-testid="linked-database-option"][data-view-id="${dashboardViewId(page)}"]`)
+    databaseRow.locator('xpath=..').locator(`[data-testid="linked-database-option"][data-view-id="${dashboardViewId}"]`)
   ).toBeVisible();
-});
+}
 
-When('I pick the dashboard of {string} in the picker', async ({ page }, database: string) => {
-  const original = dashboardViewId(page);
+/** Pick `source` in the open picker and remember the block's new dashboard. */
+async function linkDashboard(page: Page, source: SourceDashboard) {
   let linked = '';
 
-  await linkedDatabasePickerOption(page, original).click();
+  await linkedDatabasePickerOption(page, source.viewId).click();
   await expect(dashboardBlock(page).getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
   await expect
     .poll(
       async () => {
-        const views = await readDatabaseViews(page, fixtureDatabase(page, database).databaseId);
+        const views = await readDatabaseViews(page, source.databaseId);
 
-        linked = views.find((view) => view.layout === LAYOUT_BY_NAME.Dashboard && view.id !== original)?.id ?? '';
+        linked = views.find((view) => view.layout === LAYOUT_BY_NAME.Dashboard && view.id !== source.viewId)?.id ?? '';
         return linked;
       },
       { ...WIDGET_TIMEOUT, message: 'waiting for the linked dashboard view' }
     )
     .not.toBe('');
   linkedDashboardViewIds.set(page, linked);
+}
+
+Given(
+  'the document has a new dashboard from the slash menu showing the {string} widget',
+  async ({ page }, label: string) => {
+    await EditorSelectors.firstEditor(page).click({ force: true });
+    await page.keyboard.type('/');
+    await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('slash-menu-dashboard').click();
+    await expect(page.locator('[role="dialog"]').last().getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[role="dialog"]')).toHaveCount(0, { timeout: 10_000 });
+    await expect(dashboardBlock(page).getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+    let made: SourceDashboard | null = null;
+
+    // The workspace's only dashboard: the fixture databases have none.
+    await expect
+      .poll(
+        async () => {
+          made = await page.evaluate((dashboardLayout) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const contexts: any[] = (window as any).__DASHBOARD_TEST__?.contexts ?? [];
+
+            for (const ctx of contexts) {
+              const database = ctx.databaseDoc?.getMap('data')?.get('database');
+              let viewId = '';
+
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              database?.get('views')?.forEach((view: any, id: string) => {
+                if (Number(view.get('layout')) === dashboardLayout) viewId = id;
+              });
+              if (viewId) return { viewId, databaseId: String(database.get('id')) };
+            }
+
+            return null;
+          }, LAYOUT_BY_NAME.Dashboard);
+          return made;
+        },
+        { ...WIDGET_TIMEOUT, message: 'waiting for the dashboard made with /dashboard' }
+      )
+      .not.toBeNull();
+    const dashboard = made as unknown as SourceDashboard;
+
+    // Seeding writes the scenario's dashboard.
+    dashboardWorld(page).dashboardViewId = dashboard.viewId;
+    await seedDashboardWidgets(page, [{ row: 1, label }]);
+    await leaveEditMode(page);
+    madeDashboards.set(page, dashboard);
+  }
+);
+
+When('I open the linked dashboard picker and search for {string}', async ({ page }, search: string) => {
+  await openLinkedDashboardPicker(page, documentViewId(page), search);
+});
+
+Then('the picker lists the dashboard of {string} under the database', async ({ page }, database: string) => {
+  await expectPickerListsDashboardUnder(
+    page,
+    linkedDatabasePickerOption(page, fixtureDatabase(page, database).pageId),
+    dashboardViewId(page)
+  );
+});
+
+Then('the picker lists that dashboard under {string}', async ({ page }, database: string) => {
+  const databaseRow = page.getByTestId('linked-database-option').filter({ hasText: database }).first();
+
+  await expectPickerListsDashboardUnder(page, databaseRow, madeDashboard(page).viewId);
+});
+
+When('I pick the dashboard of {string} in the picker', async ({ page }, database: string) => {
+  await linkDashboard(page, { viewId: dashboardViewId(page), databaseId: fixtureDatabase(page, database).databaseId });
+});
+
+When('I pick that dashboard in the picker', async ({ page }) => {
+  await linkDashboard(page, madeDashboard(page));
+});
+
+When('I pick the {string} database in the picker', async ({ page }, database: string) => {
+  await linkedDatabasePickerOption(page, fixtureDatabase(page, database).pageId).click();
+  await expect(dashboardBlock(page).getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+});
+
+Then("the document's dashboard is empty in Edit mode", async ({ page }) => {
+  await expect(dashboardBlock(page).getByTestId('dashboard-empty-state')).toBeVisible(WIDGET_TIMEOUT);
+  await expect(dashboardBlock(page).getByTestId('dashboard-widget')).toHaveCount(0);
+  await expectDashboardMode(page, 'Edit');
 });
 
 Then("the document's dashboard shows the widgets {string}", async ({ page }, labels: string) => {
