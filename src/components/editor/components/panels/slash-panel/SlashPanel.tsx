@@ -303,6 +303,8 @@ export function SlashPanel({
 
   const { available: canCreateDashboard } = useDashboardCreationGate();
   const checkCreationRef = useRef<ReturnType<typeof useDatabaseViewCreation>['checkCreation']>(() => false);
+  // The picker stays open while a linked view is created or copied: one pick at a time.
+  const linkingRef = useRef(false);
 
   const getIsInsideAIMeeting = useCallback(() => {
     const { selection } = editor;
@@ -637,6 +639,7 @@ export function SlashPanel({
 
   const handleSelectDatabase = useCallback(
     async (targetViewId: string) => {
+      if (linkingRef.current) return;
       if (!linkedPicker || !checkCreationRef.current(linkedPicker.layout, () => setLinkedPicker(null))) return;
 
       const selection = findLinkedDatabaseSelection(databaseOptions, targetViewId);
@@ -669,6 +672,7 @@ export function SlashPanel({
 
       const { option, dashboard } = selection;
 
+      linkingRef.current = true;
       try {
         const databaseViewId = option.view.view_id;
         const baseName = option.view.name || t('document.view.placeholder', { defaultValue: 'Untitled' });
@@ -732,6 +736,11 @@ export function SlashPanel({
 
         if (linkedPicker.layout === ViewLayout.Dashboard) {
           if (!createDatabaseView) throw new Error('Dashboard creation is unavailable');
+          const slashBlockId = getBlockEntry(editor)?.[0].blockId;
+
+          if (!slashBlockId) throw new Error('The linked Dashboard insertion block is unavailable');
+          // The block where `/` was typed, even if the cursor moves while a copy is made.
+          const slashBlock = captureBlockCreationTarget(editor, slashBlockId);
           // The database starts an empty dashboard. One of its dashboards starts a
           // copy of its widgets and global filters, with its own copies of the views
           // those widgets own, as a duplicated block does.
@@ -760,7 +769,28 @@ export function SlashPanel({
             applyYDoc(databaseDoc, new Uint8Array(response.database_update));
           }
 
-          turnInto(blockType, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId }));
+          try {
+            slashBlock.replace((blockId) =>
+              turnInto(
+                blockType,
+                createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId }),
+                blockId
+              )
+            );
+          } catch (error) {
+            // No block shows the new dashboard: remove it rather than leave it behind.
+            try {
+              await deletePage?.(response.view_id);
+            } catch (cleanupError) {
+              Log.warn('[SlashPanel] failed to remove a linked dashboard without a block', {
+                viewId: response.view_id,
+                error: cleanupError,
+              });
+            }
+
+            throw error;
+          }
+
           return;
         }
 
@@ -816,6 +846,7 @@ export function SlashPanel({
 
         notify.error(error.message);
       } finally {
+        linkingRef.current = false;
         setLinkedPicker(null);
       }
     },

@@ -18,6 +18,10 @@ const mockCreateDatabaseView = jest.fn();
 const mockCheckout = jest.fn();
 const mockLoadCatalog = jest.fn();
 const mockCreateLinkedView = jest.fn();
+/** The block the editor's selection is in (`getBlockEntry`); none unless a test sets it. */
+let mockBlockEntry: unknown;
+const mockCapturedBlockIds: string[] = [];
+const mockPlaceBlock = jest.fn();
 const mockCheckCreation = jest.fn();
 const mockCreationOptions = jest.fn();
 const mockTranslate = (key: string) => key;
@@ -61,7 +65,14 @@ jest.mock('@/components/editor/components/panels/Panels.hooks', () => ({
     closePanel: mockClosePanel,
   }),
 }));
-jest.mock('@/application/slate-yjs/utils/editor', () => ({ getBlockEntry: () => undefined }));
+jest.mock('@/application/slate-yjs/utils/editor', () => ({ getBlockEntry: () => mockBlockEntry }));
+jest.mock('@/components/editor/utils/block-creation-target', () => ({
+  captureBlockCreationTarget: (_editor: unknown, blockId: string) => {
+    mockCapturedBlockIds.push(blockId);
+    return { assertCurrent: jest.fn(), replace: (replaceBlock: unknown) => mockPlaceBlock(blockId, replaceBlock) };
+  },
+  captureExistingDatabaseBlock: () => undefined,
+}));
 jest.mock('@/components/editor/components/toolbar/selection-toolbar/utils', () => ({
   getRangeRect: () => ({ top: 0, left: 0 }),
 }));
@@ -253,9 +264,13 @@ describe('linking an existing dashboard from the slash menu', () => {
     loadView: jest.fn(),
     loadViewMeta: jest.fn().mockResolvedValue(null),
     updatePage: jest.fn(),
-    deletePage: jest.fn(),
+    deletePage: jest.fn().mockResolvedValue(undefined),
     bindViewSync: jest.fn(),
     scheduleDeferredCleanup: jest.fn(),
+  };
+  const created = {
+    response: { view_id: 'linked-dashboard', database_id: 'database' },
+    databaseUpdatePending: false,
   };
 
   beforeEach(() => {
@@ -263,15 +278,17 @@ describe('linking an existing dashboard from the slash menu', () => {
     mockSearch = 'linkedDashboard';
     mockAction = { type: 'create' };
     mockEditor.selection = null;
+    // The paragraph `/` was typed in.
+    mockBlockEntry = [{ blockId: 'slash-block' }, [0]];
+    mockCapturedBlockIds.length = 0;
+    mockPlaceBlock.mockReset();
     mockLoadCatalog.mockResolvedValue([SOURCE_DATABASE]);
-    mockCreateLinkedView.mockResolvedValue({
-      response: { view_id: 'linked-dashboard', database_id: 'database' },
-      databaseUpdatePending: false,
-    });
+    mockCreateLinkedView.mockResolvedValue(created);
     Object.assign(mockEditorContext, pageServices);
   });
 
   afterEach(() => {
+    mockBlockEntry = undefined;
     Object.keys(pageServices).forEach((key) => delete (mockEditorContext as Record<string, unknown>)[key]);
   });
 
@@ -313,7 +330,42 @@ describe('linking an existing dashboard from the slash menu', () => {
         deletePage: pageServices.deletePage,
       })
     );
+    // The block goes where `/` was typed, captured before the copy started.
+    await waitFor(() => expect(mockPlaceBlock).toHaveBeenCalledTimes(1));
+    expect(mockCapturedBlockIds).toEqual(['slash-block']);
+    expect(mockPlaceBlock).toHaveBeenCalledWith('slash-block', expect.any(Function));
     expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('ignores another pick while a dashboard is still being copied', async () => {
+    let finish: (value: typeof created) => void = () => undefined;
+
+    mockCreateLinkedView.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    await openPicker();
+    fireEvent.click(screen.getByText('Team dashboard'));
+    await waitFor(() => expect(mockCreateLinkedView).toHaveBeenCalledTimes(1));
+    // The picker stays open during the copy, so the row can be picked again.
+    fireEvent.click(screen.getByText('Team dashboard'));
+    fireEvent.click(screen.getByText('Source database'));
+    finish(created);
+
+    await waitFor(() => expect(mockPlaceBlock).toHaveBeenCalledTimes(1));
+    expect(mockCreateLinkedView).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes the new dashboard when the block it was meant for is gone', async () => {
+    mockPlaceBlock.mockImplementation(() => {
+      throw new Error('Database creation target is no longer editable');
+    });
+    await openPicker();
+    fireEvent.click(screen.getByText('Team dashboard'));
+
+    await waitFor(() => expect(pageServices.deletePage).toHaveBeenCalledWith('linked-dashboard'));
+    expect(notify.error).toHaveBeenCalledWith('Database creation target is no longer editable');
   });
 
   it('starts an empty dashboard when the database itself is picked', async () => {
