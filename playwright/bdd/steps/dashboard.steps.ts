@@ -67,7 +67,12 @@ import {
 import { boardColumn, expectMemberViewMode, expectRowPage } from '../../support/dashboard-usecase-helpers';
 import { restoreEmployeeCells } from '../../support/employees-database';
 import { selectFilterOption } from '../../support/filter-test-helpers';
-import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
+import {
+  createDocumentPageAndNavigate,
+  insertLinkedDatabaseViaSlash,
+  linkedDatabasePickerOption,
+  openLinkedDashboardPicker,
+} from '../../support/page-utils';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
 import {
   DatabaseFilterSelectors,
@@ -178,6 +183,98 @@ Then('the document contains a dashboard block titled {string}', async ({ page },
   await expect(block.getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
   await expect(block).toContainText(title);
 });
+
+// An existing dashboard picked in `/Linked Dashboard`: the block gets its own
+// dashboard, starting with a copy of the picked one's widgets.
+const linkedDashboardViewIds = new WeakMap<Page, string>();
+
+function linkedDashboardViewId(page: Page) {
+  const viewId = linkedDashboardViewIds.get(page);
+
+  if (!viewId) throw new Error('No existing dashboard was linked in this scenario');
+  return viewId;
+}
+
+async function dashboardWidgetViewIds(page: Page, viewId: string) {
+  return allWidgets(await readDashboardSetting(page, viewId)).map((widget) => widget.view_id);
+}
+
+When('I open the linked dashboard picker and search for {string}', async ({ page }, search: string) => {
+  await openLinkedDashboardPicker(page, documentViewId(page), search);
+});
+
+Then('the picker lists the dashboard of {string} under the database', async ({ page }, database: string) => {
+  const databaseRow = linkedDatabasePickerOption(page, fixtureDatabase(page, database).pageId);
+
+  await expect(databaseRow).toBeVisible();
+  // Nested in the database's tree item and shown without expanding it.
+  await expect(
+    databaseRow.locator('xpath=..').locator(`[data-testid="linked-database-option"][data-view-id="${dashboardViewId(page)}"]`)
+  ).toBeVisible();
+});
+
+When('I pick the dashboard of {string} in the picker', async ({ page }, database: string) => {
+  const original = dashboardViewId(page);
+  let linked = '';
+
+  await linkedDatabasePickerOption(page, original).click();
+  await expect(dashboardBlock(page).getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(
+      async () => {
+        const views = await readDatabaseViews(page, fixtureDatabase(page, database).databaseId);
+
+        linked = views.find((view) => view.layout === LAYOUT_BY_NAME.Dashboard && view.id !== original)?.id ?? '';
+        return linked;
+      },
+      { ...WIDGET_TIMEOUT, message: 'waiting for the linked dashboard view' }
+    )
+    .not.toBe('');
+  linkedDashboardViewIds.set(page, linked);
+});
+
+Then("the document's dashboard shows the widgets {string}", async ({ page }, labels: string) => {
+  const expected = splitList(labels).map((label) => viewIdForLabel(page, label));
+  const widgets = dashboardBlock(page).getByTestId('dashboard-widget');
+
+  await expect(widgets).toHaveCount(expected.length, WIDGET_TIMEOUT);
+  for (const [index, viewId] of expected.entries()) {
+    await expect(widgets.nth(index)).toHaveAttribute('data-view-id', viewId);
+  }
+
+  // The block's own dashboard, showing the same views (and so the same rows).
+  expect(await dashboardWidgetViewIds(page, linkedDashboardViewId(page))).toEqual(expected);
+});
+
+Then("the document's dashboard is in View mode", async ({ page }) => {
+  await expectDashboardMode(page, 'View');
+});
+
+When('I reload the document', async ({ page, request }) => {
+  // The copy must be on the server, not only in this browser's cache.
+  await waitForDashboardSync(page, request, linkedDashboardViewId(page));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(dashboardBlock(page).getByTestId('dashboard-view')).toBeVisible({ timeout: 30_000 });
+});
+
+When("I delete widget {int} of the document's dashboard", async ({ page }, index: number) => {
+  const widgets = dashboardBlock(page).getByTestId('dashboard-widget');
+  const before = await widgets.count();
+
+  await enterEditMode(page);
+  await chooseWidgetMenuAction(page, widgets.nth(index - 1), 'delete');
+  await expect(widgets).toHaveCount(before - 1, WIDGET_TIMEOUT);
+  await leaveEditMode(page);
+});
+
+Then(
+  'the {string} dashboard still shows the widgets {string}',
+  async ({ page }, _database: string, labels: string) => {
+    const expected = splitList(labels).map((label) => viewIdForLabel(page, label));
+
+    await expect.poll(() => dashboardWidgetViewIds(page, dashboardViewId(page)), WIDGET_TIMEOUT).toEqual(expected);
+  }
+);
 
 Given('the fixture also has the {string} database', async ({ page, request }, name: string) => {
   await addFixtureDatabase(page, request, name);

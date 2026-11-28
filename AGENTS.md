@@ -69,6 +69,13 @@ This is a regression checklist and record of user expectations, not a claim that
 - Create Summary and Transcript sections without child blocks, like Flutter's `aiMeetingNode()`; only Notes starts with an empty paragraph. A placeholder paragraph makes desktop show an empty Summary tab and shifts every stored index. Viewing a desktop meeting on Web must not add child blocks.
 - Web-created Google Calendar meeting pages match Flutter's MeetingPageCreator: `show_notes_directly: true` and childless Summary/Transcript. With `false`, desktop hid their attendee notes behind its welcome screen.
 
+## Linked Dashboard of an existing dashboard (reported 2026-11-27)
+
+- `/Linked Dashboard` listed only databases and always created an empty dashboard view. Picking the database of an existing dashboard inserted a blank "View of <database>" in Edit mode instead of its widgets. Desktop behaves the same (`resolve_linked_view_layout_deps` seeds an empty dashboard); its port is pending.
+- The user chose a copy: the picker lists each database's dashboards beneath it (expanded; a matching database name keeps them in search). Picking one creates the block's own dashboard through the Duplicate-block path (`duplicate: true`): the same widgets, rows, widths and global filters, with its own copies of dashboard-owned widget views. Widgets show the same views and rows; arranging either dashboard afterwards leaves the other unchanged. The copy opens in View mode. Picking the database still starts an empty dashboard.
+- Never point a block at the original dashboard instead: deleting a database block trashes its view or that view's database container (`resolveDatabaseBlockDeletionTarget`).
+- Coverage: `linked-database-options.test.ts`, `SlashPanel.creation.test.tsx`, and the BDD scenarios "The slash menu links an existing dashboard with a copy of its widgets" (`dashboard-integration.feature`: listing, View mode, server round trip and reload, independent arrangement) and "Linking an existing dashboard in a document copies the views its widgets own" (`dashboard-owned-views.feature`).
+
 ## Row duplication relation regressions
 
 - Re-read the activated source cell and its membership after related database or row hydration. A newer edit or undo must prevent a delayed reciprocal insertion from restoring a removed link.

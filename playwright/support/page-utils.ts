@@ -5,7 +5,7 @@
  * Contains high-level helpers for sidebar navigation, space expansion,
  * URL utilities, and page management.
  */
-import { Page, expect } from '@playwright/test';
+import { Locator, Page, expect } from '@playwright/test';
 
 import { getSlashMenuItemName } from './i18n-constants';
 import {
@@ -198,6 +198,32 @@ export async function createDocumentPageAndNavigate(page: Page, timeout = 10000)
   await expect(dialog).toBeHidden();
   await expect(page.locator(`#root #editor-${viewId}`)).toBeVisible({ timeout: 15000 });
   return viewId;
+}
+
+/** A row of the open linked-database picker: a database or, for a linked Dashboard, one of its dashboards. */
+export function linkedDatabasePickerOption(page: Page, viewId: string): Locator {
+  return page.locator(`[data-testid="linked-database-option"][data-view-id="${viewId}"]`);
+}
+
+/**
+ * Open `/Linked Dashboard` in a document and wait for its picker, optionally
+ * searching it. Returns the picker.
+ */
+export async function openLinkedDashboardPicker(page: Page, docViewId: string, search?: string): Promise<Locator> {
+  const editor = page.locator(`#editor-${docViewId}`);
+
+  await expect(editor).toBeVisible({ timeout: 15000 });
+  await editor.click({ position: { x: 200, y: 100 }, force: true });
+  await editor.pressSequentially('/', { delay: 50 });
+  await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible({ timeout: 10000 });
+  await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedDashboard')).first().click();
+  await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Loading...')).toHaveCount(0, { timeout: 15000 });
+  const picker = page.locator('.MuiPopover-paper').filter({ hasText: 'Link to an existing database' });
+
+  await expect(picker.getByTestId('linked-database-option').first()).toBeVisible({ timeout: 10000 });
+  if (search) await picker.locator('input[placeholder*="Search"]').fill(search);
+  return picker;
 }
 
 /**

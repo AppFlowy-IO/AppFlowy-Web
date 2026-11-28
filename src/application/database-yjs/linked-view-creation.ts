@@ -27,9 +27,10 @@ export interface CreateLinkedDatabaseViewParams {
    */
   sourceViewId: string;
   /**
-   * `true` when a block is being duplicated. Only a Dashboard tells the two
-   * apart: a duplicate keeps the source's widgets (with its own copies of the
-   * views they own), a new linked dashboard starts empty.
+   * `true` when the new view copies `sourceViewId`: a duplicated block, or an
+   * existing dashboard picked in `/Linked Dashboard`. Only a Dashboard tells the
+   * two apart: a copy keeps the source's widgets (with its own copies of the
+   * views they own), a new linked dashboard of a database starts empty.
    */
   duplicate: boolean;
   createDatabaseView: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;

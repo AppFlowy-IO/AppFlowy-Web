@@ -10,11 +10,7 @@ import { isDatabaseBlockType } from '@/application/database-block';
 import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
 import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
-import {
-  databaseCatalogViewToView,
-  getDatabaseContainerEntries,
-  getWorkspaceDatabaseCatalog,
-} from '@/application/services/domains/view';
+import { getWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -123,17 +119,18 @@ import { getCharacters } from '@/utils/word';
 
 import { getDatabaseBlockTypeForLayout } from './database-layout';
 import {
+  filterLinkedDatabaseTree,
+  findLinkedDatabaseSelection,
+  getLinkedDatabaseOptions,
+  getLinkedDatabaseSelectableIds,
+  LinkedDatabaseOption,
+} from './linked-database-options';
+import {
   filterSlashMenuOptions,
   groupSlashMenuOptions,
   SlashMenuGroupKey,
   SlashMenuOptionBase,
 } from './slash-menu-options';
-
-type DatabaseOption = {
-  databaseId: string;
-  sourceViewId: string;
-  view: View;
-};
 
 interface SlashMenuOption extends SlashMenuOptionBase {
   creationLayout?: ViewLayout;
@@ -151,38 +148,16 @@ const AI_MEETING_BLOCK_TYPES = new Set<BlockType>([
   BlockType.AIMeetingSpeakerBlock,
 ]);
 
-function filterViewsByDatabases(views: View[], allowedIds: Set<string>, keyword: string) {
-  const lowercaseKeyword = keyword.toLowerCase();
-
-  const filter = (items: View[]): View[] => {
-    return items
-      .map((item) => {
-        const children = filter(item.children || []);
-        const matchKeyword = !keyword || item.name?.toLowerCase().includes(lowercaseKeyword);
-        const includeSelf = allowedIds.has(item.view_id) && matchKeyword;
-        const shouldKeep = includeSelf || children.length > 0;
-
-        if (!shouldKeep) return null;
-
-        return {
-          ...item,
-          children,
-        };
-      })
-      .filter(Boolean) as View[];
-  };
-
-  return filter(views);
-}
-
 const DatabaseTreeItem: FC<{
   view: View;
   allowedIds: Set<string>;
   onSelect: (view: View) => void;
   fallbackTitle: string;
   isSearching?: boolean;
-}> = ({ view, allowedIds, onSelect, fallbackTitle, isSearching }) => {
-  const [expanded, setExpanded] = useState(view.extra?.is_space || false);
+  /** Show the children (a database's dashboards) without a click. */
+  defaultExpanded?: boolean;
+}> = ({ view, allowedIds, onSelect, fallbackTitle, isSearching, defaultExpanded = false }) => {
+  const [expanded, setExpanded] = useState(defaultExpanded || view.extra?.is_space || false);
   // Auto-expand all nodes when searching so filtered results are visible
   const effectiveExpanded = isSearching ? true : expanded;
   const isDatabase = allowedIds.has(view.view_id);
@@ -192,6 +167,8 @@ const DatabaseTreeItem: FC<{
   return (
     <div className={'flex flex-col'}>
       <div
+        data-testid={'linked-database-option'}
+        data-view-id={view.view_id}
         onClick={() => {
           if (!hasChildren) {
             if (isDatabase) onSelect(view);
@@ -281,6 +258,7 @@ export function SlashPanel({
     getMoreAIContext,
     createDatabaseView,
     deletePage,
+    updatePage,
   } = useEditorContext();
   const editorContext = useEditorContext();
   const outline = useContext(AppOutlineContext);
@@ -294,7 +272,7 @@ export function SlashPanel({
   } | null>(null);
   const [linkedTransformOrigin, setLinkedTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
   const [databaseSearch, setDatabaseSearch] = useState('');
-  const [databaseOptions, setDatabaseOptions] = useState<DatabaseOption[]>([]);
+  const [databaseOptions, setDatabaseOptions] = useState<LinkedDatabaseOption[]>([]);
   const databaseOutline = useMemo(() => databaseOptions.map((option) => option.view), [databaseOptions]);
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
@@ -595,33 +573,25 @@ export function SlashPanel({
     ]
   );
 
-  const allowedDatabaseIds = useMemo(() => {
-    return new Set(databaseOptions.map((option) => option.view.view_id));
-  }, [databaseOptions]);
+  const allowedDatabaseIds = useMemo(() => getLinkedDatabaseSelectableIds(databaseOptions), [databaseOptions]);
 
   const filteredDatabaseTree = useMemo(() => {
     if (!databaseOutline.length) return [];
-    return filterViewsByDatabases(databaseOutline, allowedDatabaseIds, databaseSearch);
+    return filterLinkedDatabaseTree(databaseOutline, allowedDatabaseIds, databaseSearch);
   }, [databaseOutline, allowedDatabaseIds, databaseSearch]);
 
   const { askAIAnything, continueWriting } = useAIWriter();
   const aiEnabled = useAIEnabled();
   const meetingEnabled = useMeetingEnabled();
 
-  const loadDatabasesForPicker = useCallback(async () => {
+  const loadDatabasesForPicker = useCallback(async (layout: ViewLayout) => {
     if (!workspaceId) return false;
     setDatabaseLoading(true);
     setDatabaseError(null);
 
     try {
       const databases = await getWorkspaceDatabaseCatalog(workspaceId);
-      const options = getDatabaseContainerEntries(databases, { includeStandalone: true }).map<DatabaseOption>(
-        ({ databaseId, container, primaryView }) => ({
-          databaseId,
-          sourceViewId: primaryView.view_id,
-          view: databaseCatalogViewToView(databaseId, container),
-        })
-      );
+      const options = getLinkedDatabaseOptions(databases, layout);
 
       Log.debug('[SlashPanel] loadDatabasesForPicker:', {
         databaseViews: options.length,
@@ -651,7 +621,7 @@ export function SlashPanel({
 
       setDatabaseSearch('');
       setLinkedPicker({ position: { top: rect.top, left: rect.left }, layout });
-      const hasDatabases = await loadDatabasesForPicker();
+      const hasDatabases = await loadDatabasesForPicker(layout);
 
       if (!hasDatabases) {
         notify.error(
@@ -669,7 +639,19 @@ export function SlashPanel({
     async (targetViewId: string) => {
       if (!linkedPicker || !checkCreationRef.current(linkedPicker.layout, () => setLinkedPicker(null))) return;
 
-      if (!documentId || !loadView || !bindViewSync || !scheduleDeferredCleanup || editorContext.readOnly || editorContext.canWrite === false) {
+      const selection = findLinkedDatabaseSelection(databaseOptions, targetViewId);
+      // Copying a picked dashboard also copies the views its widgets own.
+      const copyUnavailable = Boolean(selection?.dashboard) && (!loadViewMeta || !updatePage || !deletePage);
+
+      if (
+        !documentId ||
+        !loadView ||
+        !bindViewSync ||
+        !scheduleDeferredCleanup ||
+        copyUnavailable ||
+        editorContext.readOnly ||
+        editorContext.canWrite === false
+      ) {
         notify.error(
           t('document.slashMenu.linkedDatabase.actionUnavailable', {
             defaultValue: 'Linking databases is not available right now',
@@ -678,13 +660,14 @@ export function SlashPanel({
         return;
       }
 
-      const option = databaseOptions.find((item) => item.view.view_id === targetViewId);
       const blockType = getDatabaseBlockTypeForLayout(linkedPicker.layout);
 
-      if (!option || !blockType) {
+      if (!selection || !blockType) {
         setLinkedPicker(null);
         return;
       }
+
+      const { option, dashboard } = selection;
 
       try {
         const databaseViewId = option.view.view_id;
@@ -749,23 +732,27 @@ export function SlashPanel({
 
         if (linkedPicker.layout === ViewLayout.Dashboard) {
           if (!createDatabaseView) throw new Error('Dashboard creation is unavailable');
-        // A new linked dashboard starts empty; List, Gallery and Feed start from the picked view.
-        const { response, databaseUpdatePending } = await createLinkedDatabaseViewForLayout(linkedPicker.layout, {
-          requestViewId: documentId,
-          sourceViewId,
-          duplicate: false,
-          payload: {
-            parent_view_id: documentId,
-            database_id: databaseId,
-            name: referencedName,
-            embedded: true,
-          },
-          createDatabaseView,
-          loadView,
-          bindViewSync,
-          deletePage,
-          scheduleDeferredCleanup,
-        });
+          // The database starts an empty dashboard. One of its dashboards starts a
+          // copy of its widgets and global filters, with its own copies of the views
+          // those widgets own, as a duplicated block does.
+          const { response, databaseUpdatePending } = await createLinkedDatabaseViewForLayout(linkedPicker.layout, {
+            requestViewId: documentId,
+            sourceViewId: dashboard?.view_id ?? sourceViewId,
+            duplicate: Boolean(dashboard),
+            payload: {
+              parent_view_id: documentId,
+              database_id: databaseId,
+              name: referencedName,
+              embedded: true,
+            },
+            createDatabaseView,
+            loadView,
+            loadViewMeta,
+            updatePage,
+            bindViewSync,
+            deletePage,
+            scheduleDeferredCleanup,
+          });
 
           if (databaseUpdatePending && response.database_update?.length && loadView) {
             const databaseDoc = await loadView(response.view_id, false, false, { databaseId });
@@ -846,6 +833,8 @@ export function SlashPanel({
       t,
       bindViewSync,
       loadView,
+      loadViewMeta,
+      updatePage,
       scheduleDeferredCleanup,
     ]
   );
@@ -2134,6 +2123,8 @@ export function SlashPanel({
                   }}
                   fallbackTitle={t('document.view.placeholder', { defaultValue: 'Untitled' })}
                   isSearching={!!databaseSearch}
+                  // A database's existing dashboards are shown, so they can be copied.
+                  defaultExpanded={linkedPicker?.layout === ViewLayout.Dashboard}
                 />
               ))
             ) : (

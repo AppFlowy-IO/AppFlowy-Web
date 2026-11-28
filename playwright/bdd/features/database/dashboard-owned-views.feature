@@ -131,6 +131,16 @@ Feature: Dashboard-owned widget views
     And the copied block's "Grid" widget shows the "Grid" view of "Projects"
     And the copied block's "Board" widget shows a view that belongs to the copied dashboard
 
+  Scenario: Linking an existing dashboard in a document copies the views its widgets own
+    Given a "Projects" database with a "Grid" view and an empty dashboard in Edit mode
+    And the user adds the "Grid" view of "Projects" from the widget picker
+    And the user creates a new "Board" view of "Projects" from the widget picker
+    When the user links the dashboard of "Projects" in a new document
+    Then the copied dashboard has 2 widgets
+    And widget 1 of the copied dashboard shows the "Grid" view of "Projects"
+    And widget 2 of the copied dashboard shows a view that belongs to the copied dashboard
+    And widget 2 of the copied dashboard is titled "Board"
+
   Scenario: Duplicating a database page points its dashboard at the copy
     Given a "Projects" database with a "Grid" view and an empty dashboard in Edit mode
     And a "Tasks" database with a "Grid" view

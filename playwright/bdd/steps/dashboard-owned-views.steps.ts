@@ -61,7 +61,12 @@ import {
   splitList,
   viewIdForLabel,
 } from '../../support/dashboard-test-helpers';
-import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
+import {
+  createDocumentPageAndNavigate,
+  insertLinkedDatabaseViaSlash,
+  linkedDatabasePickerOption,
+  openLinkedDashboardPicker,
+} from '../../support/page-utils';
 import { BlockSelectors, DatabaseViewSelectors } from '../../support/selectors';
 
 /**
@@ -506,6 +511,22 @@ When('the user duplicates the dashboard block', async ({ page }) => {
   await expect(BlockSelectors.controlsMenu(page)).toBeVisible(WIDGET_TIMEOUT);
   await BlockSelectors.controlsMenuAction(page, 'duplicate').click({ force: true });
   await expect(page.locator(`#editor-${documentId} [data-block-type="dashboard"]`)).toHaveCount(2, WIDGET_TIMEOUT);
+  memory(page).copiedDashboardViewId = await newDashboardViewId(page, known);
+});
+
+When('the user links the dashboard of {string} in a new document', async ({ page }, database: string) => {
+  const known = await hostViewIdList(page, database);
+
+  await leaveEditMode(page);
+  const documentId = await createDocumentPageAndNavigate(page);
+
+  // `/Linked Dashboard` lists the database's dashboards under it: picking one copies it.
+  await openLinkedDashboardPicker(page, documentId, database);
+  await linkedDatabasePickerOption(page, dashboardViewId(page)).click();
+  await expect(
+    page.locator(`#editor-${documentId} [data-block-type="dashboard"]`).getByTestId('dashboard-view')
+  ).toBeVisible(WIDGET_TIMEOUT);
+  memory(page).documentViewId = documentId;
   memory(page).copiedDashboardViewId = await newDashboardViewId(page, known);
 });
 
